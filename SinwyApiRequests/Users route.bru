@@ -1,0 +1,20 @@
+meta {
+  name: Users route
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:3000/posts
+  body: json
+  auth: inherit
+}
+
+body:json {
+  "whaat?"
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

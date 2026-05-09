@@ -1,15 +1,16 @@
 {
-  "name": "sinwy.backend",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-   "scripts": { 
-    "start": "bun run index.ts"
-  }, 
-  "peerDependencies": {
-    "typescript": "^5"
-  }
+	"name": "sinwy.backend",
+	"module": "index.ts",
+	"type": "module",
+	"private": true,
+	"devDependencies": {
+		"@biomejs/biome": "2.4.15",
+		"@types/bun": "latest"
+	},
+	"scripts": {
+		"start": "bun run index.ts"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	}
 }
