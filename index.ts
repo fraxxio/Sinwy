@@ -1,5 +1,5 @@
-import { SERVER } from "./appConfig";
-import createApp from "./lib/app";
+import appConfig from "@config";
+import createApp from "@/lib/app";
 
 const app = createApp();
 
@@ -29,6 +29,6 @@ app.route(
 	{ method: ["POST", "GET"] },
 );
 
-const server = app.listen(SERVER.port);
+const server = app.listen(appConfig.PORT);
 
 console.log(`Listening on ${server.url}, port ${server.port}`);

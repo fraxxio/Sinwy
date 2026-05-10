@@ -1,9 +1,6 @@
 import type { BunRequest } from "bun";
+import type { ReqContextValues } from "@/lib/sharedTypes";
 
-export type ReqContextValues = {
-	testas: boolean;
-	darvienasTestas: "vienas" | "du";
-};
 export interface IReqContext {
 	req: BunRequest<string>;
 	set<K extends keyof ReqContextValues>(
