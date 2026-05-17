@@ -1,0 +1,7 @@
+{
+    "name": "@sinwy/shared",
+    "type": "module",
+    "exports": {
+        ".": "./index.ts"
+    }
+}

@@ -1,0 +1,6 @@
+{
+    "imports": {
+        "@backend/*": "./*",
+        "@config": "./lib/appConfig.ts"
+    }
+}

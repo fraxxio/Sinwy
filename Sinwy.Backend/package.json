@@ -1,0 +1,19 @@
+{
+    "name": "@sinwy/backend",
+    "version": "0.0.0",
+    "type": "module",
+    "main": "index.ts",
+    "importMap": "./import_map.json",
+    "devDependencies": {
+        "@types/bun": "latest",
+        "drizzle-kit": "^0.31.10"
+    },
+    "dependencies": {
+        "drizzle-orm": "^0.45.2",
+        "dotenv": "^16.4.5",
+        "@sinwy/shared": "workspace:*"
+    },
+    "exports": {
+        ".": "./index.ts"
+    }
+}

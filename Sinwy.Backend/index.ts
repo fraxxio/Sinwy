@@ -1,5 +1,6 @@
+import createApp from "@backend/lib/app";
 import appConfig from "@config";
-import createApp from "@/lib/app";
+import type { User } from "@sinwy/shared";
 
 const app = createApp();
 
@@ -17,6 +18,7 @@ app.route("/", () => new Response("Hello world"));
 app.route("/users/:id", (c) => {
 	return new Response(`User ${c.req.params.id}`);
 });
+const user: User = { id: 1, name: "John Doe" };
 
 app.route(
 	"/posts",

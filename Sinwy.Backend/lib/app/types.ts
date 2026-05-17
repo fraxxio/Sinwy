@@ -1,5 +1,5 @@
+import type { ReqContextValues } from "@backend/lib/sharedTypes";
 import type { BunRequest } from "bun";
-import type { ReqContextValues } from "@/lib/sharedTypes";
 
 export interface IReqContext {
 	req: BunRequest<string>;

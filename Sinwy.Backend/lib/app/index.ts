@@ -1,3 +1,4 @@
+import type { ReqContextValues } from "@backend/lib/sharedTypes";
 import type { BunRequest } from "bun";
 import type {
 	BunRouteHandler,
@@ -5,7 +6,6 @@ import type {
 	HTTPMethod,
 	IReqContext,
 	Middleware,
-	ReqContextValues,
 	Route,
 } from "./types";
 

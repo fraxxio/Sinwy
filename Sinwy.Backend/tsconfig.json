@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@backend/*": [ "./*" ],
+      "@config": [ "./lib/appConfig.ts" ]
+    }
+  },
+  "include": [ "**/*.ts" ]
+}
