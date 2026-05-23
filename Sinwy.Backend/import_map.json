@@ -1,6 +1,8 @@
 {
     "imports": {
-        "@backend/*": "./*",
-        "@config": "./lib/appConfig.ts"
+        "@db": "./db",
+        "@db/*": "./db/*",
+        "@config": "./lib/appConfig.ts",
+        "@backend/*": "./*"
     }
 }
