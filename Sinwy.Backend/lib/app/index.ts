@@ -4,6 +4,7 @@ import type {
 	BunRouteHandler,
 	Handler,
 	HTTPMethod,
+	IApp,
 	IReqContext,
 	Middleware,
 	Route,
@@ -49,7 +50,7 @@ const compose = (middlewares: Middleware[], handler: Handler): Handler => {
 	};
 };
 
-const createApp = () => {
+const createApp = (): IApp => {
 	const routes: Route[] = [];
 	const middlewares: Middleware[] = [];
 

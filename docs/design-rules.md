@@ -614,16 +614,6 @@ Keep architecture boring and explicit.
 
 ---
 
-# Recommended Tech Stack
-
-* Runtime: Bun
-* Validation: Zod
-* ORM: Drizzle ORM
-* Logging: console or Pino
-* Testing: bun test
-
----
-
 # Summary
 
 ## Architecture Style

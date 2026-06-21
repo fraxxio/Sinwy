@@ -6,7 +6,8 @@
       "@db": [ "./db" ],
       "@db/*": [ "./db/*" ],
       "@config": [ "./lib/appConfig.ts" ],
-      "@backend/*": [ "./*" ]
+      "@authModule": [ "./modules/auth" ],
+      "@backend/*": [ "./*" ],
     }
   },
   "include": [ "**/*.ts" ]

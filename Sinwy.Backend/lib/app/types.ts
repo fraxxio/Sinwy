@@ -1,5 +1,5 @@
 import type { ReqContextValues } from "@backend/lib/sharedTypes";
-import type { BunRequest } from "bun";
+import type { BunRequest, Server } from "bun";
 
 export interface IReqContext {
 	req: BunRequest<string>;
@@ -38,3 +38,16 @@ export type Route = {
 export type BunRouteHandler = Partial<
 	Record<HTTPMethod, (req: BunRequest<string>) => Response | Promise<Response>>
 >;
+
+export interface IApp {
+	use(mw: Middleware): IApp;
+	route(
+		path: string,
+		handler: Handler,
+		options?: {
+			method?: HTTPMethod | HTTPMethod[];
+			routeMiddlewares?: Middleware[];
+		},
+	): IApp;
+	listen(port: number): Server<never>;
+}
