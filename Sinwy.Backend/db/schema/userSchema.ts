@@ -1,4 +1,5 @@
 import { account, session } from "@db/schema/authSchema";
+import { invitation, member } from "@db/schema/organizationSchema";
 import { relations } from "drizzle-orm";
 import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
@@ -17,4 +18,6 @@ export const user = pgTable("user", {
 export const userRelations = relations(user, ({ many }) => ({
 	sessions: many(session),
 	accounts: many(account),
+	members: many(member),
+	invitations: many(invitation),
 }));

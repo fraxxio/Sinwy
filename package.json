@@ -17,7 +17,10 @@
 		"check": "biome check .",
 		"check:fix": "biome check . --write",
 		"db:up": "docker compose -f ./Sinwy.Backend/docker-compose.yml up -d",
-		"db:down": "docker compose -f ./Sinwy.Backend/docker-compose.yml down"
+		"db:down": "docker compose -f ./Sinwy.Backend/docker-compose.yml down",
+		"db:migrate": "cd Sinwy.Backend && bunx drizzle-kit migrate",
+		"db:generate": "cd Sinwy.Backend && bunx drizzle-kit generate",
+		"auth:schema:generate": "bunx --bun auth@latest generate --config Sinwy.Backend/modules/auth/auth.ts"
 	},
 	"dependencies": {
 		"zod": "^4.4.3"
