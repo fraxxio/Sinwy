@@ -1,9 +1,9 @@
 {
-    "imports": {
-        "@db": "./db",
-        "@db/*": "./db/*",
-        "@config": "./lib/appConfig.ts",
-        "@authModule": "./modules/auth",
-        "@backend/*": "./*"
-    }
+	"imports": {
+		"@db": "./db",
+		"@db/*": "./db/*",
+		"@config": "./lib/appConfig.ts",
+		"@authModule": "./modules/auth",
+		"@backend/*": "./*"
+	}
 }
