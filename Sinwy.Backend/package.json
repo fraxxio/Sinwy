@@ -13,7 +13,8 @@
 		"@sinwy/shared": "workspace:*",
 		"better-auth": "^1.6.11",
 		"dotenv": "^16.4.5",
-		"drizzle-orm": "^0.45.2"
+		"drizzle-orm": "^0.45.2",
+		"resend": "^6.16.0"
 	},
 	"exports": {
 		".": "./index.ts"
