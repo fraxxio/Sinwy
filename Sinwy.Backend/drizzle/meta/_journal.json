@@ -1,20 +1,27 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1779558185403,
-      "tag": "0000_chilly_chimera",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1782324747291,
-      "tag": "0001_cheerful_stingray",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1779558185403,
+			"tag": "0000_chilly_chimera",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1782324747291,
+			"tag": "0001_cheerful_stingray",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1782671897037,
+			"tag": "0002_stormy_radioactive_man",
+			"breakpoints": true
+		}
+	]
 }

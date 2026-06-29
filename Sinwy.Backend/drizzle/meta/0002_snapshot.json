@@ -1,6 +1,6 @@
 {
-	"id": "9deded2c-6591-4ef9-98a0-6a1ac0702176",
-	"prevId": "7995aab7-7821-4f89-9821-1169f3cac8d2",
+	"id": "e6e980e7-436b-4809-9d83-f15dbc2cc761",
+	"prevId": "9deded2c-6591-4ef9-98a0-6a1ac0702176",
 	"version": "7",
 	"dialect": "postgresql",
 	"tables": {
@@ -512,6 +512,13 @@
 					"type": "text",
 					"primaryKey": false,
 					"notNull": true
+				},
+				"status": {
+					"name": "status",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "'inactive'"
 				},
 				"logo": {
 					"name": "logo",
