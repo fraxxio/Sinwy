@@ -1,9 +1,10 @@
+import { emailClient } from "@backend/infrastructure/email";
 import appConfig from "@config";
 import db from "@db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins/organization";
-import { sendEmail } from "./email";
+import { VerificationEmail } from "./emails/verificationEmail";
 
 export const auth = betterAuth({
 	baseURL: appConfig.BETTER_AUTH_URL,
@@ -16,10 +17,10 @@ export const auth = betterAuth({
 	},
 	emailVerification: {
 		sendVerificationEmail: async ({ user, url }) => {
-			await sendEmail({
+			await emailClient.send({
 				to: user.email,
-				subject: "Verify your email",
-				html: `<p>Click <a href="${url}">here</a> to verify your email.</p>`,
+				template: VerificationEmail,
+				props: { verifyUrl: url },
 			});
 		},
 	},

@@ -17,7 +17,7 @@ const configSchema = z
 		GOOGLE_CLIENT_ID: z.string(),
 		GOOGLE_CLIENT_SECRET: z.string(),
 		RESEND_API_KEY: z.string(),
-		RESEND_FROM_EMAIL: z.string(),
+		RESEND_EMAIL_DOMAIN: z.string(),
 		POSTGRES_USER: z.string(),
 		POSTGRES_PASSWORD: z.string(),
 		POSTGRES_DB: z.string(),
