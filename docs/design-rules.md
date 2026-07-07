@@ -607,7 +607,6 @@ Do NOT introduce early:
 * CQRS
 * event sourcing
 * heavy DDD
-* repository abstractions everywhere
 * service interfaces everywhere
 
 Keep architecture boring and explicit.

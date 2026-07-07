@@ -8,6 +8,8 @@
 	"private": true,
 	"scripts": {
 		"start": "bun run ./Sinwy.Backend/index.ts",
+		"test": "bun run test:backend",
+		"test:backend": "cd Sinwy.Backend && bun test",
 		"typecheck": "tsc --noEmit",
 		"typecheck:watch": "tsc --noEmit --watch",
 		"lint": "biome lint .",
