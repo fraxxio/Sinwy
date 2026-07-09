@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { slugify, uniqueSlug } from "../service";
+import { slugify, uniqueSlug } from "@backend/modules/organizations/utils";
 
 test("basic slugify", () => {
 	expect(slugify("My Cool Org")).toBe("my-cool-org");

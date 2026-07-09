@@ -1,6 +1,6 @@
 import z from "zod";
 
-const slugify = (name: string) =>
+export const slugify = (name: string) =>
 	name
 		.normalize("NFKD")
 		.replace(/[\u0300-\u036f]/g, "")
