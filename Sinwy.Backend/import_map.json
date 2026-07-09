@@ -4,6 +4,7 @@
 		"@db/*": "./db/*",
 		"@config": "./lib/appConfig.ts",
 		"@authModule": "./modules/auth",
+		"@organizationsModule": "./modules/organizations",
 		"@backend/*": "./*"
 	}
 }
