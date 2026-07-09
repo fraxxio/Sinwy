@@ -1,5 +1,6 @@
 import type { ReqContextValues } from "@backend/lib/sharedTypes";
 import type { BunRequest } from "bun";
+import { fail } from "./respond";
 import type {
 	BunRouteHandler,
 	Handler,
@@ -102,6 +103,10 @@ const createApp = (): IApp => {
 			return Bun.serve({
 				port,
 				routes: bunRoutes,
+				error(err) {
+					console.error(err);
+					return fail("Internal server error", 500);
+				},
 				fetch(req) {
 					const url = new URL(req.url);
 					const route = bunRoutes[url.pathname];

@@ -1,4 +1,5 @@
+import type { auth } from "@authModule";
+
 export type ReqContextValues = {
-	testas: boolean;
-	darvienasTestas: "vienas" | "du";
+	session: typeof auth.$Infer.Session;
 };
