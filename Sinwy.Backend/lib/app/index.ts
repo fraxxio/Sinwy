@@ -108,19 +108,11 @@ const createApp = (): IApp => {
 					return fail("Internal server error", 500);
 				},
 				fetch(req) {
-					const url = new URL(req.url);
-					const route = bunRoutes[url.pathname];
-
-					if (!route) return new Response("Not Found", { status: 404 });
-
-					const handler = route[req.method as HTTPMethod];
-					if (!handler) {
-						return new Response("Method Not Allowed", {
-							status: 405,
-						});
+					const route = bunRoutes[new URL(req.url).pathname];
+					if (route && !route[req.method as HTTPMethod]) {
+						return fail("Method not allowed", 405);
 					}
-
-					return new Response("Not Found", { status: 404 });
+					return fail("Not found", 404);
 				},
 			});
 		},

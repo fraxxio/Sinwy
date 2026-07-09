@@ -6,6 +6,7 @@ import db from "@db";
 import { session } from "@db/schema/authSchema";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
+import type { ApiResponse } from "@sinwy/shared";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import { registerOrganizationRoutes } from "../routes";
@@ -91,9 +92,15 @@ const post = (path: string, body: unknown, cookie?: string) =>
 
 type OrgDto = { id: string; name: string; slug: string; status: string };
 
+const unwrap = async <T>(res: Response) => {
+	const body = (await res.json()) as ApiResponse<T>;
+	if (!body.isSuccess) throw new Error(`request failed: ${body.message}`);
+	return body.data;
+};
+
 const createOrg = async (name: string, cookie: string) => {
 	const res = await post("/api/organizations", { name }, cookie);
-	return (await res.json()) as OrgDto;
+	return unwrap<OrgDto>(res);
 };
 
 test("POST /api/organizations without session → 401", async () => {
@@ -118,11 +125,11 @@ test("valid request → 201 with exactly { id, name, slug, status: 'inactive' }"
 	const { cookie } = await createUserWithSession();
 	const res = await post("/api/organizations", { name: "Acme Corp" }, cookie);
 	expect(res.status).toBe(201);
-	const body = (await res.json()) as OrgDto;
-	expect(Object.keys(body).sort()).toEqual(["id", "name", "slug", "status"]);
-	expect(body.name).toBe("Acme Corp");
-	expect(body.slug).toBe("acme-corp");
-	expect(body.status).toBe("inactive");
+	const org = await unwrap<OrgDto>(res);
+	expect(Object.keys(org).sort()).toEqual(["id", "name", "slug", "status"]);
+	expect(org.name).toBe("Acme Corp");
+	expect(org.slug).toBe("acme-corp");
+	expect(org.status).toBe("inactive");
 });
 
 test("creator has an owner membership row", async () => {
@@ -164,7 +171,12 @@ test("GET status: member → { status }", async () => {
 		headers: { cookie },
 	});
 	expect(res.status).toBe(200);
-	expect(await res.json()).toEqual({ status: "inactive" });
+	expect(await res.json()).toEqual({
+		isSuccess: true,
+		data: { status: "inactive" },
+		message: null,
+		code: 0,
+	});
 });
 
 test("GET status: non-member → 404", async () => {
