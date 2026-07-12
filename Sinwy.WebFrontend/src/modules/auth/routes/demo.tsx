@@ -209,7 +209,7 @@ function BetterAuthDemo() {
 							setIsSignUp(!isSignUp);
 							setError("");
 						}}
-						className="demo-muted text-sm transition-colors hover:text-[var(--sea-ink)]"
+						className="demo-muted text-sm transition-colors hover:text-(--sea-ink)"
 					>
 						{isSignUp
 							? "Already have an account? Sign in"
