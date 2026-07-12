@@ -373,7 +373,8 @@
 /* Standard glass: floating panels, dropdowns, popovers, command palette */
 @utility glass {
 	background: var(--glass-bg);
-	-webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+	-webkit-backdrop-filter: blur(var(--glass-blur))
+		saturate(var(--glass-saturate));
 	backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 	border: 1px solid var(--glass-border);
 	box-shadow:
@@ -386,7 +387,8 @@
 	background: var(--glass-bg-strong);
 	-webkit-backdrop-filter: blur(var(--glass-blur-strong))
 		saturate(var(--glass-saturate));
-	backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+	backdrop-filter: blur(var(--glass-blur-strong))
+		saturate(var(--glass-saturate));
 	border: 1px solid var(--glass-border);
 	box-shadow:
 		inset 0 1px 0 0 var(--glass-highlight),
@@ -396,7 +398,8 @@
 /* Premium card: mostly opaque, faint translucency, medium elevation */
 @utility glass-card {
 	background: var(--glass-bg-strong);
-	-webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+	-webkit-backdrop-filter: blur(var(--glass-blur))
+		saturate(var(--glass-saturate));
 	backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 	border: 1px solid var(--glass-border);
 	box-shadow:
@@ -407,7 +410,8 @@
 /* Sticky nav / toolbars: subtle blur, light elevation, hairline bottom edge */
 @utility glass-toolbar {
 	background: var(--glass-bg-strong);
-	-webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+	-webkit-backdrop-filter: blur(var(--glass-blur))
+		saturate(var(--glass-saturate));
 	backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 	border-bottom: 1px solid var(--glass-border);
 	box-shadow:
@@ -420,7 +424,8 @@
 	background: var(--glass-bg-strong);
 	-webkit-backdrop-filter: blur(var(--glass-blur-strong))
 		saturate(var(--glass-saturate));
-	backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+	backdrop-filter: blur(var(--glass-blur-strong))
+		saturate(var(--glass-saturate));
 	border: 1px solid var(--glass-border);
 	box-shadow:
 		inset 0 1px 0 0 var(--glass-highlight),

@@ -8,12 +8,12 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as AboutRouteImport } from './routes/about'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
-import { Route as DemoBetterAuthRouteImport } from './routes/demo/better-auth'
-import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as rootRouteImport } from './root'
+import { Route as AboutRouteImport } from './modules/home/routes/about'
+import { Route as IndexRouteImport } from './modules/home/routes/index'
+import { Route as DemoTanstackQueryRouteImport } from './modules/demo/routes/tanstack-query'
+import { Route as modulesAuthRoutesDemoRouteImport } from './modules/auth/routes/demo'
+import { Route as modulesAuthRoutesApiRouteImport } from './modules/auth/routes/api'
 
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
@@ -30,12 +30,12 @@ const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
   path: '/demo/tanstack-query',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoBetterAuthRoute = DemoBetterAuthRouteImport.update({
+const modulesAuthRoutesDemoRoute = modulesAuthRoutesDemoRouteImport.update({
   id: '/demo/better-auth',
   path: '/demo/better-auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+const modulesAuthRoutesApiRoute = modulesAuthRoutesApiRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
@@ -44,24 +44,24 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/demo/better-auth': typeof DemoBetterAuthRoute
+  '/demo/better-auth': typeof modulesAuthRoutesDemoRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/auth/$': typeof modulesAuthRoutesApiRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/demo/better-auth': typeof DemoBetterAuthRoute
+  '/demo/better-auth': typeof modulesAuthRoutesDemoRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/auth/$': typeof modulesAuthRoutesApiRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/demo/better-auth': typeof DemoBetterAuthRoute
+  '/demo/better-auth': typeof modulesAuthRoutesDemoRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/auth/$': typeof modulesAuthRoutesApiRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -90,9 +90,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
-  DemoBetterAuthRoute: typeof DemoBetterAuthRoute
+  modulesAuthRoutesDemoRoute: typeof modulesAuthRoutesDemoRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
-  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  modulesAuthRoutesApiRoute: typeof modulesAuthRoutesApiRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -122,14 +122,14 @@ declare module '@tanstack/react-router' {
       id: '/demo/better-auth'
       path: '/demo/better-auth'
       fullPath: '/demo/better-auth'
-      preLoaderRoute: typeof DemoBetterAuthRouteImport
+      preLoaderRoute: typeof modulesAuthRoutesDemoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
-      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      preLoaderRoute: typeof modulesAuthRoutesApiRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -138,9 +138,9 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
-  DemoBetterAuthRoute: DemoBetterAuthRoute,
+  modulesAuthRoutesDemoRoute: modulesAuthRoutesDemoRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
-  ApiAuthSplatRoute: ApiAuthSplatRoute,
+  modulesAuthRoutesApiRoute: modulesAuthRoutesApiRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
