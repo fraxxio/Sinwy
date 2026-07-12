@@ -11,9 +11,8 @@
 import { Route as rootRouteImport } from './root'
 import { Route as AboutRouteImport } from './modules/home/routes/about'
 import { Route as IndexRouteImport } from './modules/home/routes/index'
-import { Route as DemoTanstackQueryRouteImport } from './modules/demo/routes/tanstack-query'
-import { Route as modulesAuthRoutesDemoRouteImport } from './modules/auth/routes/demo'
-import { Route as modulesAuthRoutesApiRouteImport } from './modules/auth/routes/api'
+import { Route as AuthRegisterRouteImport } from './modules/auth/routes/register'
+import { Route as AuthLoginRouteImport } from './modules/auth/routes/login'
 
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
@@ -25,74 +24,49 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
-  id: '/demo/tanstack-query',
-  path: '/demo/tanstack-query',
+const AuthRegisterRoute = AuthRegisterRouteImport.update({
+  id: '/auth/register',
+  path: '/auth/register',
   getParentRoute: () => rootRouteImport,
 } as any)
-const modulesAuthRoutesDemoRoute = modulesAuthRoutesDemoRouteImport.update({
-  id: '/demo/better-auth',
-  path: '/demo/better-auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const modulesAuthRoutesApiRoute = modulesAuthRoutesApiRouteImport.update({
-  id: '/api/auth/$',
-  path: '/api/auth/$',
+const AuthLoginRoute = AuthLoginRouteImport.update({
+  id: '/auth/login',
+  path: '/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/demo/better-auth': typeof modulesAuthRoutesDemoRoute
-  '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/api/auth/$': typeof modulesAuthRoutesApiRoute
+  '/auth/login': typeof AuthLoginRoute
+  '/auth/register': typeof AuthRegisterRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/demo/better-auth': typeof modulesAuthRoutesDemoRoute
-  '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/api/auth/$': typeof modulesAuthRoutesApiRoute
+  '/auth/login': typeof AuthLoginRoute
+  '/auth/register': typeof AuthRegisterRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/demo/better-auth': typeof modulesAuthRoutesDemoRoute
-  '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/api/auth/$': typeof modulesAuthRoutesApiRoute
+  '/auth/login': typeof AuthLoginRoute
+  '/auth/register': typeof AuthRegisterRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/about'
-    | '/demo/better-auth'
-    | '/demo/tanstack-query'
-    | '/api/auth/$'
+  fullPaths: '/' | '/about' | '/auth/login' | '/auth/register'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/about'
-    | '/demo/better-auth'
-    | '/demo/tanstack-query'
-    | '/api/auth/$'
-  id:
-    | '__root__'
-    | '/'
-    | '/about'
-    | '/demo/better-auth'
-    | '/demo/tanstack-query'
-    | '/api/auth/$'
+  to: '/' | '/about' | '/auth/login' | '/auth/register'
+  id: '__root__' | '/' | '/about' | '/auth/login' | '/auth/register'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
-  modulesAuthRoutesDemoRoute: typeof modulesAuthRoutesDemoRoute
-  DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
-  modulesAuthRoutesApiRoute: typeof modulesAuthRoutesApiRoute
+  AuthLoginRoute: typeof AuthLoginRoute
+  AuthRegisterRoute: typeof AuthRegisterRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -111,25 +85,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/tanstack-query': {
-      id: '/demo/tanstack-query'
-      path: '/demo/tanstack-query'
-      fullPath: '/demo/tanstack-query'
-      preLoaderRoute: typeof DemoTanstackQueryRouteImport
+    '/auth/register': {
+      id: '/auth/register'
+      path: '/auth/register'
+      fullPath: '/auth/register'
+      preLoaderRoute: typeof AuthRegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/better-auth': {
-      id: '/demo/better-auth'
-      path: '/demo/better-auth'
-      fullPath: '/demo/better-auth'
-      preLoaderRoute: typeof modulesAuthRoutesDemoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/$': {
-      id: '/api/auth/$'
-      path: '/api/auth/$'
-      fullPath: '/api/auth/$'
-      preLoaderRoute: typeof modulesAuthRoutesApiRouteImport
+    '/auth/login': {
+      id: '/auth/login'
+      path: '/auth/login'
+      fullPath: '/auth/login'
+      preLoaderRoute: typeof AuthLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -138,9 +105,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
-  modulesAuthRoutesDemoRoute: modulesAuthRoutesDemoRoute,
-  DemoTanstackQueryRoute: DemoTanstackQueryRoute,
-  modulesAuthRoutesApiRoute: modulesAuthRoutesApiRoute,
+  AuthLoginRoute: AuthLoginRoute,
+  AuthRegisterRoute: AuthRegisterRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

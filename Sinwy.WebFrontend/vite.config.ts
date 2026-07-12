@@ -7,6 +7,10 @@ import { defineConfig } from "vite";
 
 const config = defineConfig({
 	resolve: { tsconfigPaths: true },
+	server: {
+		// ponytail: dev proxy keeps auth cookies same-origin; set BACKEND_URL if the backend isn't on :3001
+		proxy: { "/api": process.env.BACKEND_URL ?? "http://localhost:3001" },
+	},
 	plugins: [
 		devtools(),
 		tailwindcss(),
