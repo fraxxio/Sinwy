@@ -4,7 +4,7 @@ export const Route = createFileRoute("/")({ component: App });
 
 function App() {
 	return (
-		<main className="page-wrap px-4 pb-8 pt-14">
+		<main className="page-wrap pb-8 pt-14">
 			<section className="island-shell rise-in relative overflow-hidden rounded-[2rem] px-6 py-10 sm:px-10 sm:py-14">
 				<div className="pointer-events-none absolute -left-20 -top-24 h-56 w-56 rounded-full bg-[radial-gradient(circle,rgba(79,184,178,0.32),transparent_66%)]" />
 				<div className="pointer-events-none absolute -bottom-20 -right-20 h-56 w-56 rounded-full bg-[radial-gradient(circle,rgba(47,106,74,0.18),transparent_66%)]" />
@@ -19,7 +19,7 @@ function App() {
 				<div className="flex flex-wrap gap-3">
 					<a
 						href="/about"
-						className="rounded-full border border-[rgba(50,143,151,0.3)] bg-[rgba(79,184,178,0.14)] px-5 py-2.5 text-sm font-semibold text-[var(--lagoon-deep)] no-underline transition hover:-translate-y-0.5 hover:bg-[rgba(79,184,178,0.24)]"
+						className="glass-button rounded-full border border-[rgba(50,143,151,0.3)] bg-[rgba(79,184,178,0.14)] px-5 py-2.5 text-sm font-semibold text-[var(--lagoon-deep)] no-underline transition hover:bg-[rgba(79,184,178,0.24)]"
 					>
 						About This Starter
 					</a>
@@ -27,7 +27,7 @@ function App() {
 						href="https://tanstack.com/router"
 						target="_blank"
 						rel="noopener noreferrer"
-						className="rounded-full border border-[rgba(23,58,64,0.2)] bg-white/50 px-5 py-2.5 text-sm font-semibold text-[var(--sea-ink)] no-underline transition hover:-translate-y-0.5 hover:border-[rgba(23,58,64,0.35)]"
+						className="glass-button rounded-full border border-[rgba(23,58,64,0.2)] bg-white/50 px-5 py-2.5 text-sm font-semibold text-[var(--sea-ink)] no-underline transition hover:border-[rgba(23,58,64,0.35)]"
 					>
 						Router Guide
 					</a>
@@ -70,14 +70,16 @@ function App() {
 				<p className="island-kicker mb-2">Quick Start</p>
 				<ul className="m-0 list-disc space-y-2 pl-5 text-sm text-[var(--sea-ink-soft)]">
 					<li>
-						Edit <code>src/routes/index.tsx</code> to customize the home page.
+						Edit <code>src/modules/home/routes/index.tsx</code> to customize the
+						home page.
 					</li>
 					<li>
-						Update <code>src/components/Header.tsx</code> and{" "}
-						<code>src/components/Footer.tsx</code> for brand links.
+						Update <code>src/shared/components/Header.tsx</code> and{" "}
+						<code>src/shared/components/Footer.tsx</code> for brand links.
 					</li>
 					<li>
-						Add routes in <code>src/routes</code> and tweak visual tokens in{" "}
+						Add modules in <code>src/modules</code>, map them in{" "}
+						<code>src/routes.ts</code>, and tweak visual tokens in{" "}
 						<code>src/styles.css</code>.
 					</li>
 				</ul>

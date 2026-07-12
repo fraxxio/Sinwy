@@ -10,7 +10,13 @@ const config = defineConfig({
 	plugins: [
 		devtools(),
 		tailwindcss(),
-		tanstackStart(),
+		tanstackStart({
+			router: {
+				// relative to srcDirectory ("src"), so this is ./src
+				routesDirectory: ".",
+				virtualRouteConfig: "./src/routes.ts",
+			},
+		}),
 		viteReact(),
 		babel({ presets: [reactCompilerPreset()] }),
 	],
