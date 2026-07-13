@@ -8,6 +8,7 @@ import { AuthLayout } from "../components/AuthLayout";
 import { authClient } from "../lib/auth-client";
 
 export const Route = createFileRoute("/auth/register")({
+	validateSearch: z.object({ source: z.string().optional() }),
 	component: RegisterPage,
 });
 
@@ -18,6 +19,9 @@ const registerSchema = z.object({
 });
 
 function RegisterPage() {
+	const { source } = Route.useSearch();
+	// business signups continue into org creation; the source lives only in the URL
+	const callbackURL = source === "business" ? "/organizations/new" : "/";
 	const [serverError, setServerError] = useState<string | null>(null);
 	const [sentTo, setSentTo] = useState<string | null>(null);
 
@@ -28,7 +32,7 @@ function RegisterPage() {
 			setServerError(null);
 			const { error } = await authClient.signUp.email({
 				...value,
-				callbackURL: "/",
+				callbackURL,
 			});
 			if (error) {
 				setServerError(error.message ?? "Sign up failed");
@@ -46,8 +50,7 @@ function RegisterPage() {
 						Check your inbox
 					</h1>
 					<p className="text-sm text-muted-foreground">
-						We sent a verification link to {sentTo}. Verify your email, then
-						sign in.
+						We sent a verification link to {sentTo}. Click it to continue.
 					</p>
 				</div>
 				<Button
@@ -115,7 +118,7 @@ function RegisterPage() {
 				onClick={() => {
 					void authClient.signIn.social({
 						provider: "google",
-						callbackURL: "/",
+						callbackURL,
 					});
 				}}
 			>

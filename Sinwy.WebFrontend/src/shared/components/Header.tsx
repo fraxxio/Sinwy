@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { Button } from "#/shared/components/ui/button.tsx";
 import ThemeToggle from "./ThemeToggle.tsx";
 
 const Header = () => {
@@ -34,6 +35,12 @@ const Header = () => {
 
 				<div className="ml-auto flex items-center gap-1.5 sm:gap-2">
 					<ThemeToggle />
+					<Link to="/auth/login">
+						<Button variant={"outline"}>Login</Button>
+					</Link>
+					<Link to="/auth/register">
+						<Button>Register</Button>
+					</Link>
 				</div>
 			</nav>
 		</header>

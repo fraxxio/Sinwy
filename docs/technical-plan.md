@@ -1,190 +1,70 @@
-# Technical Plan — Auth & Organization Creation
+# Technical Plan — Frontend: Organization Creation, Payments, Onboarding
 
-Implements [user-creation-roadmap.md](./user-creation-roadmap.md), satisfies [user-flow-map.md](./user-flow-map.md).
-Scope of this pass: **backend, through webhook activation** (flow map 1, 3, 5, 6, 7 server-side). Frontend is the next pass (Phase 4, outline only).
+Implements the frontend half of [user-creation-roadmap.md](./user-creation-roadmap.md) (flow map 4–6). The previous backend plan is fully implemented and removed from this doc.
 
-Already in place ([Sinwy.Backend/modules/auth/auth.ts](../Sinwy.Backend/modules/auth/auth.ts)):
-email/password + `requireEmailVerification`, verification email sending, Google OAuth, organization plugin with `status` additional field (default `inactive`), org tables in [db/schema/organizationSchema.ts](../Sinwy.Backend/db/schema/organizationSchema.ts). No DB schema changes are needed in this pass.
+**Already in place:**
 
----
+- Backend: email/password + verification, Google OAuth, organization plugin (`status`, client-side creation disabled), Polar plugin with checkout slugs `starter` / `professional` / `enterprise`, webhook projection subscription → `organization.status`, `POST /api/organizations`, `GET /api/organizations/:id/status` (both session-guarded), `successUrl: /checkout/success?checkout_id={CHECKOUT_ID}`.
+- Frontend: login/register pages, `FormInput`, virtual-file route modules (`home`, `auth`).
 
-## Phase 1 — Polar Integration (roadmap Steps 2–5, flow map 5–7)
-
-### 1.1 Install
-
-```bash
-bun add @polar-sh/better-auth @polar-sh/sdk
-```
-
-### 1.2 Environment / config
-
-Add to `appConfig` (lib/appConfig.ts) and `.env`:
-
-- `POLAR_ACCESS_TOKEN` — Organization Access Token from Polar settings
-- `POLAR_WEBHOOK_SECRET` — from the Polar webhook endpoint config
-- `POLAR_SERVER` — `sandbox` | `production` (sandbox for dev; tokens/products are per-environment)
-
-### 1.3 Polar dashboard (manual, once per environment)
-
-- Create products: Starter, Professional, Enterprise (subscription pricing)
-- Create webhook endpoint pointing at `<backend-url>/api/auth/polar/webhooks`, copy secret
-
-### 1.4 Plugin config in `auth.ts`
-
-Add to the `plugins` array:
-
-```ts
-polar({
-	client: new Polar({ accessToken, server }),
-	createCustomerOnSignUp: true, // Polar customer per user, mapped via externalId — no local mapping table
-	use: [
-		checkout({
-			products: [
-				{ productId: "<from dashboard>", slug: "starter" },
-				{ productId: "<from dashboard>", slug: "professional" },
-				{ productId: "<from dashboard>", slug: "enterprise" },
-			],
-			successUrl: "/checkout/success?checkout_id={CHECKOUT_ID}",
-			authenticatedUsersOnly: true,
-		}),
-		portal(), // customer portal + subscription reads, used later for entitlement checks
-		webhooks({
-			secret: POLAR_WEBHOOK_SECRET,
-			onSubscriptionActive,   // → org status "active"
-			onSubscriptionRevoked,  // → org status "inactive"
-		}),
-	],
-})
-```
-
-### 1.5 Webhook handlers (flow map 6–7)
-
-Both handlers do the same projection (roadmap Step 5: status is a pure projection of subscription state):
-
-1. Read `referenceId` (organization id) from the subscription metadata; if absent, ignore the event (subscription not tied to an org).
-2. Update `organization.status` via Drizzle (`db.update(organization)...`) — this is our own field, direct update inside the auth module is fine.
-3. Handlers must be idempotent (webhooks can be re-delivered); a plain status set already is.
-
-Note: unpublishing public pages on `inactive` is enforced by *readers* of `status` (the future public-page serving checks status = active) — no action in the handler.
-
-### 1.6 Routing check
-
-The existing catch-all `/api/auth/*` route (modules/auth/routes.ts) already forwards POST/GET, so `/api/auth/polar/webhooks` works without new routes. Verify with a signed test event from the Polar dashboard.
-
-### 1.7 Testing (write after phase is implemented)
-
-**Not tested (library code):** checkout redirect, webhook signature verification, customer-on-signup, portal — Polar/better-auth internals.
-
-**Design for testability:** the webhook handlers must be one-liners calling a plain exported function, e.g. `projectSubscriptionStatus(payload)` — that function holds all our logic and is what gets tested. Don't test through the HTTP webhook endpoint (that would mean forging signatures).
-
-**Integration tests (`bun test` + test DB), the most important suite in the plan:**
-
-1. subscription-active payload with `referenceId` → org row `status = "active"`
-2. subscription-revoked payload → `status = "inactive"`
-3. payload without `referenceId` → no-op, no throw
-4. same event delivered twice → same end state, no error (idempotency)
-5. `referenceId` pointing at a non-existent org → no throw (stale/foreign event)
-
-**Optional smoke:** POST `/api/auth/polar/webhooks` with an invalid signature → rejected. Only proves route wiring; skip if 1.6's manual check passed.
+**Phase order note:** payments cannot come first — checkout requires an existing organization id as `referenceId` (roadmap §7.1, "Organization First, Then Billing"). So: entry routing → create org → pay → onboard.
 
 ---
 
-## Phase 2 — Organizations Module (roadmap Step 1, flow map 5)
+## Phase 1 — Auth Client Plugins & Business-Owner Entry
 
-### 2.1 Lock down client-side creation
+Goal: the client can talk to the org/Polar endpoints, and business-owner signups land in the org creation flow.
 
-In the organization plugin options: `allowUserToCreateOrganization: false`.
-All other org operations (members, invitations, active-org switching) stay on built-in better-auth endpoints.
+1. `bun add @polar-sh/better-auth` in the frontend workspace; add `organizationClient()` and `polarClient()` to [auth-client.ts](../Sinwy.WebFrontend/src/modules/auth/lib/auth-client.ts).
+2. Backend: set `emailVerification.autoSignInAfterVerification: true` — without it the verification link lands the business signup on `/organizations/new` with no session, the guard bounces them to login, and login's hardcoded `navigate({ to: "/" })` loses the flow. Update the register page's "verify, then sign in" copy to match.
+3. Business marketing CTA links to `/auth/register?source=business`. Register (and Google button) pass `callbackURL: "/organizations/new"` when `source=business`, else `"/"`. The source lives only in the URL/callback — never persisted (roadmap §1.4).
 
-### 2.2 New module `modules/organizations/`
-
-Per the module pattern (`index.ts` public API, cross-module via services):
-
-```
-modules/organizations/
-├── index.ts        # exports registerOrganizationRoutes + service
-├── routes.ts
-└── service.ts
-```
-
-### 2.3 `POST /api/organizations` — create (flow map 5)
-
-1. Require session (`auth.api.getSession({ headers })`, 401 if none; better-auth already guarantees verified email for sessions).
-2. Validate body with Zod: `{ name: string (1..100) }`. DTO type via `z.infer`.
-3. Generate slug: slugify(name); on unique-collision append short random suffix and retry.
-4. Create via `auth.api.createOrganization({ body: { name, slug, userId: session.user.id } })` — server-side call without session headers (required because client creation is disabled). Creator becomes owner; `status` defaults to `inactive`.
-5. Return DTO: `{ id, name, slug, status }` — never the Drizzle row.
-
-### 2.4 `GET /api/organizations/:id/status` — polling target (flow map 6)
-
-1. Require session + membership in `:id` (member table lookup).
-2. Return `{ status }`.
-
-Used by the success page ("Activating your organization…" ~2s poll). No push/SSE — polling for seconds-scale latency.
-
-### 2.5 Testing (write after phase is implemented)
-
-**Not tested (library code):** session creation, email-verification enforcement, owner-membership mechanics inside `auth.api.createOrganization`.
-
-**Unit tests (pure, no DB):**
-
-1. slug generation: basic slugify, unicode/symbol-heavy names, name that strips to empty, collision → suffixed slug
-
-**Integration tests (`bun test` + test DB, requests against the app):**
-
-1. `POST /api/organizations` without session → 401
-2. invalid body (missing/empty/too-long name) → 400
-3. valid request → 201 with exactly `{ id, name, slug, status: "inactive" }` (no Drizzle internals leaking)
-4. creator has an owner membership row for the new org
-5. two orgs with the same name → distinct slugs
-6. **built-in `organization.create` endpoint → rejected** — regression guard for `allowUserToCreateOrganization: false`; if someone drops that flag, this is the only thing that catches it
-7. `GET /api/organizations/:id/status`: member → `{ status }`; non-member → 403/404; no session → 401
+Done when: a verified business signup lands on `/organizations/new` signed in; a normal signup lands on `/`.
 
 ---
 
-## Phase 3 — Verification (backend pass "done" criteria)
+## Phase 2 — First Organization Creation
 
-Manual/scripted against the running server (Polar sandbox):
+Goal: business owner names their organization; it exists as `inactive`.
 
-1. Register (email/password) → verification email sent → cannot sign in before verifying.
-2. Google OAuth sign-in → session works.
-3. `POST /api/organizations` with session → org created, `status = inactive`, creator is owner member. Without session → 401. Duplicate name → distinct slug.
-4. `authClient.organization.create` path → rejected (creation disabled).
-5. Checkout: `authClient.checkout({ slug, referenceId: orgId })` → redirects to Polar sandbox checkout; complete test payment.
-6. Webhook: subscription-active event → org `status = active`; revoke in Polar dashboard → `status = inactive`. Re-delivered event → no error.
+1. New frontend module `modules/organizations`; add `physical("/organizations", "modules/organizations/routes")` to [routes.ts](../Sinwy.WebFrontend/src/routes.ts).
+2. `new.tsx`: session guard in `beforeLoad` (no session → redirect to login). Single `FormInput` (name) → `POST /api/organizations` → response `{ id, name, slug, status }`.
+3. On success navigate to `/organizations/$id/plan`.
 
-### 3.1 Testing
-
-This phase stays **manual** — items 1, 2, 5, 6 exercise external services (email delivery, Google OAuth, Polar sandbox checkout and webhook delivery) that automated tests can't reach and shouldn't fake. Items 3 and 4 are already automated by the Phase 1.7 and 2.5 suites; the manual pass here is the end-to-end confirmation that the pieces those suites test in isolation are wired together correctly.
-
-**Test infrastructure note (applies to 1.7 and 2.5):** integration tests need their own Postgres database because they truncate tables between tests — pointing them at the dev database would wipe manually created dev state on every run. Same local container is fine: `CREATE DATABASE sinwy_test;`, tests use a `DATABASE_URL` pointing at it, schema pushed in a `bun test` preload/setup. Set this up once when writing the Phase 1 suite.
+Done when: submitting the form creates an `inactive` org (creator = owner) and lands on the plan page.
 
 ---
 
-## Phase 4 — Frontend Pass (next pass, outline)
+## Phase 3 — Payments
 
-Consumes the finished backend; TanStack Start app.
+Goal: pick a plan, pay via Polar, organization activates.
 
-1. Auth client with `polarClient()` + organization client plugins.
-2. Register/login/verify screens (flow map 1, 3); registration source carried in `callbackURL` only (roadmap 1.4).
-3. Post-login routing (flow map 4): active org → Organization Mode, else Customer Mode; mode = active organization context (roadmap §6).
-4. Org creation page → `POST /api/organizations` → plan selection → `authClient.checkout({ slug, referenceId })` (flow map 5).
-5. `/checkout/success` page: poll `GET /api/organizations/:id/status` until `active` (timeout fallback), then route to onboarding placeholder (flow map 6).
+1. `$id.plan.tsx`: three plan cards; slugs must match the backend checkout config (`starter`, `professional`, `enterprise`). Selecting one stores the org id in `sessionStorage` (the static `successUrl` can't carry it) and calls `authClient.checkout({ slug, referenceId: orgId })` → browser goes to Polar.
+2. `/checkout/success` route (small `checkout` module or a route in `organizations`): the Polar plugin resolves the relative `successUrl` against the backend request URL, so this only reaches the frontend because dev proxies `/api` same-origin — **prod must keep frontend and backend on one origin** (reverse proxy `/api` → backend). Reads org id from `sessionStorage`; missing → fallback link to dashboard. Shows "Activating your organization…" and polls `GET /api/organizations/:id/status` every ~2s until `active`; ~60s timeout → "taking longer than expected" message with a retry link (webhook is async, roadmap Step 6).
+3. On `active`: navigate to `/organizations/$id/onboarding`.
 
-### 4.6 Testing (write after phase is implemented)
+Extract the polling loop as a pure function (injected fetch + timers) with one unit test: resolves on `active`, survives one failed request, gives up on timeout.
 
-**Not tested:** screens/components, form rendering, better-auth client calls. No browser E2E framework in this pass — add Playwright later only if funnel regressions actually appear.
-
-**Unit tests (`bun test` runs fine in the frontend workspace) — extract both as pure functions so they're testable without a browser:**
-
-1. post-login routing decision: `(hasActiveOrg, orgCount, source?) → destination` — covers flow map 2 and 4 branches (discovery vs marketing first redirect, org → Organization Mode, none → Customer Mode)
-2. success-page polling: with injected fetch + timers — resolves when status flips to `active`, gives up after timeout, survives a failed poll request in between
+Done when: a Polar sandbox payment flips the org to `active` and the browser ends up on the onboarding route.
 
 ---
 
-## Decisions this plan is bound by
+## Phase 4 — Onboarding Entry
 
-- Org creation only via custom endpoint; created `inactive` before payment (roadmap Step 1).
-- No local subscription tables; `organization.status` is the only billing projection (roadmap §7.2, Step 5).
-- Registration source is transient, never persisted (roadmap 1.4).
-- Entitlements: none yet — status is the only plan effect; org creation unlimited (roadmap §7.4).
+Goal: activated business owners enter Organization Mode and start onboarding.
+
+1. On entering onboarding, call `authClient.organization.setActive({ organizationId })` — Organization Mode is just "an active org is set" (roadmap §6).
+2. `$id.onboarding.tsx`: wizard shell only — welcome step + "set up your page" placeholder. The real page-builder wizard is a later pass; no "onboarding completed" flag yet — add it to the org when the wizard has real steps to complete.
+3. Post-login routing: pure function `(session, organizations, activeOrgId) → destination` — active/last org → `/organizations/$id/onboarding` (stand-in until a dashboard route exists), no orgs → `/` (Customer Mode). One unit test over the branches.
+4. Wire it via a tiny `/postlogin` dispatcher route (`beforeLoad`: run the function, redirect). Email login navigates there after `signIn.email`; Google buttons use `callbackURL: "/postlogin"` — OAuth redirects can't run the function client-side, so both paths converge on the route.
+
+Done when: login as an owner of an active org lands in Organization Mode; a user with no orgs lands in Customer Mode; fresh activation flows straight into the wizard shell.
+
+---
+
+## Bound by (from the roadmap)
+
+- Org creation only via `POST /api/organizations`; orgs are `inactive` until Polar says otherwise.
+- No local subscription state on the frontend either — poll org `status`, nothing else.
+- Registration source is transient (`callbackURL` only).
+- Mode = active organization context; every user can always switch back to Customer Mode.
