@@ -1,20 +1,15 @@
 import type { OrganizationDto } from "@sinwy/shared";
 import { useForm } from "@tanstack/react-form";
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { authClient } from "#/modules/auth/lib/auth-client";
+import { protectedRoute } from "#/modules/auth/lib/protected-route";
 import { FormInput } from "#/shared/components/FormInput";
 import { Button } from "#/shared/components/ui/button";
 import { api } from "#/shared/lib/api";
 
 export const Route = createFileRoute("/organizations/new")({
-	// ponytail: client-only — authClient can't read cookies during SSR; nothing here needs SSR
-	ssr: false,
-	beforeLoad: async () => {
-		const { data } = await authClient.getSession();
-		if (!data) throw redirect({ to: "/auth/login" });
-	},
+	...protectedRoute,
 	component: NewOrganizationPage,
 });
 
