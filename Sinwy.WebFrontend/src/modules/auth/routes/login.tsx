@@ -3,11 +3,16 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { FormInput } from "#/shared/components/FormInput";
-import { Button } from "#/shared/components/ui/button";
+import { SubmitButton } from "#/shared/components/SubmitButton";
+import { FieldError } from "#/shared/components/ui/field";
 import { AuthLayout } from "../components/AuthLayout";
+import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { authClient } from "../lib/auth-client";
 
-export const Route = createFileRoute("/auth/login")({ component: LoginPage });
+export const Route = createFileRoute("/auth/login")({
+	validateSearch: z.object({ redirect: z.string().optional() }),
+	component: LoginPage,
+});
 
 const loginSchema = z.object({
 	email: z.email("Enter a valid email"),
@@ -16,6 +21,12 @@ const loginSchema = z.object({
 
 function LoginPage() {
 	const navigate = useNavigate();
+	const { redirect } = Route.useSearch();
+	// only same-origin paths — an absolute or `//host` URL would be an open redirect
+	const returnTo =
+		redirect?.startsWith("/") && !redirect.startsWith("//")
+			? redirect
+			: undefined;
 	const [serverError, setServerError] = useState<string | null>(null);
 
 	const form = useForm({
@@ -28,7 +39,8 @@ function LoginPage() {
 				setServerError(error.message ?? "Sign in failed");
 				return;
 			}
-			await navigate({ to: "/" });
+			if (returnTo) await navigate({ href: returnTo });
+			else await navigate({ to: "/auth/postlogin" });
 		},
 	});
 
@@ -64,32 +76,12 @@ function LoginPage() {
 					autoComplete="current-password"
 				/>
 
-				{serverError && (
-					<p className="text-sm text-destructive">{serverError}</p>
-				)}
+				{serverError && <FieldError>{serverError}</FieldError>}
 
-				<form.Subscribe selector={(state) => state.isSubmitting}>
-					{(isSubmitting) => (
-						<Button type="submit" className="w-full" disabled={isSubmitting}>
-							{isSubmitting ? "Signing in…" : "Sign in"}
-						</Button>
-					)}
-				</form.Subscribe>
+				<SubmitButton form={form} label="Sign in" pendingLabel="Signing in…" />
 			</form>
 
-			<Button
-				type="button"
-				variant="outline"
-				className="mt-3 w-full"
-				onClick={() => {
-					void authClient.signIn.social({
-						provider: "google",
-						callbackURL: "/",
-					});
-				}}
-			>
-				Continue with Google
-			</Button>
+			<GoogleSignInButton callbackURL={returnTo ?? "/auth/postlogin"} />
 
 			<p className="mt-6 text-center text-sm text-muted-foreground">
 				Don't have an account?{" "}

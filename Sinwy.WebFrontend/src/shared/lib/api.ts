@@ -5,11 +5,11 @@ export async function api<T>(
 	path: string,
 	init?: RequestInit,
 ): Promise<ApiResponse<T>> {
+	const { headers, ...rest } = init ?? {};
 	try {
 		const res = await fetch(`/api${path}`, {
-			method: "GET",
-			headers: { "Content-Type": "application/json", ...init?.headers },
-			...init,
+			...rest,
+			headers: { "Content-Type": "application/json", ...headers },
 		});
 		return (await res.json()) as ApiResponse<T>;
 	} catch {

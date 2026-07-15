@@ -2,7 +2,11 @@ import { sessionFrom } from "@authModule";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler } from "@backend/lib/app/types";
 import { createOrganizationBody } from "@backend/modules/organizations/utils";
-import { createOrganization, getOrganizationStatus } from "./service";
+import {
+	createOrganization,
+	getCheckoutOrganization,
+	getOrganizationStatus,
+} from "./service";
 
 export const createOrganizationHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
@@ -24,4 +28,14 @@ export const getOrganizationStatusHandler: Handler = async (c) => {
 	if (!status) return fail("Not found", 404);
 
 	return ok({ status });
+};
+
+export const getCheckoutOrganizationHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+
+	const { checkoutId } = c.req.params as { checkoutId: string };
+	const result = await getCheckoutOrganization(user.id, checkoutId);
+	if (!result) return fail("Not found", 404);
+
+	return ok(result);
 };

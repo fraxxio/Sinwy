@@ -5,7 +5,8 @@ import { useState } from "react";
 import { z } from "zod";
 import { protectedRoute } from "#/modules/auth/lib/protected-route";
 import { FormInput } from "#/shared/components/FormInput";
-import { Button } from "#/shared/components/ui/button";
+import { SubmitButton } from "#/shared/components/SubmitButton";
+import { FieldError } from "#/shared/components/ui/field";
 import { api } from "#/shared/lib/api";
 
 export const Route = createFileRoute("/organizations/new")({
@@ -71,17 +72,13 @@ function NewOrganizationPage() {
 						autoComplete="organization"
 					/>
 
-					{serverError && (
-						<p className="text-sm text-destructive">{serverError}</p>
-					)}
+					{serverError && <FieldError>{serverError}</FieldError>}
 
-					<form.Subscribe selector={(state) => state.isSubmitting}>
-						{(isSubmitting) => (
-							<Button type="submit" className="w-full" disabled={isSubmitting}>
-								{isSubmitting ? "Creating…" : "Create organization"}
-							</Button>
-						)}
-					</form.Subscribe>
+					<SubmitButton
+						form={form}
+						label="Create organization"
+						pendingLabel="Creating…"
+					/>
 				</form>
 			</div>
 		</main>

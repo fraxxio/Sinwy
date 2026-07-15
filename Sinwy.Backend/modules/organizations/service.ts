@@ -1,4 +1,4 @@
-import { auth } from "@authModule";
+import { auth, polarClient } from "@authModule";
 import { uniqueSlug } from "@backend/modules/organizations/utils";
 import type { OrganizationDto, OrganizationStatus } from "@sinwy/shared";
 import { findStatusForMember, isSlugTaken } from "./repository";
@@ -29,4 +29,19 @@ export const getOrganizationStatus = async (
 ) => {
 	// null → org doesn't exist or caller isn't a member (both read as not-found)
 	return findStatusForMember(userId, organizationId);
+};
+
+export const getCheckoutOrganization = async (
+	userId: string,
+	checkoutId: string,
+) => {
+	// null → unknown checkout, someone else's checkout, or no org reference
+	const checkout = await polarClient.checkouts
+		.get({ id: checkoutId })
+		.catch(() => null);
+	if (!checkout || checkout.externalCustomerId !== userId) return null;
+	const referenceId = checkout.metadata.referenceId;
+	return typeof referenceId === "string"
+		? { organizationId: referenceId }
+		: null;
 };

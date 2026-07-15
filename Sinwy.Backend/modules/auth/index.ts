@@ -1,4 +1,4 @@
-export { auth } from "./auth";
+export { auth, polarClient } from "./auth";
 export { requireAuth, sessionFrom } from "./middleware";
 export { registerAuthRoutes } from "./routes";
 export { projectSubscriptionStatus } from "./subscriptionStatus";

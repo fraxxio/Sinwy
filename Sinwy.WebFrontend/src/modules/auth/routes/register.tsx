@@ -3,8 +3,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { FormInput } from "#/shared/components/FormInput";
+import { SubmitButton } from "#/shared/components/SubmitButton";
 import { Button } from "#/shared/components/ui/button";
+import { FieldError } from "#/shared/components/ui/field";
 import { AuthLayout } from "../components/AuthLayout";
+import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { authClient } from "../lib/auth-client";
 
 export const Route = createFileRoute("/auth/register")({
@@ -21,7 +24,8 @@ const registerSchema = z.object({
 function RegisterPage() {
 	const { source } = Route.useSearch();
 	// business signups continue into org creation; the source lives only in the URL
-	const callbackURL = source === "business" ? "/organizations/new" : "/";
+	const callbackURL =
+		source === "business" ? "/organizations/new" : "/auth/postlogin";
 	const [serverError, setServerError] = useState<string | null>(null);
 	const [sentTo, setSentTo] = useState<string | null>(null);
 
@@ -98,32 +102,16 @@ function RegisterPage() {
 					autoComplete="new-password"
 				/>
 
-				{serverError && (
-					<p className="text-sm text-destructive">{serverError}</p>
-				)}
+				{serverError && <FieldError>{serverError}</FieldError>}
 
-				<form.Subscribe selector={(state) => state.isSubmitting}>
-					{(isSubmitting) => (
-						<Button type="submit" className="w-full" disabled={isSubmitting}>
-							{isSubmitting ? "Creating account…" : "Create account"}
-						</Button>
-					)}
-				</form.Subscribe>
+				<SubmitButton
+					form={form}
+					label="Create account"
+					pendingLabel="Creating account…"
+				/>
 			</form>
 
-			<Button
-				type="button"
-				variant="outline"
-				className="mt-3 w-full"
-				onClick={() => {
-					void authClient.signIn.social({
-						provider: "google",
-						callbackURL,
-					});
-				}}
-			>
-				Continue with Google
-			</Button>
+			<GoogleSignInButton callbackURL={callbackURL} />
 
 			<p className="mt-6 text-center text-sm text-muted-foreground">
 				Already have an account?{" "}

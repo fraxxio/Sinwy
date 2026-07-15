@@ -1,8 +1,12 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { authClient } from "#/modules/auth/lib/auth-client.ts";
 import { Button } from "#/shared/components/ui/button.tsx";
 import ThemeToggle from "./ThemeToggle.tsx";
 
 const Header = () => {
+	const navigate = useNavigate();
+	const { data: session } = authClient.useSession();
+
 	return (
 		<header className="sticky top-0 z-50 border-b border-(--line) bg-(--header-bg) backdrop-blur-lg">
 			<nav className="page-wrap flex flex-wrap items-center gap-x-3 gap-y-2 py-3 sm:py-4">
@@ -35,12 +39,29 @@ const Header = () => {
 
 				<div className="ml-auto flex items-center gap-1.5 sm:gap-2">
 					<ThemeToggle />
-					<Link to="/auth/login">
-						<Button variant={"outline"}>Login</Button>
-					</Link>
-					<Link to="/auth/register">
-						<Button>Register</Button>
-					</Link>
+					{session ? (
+						<>
+							<span className="hidden text-sm text-muted-foreground sm:inline">
+								{session.user.name || session.user.email}
+							</span>
+							<Button
+								variant="outline"
+								onClick={async () => {
+									await authClient.signOut();
+									await navigate({ to: "/" });
+								}}
+							>
+								Sign out
+							</Button>
+						</>
+					) : (
+						<>
+							<Button variant="outline" render={<Link to="/auth/login" />}>
+								Login
+							</Button>
+							<Button render={<Link to="/auth/register" />}>Register</Button>
+						</>
+					)}
 				</div>
 			</nav>
 		</header>

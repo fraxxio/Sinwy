@@ -12,9 +12,12 @@ import { Route as rootRouteImport } from './root'
 import { Route as AboutRouteImport } from './modules/home/routes/about'
 import { Route as IndexRouteImport } from './modules/home/routes/index'
 import { Route as OrganizationsNewRouteImport } from './modules/organizations/routes/new'
+import { Route as CheckoutSuccessRouteImport } from './modules/checkout/routes/success'
 import { Route as AuthRegisterRouteImport } from './modules/auth/routes/register'
+import { Route as AuthPostloginRouteImport } from './modules/auth/routes/postlogin'
 import { Route as AuthLoginRouteImport } from './modules/auth/routes/login'
 import { Route as OrganizationsIdDotplanRouteImport } from './modules/organizations/routes/$id.plan'
+import { Route as OrganizationsIdDotonboardingRouteImport } from './modules/organizations/routes/$id.onboarding'
 
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
@@ -31,9 +34,19 @@ const OrganizationsNewRoute = OrganizationsNewRouteImport.update({
   path: '/organizations/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CheckoutSuccessRoute = CheckoutSuccessRouteImport.update({
+  id: '/checkout/success',
+  path: '/checkout/success',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRegisterRoute = AuthRegisterRouteImport.update({
   id: '/auth/register',
   path: '/auth/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthPostloginRoute = AuthPostloginRouteImport.update({
+  id: '/auth/postlogin',
+  path: '/auth/postlogin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
@@ -46,21 +59,33 @@ const OrganizationsIdDotplanRoute = OrganizationsIdDotplanRouteImport.update({
   path: '/organizations/$id/plan',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrganizationsIdDotonboardingRoute =
+  OrganizationsIdDotonboardingRouteImport.update({
+    id: '/organizations/$id/onboarding',
+    path: '/organizations/$id/onboarding',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/auth/login': typeof AuthLoginRoute
+  '/auth/postlogin': typeof AuthPostloginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/auth/login': typeof AuthLoginRoute
+  '/auth/postlogin': typeof AuthPostloginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
 }
 export interface FileRoutesById {
@@ -68,8 +93,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/auth/login': typeof AuthLoginRoute
+  '/auth/postlogin': typeof AuthPostloginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
 }
 export interface FileRouteTypes {
@@ -78,24 +106,33 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/auth/login'
+    | '/auth/postlogin'
     | '/auth/register'
+    | '/checkout/success'
     | '/organizations/new'
+    | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
     | '/auth/login'
+    | '/auth/postlogin'
     | '/auth/register'
+    | '/checkout/success'
     | '/organizations/new'
+    | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
   id:
     | '__root__'
     | '/'
     | '/about'
     | '/auth/login'
+    | '/auth/postlogin'
     | '/auth/register'
+    | '/checkout/success'
     | '/organizations/new'
+    | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
   fileRoutesById: FileRoutesById
 }
@@ -103,8 +140,11 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AuthLoginRoute: typeof AuthLoginRoute
+  AuthPostloginRoute: typeof AuthPostloginRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
+  CheckoutSuccessRoute: typeof CheckoutSuccessRoute
   OrganizationsNewRoute: typeof OrganizationsNewRoute
+  OrganizationsIdDotonboardingRoute: typeof OrganizationsIdDotonboardingRoute
   OrganizationsIdDotplanRoute: typeof OrganizationsIdDotplanRoute
 }
 
@@ -131,11 +171,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrganizationsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/checkout/success': {
+      id: '/checkout/success'
+      path: '/checkout/success'
+      fullPath: '/checkout/success'
+      preLoaderRoute: typeof CheckoutSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/register': {
       id: '/auth/register'
       path: '/auth/register'
       fullPath: '/auth/register'
       preLoaderRoute: typeof AuthRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/postlogin': {
+      id: '/auth/postlogin'
+      path: '/auth/postlogin'
+      fullPath: '/auth/postlogin'
+      preLoaderRoute: typeof AuthPostloginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/login': {
@@ -152,6 +206,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrganizationsIdDotplanRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/organizations/$id/onboarding': {
+      id: '/organizations/$id/onboarding'
+      path: '/organizations/$id/onboarding'
+      fullPath: '/organizations/$id/onboarding'
+      preLoaderRoute: typeof OrganizationsIdDotonboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -159,8 +220,11 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AuthLoginRoute: AuthLoginRoute,
+  AuthPostloginRoute: AuthPostloginRoute,
   AuthRegisterRoute: AuthRegisterRoute,
+  CheckoutSuccessRoute: CheckoutSuccessRoute,
   OrganizationsNewRoute: OrganizationsNewRoute,
+  OrganizationsIdDotonboardingRoute: OrganizationsIdDotonboardingRoute,
   OrganizationsIdDotplanRoute: OrganizationsIdDotplanRoute,
 }
 export const routeTree = rootRouteImport
