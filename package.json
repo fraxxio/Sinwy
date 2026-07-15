@@ -28,7 +28,8 @@
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "2.4.15"
+		"@biomejs/biome": "2.4.15",
+		"shadcn": "^4.13.0"
 	},
 	"peerDependencies": {
 		"typescript": "6.0.3"

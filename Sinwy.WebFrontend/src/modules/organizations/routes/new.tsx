@@ -1,0 +1,86 @@
+import type { OrganizationDto } from "@sinwy/shared";
+import { useForm } from "@tanstack/react-form";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+import { z } from "zod";
+import { protectedRoute } from "#/modules/auth/lib/protected-route";
+import { FormInput } from "#/shared/components/FormInput";
+import { SubmitButton } from "#/shared/components/SubmitButton";
+import { FieldError } from "#/shared/components/ui/field";
+import { api } from "#/shared/lib/api";
+
+export const Route = createFileRoute("/organizations/new")({
+	...protectedRoute,
+	component: NewOrganizationPage,
+});
+
+const createOrgSchema = z.object({
+	name: z
+		.string()
+		.trim()
+		.min(1, "Name is required")
+		.max(100, "Max 100 characters"),
+});
+
+function NewOrganizationPage() {
+	const navigate = useNavigate();
+	const [serverError, setServerError] = useState<string | null>(null);
+
+	const form = useForm({
+		defaultValues: { name: "" },
+		validators: { onSubmit: createOrgSchema },
+		onSubmit: async ({ value }) => {
+			setServerError(null);
+			const response = await api<OrganizationDto>("/organizations", {
+				method: "POST",
+				body: JSON.stringify(value),
+			});
+			if (!response.isSuccess) {
+				setServerError(response.message);
+				return;
+			}
+			await navigate({
+				to: "/organizations/$id/plan",
+				params: { id: response.data.id },
+			});
+		},
+	});
+
+	return (
+		<main className="page-wrap py-14">
+			<div className="mx-auto w-full max-w-sm">
+				<div className="mb-6 space-y-1.5">
+					<h1 className="text-2xl font-bold tracking-tight">
+						Name your organization
+					</h1>
+					<p className="text-sm text-muted-foreground">
+						You can change this later. Next, you'll pick a plan.
+					</p>
+				</div>
+
+				<form
+					className="grid gap-4"
+					onSubmit={(e) => {
+						e.preventDefault();
+						void form.handleSubmit();
+					}}
+				>
+					<FormInput
+						form={form}
+						name="name"
+						label="Organization name"
+						autoComplete="organization"
+					/>
+
+					{serverError && <FieldError>{serverError}</FieldError>}
+
+					<SubmitButton
+						form={form}
+						label="Create organization"
+						pendingLabel="Creating…"
+					/>
+				</form>
+			</div>
+		</main>
+	);
+}

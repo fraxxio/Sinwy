@@ -24,6 +24,12 @@
 			"quoteStyle": "double"
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["**/shared/components/ui/**"],
+			"linter": { "enabled": false }
+		}
+	],
 	"assist": {
 		"enabled": true,
 		"actions": {

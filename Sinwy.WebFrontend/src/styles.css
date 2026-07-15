@@ -52,7 +52,7 @@
 	--hero-b: rgba(47, 106, 74, 0.2);
 
 	/* shadcn semantics */
-	--background: oklch(1 0 0);
+	--background: oklch(0.9702 0 0);
 	--foreground: oklch(0.145 0.008 326);
 	--card: oklch(1 0 0);
 	--card-foreground: oklch(0.145 0.008 326);
@@ -540,37 +540,6 @@ body {
 	overflow-x: hidden;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
-}
-
-body::before {
-	content: "";
-	position: fixed;
-	inset: 0;
-	pointer-events: none;
-	z-index: -1;
-	opacity: 0.28;
-	background:
-		radial-gradient(
-			circle at 20% 15%,
-			rgba(255, 255, 255, 0.8),
-			transparent 34%
-		),
-		radial-gradient(circle at 78% 26%, rgba(79, 184, 178, 0.2), transparent 42%),
-		radial-gradient(circle at 42% 82%, rgba(47, 106, 74, 0.14), transparent 36%);
-}
-
-body::after {
-	content: "";
-	position: fixed;
-	inset: 0;
-	pointer-events: none;
-	z-index: -1;
-	opacity: 0.14;
-	background-image:
-		linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
-		linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
-	background-size: 28px 28px;
-	mask-image: radial-gradient(circle at 50% 30%, black, transparent 78%);
 }
 
 a {

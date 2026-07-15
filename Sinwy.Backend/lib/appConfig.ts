@@ -11,7 +11,7 @@ config({ path: join(__dirname, "../.env") });
 const configSchema = z
 	.object({
 		NODE_ENV: z.enum(["dev", "local", "prod", "test"]),
-		PORT: z.coerce.number().default(3000),
+		PORT: z.coerce.number().default(3001),
 		BETTER_AUTH_SECRET: z.string(),
 		BETTER_AUTH_URL: z.string(),
 		GOOGLE_CLIENT_ID: z.string(),

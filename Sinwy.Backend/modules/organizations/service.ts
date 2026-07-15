@@ -1,8 +1,12 @@
-import { auth } from "@authModule";
+import { auth, polarClient } from "@authModule";
 import { uniqueSlug } from "@backend/modules/organizations/utils";
+import type { OrganizationDto, OrganizationStatus } from "@sinwy/shared";
 import { findStatusForMember, isSlugTaken } from "./repository";
 
-export const createOrganization = async (userId: string, name: string) => {
+export const createOrganization = async (
+	userId: string,
+	name: string,
+): Promise<OrganizationDto> => {
 	const slug = await uniqueSlug(name, isSlugTaken);
 	// server-side system action: no session headers + explicit userId bypasses
 	// allowUserToCreateOrganization: false; creator becomes owner
@@ -10,7 +14,13 @@ export const createOrganization = async (userId: string, name: string) => {
 		body: { name, slug, userId },
 	});
 	if (!org) throw new Error("Organization creation failed");
-	return { id: org.id, name: org.name, slug: org.slug, status: org.status };
+	return {
+		id: org.id,
+		name: org.name,
+		slug: org.slug,
+		// DB column is a plain string; only the webhook projection writes it, with these two values
+		status: org.status as OrganizationStatus,
+	};
 };
 
 export const getOrganizationStatus = async (
@@ -19,4 +29,19 @@ export const getOrganizationStatus = async (
 ) => {
 	// null → org doesn't exist or caller isn't a member (both read as not-found)
 	return findStatusForMember(userId, organizationId);
+};
+
+export const getCheckoutOrganization = async (
+	userId: string,
+	checkoutId: string,
+) => {
+	// null → unknown checkout, someone else's checkout, or no org reference
+	const checkout = await polarClient.checkouts
+		.get({ id: checkoutId })
+		.catch(() => null);
+	if (!checkout || checkout.externalCustomerId !== userId) return null;
+	const referenceId = checkout.metadata.referenceId;
+	return typeof referenceId === "string"
+		? { organizationId: referenceId }
+		: null;
 };

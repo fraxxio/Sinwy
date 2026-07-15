@@ -11,9 +11,13 @@
 import { Route as rootRouteImport } from './root'
 import { Route as AboutRouteImport } from './modules/home/routes/about'
 import { Route as IndexRouteImport } from './modules/home/routes/index'
-import { Route as DemoTanstackQueryRouteImport } from './modules/demo/routes/tanstack-query'
-import { Route as modulesAuthRoutesDemoRouteImport } from './modules/auth/routes/demo'
-import { Route as modulesAuthRoutesApiRouteImport } from './modules/auth/routes/api'
+import { Route as OrganizationsNewRouteImport } from './modules/organizations/routes/new'
+import { Route as CheckoutSuccessRouteImport } from './modules/checkout/routes/success'
+import { Route as AuthRegisterRouteImport } from './modules/auth/routes/register'
+import { Route as AuthPostloginRouteImport } from './modules/auth/routes/postlogin'
+import { Route as AuthLoginRouteImport } from './modules/auth/routes/login'
+import { Route as OrganizationsIdDotplanRouteImport } from './modules/organizations/routes/$id.plan'
+import { Route as OrganizationsIdDotonboardingRouteImport } from './modules/organizations/routes/$id.onboarding'
 
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
@@ -25,74 +29,123 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
-  id: '/demo/tanstack-query',
-  path: '/demo/tanstack-query',
+const OrganizationsNewRoute = OrganizationsNewRouteImport.update({
+  id: '/organizations/new',
+  path: '/organizations/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const modulesAuthRoutesDemoRoute = modulesAuthRoutesDemoRouteImport.update({
-  id: '/demo/better-auth',
-  path: '/demo/better-auth',
+const CheckoutSuccessRoute = CheckoutSuccessRouteImport.update({
+  id: '/checkout/success',
+  path: '/checkout/success',
   getParentRoute: () => rootRouteImport,
 } as any)
-const modulesAuthRoutesApiRoute = modulesAuthRoutesApiRouteImport.update({
-  id: '/api/auth/$',
-  path: '/api/auth/$',
+const AuthRegisterRoute = AuthRegisterRouteImport.update({
+  id: '/auth/register',
+  path: '/auth/register',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthPostloginRoute = AuthPostloginRouteImport.update({
+  id: '/auth/postlogin',
+  path: '/auth/postlogin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthLoginRoute = AuthLoginRouteImport.update({
+  id: '/auth/login',
+  path: '/auth/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrganizationsIdDotplanRoute = OrganizationsIdDotplanRouteImport.update({
+  id: '/organizations/$id/plan',
+  path: '/organizations/$id/plan',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrganizationsIdDotonboardingRoute =
+  OrganizationsIdDotonboardingRouteImport.update({
+    id: '/organizations/$id/onboarding',
+    path: '/organizations/$id/onboarding',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/demo/better-auth': typeof modulesAuthRoutesDemoRoute
-  '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/api/auth/$': typeof modulesAuthRoutesApiRoute
+  '/auth/login': typeof AuthLoginRoute
+  '/auth/postlogin': typeof AuthPostloginRoute
+  '/auth/register': typeof AuthRegisterRoute
+  '/checkout/success': typeof CheckoutSuccessRoute
+  '/organizations/new': typeof OrganizationsNewRoute
+  '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
+  '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/demo/better-auth': typeof modulesAuthRoutesDemoRoute
-  '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/api/auth/$': typeof modulesAuthRoutesApiRoute
+  '/auth/login': typeof AuthLoginRoute
+  '/auth/postlogin': typeof AuthPostloginRoute
+  '/auth/register': typeof AuthRegisterRoute
+  '/checkout/success': typeof CheckoutSuccessRoute
+  '/organizations/new': typeof OrganizationsNewRoute
+  '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
+  '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/demo/better-auth': typeof modulesAuthRoutesDemoRoute
-  '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/api/auth/$': typeof modulesAuthRoutesApiRoute
+  '/auth/login': typeof AuthLoginRoute
+  '/auth/postlogin': typeof AuthPostloginRoute
+  '/auth/register': typeof AuthRegisterRoute
+  '/checkout/success': typeof CheckoutSuccessRoute
+  '/organizations/new': typeof OrganizationsNewRoute
+  '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
+  '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/about'
-    | '/demo/better-auth'
-    | '/demo/tanstack-query'
-    | '/api/auth/$'
+    | '/auth/login'
+    | '/auth/postlogin'
+    | '/auth/register'
+    | '/checkout/success'
+    | '/organizations/new'
+    | '/organizations/$id/onboarding'
+    | '/organizations/$id/plan'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
-    | '/demo/better-auth'
-    | '/demo/tanstack-query'
-    | '/api/auth/$'
+    | '/auth/login'
+    | '/auth/postlogin'
+    | '/auth/register'
+    | '/checkout/success'
+    | '/organizations/new'
+    | '/organizations/$id/onboarding'
+    | '/organizations/$id/plan'
   id:
     | '__root__'
     | '/'
     | '/about'
-    | '/demo/better-auth'
-    | '/demo/tanstack-query'
-    | '/api/auth/$'
+    | '/auth/login'
+    | '/auth/postlogin'
+    | '/auth/register'
+    | '/checkout/success'
+    | '/organizations/new'
+    | '/organizations/$id/onboarding'
+    | '/organizations/$id/plan'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
-  modulesAuthRoutesDemoRoute: typeof modulesAuthRoutesDemoRoute
-  DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
-  modulesAuthRoutesApiRoute: typeof modulesAuthRoutesApiRoute
+  AuthLoginRoute: typeof AuthLoginRoute
+  AuthPostloginRoute: typeof AuthPostloginRoute
+  AuthRegisterRoute: typeof AuthRegisterRoute
+  CheckoutSuccessRoute: typeof CheckoutSuccessRoute
+  OrganizationsNewRoute: typeof OrganizationsNewRoute
+  OrganizationsIdDotonboardingRoute: typeof OrganizationsIdDotonboardingRoute
+  OrganizationsIdDotplanRoute: typeof OrganizationsIdDotplanRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -111,25 +164,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/tanstack-query': {
-      id: '/demo/tanstack-query'
-      path: '/demo/tanstack-query'
-      fullPath: '/demo/tanstack-query'
-      preLoaderRoute: typeof DemoTanstackQueryRouteImport
+    '/organizations/new': {
+      id: '/organizations/new'
+      path: '/organizations/new'
+      fullPath: '/organizations/new'
+      preLoaderRoute: typeof OrganizationsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/better-auth': {
-      id: '/demo/better-auth'
-      path: '/demo/better-auth'
-      fullPath: '/demo/better-auth'
-      preLoaderRoute: typeof modulesAuthRoutesDemoRouteImport
+    '/checkout/success': {
+      id: '/checkout/success'
+      path: '/checkout/success'
+      fullPath: '/checkout/success'
+      preLoaderRoute: typeof CheckoutSuccessRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/auth/$': {
-      id: '/api/auth/$'
-      path: '/api/auth/$'
-      fullPath: '/api/auth/$'
-      preLoaderRoute: typeof modulesAuthRoutesApiRouteImport
+    '/auth/register': {
+      id: '/auth/register'
+      path: '/auth/register'
+      fullPath: '/auth/register'
+      preLoaderRoute: typeof AuthRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/postlogin': {
+      id: '/auth/postlogin'
+      path: '/auth/postlogin'
+      fullPath: '/auth/postlogin'
+      preLoaderRoute: typeof AuthPostloginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/login': {
+      id: '/auth/login'
+      path: '/auth/login'
+      fullPath: '/auth/login'
+      preLoaderRoute: typeof AuthLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/organizations/$id/plan': {
+      id: '/organizations/$id/plan'
+      path: '/organizations/$id/plan'
+      fullPath: '/organizations/$id/plan'
+      preLoaderRoute: typeof OrganizationsIdDotplanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/organizations/$id/onboarding': {
+      id: '/organizations/$id/onboarding'
+      path: '/organizations/$id/onboarding'
+      fullPath: '/organizations/$id/onboarding'
+      preLoaderRoute: typeof OrganizationsIdDotonboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -138,9 +219,13 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
-  modulesAuthRoutesDemoRoute: modulesAuthRoutesDemoRoute,
-  DemoTanstackQueryRoute: DemoTanstackQueryRoute,
-  modulesAuthRoutesApiRoute: modulesAuthRoutesApiRoute,
+  AuthLoginRoute: AuthLoginRoute,
+  AuthPostloginRoute: AuthPostloginRoute,
+  AuthRegisterRoute: AuthRegisterRoute,
+  CheckoutSuccessRoute: CheckoutSuccessRoute,
+  OrganizationsNewRoute: OrganizationsNewRoute,
+  OrganizationsIdDotonboardingRoute: OrganizationsIdDotonboardingRoute,
+  OrganizationsIdDotplanRoute: OrganizationsIdDotplanRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
