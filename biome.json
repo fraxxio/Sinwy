@@ -16,7 +16,34 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"recommended": true,
+			"correctness": {
+				"noUnusedVariables": "error",
+				"noUnusedImports": "error",
+				"noUnusedFunctionParameters": "error"
+			},
+			"suspicious": {
+				"noExplicitAny": "error",
+				"useAwait": "error"
+			},
+			"style": {
+				"noNonNullAssertion": "error",
+				"noParameterAssign": "error",
+				"useConst": "error",
+				"useImportType": "error",
+				"useExportType": "error",
+				"noInferrableTypes": "error",
+				"useNodejsImportProtocol": "error",
+				"useTemplate": "error",
+				"noYodaExpression": "error",
+				"useCollapsedElseIf": "error",
+				"useShorthandAssign": "error"
+			},
+			"complexity": {
+				"noUselessStringConcat": "error",
+				"noForEach": "off",
+				"useLiteralKeys": "off"
+			}
 		}
 	},
 	"javascript": {
@@ -28,6 +55,14 @@
 		{
 			"includes": ["**/shared/components/ui/**"],
 			"linter": { "enabled": false }
+		},
+		{
+			"includes": ["**/src/styles.css"],
+			"linter": {
+				"rules": {
+					"complexity": { "noImportantStyles": "off" }
+				}
+			}
 		}
 	],
 	"assist": {

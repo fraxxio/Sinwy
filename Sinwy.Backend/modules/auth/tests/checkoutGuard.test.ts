@@ -50,7 +50,7 @@ test("member of an inactive org → checkout proceeds", async () => {
 });
 
 test("non-member → FORBIDDEN", async () => {
-	expect(ensureCheckoutAllowed(strangerId, orgId)).rejects.toThrow(
+	await expect(ensureCheckoutAllowed(strangerId, orgId)).rejects.toThrow(
 		"Not a member of this organization",
 	);
 });

@@ -31,7 +31,7 @@ class ReqContext implements IReqContext {
 }
 
 const compose = (middlewares: Middleware[], handler: Handler): Handler => {
-	return async (ctx) => {
+	return (ctx) => {
 		let index = -1;
 
 		async function dispatch(i: number): Promise<Response> {
@@ -41,10 +41,10 @@ const compose = (middlewares: Middleware[], handler: Handler): Handler => {
 			const fn = middlewares[i];
 
 			if (!fn) {
-				return handler(ctx);
+				return await handler(ctx);
 			}
 
-			return fn(ctx, () => dispatch(i + 1));
+			return await fn(ctx, () => dispatch(i + 1));
 		}
 
 		return dispatch(0);

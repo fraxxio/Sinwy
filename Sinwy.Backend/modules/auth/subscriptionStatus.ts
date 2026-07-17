@@ -9,7 +9,7 @@ import { setOrganizationStatus } from "./repository";
 export const projectSubscriptionStatus = async (
 	payload: WebhookSubscriptionActivePayload | WebhookSubscriptionRevokedPayload,
 ) => {
-	const referenceId = payload.data.metadata.referenceId;
+	const referenceId = payload.data.metadata["referenceId"];
 	// no referenceId → subscription not tied to an org, ignore
 	if (typeof referenceId !== "string") return;
 
