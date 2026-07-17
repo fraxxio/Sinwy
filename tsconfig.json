@@ -21,9 +21,13 @@
 		"noUncheckedIndexedAccess": true,
 		"noImplicitOverride": true,
 
-		// Some stricter flags (disabled by default)
-		"noUnusedLocals": false,
-		"noUnusedParameters": false,
-		"noPropertyAccessFromIndexSignature": false
+		// Stricter flags (not included in "strict")
+		"exactOptionalPropertyTypes": true,
+		"noImplicitReturns": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noPropertyAccessFromIndexSignature": true,
+		"allowUnreachableCode": false,
+		"allowUnusedLabels": false
 	}
 }

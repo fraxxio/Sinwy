@@ -4,7 +4,7 @@ import { config } from "dotenv";
 
 // Force the test database BEFORE any app module loads appConfig —
 // integration tests truncate tables and must never touch the dev DB.
-process.env.POSTGRES_DB = "sinwy_test";
+process.env["POSTGRES_DB"] = "sinwy_test";
 
 // dotenv never overrides already-set vars, so POSTGRES_DB stays "sinwy_test"
 config({ path: join(import.meta.dir, "../.env") });

@@ -23,7 +23,7 @@ export const createOrganization = async (
 	};
 };
 
-export const getOrganizationStatus = async (
+export const getOrganizationStatus = (
 	userId: string,
 	organizationId: string,
 ) => {
@@ -40,7 +40,7 @@ export const getCheckoutOrganization = async (
 		.get({ id: checkoutId })
 		.catch(() => null);
 	if (!checkout || checkout.externalCustomerId !== userId) return null;
-	const referenceId = checkout.metadata.referenceId;
+	const referenceId = checkout.metadata["referenceId"];
 	return typeof referenceId === "string"
 		? { organizationId: referenceId }
 		: null;
