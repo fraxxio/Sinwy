@@ -1,15 +1,85 @@
-# Sinwy - Platform to upload your service business online.
+# Sinwy
 
-To install dependencies:
+Platform to upload your service business online.
 
-```bash
-bun install
+## Tech Stack
+
+- **Runtime / package manager:** [Bun](https://bun.com)
+- **Backend** (`Sinwy.Backend`): custom lightweight HTTP framework on `Bun.serve`, [Drizzle ORM](https://orm.drizzle.team) + PostgreSQL, [Better Auth](https://better-auth.com), [Polar](https://polar.sh) (billing), [Resend](https://resend.com) (email)
+- **Frontend** (`Sinwy.WebFrontend`): React 19, [TanStack Start](https://tanstack.com/start) (Router, Query, Form), Vite, Tailwind CSS 4, shadcn/Base UI
+- **Shared** (`Sinwy.Shared`): shared TypeScript types, imported as `@sinwy/shared`
+- **Tooling:** TypeScript, Biome (format + lint), Zod for validation, Docker Compose for the local database
+
+## Workspace Layout
+
+```
+Sinwy/
+├── Sinwy.Backend/      # Bun HTTP server (@sinwy/backend)
+├── Sinwy.Shared/       # Shared TypeScript types (@sinwy/shared)
+├── Sinwy.WebFrontend/  # TanStack Start frontend (@sinwy/webfrontend)
+└── docs/               # Architecture & roadmap docs
 ```
 
-To run:
+## Prerequisites
 
-```bash
-bun start
-```
+- [Bun](https://bun.com) v1.3+
+- Docker (for local PostgreSQL)
 
-This project was created using `bun init` in bun v1.3.3. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+## Local Setup
+
+1. **Install dependencies** (repo root):
+
+   ```bash
+   bun install
+   ```
+
+2. **Configure environment** — copy the backend env template and fill in the values (Postgres credentials, Polar/Resend/auth keys):
+
+   ```bash
+   cp Sinwy.Backend/.env.example Sinwy.Backend/.env
+   ```
+
+3. **Start PostgreSQL** (Docker):
+
+   ```bash
+   bun db:up
+   ```
+
+4. **Run database migrations:**
+
+   ```bash
+   bun db:migrate
+   ```
+
+5. **Start everything:**
+
+   ```bash
+   bun start
+   ```
+
+   The frontend runs on http://localhost:3000; the backend port comes from your `.env`. To run one side only:
+
+   ```bash
+   bun start:web      # frontend only
+   bun start:server   # backend only
+   ```
+
+## Common Scripts
+
+All run from the repo root.
+
+| Command | Description |
+| --- | --- |
+| `bun start` / `start:web` / `start:server` | Run app (all / frontend / backend) |
+| `bun run build` | Build all workspaces |
+| `bun run test` / `test:web` / `test:server` | Run tests |
+| `bun typecheck` | TypeScript type check (`--watch` via `typecheck:watch`) |
+| `bun check` / `bun check:fix` | Biome lint + format check / auto-fix |
+| `bun db:up` / `bun db:down` | Start / stop local PostgreSQL |
+| `bun db:generate` / `bun db:migrate` | Generate / apply Drizzle migrations |
+| `bun auth:schema:generate` | Regenerate the Better Auth schema |
+
+## Further Reading
+
+- `CLAUDE.md` — architecture conventions (module pattern, code style)
+- `docs/` — design rules, docs
