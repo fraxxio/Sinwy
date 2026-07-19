@@ -24,6 +24,7 @@ Sinwy/
 
 - [Bun](https://bun.com) v1.3+
 - Docker (for local PostgreSQL)
+- [ngrok](https://ngrok.com) (only if you need Polar webhooks locally — see below)
 
 ## Local Setup
 
@@ -64,6 +65,28 @@ Sinwy/
    bun start:server   # backend only
    ```
 
+### Polar webhooks (optional)
+
+Polar can't reach `localhost`, so webhook testing needs a public HTTPS tunnel. We use ngrok with a static domain (free tier includes one):
+
+1. Sign up at [ngrok](https://ngrok.com), claim your free static domain, and run `ngrok config add-authtoken <token>`.
+2. Add a named tunnel to your ngrok config (`ngrok config check` shows its path):
+
+   ```yaml
+   tunnels:
+     sinwy:
+       proto: http
+       addr: 3001 # your backend port
+       domain: <your-static-domain>.ngrok-free.dev
+   ```
+
+3. Point the webhook URL in Polar's dashboard at `https://<your-static-domain>.ngrok-free.dev/api/auth/polar/webhooks` and put its signing secret in `POLAR_WEBHOOK_SECRET`.
+4. Start the tunnel alongside the backend:
+
+   ```bash
+   bun start:localproxy
+   ```
+
 ## Common Scripts
 
 All run from the repo root.
@@ -71,6 +94,7 @@ All run from the repo root.
 | Command | Description |
 | --- | --- |
 | `bun start` / `start:web` / `start:server` | Run app (all / frontend / backend) |
+| `bun start:localproxy` | ngrok tunnel for Polar webhooks (needs setup above) |
 | `bun run build` | Build all workspaces |
 | `bun run test` / `test:web` / `test:server` | Run tests |
 | `bun typecheck` | TypeScript type check (`--watch` via `typecheck:watch`) |
