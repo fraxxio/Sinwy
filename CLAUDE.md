@@ -32,3 +32,5 @@ Cross-module imports must go through each module's `index.ts`. Never import from
 - **DB types:** use Drizzle inferred types (`$inferSelect`, `$inferInsert`) for internal DB entities, never expose them directly to API consumers — map to DTOs first
 - Avoid premature abstractions; split files only when complexity justifies it
 - Follow modular monolith and vertical slice architecture patterns
+- Avoid long paragraphs of comments on code, if we need to write such long comments think of new solution that wouldn't need such comments.
+- Don't add comments specific to the current conversation session for example explaning what you did or why you did it, comments should be added only when absolutely necessary.
