@@ -1,6 +1,6 @@
 import { useForm } from "@tanstack/react-form";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { FormInput } from "#/shared/components/FormInput";
 import { SubmitButton } from "#/shared/components/SubmitButton";
@@ -22,12 +22,17 @@ const registerSchema = z.object({
 });
 
 function RegisterPage() {
+	const navigate = Route.useNavigate();
 	const { source } = Route.useSearch();
-	// business signups continue into org creation; the source lives only in the URL
+	const [savedSource] = useState(source);
 	const callbackURL =
-		source === "business" ? "/organizations/new" : "/auth/postlogin";
+		savedSource === "business" ? "/organizations/new" : "/auth/postlogin";
 	const [serverError, setServerError] = useState<string | null>(null);
 	const [sentTo, setSentTo] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (source !== undefined) navigate({ search: {}, replace: true });
+	}, [source, navigate]);
 
 	const form = useForm({
 		defaultValues: { name: "", email: "", password: "" },

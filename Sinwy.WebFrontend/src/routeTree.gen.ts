@@ -9,44 +9,24 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './root'
-import { Route as AboutRouteImport } from './modules/home/routes/about'
 import { Route as IndexRouteImport } from './modules/home/routes/index'
-import { Route as OrganizationsNewRouteImport } from './modules/organizations/routes/new'
-import { Route as CheckoutSuccessRouteImport } from './modules/checkout/routes/success'
-import { Route as AuthRegisterRouteImport } from './modules/auth/routes/register'
-import { Route as AuthPostloginRouteImport } from './modules/auth/routes/postlogin'
+import { Route as AboutRouteImport } from './modules/home/routes/about'
 import { Route as AuthLoginRouteImport } from './modules/auth/routes/login'
-import { Route as OrganizationsIdDotplanRouteImport } from './modules/organizations/routes/$id.plan'
+import { Route as AuthPostloginRouteImport } from './modules/auth/routes/postlogin'
+import { Route as AuthRegisterRouteImport } from './modules/auth/routes/register'
+import { Route as CheckoutSuccessRouteImport } from './modules/checkout/routes/success'
+import { Route as OrganizationsNewRouteImport } from './modules/organizations/routes/new'
 import { Route as OrganizationsIdDotonboardingRouteImport } from './modules/organizations/routes/$id.onboarding'
+import { Route as OrganizationsIdDotplanRouteImport } from './modules/organizations/routes/$id.plan'
 
-const AboutRoute = AboutRouteImport.update({
-  id: '/about',
-  path: '/about',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OrganizationsNewRoute = OrganizationsNewRouteImport.update({
-  id: '/organizations/new',
-  path: '/organizations/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CheckoutSuccessRoute = CheckoutSuccessRouteImport.update({
-  id: '/checkout/success',
-  path: '/checkout/success',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthRegisterRoute = AuthRegisterRouteImport.update({
-  id: '/auth/register',
-  path: '/auth/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthPostloginRoute = AuthPostloginRouteImport.update({
-  id: '/auth/postlogin',
-  path: '/auth/postlogin',
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
@@ -54,9 +34,24 @@ const AuthLoginRoute = AuthLoginRouteImport.update({
   path: '/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OrganizationsIdDotplanRoute = OrganizationsIdDotplanRouteImport.update({
-  id: '/organizations/$id/plan',
-  path: '/organizations/$id/plan',
+const AuthPostloginRoute = AuthPostloginRouteImport.update({
+  id: '/auth/postlogin',
+  path: '/auth/postlogin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRegisterRoute = AuthRegisterRouteImport.update({
+  id: '/auth/register',
+  path: '/auth/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CheckoutSuccessRoute = CheckoutSuccessRouteImport.update({
+  id: '/checkout/success',
+  path: '/checkout/success',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrganizationsNewRoute = OrganizationsNewRouteImport.update({
+  id: '/organizations/new',
+  path: '/organizations/new',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrganizationsIdDotonboardingRoute =
@@ -65,6 +60,11 @@ const OrganizationsIdDotonboardingRoute =
     path: '/organizations/$id/onboarding',
     getParentRoute: () => rootRouteImport,
   } as any)
+const OrganizationsIdDotplanRoute = OrganizationsIdDotplanRouteImport.update({
+  id: '/organizations/$id/plan',
+  path: '/organizations/$id/plan',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -150,13 +150,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -164,32 +157,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/organizations/new': {
-      id: '/organizations/new'
-      path: '/organizations/new'
-      fullPath: '/organizations/new'
-      preLoaderRoute: typeof OrganizationsNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/checkout/success': {
-      id: '/checkout/success'
-      path: '/checkout/success'
-      fullPath: '/checkout/success'
-      preLoaderRoute: typeof CheckoutSuccessRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/register': {
-      id: '/auth/register'
-      path: '/auth/register'
-      fullPath: '/auth/register'
-      preLoaderRoute: typeof AuthRegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/postlogin': {
-      id: '/auth/postlogin'
-      path: '/auth/postlogin'
-      fullPath: '/auth/postlogin'
-      preLoaderRoute: typeof AuthPostloginRouteImport
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/login': {
@@ -199,11 +171,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/organizations/$id/plan': {
-      id: '/organizations/$id/plan'
-      path: '/organizations/$id/plan'
-      fullPath: '/organizations/$id/plan'
-      preLoaderRoute: typeof OrganizationsIdDotplanRouteImport
+    '/auth/postlogin': {
+      id: '/auth/postlogin'
+      path: '/auth/postlogin'
+      fullPath: '/auth/postlogin'
+      preLoaderRoute: typeof AuthPostloginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/register': {
+      id: '/auth/register'
+      path: '/auth/register'
+      fullPath: '/auth/register'
+      preLoaderRoute: typeof AuthRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/checkout/success': {
+      id: '/checkout/success'
+      path: '/checkout/success'
+      fullPath: '/checkout/success'
+      preLoaderRoute: typeof CheckoutSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/organizations/new': {
+      id: '/organizations/new'
+      path: '/organizations/new'
+      fullPath: '/organizations/new'
+      preLoaderRoute: typeof OrganizationsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/organizations/$id/onboarding': {
@@ -211,6 +204,13 @@ declare module '@tanstack/react-router' {
       path: '/organizations/$id/onboarding'
       fullPath: '/organizations/$id/onboarding'
       preLoaderRoute: typeof OrganizationsIdDotonboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/organizations/$id/plan': {
+      id: '/organizations/$id/plan'
+      path: '/organizations/$id/plan'
+      fullPath: '/organizations/$id/plan'
+      preLoaderRoute: typeof OrganizationsIdDotplanRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

@@ -542,14 +542,14 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
-a {
+a:not([data-slot="button"]) {
 	color: var(--lagoon-deep);
 	text-decoration-color: rgba(50, 143, 151, 0.4);
 	text-decoration-thickness: 1px;
 	text-underline-offset: 2px;
 }
 
-a:hover {
+a:not([data-slot="button"]):hover {
 	color: #246f76;
 }
 

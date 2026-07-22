@@ -28,6 +28,7 @@
 		"db:down": "docker compose -f ./Sinwy.Backend/docker-compose.yml down",
 		"db:migrate": "cd Sinwy.Backend && bunx drizzle-kit migrate",
 		"db:generate": "cd Sinwy.Backend && bunx drizzle-kit generate",
+		"db:ui": "cd Sinwy.Backend && bunx drizzle-kit studio",
 		"auth:schema:generate": "bunx --bun auth@latest generate --config Sinwy.Backend/modules/auth/auth.ts"
 	},
 	"dependencies": {
