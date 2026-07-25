@@ -1,55 +1,29 @@
-import { useForm } from "@tanstack/react-form";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { z } from "zod";
+import useRegister from "#/modules/auth/lib/useRegister";
 import { FormInput } from "#/shared/components/FormInput";
 import { SubmitButton } from "#/shared/components/SubmitButton";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { AuthLayout } from "../components/AuthLayout";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
-import { authClient } from "../lib/auth-client";
 
 export const Route = createFileRoute("/auth/register")({
 	validateSearch: z.object({ source: z.string().optional() }),
 	component: RegisterPage,
 });
 
-const registerSchema = z.object({
-	name: z.string().min(1, "Name is required"),
-	email: z.email("Enter a valid email"),
-	password: z.string().min(8, "Password must be at least 8 characters"),
-});
-
 function RegisterPage() {
 	const navigate = Route.useNavigate();
 	const { source } = Route.useSearch();
-	const [savedSource] = useState(source);
-	const callbackURL =
-		savedSource === "business" ? "/organizations/new" : "/auth/postlogin";
-	const [serverError, setServerError] = useState<string | null>(null);
-	const [sentTo, setSentTo] = useState<string | null>(null);
+	const { sentTo, serverError, form, callbackURL } = useRegister({
+		source,
+	});
 
 	useEffect(() => {
 		if (source !== undefined) navigate({ search: {}, replace: true });
 	}, [source, navigate]);
-
-	const form = useForm({
-		defaultValues: { name: "", email: "", password: "" },
-		validators: { onSubmit: registerSchema },
-		onSubmit: async ({ value }) => {
-			setServerError(null);
-			const { error } = await authClient.signUp.email({
-				...value,
-				callbackURL,
-			});
-			if (error) {
-				setServerError(error.message ?? "Sign up failed");
-				return;
-			}
-			setSentTo(value.email);
-		},
-	});
 
 	if (sentTo) {
 		return (
