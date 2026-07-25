@@ -18,6 +18,7 @@
 		"hooks": "@/shared/hooks"
 	},
 	"iconLibrary": "lucide",
+	"cssVariables": true,
 	"rtl": false,
 	"menuColor": "default-translucent",
 	"menuAccent": "subtle",

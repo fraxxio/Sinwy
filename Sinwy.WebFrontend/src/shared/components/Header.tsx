@@ -55,10 +55,15 @@ const Header = () => {
 						</>
 					) : (
 						<>
-							<Button variant="outline" render={<Link to="/auth/login" />}>
+							<Button
+								variant="outline"
+								nativeButton={false}
+								render={<Link to="/auth/login" />}
+							>
 								Login
 							</Button>
 							<Button
+								nativeButton={false}
 								render={
 									<Link to="/auth/register" search={{ source: "business" }} />
 								}
