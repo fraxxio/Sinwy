@@ -1,4 +1,4 @@
-import { useForm } from "@tanstack/react-form";
+import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import z from "zod";
@@ -23,7 +23,8 @@ const useLogin = ({ redirectFrom }: Props) => {
 
 	const form = useForm({
 		defaultValues: { email: "", password: "" },
-		validators: { onSubmit: loginSchema },
+		validationLogic: revalidateLogic({ mode: "change" }),
+		validators: { onDynamic: loginSchema },
 		onSubmit: async ({ value }) => {
 			setServerError(null);
 			const { error } = await authClient.signIn.email(value);

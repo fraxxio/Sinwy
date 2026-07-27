@@ -69,6 +69,7 @@
 	--accent: oklch(0.96 0.003 325.6);
 	--accent-foreground: oklch(0.212 0.019 322.12);
 	--destructive: oklch(0.577 0.245 27.325);
+	--success: oklch(0.56 0.128 158);
 	--border: oklch(0.922 0.005 325.62);
 	--input: oklch(0.922 0.005 325.62);
 	--ring: oklch(0.596 0.145 163.225);
@@ -163,6 +164,7 @@
 	--accent: oklch(0.263 0.024 320.12);
 	--accent-foreground: oklch(0.985 0 0);
 	--destructive: oklch(0.704 0.191 22.216);
+	--success: oklch(0.72 0.155 160);
 	--border: oklch(1 0 0 / 10%);
 	--input: oklch(1 0 0 / 15%);
 	--ring: oklch(0.696 0.17 162.48);
@@ -247,6 +249,7 @@
 		--accent: oklch(0.263 0.024 320.12);
 		--accent-foreground: oklch(0.985 0 0);
 		--destructive: oklch(0.704 0.191 22.216);
+		--success: oklch(0.72 0.155 160);
 		--border: oklch(1 0 0 / 10%);
 		--input: oklch(1 0 0 / 15%);
 		--ring: oklch(0.696 0.17 162.48);
@@ -313,6 +316,7 @@
 	--color-input: var(--input);
 	--color-border: var(--border);
 	--color-destructive: var(--destructive);
+	--color-success: var(--success);
 	--color-accent-foreground: var(--accent-foreground);
 	--color-accent: var(--accent);
 	--color-muted-foreground: var(--muted-foreground);
@@ -348,6 +352,7 @@
 	--animate-fade-in: fade-in 0.2s var(--ease-glide) both;
 	--animate-scale-in: scale-in 0.2s var(--ease-glide) both;
 	--animate-rise-in: rise-in 0.5s var(--ease-glide) both;
+	--animate-shake: shake 0.4s ease-in-out;
 
 	@keyframes fade-in {
 		from {
@@ -364,6 +369,16 @@
 		from {
 			opacity: 0;
 			transform: translateY(10px);
+		}
+	}
+	@keyframes shake {
+		20%,
+		60% {
+			transform: translateX(-5px);
+		}
+		40%,
+		80% {
+			transform: translateX(5px);
 		}
 	}
 }

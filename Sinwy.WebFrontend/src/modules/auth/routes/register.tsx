@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { z } from "zod";
-import useRegister from "#/modules/auth/lib/useRegister";
+import useRegister, { PASSWORD_RULES } from "#/modules/auth/lib/useRegister";
 import { FormInput } from "#/shared/components/FormInput";
 import { SubmitButton } from "#/shared/components/SubmitButton";
 import { Button } from "#/shared/components/ui/button";
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/auth/register")({
 function RegisterPage() {
 	const navigate = Route.useNavigate();
 	const { source } = Route.useSearch();
-	const { sentTo, serverError, form, callbackURL } = useRegister({
+	const { sentTo, serverError, form, callbackURL, shakeToken } = useRegister({
 		source,
 	});
 
@@ -57,20 +57,31 @@ function RegisterPage() {
 			</div>
 
 			<form
-				className="grid gap-4"
+				noValidate
+				className="grid gap-2"
 				onSubmit={(e) => {
 					e.preventDefault();
 					void form.handleSubmit();
 				}}
 			>
-				<FormInput form={form} name="name" label="Name" autoComplete="name" />
+				<FormInput
+					form={form}
+					name="name"
+					label="Name"
+					placeholder="Jordan Rivera"
+					autoComplete="name"
+					shakeToken={shakeToken}
+				/>
 
 				<FormInput
 					form={form}
 					name="email"
 					label="Email"
 					type="email"
+					placeholder="you@example.com"
 					autoComplete="email"
+					description="We'll never share your email with anyone."
+					shakeToken={shakeToken}
 				/>
 
 				<FormInput
@@ -78,7 +89,20 @@ function RegisterPage() {
 					name="password"
 					label="Password"
 					type="password"
+					placeholder="Create a strong password"
 					autoComplete="new-password"
+					description={PASSWORD_RULES}
+					shakeToken={shakeToken}
+				/>
+
+				<FormInput
+					form={form}
+					name="confirmPassword"
+					label="Confirm password"
+					type="password"
+					placeholder="Re-enter your password"
+					autoComplete="new-password"
+					shakeToken={shakeToken}
 				/>
 
 				{serverError && <FieldError>{serverError}</FieldError>}

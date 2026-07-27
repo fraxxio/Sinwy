@@ -14,7 +14,8 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
 				"hover:border-[color-mix(in_oklab,var(--ring)_28%,var(--line-soft))]",
 				"focus-visible:border-ring focus-visible:[--input-ring:color-mix(in_oklab,var(--ring)_28%,transparent)]",
 				"disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
-				"aria-invalid:border-destructive aria-invalid:[--input-ring:color-mix(in_oklab,var(--destructive)_22%,transparent)] dark:aria-invalid:border-destructive/60",
+				"aria-invalid:border-destructive aria-invalid:focus-visible:[--input-ring:color-mix(in_oklab,var(--destructive)_22%,transparent)] dark:aria-invalid:border-destructive/60",
+				"data-valid:border-success",
 				"md:text-sm",
 				className,
 			)}

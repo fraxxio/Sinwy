@@ -28,7 +28,8 @@ function LoginPage() {
 			</div>
 
 			<form
-				className="grid gap-4"
+				noValidate
+				className="grid gap-2"
 				onSubmit={(e) => {
 					e.preventDefault();
 					void form.handleSubmit();
