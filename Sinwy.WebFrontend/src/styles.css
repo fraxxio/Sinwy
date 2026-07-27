@@ -41,6 +41,8 @@
 	--surface: rgba(255, 255, 255, 0.74);
 	--surface-strong: rgba(255, 255, 255, 0.9);
 	--line: rgba(23, 58, 64, 0.14);
+	/* Derived from --line at use time — do not redeclare in the dark blocks. */
+	--line-soft: color-mix(in oklab, var(--line) 52%, transparent);
 	--inset-glint: rgba(255, 255, 255, 0.82);
 	--kicker: rgba(47, 106, 74, 0.9);
 	--bg-base: #e7f3ec;
@@ -67,6 +69,7 @@
 	--accent: oklch(0.96 0.003 325.6);
 	--accent-foreground: oklch(0.212 0.019 322.12);
 	--destructive: oklch(0.577 0.245 27.325);
+	--success: oklch(0.56 0.128 158);
 	--border: oklch(0.922 0.005 325.62);
 	--input: oklch(0.922 0.005 325.62);
 	--ring: oklch(0.596 0.145 163.225);
@@ -161,6 +164,7 @@
 	--accent: oklch(0.263 0.024 320.12);
 	--accent-foreground: oklch(0.985 0 0);
 	--destructive: oklch(0.704 0.191 22.216);
+	--success: oklch(0.72 0.155 160);
 	--border: oklch(1 0 0 / 10%);
 	--input: oklch(1 0 0 / 15%);
 	--ring: oklch(0.696 0.17 162.48);
@@ -245,6 +249,7 @@
 		--accent: oklch(0.263 0.024 320.12);
 		--accent-foreground: oklch(0.985 0 0);
 		--destructive: oklch(0.704 0.191 22.216);
+		--success: oklch(0.72 0.155 160);
 		--border: oklch(1 0 0 / 10%);
 		--input: oklch(1 0 0 / 15%);
 		--ring: oklch(0.696 0.17 162.48);
@@ -311,6 +316,7 @@
 	--color-input: var(--input);
 	--color-border: var(--border);
 	--color-destructive: var(--destructive);
+	--color-success: var(--success);
 	--color-accent-foreground: var(--accent-foreground);
 	--color-accent: var(--accent);
 	--color-muted-foreground: var(--muted-foreground);
@@ -346,6 +352,7 @@
 	--animate-fade-in: fade-in 0.2s var(--ease-glide) both;
 	--animate-scale-in: scale-in 0.2s var(--ease-glide) both;
 	--animate-rise-in: rise-in 0.5s var(--ease-glide) both;
+	--animate-shake: shake 0.4s ease-in-out;
 
 	@keyframes fade-in {
 		from {
@@ -362,6 +369,16 @@
 		from {
 			opacity: 0;
 			transform: translateY(10px);
+		}
+	}
+	@keyframes shake {
+		20%,
+		60% {
+			transform: translateX(-5px);
+		}
+		40%,
+		80% {
+			transform: translateX(5px);
 		}
 	}
 }
@@ -433,22 +450,35 @@
 }
 
 /* Tactile button surface: layer over a solid bg-* color (e.g. bg-primary).
-   Skeuomorphic bevel: top sheen fading into a faint bottom shade, a bright
-   inner top edge, a dark inner bottom edge, and a soft drop shadow. */
+   Soft dome: broad top sheen dissolving to nothing, a feathered inner rim,
+   and a coloured halo bled from --glow (defaults to the fill colour). */
 @utility glass-button {
-	background-image: linear-gradient(
-		to bottom,
-		rgb(255 255 255 / 0.18),
-		rgb(255 255 255 / 0.02) 52%,
-		rgb(0 0 0 / 0.05)
-	);
+	--glow: var(--primary);
+	background-image:
+		linear-gradient(
+			to bottom,
+			rgb(255 255 255 / 0.34),
+			rgb(255 255 255 / 0.1) 38%,
+			rgb(255 255 255 / 0) 66%,
+			rgb(0 0 0 / 0.07)
+		),
+		radial-gradient(
+			120% 100% at 50% -30%,
+			rgb(255 255 255 / 0.3),
+			transparent 60%
+		);
 	box-shadow:
-		inset 0 1px 0 0 rgb(255 255 255 / 0.28),
-		inset 0 -1px 0 0 rgb(0 0 0 / 0.14),
-		inset 1px 0 0 0 rgb(255 255 255 / 0.06),
-		inset -1px 0 0 0 rgb(255 255 255 / 0.06),
-		0 1px 2px rgb(var(--shadow-tint) / 0.16),
-		0 3px 8px -2px rgb(var(--shadow-tint) / 0.2);
+		inset 0 1px 1px -0.5px rgb(255 255 255 / 0.45),
+		inset 0 0 0 1px rgb(255 255 255 / 0.14),
+		inset 0 6px 12px -6px rgb(255 255 255 / 0.35),
+		inset 0 -6px 10px -6px rgb(0 0 0 / 0.16),
+		0 1px 2px rgb(var(--shadow-tint) / 0.1),
+		0 4px 10px -3px color-mix(in oklab, var(--glow) 42%, transparent),
+		0 12px 28px -8px color-mix(in oklab, var(--glow) 34%, transparent);
+	transition:
+		box-shadow 200ms var(--ease-glide),
+		background-color 200ms var(--ease-glide),
+		transform 150ms var(--ease-glide);
 }
 
 /* Elevation-only (solid surfaces) */
@@ -471,6 +501,27 @@
 /* Inset surfaces: inputs, checkboxes, wells, track of switches */
 @utility inset-soft {
 	box-shadow: var(--inset-soft-shadow);
+}
+
+/* Input trough: inner top shade, bright bottom bevel, soft outer lift.
+   Focus/error glow rides on --input-ring so the stack stays one shadow. */
+@utility input-well {
+	--input-ring: transparent;
+	background-image: linear-gradient(
+		to bottom,
+		rgb(var(--shadow-tint) / 0.05),
+		rgb(var(--shadow-tint) / 0) 62%
+	);
+	box-shadow:
+		0 0 0 3px var(--input-ring),
+		inset 0 1px 2px -1px rgb(var(--shadow-tint) / 0.14),
+		inset 0 0 6px -1px rgb(var(--shadow-tint) / 0.06),
+		inset 1px 0 0 0 var(--highlight-faint),
+		inset -1px 0 0 0 var(--highlight-faint),
+		inset 0 -1px 0 0 var(--highlight),
+		0 1px 0 0 var(--highlight-faint),
+		0 1px 3px -1px rgb(var(--shadow-tint) / 0.06),
+		0 8px 16px -8px rgb(var(--shadow-tint) / 0.1);
 }
 
 /* Opaque floating surface for menus when glass would hurt readability */
@@ -542,14 +593,14 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
-a {
+a:not([data-slot="button"]) {
 	color: var(--lagoon-deep);
 	text-decoration-color: rgba(50, 143, 151, 0.4);
 	text-decoration-thickness: 1px;
 	text-underline-offset: 2px;
 }
 
-a:hover {
+a:not([data-slot="button"]):hover {
 	color: #246f76;
 }
 
@@ -586,7 +637,7 @@ a:hover {
 	   .page-wrap so left/right edges align across the whole page. Never
 	   add extra horizontal padding next to it. */
 	.page-wrap {
-		max-width: 72rem;
+		max-width: 90rem;
 		margin-inline: auto;
 		padding-inline: var(--page-gutter);
 	}

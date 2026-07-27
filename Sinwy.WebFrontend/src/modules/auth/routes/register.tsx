@@ -1,50 +1,29 @@
-import { useForm } from "@tanstack/react-form";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect } from "react";
 import { z } from "zod";
+import useRegister, { PASSWORD_RULES } from "#/modules/auth/lib/useRegister";
 import { FormInput } from "#/shared/components/FormInput";
 import { SubmitButton } from "#/shared/components/SubmitButton";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { AuthLayout } from "../components/AuthLayout";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
-import { authClient } from "../lib/auth-client";
 
 export const Route = createFileRoute("/auth/register")({
 	validateSearch: z.object({ source: z.string().optional() }),
 	component: RegisterPage,
 });
 
-const registerSchema = z.object({
-	name: z.string().min(1, "Name is required"),
-	email: z.email("Enter a valid email"),
-	password: z.string().min(8, "Password must be at least 8 characters"),
-});
-
 function RegisterPage() {
+	const navigate = Route.useNavigate();
 	const { source } = Route.useSearch();
-	// business signups continue into org creation; the source lives only in the URL
-	const callbackURL =
-		source === "business" ? "/organizations/new" : "/auth/postlogin";
-	const [serverError, setServerError] = useState<string | null>(null);
-	const [sentTo, setSentTo] = useState<string | null>(null);
-
-	const form = useForm({
-		defaultValues: { name: "", email: "", password: "" },
-		validators: { onSubmit: registerSchema },
-		onSubmit: async ({ value }) => {
-			setServerError(null);
-			const { error } = await authClient.signUp.email({
-				...value,
-				callbackURL,
-			});
-			if (error) {
-				setServerError(error.message ?? "Sign up failed");
-				return;
-			}
-			setSentTo(value.email);
-		},
+	const { sentTo, serverError, form, callbackURL, shakeToken } = useRegister({
+		source,
 	});
+
+	useEffect(() => {
+		if (source !== undefined) navigate({ search: {}, replace: true });
+	}, [source, navigate]);
 
 	if (sentTo) {
 		return (
@@ -78,20 +57,31 @@ function RegisterPage() {
 			</div>
 
 			<form
-				className="grid gap-4"
+				noValidate
+				className="grid gap-2"
 				onSubmit={(e) => {
 					e.preventDefault();
 					void form.handleSubmit();
 				}}
 			>
-				<FormInput form={form} name="name" label="Name" autoComplete="name" />
+				<FormInput
+					form={form}
+					name="name"
+					label="Name"
+					placeholder="Jordan Rivera"
+					autoComplete="name"
+					shakeToken={shakeToken}
+				/>
 
 				<FormInput
 					form={form}
 					name="email"
 					label="Email"
 					type="email"
+					placeholder="you@example.com"
 					autoComplete="email"
+					description="We'll never share your email with anyone."
+					shakeToken={shakeToken}
 				/>
 
 				<FormInput
@@ -99,7 +89,20 @@ function RegisterPage() {
 					name="password"
 					label="Password"
 					type="password"
+					placeholder="Create a strong password"
 					autoComplete="new-password"
+					description={PASSWORD_RULES}
+					shakeToken={shakeToken}
+				/>
+
+				<FormInput
+					form={form}
+					name="confirmPassword"
+					label="Confirm password"
+					type="password"
+					placeholder="Re-enter your password"
+					autoComplete="new-password"
+					shakeToken={shakeToken}
 				/>
 
 				{serverError && <FieldError>{serverError}</FieldError>}
@@ -110,6 +113,8 @@ function RegisterPage() {
 					pendingLabel="Creating account…"
 				/>
 			</form>
+
+			<p className="my-4 text-center text-sm text-muted-foreground">or</p>
 
 			<GoogleSignInButton callbackURL={callbackURL} />
 

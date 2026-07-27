@@ -1,0 +1,72 @@
+import { revalidateLogic, useForm } from "@tanstack/react-form";
+import { useRef, useState } from "react";
+import z from "zod";
+import { authClient } from "#/modules/auth/lib/auth-client";
+
+export const PASSWORD_RULES =
+	"At least 10 characters, including one number and one symbol.";
+
+export const registerSchema = z
+	.object({
+		name: z
+			.string()
+			.trim()
+			.min(3, "Name must be at least 3 characters")
+			.regex(
+				/^\p{L}+(?:[ -]\p{L}+)*$/u,
+				"Use letters, spaces and hyphens only",
+			),
+		email: z.email("Enter a valid email"),
+		password: z
+			.string()
+			.regex(/^(?=.*\d)(?=.*[^\p{L}\d])[^\s]{10,}$/u, PASSWORD_RULES),
+		confirmPassword: z.string(),
+	})
+	.refine((value) => value.password === value.confirmPassword, {
+		path: ["confirmPassword"],
+		message: "Passwords do not match",
+	});
+
+const SHAKE_DEBOUNCE_MS = 600;
+
+type Props = {
+	source?: string | undefined;
+};
+
+const useRegister = ({ source }: Props = {}) => {
+	const [serverError, setServerError] = useState<string | null>(null);
+	const [registerSource] = useState(source);
+	const [sentTo, setSentTo] = useState<string | null>(null);
+	const [shakeToken, setShakeToken] = useState(0);
+	const lastShakeAt = useRef(0);
+	const callbackURL =
+		registerSource === "business" ? "/organizations/new" : "/auth/postlogin";
+
+	const form = useForm({
+		defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
+		validationLogic: revalidateLogic({ mode: "change" }),
+		validators: { onDynamic: registerSchema },
+		onSubmitInvalid: () => {
+			const now = Date.now();
+			if (now - lastShakeAt.current < SHAKE_DEBOUNCE_MS) return;
+			lastShakeAt.current = now;
+			setShakeToken((token) => token + 1);
+		},
+		onSubmit: async ({ value: { confirmPassword: _, ...value } }) => {
+			setServerError(null);
+			const { error } = await authClient.signUp.email({
+				...value,
+				callbackURL,
+			});
+			if (error) {
+				setServerError(error.message ?? "Sign up failed");
+				return;
+			}
+			setSentTo(value.email);
+		},
+	});
+
+	return { form, sentTo, serverError, callbackURL, shakeToken };
+};
+
+export default useRegister;

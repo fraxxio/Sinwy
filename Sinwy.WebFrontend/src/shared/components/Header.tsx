@@ -15,8 +15,7 @@ const Header = () => {
 						to="/"
 						className="inline-flex items-center gap-2 rounded-full border border-(--chip-line) bg-(--chip-bg) px-3 py-1.5 text-sm text-(--sea-ink) no-underline shadow-[0_8px_24px_rgba(30,90,72,0.08)] sm:px-4 sm:py-2"
 					>
-						<span className="h-2 w-2 rounded-full bg-[linear-gradient(90deg,#56c6be,#7ed3bf)]" />
-						TanStack Start
+						Sinwy
 					</Link>
 				</h2>
 
@@ -56,10 +55,21 @@ const Header = () => {
 						</>
 					) : (
 						<>
-							<Button variant="outline" render={<Link to="/auth/login" />}>
+							<Button
+								variant="outline"
+								nativeButton={false}
+								render={<Link to="/auth/login" />}
+							>
 								Login
 							</Button>
-							<Button render={<Link to="/auth/register" />}>Register</Button>
+							<Button
+								nativeButton={false}
+								render={
+									<Link to="/auth/register" search={{ source: "business" }} />
+								}
+							>
+								Register
+							</Button>
 						</>
 					)}
 				</div>
