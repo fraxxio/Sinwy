@@ -9,7 +9,7 @@ const buttonVariants = cva(
 		variants: {
 			variant: {
 				default:
-					"glass-button bg-primary text-primary-foreground border-[color-mix(in_oklab,var(--primary),black_28%)] hover:bg-[color-mix(in_oklch,var(--primary),white_8%)] active:shadow-none dark:border-[color-mix(in_oklab,var(--primary),white_16%)]",
+					"glass-button rounded-lg bg-primary text-primary-foreground border-[color-mix(in_oklab,var(--primary),white_15%)] hover:bg-[color-mix(in_oklch,var(--primary),white_10%)] active:shadow-[inset_0_2px_4px_-1px_rgb(0_0_0/0.2),0_1px_2px_rgb(var(--shadow-tint)/0.12)] dark:border-[color-mix(in_oklab,var(--primary),white_14%)]",
 				outline:
 					"border-border bg-background/70 depth-1 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:bg-input/20 dark:hover:bg-input/35",
 				secondary:

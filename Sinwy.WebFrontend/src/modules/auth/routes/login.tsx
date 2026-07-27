@@ -55,6 +55,8 @@ function LoginPage() {
 				<SubmitButton form={form} label="Sign in" pendingLabel="Signing in…" />
 			</form>
 
+			<p className="my-4 text-center text-sm text-muted-foreground">or</p>
+
 			<GoogleSignInButton callbackURL={callbackURL ?? "/auth/postlogin"} />
 
 			<p className="mt-6 text-center text-sm text-muted-foreground">

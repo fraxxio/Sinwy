@@ -90,6 +90,8 @@ function RegisterPage() {
 				/>
 			</form>
 
+			<p className="my-4 text-center text-sm text-muted-foreground">or</p>
+
 			<GoogleSignInButton callbackURL={callbackURL} />
 
 			<p className="mt-6 text-center text-sm text-muted-foreground">
