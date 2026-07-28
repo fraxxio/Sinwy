@@ -6,6 +6,12 @@ import { authClient } from "#/modules/auth/lib/auth-client";
 export const PASSWORD_RULES =
 	"At least 10 characters, including one number and one symbol.";
 
+// 128 mirrors better-auth's maxPasswordLength, which rejects server-side otherwise
+export const passwordSchema = z
+	.string()
+	.regex(/^(?=.*\d)(?=.*[^\p{L}\d])[^\s]{10,}$/u, PASSWORD_RULES)
+	.max(128, "Password must be at most 128 characters");
+
 export const registerSchema = z
 	.object({
 		name: z
@@ -17,9 +23,7 @@ export const registerSchema = z
 				"Use letters, spaces and hyphens only",
 			),
 		email: z.email("Enter a valid email"),
-		password: z
-			.string()
-			.regex(/^(?=.*\d)(?=.*[^\p{L}\d])[^\s]{10,}$/u, PASSWORD_RULES),
+		password: passwordSchema,
 		confirmPassword: z.string(),
 	})
 	.refine((value) => value.password === value.confirmPassword, {

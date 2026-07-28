@@ -51,6 +51,13 @@ function LoginPage() {
 					autoComplete="current-password"
 				/>
 
+				<Link
+					to="/auth/forgot-password"
+					className="justify-self-end text-sm text-muted-foreground"
+				>
+					Forgot password?
+				</Link>
+
 				{serverError && <FieldError>{serverError}</FieldError>}
 
 				<SubmitButton form={form} label="Sign in" pendingLabel="Signing in…" />

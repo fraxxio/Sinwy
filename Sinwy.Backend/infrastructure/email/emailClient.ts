@@ -20,15 +20,16 @@ export const emailClient: EmailClient = {
 		template,
 		props,
 	}: SendOptions<T>) {
+		const subject = template.subject(props);
 		const { error } = await resend.emails.send({
 			from: buildFrom(from),
 			to,
-			subject: template.subject(props),
+			subject,
 			html: template.html(props),
 		});
 
 		if (error) {
-			throw new EmailDeliveryError(`Failed to deliver email to ${to}`, {
+			throw new EmailDeliveryError(`Failed to deliver "${subject}" to ${to}`, {
 				cause: error,
 			});
 		}
