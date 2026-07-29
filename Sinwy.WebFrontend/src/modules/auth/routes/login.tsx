@@ -3,6 +3,7 @@ import { z } from "zod";
 import useLogin from "#/modules/auth/lib/useLogin";
 import { FormInput } from "#/shared/components/FormInput";
 import { SubmitButton } from "#/shared/components/SubmitButton";
+import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { AuthLayout } from "../components/AuthLayout";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
@@ -14,9 +15,45 @@ export const Route = createFileRoute("/auth/login")({
 
 function LoginPage() {
 	const { redirect } = Route.useSearch();
-	const { form, serverError, callbackURL } = useLogin({
-		redirectFrom: redirect,
-	});
+	const { form, serverError, callbackURL, unverifiedEmail, clearUnverified } =
+		useLogin({
+			redirectFrom: redirect,
+		});
+
+	if (unverifiedEmail) {
+		return (
+			<AuthLayout>
+				<div className="space-y-1.5 text-center">
+					<h1 className="text-2xl font-bold tracking-tight">
+						Verify your email
+					</h1>
+					<p className="text-sm text-muted-foreground">
+						We sent a verification link to {unverifiedEmail}. Click it to
+						continue.
+					</p>
+				</div>
+				<form.Subscribe selector={(state) => state.isSubmitting}>
+					{(isSubmitting) => (
+						<Button
+							variant="outline"
+							className="mt-6 w-full"
+							disabled={isSubmitting}
+							onClick={() => void form.handleSubmit()}
+						>
+							{isSubmitting ? "Sending…" : "Resend email"}
+						</Button>
+					)}
+				</form.Subscribe>
+				<button
+					type="button"
+					className="mt-4 w-full text-center text-sm text-muted-foreground"
+					onClick={clearUnverified}
+				>
+					Back to sign in
+				</button>
+			</AuthLayout>
+		);
+	}
 
 	return (
 		<AuthLayout>

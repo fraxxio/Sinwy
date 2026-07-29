@@ -1,5 +1,6 @@
+import { RESEND_COOLDOWN_SECONDS } from "@sinwy/shared";
 import { revalidateLogic, useForm } from "@tanstack/react-form";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import z from "zod";
 import { authClient } from "#/modules/auth/lib/auth-client";
 
@@ -41,10 +42,17 @@ const useRegister = ({ source }: Props = {}) => {
 	const [serverError, setServerError] = useState<string | null>(null);
 	const [registerSource] = useState(source);
 	const [sentTo, setSentTo] = useState<string | null>(null);
+	const [cooldown, setCooldown] = useState(0);
 	const [shakeToken, setShakeToken] = useState(0);
 	const lastShakeAt = useRef(0);
 	const callbackURL =
 		registerSource === "business" ? "/organizations/new" : "/auth/postlogin";
+
+	useEffect(() => {
+		if (cooldown <= 0) return;
+		const id = setTimeout(() => setCooldown((left) => left - 1), 1000);
+		return () => clearTimeout(id);
+	}, [cooldown]);
 
 	const form = useForm({
 		defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
@@ -67,10 +75,39 @@ const useRegister = ({ source }: Props = {}) => {
 				return;
 			}
 			setSentTo(value.email);
+			setCooldown(RESEND_COOLDOWN_SECONDS);
 		},
 	});
 
-	return { form, sentTo, serverError, callbackURL, shakeToken };
+	const resend = async () => {
+		if (cooldown > 0 || !sentTo) return;
+		setServerError(null);
+		const { error } = await authClient.sendVerificationEmail({
+			email: sentTo,
+			callbackURL,
+		});
+		if (error) {
+			setServerError("Something went wrong. Try again in a moment.");
+			return;
+		}
+		setCooldown(RESEND_COOLDOWN_SECONDS);
+	};
+
+	const reset = () => {
+		setSentTo(null);
+		setServerError(null);
+	};
+
+	return {
+		form,
+		sentTo,
+		serverError,
+		callbackURL,
+		shakeToken,
+		cooldown,
+		resend,
+		reset,
+	};
 };
 
 export default useRegister;

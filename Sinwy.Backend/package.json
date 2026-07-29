@@ -17,7 +17,6 @@
 		"@polar-sh/better-auth": "^1.8.4",
 		"@polar-sh/sdk": "^0.47.0",
 		"@sinwy/shared": "workspace:*",
-		"better-auth": "^1.6.11",
 		"dotenv": "^16.4.5",
 		"drizzle-orm": "^0.45.2",
 		"resend": "^6.16.0"

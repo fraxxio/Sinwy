@@ -1,5 +1,5 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
-import { useNavigate } from "@tanstack/react-router";
+import { BASE_ERROR_CODES } from "better-auth";
 import { useState } from "react";
 import z from "zod";
 import { authClient } from "#/modules/auth/lib/auth-client";
@@ -15,7 +15,7 @@ type Props = {
 
 const useLogin = ({ redirectFrom }: Props) => {
 	const [serverError, setServerError] = useState<string | null>(null);
-	const navigate = useNavigate();
+	const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 	const callbackURL =
 		redirectFrom?.startsWith("/") && !redirectFrom.startsWith("//")
 			? redirectFrom
@@ -27,17 +27,26 @@ const useLogin = ({ redirectFrom }: Props) => {
 		validators: { onDynamic: loginSchema },
 		onSubmit: async ({ value }) => {
 			setServerError(null);
-			const { error } = await authClient.signIn.email(value);
-			if (error) {
-				setServerError(error.message ?? "Sign in failed");
-				return;
-			}
-			if (callbackURL) await navigate({ href: callbackURL });
-			else await navigate({ to: "/auth/postlogin" });
+			// callbackURL rides into the verification link (sendOnSignIn) and,
+			// on success, the client redirects there itself
+			const { error } = await authClient.signIn.email({
+				...value,
+				callbackURL: callbackURL ?? "/auth/postlogin",
+			});
+			if (!error) return;
+			if (error.code === BASE_ERROR_CODES.EMAIL_NOT_VERIFIED.code)
+				setUnverifiedEmail(value.email);
+			else setServerError(error.message ?? "Sign in failed");
 		},
 	});
 
-	return { form, serverError, callbackURL };
+	return {
+		form,
+		serverError,
+		callbackURL,
+		unverifiedEmail,
+		clearUnverified: () => setUnverifiedEmail(null),
+	};
 };
 
 export default useLogin;

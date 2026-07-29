@@ -17,9 +17,16 @@ export const Route = createFileRoute("/auth/register")({
 function RegisterPage() {
 	const navigate = Route.useNavigate();
 	const { source } = Route.useSearch();
-	const { sentTo, serverError, form, callbackURL, shakeToken } = useRegister({
-		source,
-	});
+	const {
+		sentTo,
+		serverError,
+		form,
+		callbackURL,
+		shakeToken,
+		cooldown,
+		resend,
+		reset,
+	} = useRegister({ source });
 
 	useEffect(() => {
 		if (source !== undefined) navigate({ search: {}, replace: true });
@@ -36,12 +43,20 @@ function RegisterPage() {
 						We sent a verification link to {sentTo}. Click it to continue.
 					</p>
 				</div>
+
+				{serverError && (
+					<FieldError className="mt-4 justify-center">{serverError}</FieldError>
+				)}
+
 				<Button
-					variant="outline"
 					className="mt-6 w-full"
-					render={<Link to="/auth/login" />}
+					onClick={() => void resend()}
+					disabled={cooldown > 0}
 				>
-					Back to sign in
+					{cooldown > 0 ? `Send again in ${cooldown}s` : "Send again"}
+				</Button>
+				<Button variant="outline" className="mt-2 w-full" onClick={reset}>
+					Wrong email? Go back
 				</Button>
 			</AuthLayout>
 		);

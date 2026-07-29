@@ -3,7 +3,11 @@ import appConfig from "@config";
 import db from "@db";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import { Polar } from "@polar-sh/sdk";
-import { PLAN_SLUGS, type PlanSlug } from "@sinwy/shared";
+import {
+	PLAN_SLUGS,
+	type PlanSlug,
+	RESEND_COOLDOWN_SECONDS,
+} from "@sinwy/shared";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
@@ -12,6 +16,7 @@ import {
 	getSessionFromCtx,
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
+import { z } from "zod";
 import { ensureCheckoutAllowed } from "./checkoutGuard";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
@@ -39,6 +44,16 @@ export const auth = betterAuth({
 		enabled: true,
 		requireEmailVerification: true,
 		revokeSessionsOnPasswordReset: true,
+		onExistingUserSignUp: async ({ user }, request) => {
+			if (user.emailVerified) return;
+			const { callbackURL } = z
+				.object({ callbackURL: z.string() })
+				.catch({ callbackURL: "/auth/postlogin" })
+				.parse(await request?.json().catch(() => null));
+			await auth.api.sendVerificationEmail({
+				body: { email: user.email, callbackURL },
+			});
+		},
 		sendResetPassword: async ({ user, url }) => {
 			await emailClient.send({
 				to: user.email,
@@ -47,8 +62,14 @@ export const auth = betterAuth({
 			});
 		},
 	},
+	rateLimit: {
+		customRules: {
+			"/send-verification-email": { window: RESEND_COOLDOWN_SECONDS, max: 3 },
+		},
+	},
 	emailVerification: {
 		autoSignInAfterVerification: true,
+		sendOnSignIn: true,
 		sendVerificationEmail: async ({ user, url }) => {
 			await emailClient.send({
 				to: user.email,
