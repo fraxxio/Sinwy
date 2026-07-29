@@ -15,7 +15,7 @@ export const Route = createFileRoute("/auth/login")({
 
 function LoginPage() {
 	const { redirect } = Route.useSearch();
-	const { form, serverError, callbackURL, unverifiedEmail, clearUnverified } =
+	const { form, serverError, callbackURL, clearUnverified, unverifiedEmail } =
 		useLogin({
 			redirectFrom: redirect,
 		});
@@ -28,8 +28,8 @@ function LoginPage() {
 						Verify your email
 					</h1>
 					<p className="text-sm text-muted-foreground">
-						We sent a verification link to {unverifiedEmail}. Click it to
-						continue.
+						Your email is not verified. We sent a verification link to{" "}
+						<b>{unverifiedEmail}</b>. Click it to continue.
 					</p>
 				</div>
 				<form.Subscribe selector={(state) => state.isSubmitting}>
@@ -44,13 +44,14 @@ function LoginPage() {
 						</Button>
 					)}
 				</form.Subscribe>
-				<button
+				<Button
 					type="button"
-					className="mt-4 w-full text-center text-sm text-muted-foreground"
+					variant="ghost"
+					className="mt-6 mx-auto flex w-fit"
 					onClick={clearUnverified}
 				>
 					Back to sign in
-				</button>
+				</Button>
 			</AuthLayout>
 		);
 	}

@@ -40,7 +40,8 @@ function RegisterPage() {
 						Check your inbox
 					</h1>
 					<p className="text-sm text-muted-foreground">
-						We sent a verification link to {sentTo}. Click it to continue.
+						We sent a verification link to <b>{sentTo}</b>. Click it to
+						continue.
 					</p>
 				</div>
 
@@ -55,7 +56,7 @@ function RegisterPage() {
 				>
 					{cooldown > 0 ? `Send again in ${cooldown}s` : "Send again"}
 				</Button>
-				<Button variant="outline" className="mt-2 w-full" onClick={reset}>
+				<Button variant="outline" className="mt-6 w-full" onClick={reset}>
 					Wrong email? Go back
 				</Button>
 			</AuthLayout>
