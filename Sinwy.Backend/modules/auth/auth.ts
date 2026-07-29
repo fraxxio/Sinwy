@@ -13,6 +13,7 @@ import {
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
 import { ensureCheckoutAllowed } from "./checkoutGuard";
+import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
 import { projectSubscriptionStatus } from "./subscriptionStatus";
 
@@ -37,6 +38,14 @@ export const auth = betterAuth({
 	emailAndPassword: {
 		enabled: true,
 		requireEmailVerification: true,
+		revokeSessionsOnPasswordReset: true,
+		sendResetPassword: async ({ user, url }) => {
+			await emailClient.send({
+				to: user.email,
+				template: ResetPasswordEmail,
+				props: { resetUrl: url },
+			});
+		},
 	},
 	emailVerification: {
 		autoSignInAfterVerification: true,
