@@ -1,12 +1,19 @@
-import { revalidateLogic, useForm } from "@tanstack/react-form";
+import { formOptions, revalidateLogic } from "@tanstack/react-form";
 import { BASE_ERROR_CODES } from "better-auth";
 import { useState } from "react";
 import z from "zod";
 import { authClient } from "#/modules/auth/lib/auth-client";
+import { useAppForm } from "#/shared/lib/form";
 
 const loginSchema = z.object({
 	email: z.email("Enter a valid email"),
 	password: z.string().min(1, "Password is required"),
+});
+
+export const loginFormOpts = formOptions({
+	defaultValues: { email: "", password: "" },
+	validationLogic: revalidateLogic({ mode: "change" }),
+	validators: { onDynamic: loginSchema },
 });
 
 type Props = {
@@ -21,10 +28,8 @@ const useLogin = ({ redirectFrom }: Props) => {
 			? redirectFrom
 			: undefined;
 
-	const form = useForm({
-		defaultValues: { email: "", password: "" },
-		validationLogic: revalidateLogic({ mode: "change" }),
-		validators: { onDynamic: loginSchema },
+	const form = useAppForm({
+		...loginFormOpts,
 		onSubmit: async ({ value }) => {
 			setServerError(null);
 			// callbackURL rides into the verification link (sendOnSignIn) and,

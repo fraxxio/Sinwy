@@ -1,8 +1,3 @@
-import type {
-	AnyFieldApi,
-	DeepKeys,
-	ReactFormExtendedApi,
-} from "@tanstack/react-form";
 import { Eye, EyeOff } from "lucide-react";
 import type { ComponentProps } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -13,57 +8,23 @@ import {
 	FieldLabel,
 } from "#/shared/components/ui/field";
 import { Input } from "#/shared/components/ui/input";
+import { useFieldContext } from "#/shared/lib/form-contexts";
 import { cn } from "#/shared/lib/utils";
 
-// biome-ignore lint/suspicious/noExplicitAny: only TFormData matters for rendering a field; the validator generics vary per form
-type Any = any;
-
-type FormInputProps<TFormData> = {
-	form: ReactFormExtendedApi<
-		TFormData,
-		Any,
-		Any,
-		Any,
-		Any,
-		Any,
-		Any,
-		Any,
-		Any,
-		Any,
-		Any,
-		Any
-	>;
-	name: DeepKeys<TFormData>;
+type Props = {
 	label: string;
 	description?: string;
 	shakeToken?: number;
 } & Omit<ComponentProps<typeof Input>, "name" | "form">;
 
-export const FormInput = <TFormData,>({
-	form,
-	name,
-	...rest
-}: FormInputProps<TFormData>) => (
-	<form.Field name={name}>
-		{(field: AnyFieldApi) => <FieldRow field={field} {...rest} />}
-	</form.Field>
-);
-
-type FieldRowProps = {
-	field: AnyFieldApi;
-	label: string;
-	description?: string;
-	shakeToken?: number;
-} & Omit<ComponentProps<typeof Input>, "name" | "form">;
-
-const FieldRow = ({
-	field,
+export const TextField = ({
 	label,
 	description,
 	shakeToken = 0,
 	type,
 	...inputProps
-}: FieldRowProps) => {
+}: Props) => {
+	const field = useFieldContext<string>();
 	const [descriptionShown, setDescriptionShown] = useState(false);
 	const [shaking, setShaking] = useState(false);
 	const [passwordShown, setPasswordShown] = useState(false);

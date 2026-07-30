@@ -1,13 +1,11 @@
 import type { OrganizationDto } from "@sinwy/shared";
-import { useForm } from "@tanstack/react-form";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { protectedRoute } from "#/modules/auth/lib/protected-route";
-import { FormInput } from "#/shared/components/FormInput";
-import { SubmitButton } from "#/shared/components/SubmitButton";
 import { FieldError } from "#/shared/components/ui/field";
 import { api } from "#/shared/lib/api";
+import { useAppForm } from "#/shared/lib/form";
 
 export const Route = createFileRoute("/organizations/new")({
 	...protectedRoute,
@@ -26,7 +24,7 @@ function NewOrganizationPage() {
 	const navigate = useNavigate();
 	const [serverError, setServerError] = useState<string | null>(null);
 
-	const form = useForm({
+	const form = useAppForm({
 		defaultValues: { name: "" },
 		validators: { onSubmit: createOrgSchema },
 		onSubmit: async ({ value }) => {
@@ -65,20 +63,23 @@ function NewOrganizationPage() {
 						void form.handleSubmit();
 					}}
 				>
-					<FormInput
-						form={form}
-						name="name"
-						label="Organization name"
-						autoComplete="organization"
-					/>
+					<form.AppField name="name">
+						{(field) => (
+							<field.TextField
+								label="Organization name"
+								autoComplete="organization"
+							/>
+						)}
+					</form.AppField>
 
 					{serverError && <FieldError>{serverError}</FieldError>}
 
-					<SubmitButton
-						form={form}
-						label="Create organization"
-						pendingLabel="Creating…"
-					/>
+					<form.AppForm>
+						<form.SubmitButton
+							label="Create organization"
+							pendingLabel="Creating…"
+						/>
+					</form.AppForm>
 				</form>
 			</div>
 		</main>

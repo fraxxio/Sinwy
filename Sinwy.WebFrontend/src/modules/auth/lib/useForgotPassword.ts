@@ -1,10 +1,17 @@
-import { revalidateLogic, useForm } from "@tanstack/react-form";
+import { formOptions, revalidateLogic } from "@tanstack/react-form";
 import { useEffect, useState } from "react";
 import z from "zod";
 import { authClient } from "#/modules/auth/lib/auth-client";
+import { useAppForm } from "#/shared/lib/form";
 
 const forgotPasswordSchema = z.object({
 	email: z.email("Enter a valid email"),
+});
+
+export const forgotPasswordFormOpts = formOptions({
+	defaultValues: { email: "" },
+	validationLogic: revalidateLogic({ mode: "change" }),
+	validators: { onDynamic: forgotPasswordSchema },
 });
 
 // better-auth rate limits /request-password-reset to 3 per 60s
@@ -35,10 +42,8 @@ const useForgotPassword = () => {
 		setCooldown(RESEND_COOLDOWN_SECONDS);
 	};
 
-	const form = useForm({
-		defaultValues: { email: "" },
-		validationLogic: revalidateLogic({ mode: "change" }),
-		validators: { onDynamic: forgotPasswordSchema },
+	const form = useAppForm({
+		...forgotPasswordFormOpts,
 		onSubmit: ({ value }) => requestReset(value.email),
 	});
 
