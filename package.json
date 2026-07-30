@@ -32,6 +32,7 @@
 		"auth:schema:generate": "bunx --bun auth@latest generate --config Sinwy.Backend/modules/auth/auth.ts"
 	},
 	"dependencies": {
+		"better-auth": "^1.6.11",
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {

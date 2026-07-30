@@ -1,9 +1,11 @@
-import { revalidateLogic, useForm } from "@tanstack/react-form";
+import { revalidateLogic } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
+import { BASE_ERROR_CODES } from "better-auth";
 import { useState } from "react";
 import z from "zod";
 import { authClient } from "#/modules/auth/lib/auth-client";
 import { passwordSchema } from "#/modules/auth/lib/useRegister";
+import { useAppForm } from "#/shared/lib/form";
 
 export const resetPasswordSchema = z
 	.object({
@@ -24,7 +26,7 @@ const useResetPassword = ({ token }: Props) => {
 	const [tokenRejected, setTokenRejected] = useState(false);
 	const navigate = useNavigate();
 
-	const form = useForm({
+	const form = useAppForm({
 		defaultValues: { password: "", confirmPassword: "" },
 		validationLogic: revalidateLogic({ mode: "change" }),
 		validators: { onDynamic: resetPasswordSchema },
@@ -35,7 +37,7 @@ const useResetPassword = ({ token }: Props) => {
 				token,
 			});
 			// the token can expire or be spent between opening the page and submitting
-			if (error?.code === "INVALID_TOKEN") {
+			if (error?.code === BASE_ERROR_CODES.INVALID_TOKEN.code) {
 				setTokenRejected(true);
 				return;
 			}
