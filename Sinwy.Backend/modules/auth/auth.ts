@@ -1,6 +1,7 @@
 import { emailClient } from "@backend/infrastructure/email";
 import appConfig from "@config";
 import db from "@db";
+import { createLogger } from "@logger";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import { Polar } from "@polar-sh/sdk";
 import {
@@ -22,6 +23,8 @@ import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
 import { projectSubscriptionStatus } from "./subscriptionStatus";
 
+const authLogger = createLogger("auth");
+
 // If this client is going to be used elsewhere or new logic specific to polar appears we will move that to it's own module
 export const polarClient = new Polar({
 	accessToken: appConfig.POLAR_ACCESS_TOKEN,
@@ -37,6 +40,12 @@ const planProducts = {
 
 export const auth = betterAuth({
 	baseURL: appConfig.BETTER_AUTH_URL,
+	logger: {
+		level: appConfig.LOG_LEVEL,
+		log: (level, message, ...args) => {
+			authLogger[level](message, args.length > 0 ? { args } : undefined);
+		},
+	},
 	database: drizzleAdapter(db, {
 		provider: "pg",
 	}),

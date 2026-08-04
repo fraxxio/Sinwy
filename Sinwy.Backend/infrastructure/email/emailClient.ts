@@ -1,37 +1,12 @@
 import appConfig from "@config";
-import { Resend } from "resend";
-import { EmailAddress } from "./emailAddresses";
-import {
-	type EmailClient,
-	EmailDeliveryError,
-	type SendOptions,
-} from "./emailClientTypes";
+import { consoleEmailClient } from "./consoleEmailClient";
+import type { EmailClient } from "./emailClientTypes";
+import { resendEmailClient } from "./resendEmailClient";
 
-const resend = new Resend(appConfig.RESEND_API_KEY);
+// keyed by EMAIL_DRIVER so adding a driver in appConfig fails here until it has a client
+const clients = {
+	resend: resendEmailClient,
+	console: consoleEmailClient,
+} satisfies Record<(typeof appConfig)["EMAIL_DRIVER"], EmailClient>;
 
-const buildFrom = (local: EmailAddress): string => {
-	return `${local}@${appConfig.RESEND_EMAIL_DOMAIN}`;
-};
-
-export const emailClient: EmailClient = {
-	async send<T>({
-		to,
-		from = EmailAddress.Default,
-		template,
-		props,
-	}: SendOptions<T>) {
-		const subject = template.subject(props);
-		const { error } = await resend.emails.send({
-			from: buildFrom(from),
-			to,
-			subject,
-			html: template.html(props),
-		});
-
-		if (error) {
-			throw new EmailDeliveryError(`Failed to deliver "${subject}" to ${to}`, {
-				cause: error,
-			});
-		}
-	},
-};
+export const emailClient = clients[appConfig.EMAIL_DRIVER];
