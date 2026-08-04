@@ -129,7 +129,10 @@ export const auth = betterAuth({
 						productId: planProducts[slug],
 						slug,
 					})),
-					successUrl: "/checkout/success?checkout_id={CHECKOUT_ID}",
+					successUrl: new URL(
+						"/checkout/success?checkout_id={CHECKOUT_ID}",
+						appConfig.WEB_APP_URL,
+					).toString(),
 					authenticatedUsersOnly: true,
 				}),
 				portal(),

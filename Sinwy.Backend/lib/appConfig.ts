@@ -16,6 +16,7 @@ const configSchema = z
 		LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 		BETTER_AUTH_SECRET: z.string(),
 		BETTER_AUTH_URL: z.string(),
+		WEB_APP_URL: z.url(),
 		GOOGLE_CLIENT_ID: z.string(),
 		GOOGLE_CLIENT_SECRET: z.string(),
 		EMAIL_DRIVER: z.enum(["resend", "console"]).optional(),
