@@ -6,6 +6,7 @@
 			"@db": ["./db"],
 			"@db/*": ["./db/*"],
 			"@config": ["./lib/appConfig.ts"],
+			"@logger": ["./lib/logger"],
 			"@authModule": ["./modules/auth"],
 			"@organizationsModule": ["./modules/organizations"],
 			"@backend/*": ["./*"]
