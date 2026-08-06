@@ -1,7 +1,8 @@
 import { auth, polarClient } from "@authModule";
 import { uniqueSlug } from "@backend/modules/organizations/utils";
 import type { OrganizationDto, OrganizationStatus } from "@sinwy/shared";
-import { findStatusForMember, isSlugTaken } from "./repository";
+import { reconcileInactiveStatus } from "./reconcileStatus";
+import { findStatusForMember, isSlugTaken, setStatus } from "./repository";
 
 export const createOrganization = async (
 	userId: string,
@@ -23,13 +24,22 @@ export const createOrganization = async (
 	};
 };
 
-export const getOrganizationStatus = (
+export const getOrganizationStatus = async (
 	userId: string,
 	organizationId: string,
-) => {
+): Promise<OrganizationStatus | null> => {
 	// null → org doesn't exist or caller isn't a member (both read as not-found)
-	return findStatusForMember(userId, organizationId);
+	const status = await findStatusForMember(userId, organizationId);
+	if (status === null) return null;
+	if (status === "active") return "active";
+	return reconcileInactiveStatus(organizationId);
 };
+
+/** Billing projection entry point: Polar subscription state → organization. */
+export const setOrganizationStatus = (
+	organizationId: string,
+	status: OrganizationStatus,
+) => setStatus(organizationId, status);
 
 export const getCheckoutOrganization = async (
 	userId: string,
