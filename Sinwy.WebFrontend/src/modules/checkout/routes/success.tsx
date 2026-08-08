@@ -1,9 +1,11 @@
 import type { OrganizationStatus } from "@sinwy/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { protectedRoute } from "#/modules/auth/lib/protected-route";
 import { pollUntilActive } from "#/modules/checkout/lib/poll-until-active";
+import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { Button } from "#/shared/components/ui/button";
 import { api } from "#/shared/lib/api";
 
@@ -18,6 +20,7 @@ type Phase = "activating" | "unknown-org" | "timed-out";
 
 function CheckoutSuccessPage() {
 	const navigate = useNavigate();
+	const queryClient = useQueryClient();
 	const { checkout_id: checkoutId } = Route.useSearch();
 	const [phase, setPhase] = useState<Phase>(
 		checkoutId ? "activating" : "unknown-org",
@@ -54,6 +57,7 @@ function CheckoutSuccessPage() {
 				setPhase("timed-out");
 				return;
 			}
+			await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
 			void navigate({
 				to: "/organizations/$id/onboarding",
 				params: { id: orgId },
@@ -63,7 +67,7 @@ function CheckoutSuccessPage() {
 		return () => {
 			cancelled = true;
 		};
-	}, [checkoutId, navigate]);
+	}, [checkoutId, navigate, queryClient]);
 
 	return (
 		<main className="page-wrap py-14">

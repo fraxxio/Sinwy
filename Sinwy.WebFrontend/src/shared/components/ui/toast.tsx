@@ -11,7 +11,14 @@ import * as React from "react";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/lib/utils";
 
-const toast = ToastPrimitive.createToastManager();
+type ToastData = {
+	/** Hide the icon-only close button in the corner. */
+	hideClose?: boolean;
+	/** Render a labelled dismiss button alongside the action. */
+	dismissLabel?: string;
+};
+
+const toast = ToastPrimitive.createToastManager<ToastData>();
 
 function ToastProvider({ ...props }: ToastPrimitive.Provider.Props) {
 	return <ToastPrimitive.Provider {...props} />;
@@ -71,7 +78,7 @@ function ToastContent({ className, ...props }: ToastPrimitive.Content.Props) {
 		<ToastPrimitive.Content
 			data-slot="toast-content"
 			className={cn(
-				"flex h-full items-center gap-3 overflow-hidden p-4 transition-opacity duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] data-behind:opacity-0 data-expanded:opacity-100",
+				"flex h-full items-start gap-3 overflow-hidden p-4 transition-opacity duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] data-behind:opacity-0 data-expanded:opacity-100",
 				className,
 			)}
 			{...props}
@@ -104,7 +111,7 @@ function ToastDescription({
 
 function ToastAction({
 	className,
-	render = <Button variant="outline" size="sm" />,
+	render = <Button size="sm" />,
 	...props
 }: ToastPrimitive.Action.Props) {
 	return (
@@ -120,16 +127,27 @@ function ToastAction({
 function ToastClose({
 	className,
 	children,
-	render = <Button variant="ghost" size="icon-sm" />,
+	render,
 	...props
 }: ToastPrimitive.Close.Props) {
+	const labelled = children != null;
+
 	return (
 		<ToastPrimitive.Close
 			data-slot="toast-close"
-			aria-label="Close toast"
-			render={render}
+			aria-label={labelled ? undefined : "Close toast"}
+			render={
+				render ??
+				(labelled ? (
+					<Button variant="outline" size="sm" />
+				) : (
+					<Button variant="ghost" size="icon-sm" />
+				))
+			}
 			className={cn(
-				"relative shrink-0 text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:text-foreground",
+				"shrink-0",
+				!labelled &&
+					"relative text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:text-foreground",
 				className,
 			)}
 			{...props}
@@ -169,7 +187,7 @@ function ToastIcon({ type }: { type: string | undefined }) {
 	return (
 		<span
 			data-slot="toast-icon"
-			className="shrink-0 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4"
+			className="mt-0.5 shrink-0 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4"
 		>
 			{icon}
 		</span>
@@ -177,21 +195,31 @@ function ToastIcon({ type }: { type: string | undefined }) {
 }
 
 function ToastList() {
-	const { toasts } = ToastPrimitive.useToastManager();
+	const { toasts } = ToastPrimitive.useToastManager<ToastData>();
 
-	return toasts.map((toastItem) => (
-		<Toast key={toastItem.id} toast={toastItem}>
-			<ToastContent>
-				<ToastIcon type={toastItem.type} />
-				<div className="flex min-w-0 flex-1 flex-col gap-1">
-					<ToastTitle />
-					<ToastDescription />
-				</div>
-				<ToastAction />
-				<ToastClose />
-			</ToastContent>
-		</Toast>
-	));
+	return toasts.map((toastItem) => {
+		const { hideClose, dismissLabel } = toastItem.data ?? {};
+		const hasButtons = Boolean(toastItem.actionProps?.children || dismissLabel);
+
+		return (
+			<Toast key={toastItem.id} toast={toastItem}>
+				<ToastContent>
+					<ToastIcon type={toastItem.type} />
+					<div className="flex min-w-0 flex-1 flex-col gap-1">
+						<ToastTitle />
+						<ToastDescription />
+						{hasButtons && (
+							<div className="mt-3 flex flex-wrap items-center gap-2">
+								<ToastAction />
+								{dismissLabel && <ToastClose>{dismissLabel}</ToastClose>}
+							</div>
+						)}
+					</div>
+					{!hideClose && <ToastClose />}
+				</ToastContent>
+			</Toast>
+		);
+	});
 }
 
 function Toaster({

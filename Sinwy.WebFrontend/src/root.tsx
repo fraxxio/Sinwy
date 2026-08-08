@@ -6,6 +6,7 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
+import UnfinishedOnboardingToast from "#/modules/user/components/UnfinishedOnboardingToast";
 import Footer from "#/shared/components/Footer";
 import Header from "#/shared/components/Header";
 import { Toaster } from "#/shared/components/ui/toast";
@@ -58,6 +59,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 					<Header />
 					{children}
 					<Footer />
+					<UnfinishedOnboardingToast />
 				</Toaster>
 				<TanStackDevtools
 					config={{

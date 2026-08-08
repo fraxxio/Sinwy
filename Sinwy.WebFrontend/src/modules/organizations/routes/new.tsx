@@ -1,8 +1,10 @@
 import type { OrganizationDto } from "@sinwy/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { protectedRoute } from "#/modules/auth/lib/protected-route";
+import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { FieldError } from "#/shared/components/ui/field";
 import { api } from "#/shared/lib/api";
 import { useAppForm } from "#/shared/lib/form";
@@ -22,6 +24,7 @@ const createOrgSchema = z.object({
 
 function NewOrganizationPage() {
 	const navigate = useNavigate();
+	const queryClient = useQueryClient();
 	const [serverError, setServerError] = useState<string | null>(null);
 
 	const form = useAppForm({
@@ -37,6 +40,7 @@ function NewOrganizationPage() {
 				setServerError(response.message);
 				return;
 			}
+			await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
 			await navigate({
 				to: "/organizations/$id/plan",
 				params: { id: response.data.id },
