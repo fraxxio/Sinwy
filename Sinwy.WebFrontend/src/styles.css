@@ -29,6 +29,9 @@
 :root {
 	/* Layout — single source of truth for the window-edge gutter */
 	--page-gutter: clamp(1rem, 4vw, 2rem);
+	--page-max: 90rem;
+	/* Distance from the viewport edge to the capped content column */
+	--page-edge: calc((100% - min(100%, var(--page-max))) / 2 + var(--page-gutter));
 
 	/* Brand palette (unchanged) */
 	--sea-ink: #173a40;
@@ -637,7 +640,7 @@ a:not([data-slot="button"]):hover {
 	   .page-wrap so left/right edges align across the whole page. Never
 	   add extra horizontal padding next to it. */
 	.page-wrap {
-		max-width: 90rem;
+		max-width: var(--page-max);
 		margin-inline: auto;
 		padding-inline: var(--page-gutter);
 	}

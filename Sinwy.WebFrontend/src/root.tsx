@@ -6,8 +6,10 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
+import UnfinishedOnboardingToast from "#/modules/user/components/UnfinishedOnboardingToast";
 import Footer from "#/shared/components/Footer";
 import Header from "#/shared/components/Header";
+import { Toaster } from "#/shared/components/ui/toast";
 import TanStackQueryDevtools from "#/shared/integrations/tanstack-query/devtools";
 import appCss from "./styles.css?url";
 
@@ -53,9 +55,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				className="font-sans antialiased wrap-anywhere selection:bg-[rgba(79,184,178,0.24)]"
 				suppressHydrationWarning
 			>
-				<Header />
-				{children}
-				<Footer />
+				<Toaster>
+					<Header />
+					{children}
+					<Footer />
+					<UnfinishedOnboardingToast />
+				</Toaster>
 				<TanStackDevtools
 					config={{
 						position: "bottom-right",

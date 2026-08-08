@@ -6,6 +6,7 @@
 		"@logger": "./lib/logger",
 		"@authModule": "./modules/auth",
 		"@organizationsModule": "./modules/organizations",
+		"@userModule": "./modules/user",
 		"@backend/*": "./*"
 	}
 }

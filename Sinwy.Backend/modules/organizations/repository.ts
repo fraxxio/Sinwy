@@ -1,5 +1,6 @@
 import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
+import type { OrganizationStatus } from "@sinwy/shared";
 import { and, eq } from "drizzle-orm";
 
 export const isSlugTaken = async (slug: string) => {
@@ -22,4 +23,17 @@ export const findStatusForMember = async (
 			and(eq(member.organizationId, organizationId), eq(member.userId, userId)),
 		);
 	return row?.status ?? null;
+};
+
+/** False when no row matched, i.e. the id belongs to no organization. */
+export const setStatus = async (
+	organizationId: string,
+	status: OrganizationStatus,
+) => {
+	const updated = await db
+		.update(organization)
+		.set({ status })
+		.where(eq(organization.id, organizationId))
+		.returning({ id: organization.id });
+	return updated.length > 0;
 };
