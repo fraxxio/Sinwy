@@ -18,8 +18,10 @@ import { Route as AuthRegisterRouteImport } from './modules/auth/routes/register
 import { Route as AuthResetPasswordRouteImport } from './modules/auth/routes/reset-password'
 import { Route as CheckoutSuccessRouteImport } from './modules/checkout/routes/success'
 import { Route as OrganizationsNewRouteImport } from './modules/organizations/routes/new'
+import { Route as OrganizationsIdDot_dashboardRouteImport } from './modules/organizations/routes/$id._dashboard'
 import { Route as OrganizationsIdDotonboardingRouteImport } from './modules/organizations/routes/$id.onboarding'
 import { Route as OrganizationsIdDotplanRouteImport } from './modules/organizations/routes/$id.plan'
+import { Route as OrganizationsIdDot_dashboardDothomeRouteImport } from './modules/organizations/routes/$id._dashboard.home'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -66,6 +68,12 @@ const OrganizationsNewRoute = OrganizationsNewRouteImport.update({
   path: '/organizations/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrganizationsIdDot_dashboardRoute =
+  OrganizationsIdDot_dashboardRouteImport.update({
+    id: '/organizations/$id/_dashboard',
+    path: '/organizations/$id',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const OrganizationsIdDotonboardingRoute =
   OrganizationsIdDotonboardingRouteImport.update({
     id: '/organizations/$id/onboarding',
@@ -77,6 +85,12 @@ const OrganizationsIdDotplanRoute = OrganizationsIdDotplanRouteImport.update({
   path: '/organizations/$id/plan',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrganizationsIdDot_dashboardDothomeRoute =
+  OrganizationsIdDot_dashboardDothomeRouteImport.update({
+    id: '/home',
+    path: '/home',
+    getParentRoute: () => OrganizationsIdDot_dashboardRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -88,8 +102,10 @@ export interface FileRoutesByFullPath {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/organizations/$id': typeof OrganizationsIdDot_dashboardRouteWithChildren
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
+  '/organizations/$id/home': typeof OrganizationsIdDot_dashboardDothomeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -101,8 +117,10 @@ export interface FileRoutesByTo {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/organizations/$id': typeof OrganizationsIdDot_dashboardRouteWithChildren
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
+  '/organizations/$id/home': typeof OrganizationsIdDot_dashboardDothomeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -115,8 +133,10 @@ export interface FileRoutesById {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/organizations/$id/_dashboard': typeof OrganizationsIdDot_dashboardRouteWithChildren
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
+  '/organizations/$id/_dashboard/home': typeof OrganizationsIdDot_dashboardDothomeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -130,8 +150,10 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
+    | '/organizations/$id'
     | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
+    | '/organizations/$id/home'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -143,8 +165,10 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
+    | '/organizations/$id'
     | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
+    | '/organizations/$id/home'
   id:
     | '__root__'
     | '/'
@@ -156,8 +180,10 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
+    | '/organizations/$id/_dashboard'
     | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
+    | '/organizations/$id/_dashboard/home'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -170,6 +196,7 @@ export interface RootRouteChildren {
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   CheckoutSuccessRoute: typeof CheckoutSuccessRoute
   OrganizationsNewRoute: typeof OrganizationsNewRoute
+  OrganizationsIdDot_dashboardRoute: typeof OrganizationsIdDot_dashboardRouteWithChildren
   OrganizationsIdDotonboardingRoute: typeof OrganizationsIdDotonboardingRoute
   OrganizationsIdDotplanRoute: typeof OrganizationsIdDotplanRoute
 }
@@ -239,6 +266,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrganizationsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/organizations/$id/_dashboard': {
+      id: '/organizations/$id/_dashboard'
+      path: '/organizations/$id'
+      fullPath: '/organizations/$id'
+      preLoaderRoute: typeof OrganizationsIdDot_dashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/organizations/$id/onboarding': {
       id: '/organizations/$id/onboarding'
       path: '/organizations/$id/onboarding'
@@ -253,8 +287,30 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrganizationsIdDotplanRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/organizations/$id/_dashboard/home': {
+      id: '/organizations/$id/_dashboard/home'
+      path: '/home'
+      fullPath: '/organizations/$id/home'
+      preLoaderRoute: typeof OrganizationsIdDot_dashboardDothomeRouteImport
+      parentRoute: typeof OrganizationsIdDot_dashboardRoute
+    }
   }
 }
+
+interface OrganizationsIdDot_dashboardRouteChildren {
+  OrganizationsIdDot_dashboardDothomeRoute: typeof OrganizationsIdDot_dashboardDothomeRoute
+}
+
+const OrganizationsIdDot_dashboardRouteChildren: OrganizationsIdDot_dashboardRouteChildren =
+  {
+    OrganizationsIdDot_dashboardDothomeRoute:
+      OrganizationsIdDot_dashboardDothomeRoute,
+  }
+
+const OrganizationsIdDot_dashboardRouteWithChildren =
+  OrganizationsIdDot_dashboardRoute._addFileChildren(
+    OrganizationsIdDot_dashboardRouteChildren,
+  )
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -266,6 +322,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   CheckoutSuccessRoute: CheckoutSuccessRoute,
   OrganizationsNewRoute: OrganizationsNewRoute,
+  OrganizationsIdDot_dashboardRoute:
+    OrganizationsIdDot_dashboardRouteWithChildren,
   OrganizationsIdDotonboardingRoute: OrganizationsIdDotonboardingRoute,
   OrganizationsIdDotplanRoute: OrganizationsIdDotplanRoute,
 }

@@ -23,4 +23,11 @@ declare module "@tanstack/react-router" {
 	interface Register {
 		router: ReturnType<typeof getRouter>;
 	}
+
+	interface StaticDataRouteOption {
+		/** Renders the dashboard app shell instead of the marketing header/footer. */
+		appShell?: boolean;
+		/** Label for this route in the dashboard breadcrumb trail. */
+		crumb?: string;
+	}
 }
