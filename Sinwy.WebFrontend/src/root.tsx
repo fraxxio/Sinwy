@@ -4,6 +4,7 @@ import {
 	createRootRouteWithContext,
 	HeadContent,
 	Scripts,
+	useMatches,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import UnfinishedOnboardingToast from "#/modules/user/components/UnfinishedOnboardingToast";
@@ -43,6 +44,26 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 	shellComponent: RootDocument,
 });
 
+/**
+ * Picks the shell for the active route: dashboard routes render their own app
+ * shell, everything else gets the site header and footer.
+ */
+function RouteShell({ children }: { children: React.ReactNode }) {
+	const hasOwnAppShell = useMatches({
+		select: (matches) => matches.some((match) => match.staticData.appShell),
+	});
+
+	if (hasOwnAppShell) return children;
+
+	return (
+		<>
+			<Header />
+			{children}
+			<Footer />
+		</>
+	);
+}
+
 function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="en" suppressHydrationWarning>
@@ -56,9 +77,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				suppressHydrationWarning
 			>
 				<Toaster>
-					<Header />
-					{children}
-					<Footer />
+					<RouteShell>{children}</RouteShell>
 					<UnfinishedOnboardingToast />
 				</Toaster>
 				<TanStackDevtools

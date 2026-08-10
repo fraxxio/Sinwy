@@ -24,3 +24,12 @@ test("collision → suffixed slug", async () => {
 test("no collision → plain slug", async () => {
 	expect(await uniqueSlug("Acme", async () => false)).toBe("acme");
 });
+
+test("reserved slug → suffixed even when free in the DB", async () => {
+	expect(await uniqueSlug("Settings", async () => false)).toMatch(
+		/^settings-[a-z0-9]{6}$/,
+	);
+	expect(await uniqueSlug("About", async () => false)).toMatch(
+		/^about-[a-z0-9]{6}$/,
+	);
+});

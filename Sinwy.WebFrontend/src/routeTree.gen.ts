@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './root'
 import { Route as IndexRouteImport } from './modules/home/routes/index'
 import { Route as AboutRouteImport } from './modules/home/routes/about'
+import { Route as OrganizationSlugShellRouteImport } from './modules/dashboard/routes/_shell'
 import { Route as AuthForgotPasswordRouteImport } from './modules/auth/routes/forgot-password'
 import { Route as AuthLoginRouteImport } from './modules/auth/routes/login'
 import { Route as AuthPostloginRouteImport } from './modules/auth/routes/postlogin'
@@ -18,6 +19,7 @@ import { Route as AuthRegisterRouteImport } from './modules/auth/routes/register
 import { Route as AuthResetPasswordRouteImport } from './modules/auth/routes/reset-password'
 import { Route as CheckoutSuccessRouteImport } from './modules/checkout/routes/success'
 import { Route as OrganizationsNewRouteImport } from './modules/organizations/routes/new'
+import { Route as OrganizationSlugShellDothomeRouteImport } from './modules/dashboard/routes/_shell.home'
 import { Route as OrganizationsIdDotonboardingRouteImport } from './modules/organizations/routes/$id.onboarding'
 import { Route as OrganizationsIdDotplanRouteImport } from './modules/organizations/routes/$id.plan'
 
@@ -29,6 +31,11 @@ const IndexRoute = IndexRouteImport.update({
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrganizationSlugShellRoute = OrganizationSlugShellRouteImport.update({
+  id: '/$organizationSlug/_shell',
+  path: '/$organizationSlug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
@@ -66,6 +73,12 @@ const OrganizationsNewRoute = OrganizationsNewRouteImport.update({
   path: '/organizations/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrganizationSlugShellDothomeRoute =
+  OrganizationSlugShellDothomeRouteImport.update({
+    id: '/home',
+    path: '/home',
+    getParentRoute: () => OrganizationSlugShellRoute,
+  } as any)
 const OrganizationsIdDotonboardingRoute =
   OrganizationsIdDotonboardingRouteImport.update({
     id: '/organizations/$id/onboarding',
@@ -81,6 +94,7 @@ const OrganizationsIdDotplanRoute = OrganizationsIdDotplanRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/$organizationSlug': typeof OrganizationSlugShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/postlogin': typeof AuthPostloginRoute
@@ -88,12 +102,14 @@ export interface FileRoutesByFullPath {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/$organizationSlug/home': typeof OrganizationSlugShellDothomeRoute
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/$organizationSlug': typeof OrganizationSlugShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/postlogin': typeof AuthPostloginRoute
@@ -101,6 +117,7 @@ export interface FileRoutesByTo {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/$organizationSlug/home': typeof OrganizationSlugShellDothomeRoute
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
 }
@@ -108,6 +125,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/$organizationSlug/_shell': typeof OrganizationSlugShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/postlogin': typeof AuthPostloginRoute
@@ -115,6 +133,7 @@ export interface FileRoutesById {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/$organizationSlug/_shell/home': typeof OrganizationSlugShellDothomeRoute
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
 }
@@ -123,6 +142,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/$organizationSlug'
     | '/auth/forgot-password'
     | '/auth/login'
     | '/auth/postlogin'
@@ -130,12 +150,14 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
+    | '/$organizationSlug/home'
     | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
+    | '/$organizationSlug'
     | '/auth/forgot-password'
     | '/auth/login'
     | '/auth/postlogin'
@@ -143,12 +165,14 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
+    | '/$organizationSlug/home'
     | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
   id:
     | '__root__'
     | '/'
     | '/about'
+    | '/$organizationSlug/_shell'
     | '/auth/forgot-password'
     | '/auth/login'
     | '/auth/postlogin'
@@ -156,6 +180,7 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
+    | '/$organizationSlug/_shell/home'
     | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
   fileRoutesById: FileRoutesById
@@ -163,6 +188,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  OrganizationSlugShellRoute: typeof OrganizationSlugShellRouteWithChildren
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthPostloginRoute: typeof AuthPostloginRoute
@@ -188,6 +214,13 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$organizationSlug/_shell': {
+      id: '/$organizationSlug/_shell'
+      path: '/$organizationSlug'
+      fullPath: '/$organizationSlug'
+      preLoaderRoute: typeof OrganizationSlugShellRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/forgot-password': {
@@ -239,6 +272,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrganizationsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$organizationSlug/_shell/home': {
+      id: '/$organizationSlug/_shell/home'
+      path: '/home'
+      fullPath: '/$organizationSlug/home'
+      preLoaderRoute: typeof OrganizationSlugShellDothomeRouteImport
+      parentRoute: typeof OrganizationSlugShellRoute
+    }
     '/organizations/$id/onboarding': {
       id: '/organizations/$id/onboarding'
       path: '/organizations/$id/onboarding'
@@ -256,9 +296,23 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface OrganizationSlugShellRouteChildren {
+  OrganizationSlugShellDothomeRoute: typeof OrganizationSlugShellDothomeRoute
+}
+
+const OrganizationSlugShellRouteChildren: OrganizationSlugShellRouteChildren = {
+  OrganizationSlugShellDothomeRoute: OrganizationSlugShellDothomeRoute,
+}
+
+const OrganizationSlugShellRouteWithChildren =
+  OrganizationSlugShellRoute._addFileChildren(
+    OrganizationSlugShellRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  OrganizationSlugShellRoute: OrganizationSlugShellRouteWithChildren,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthPostloginRoute: AuthPostloginRoute,
