@@ -28,15 +28,17 @@ const readSidebarCookie = () =>
  * sidebar keeps its open/collapsed state across navigations.
  */
 export function DashboardLayout({
+	organizationName,
 	breadcrumbs = [],
 	children,
 }: {
+	organizationName: string;
 	breadcrumbs?: Breadcrumbs;
 	children: ReactNode;
 }) {
 	return (
 		<SidebarProvider defaultOpen={readSidebarCookie()}>
-			<AppSidebar />
+			<AppSidebar organizationName={organizationName} />
 			<SidebarInset>
 				<header className="flex h-16 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
 					<div className="flex items-center gap-2 px-4">

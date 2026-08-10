@@ -22,14 +22,6 @@ import {
 	SidebarRail,
 } from "#/shared/components/ui/sidebar";
 
-const teams = [
-	{
-		name: "Sinwy",
-		logo: <GalleryVerticalEndIcon />,
-		plan: "Organization",
-	},
-];
-
 const navMain = [
 	{
 		title: "Overview",
@@ -86,11 +78,22 @@ const projects = [
 	{ name: "Travel", url: "#", icon: <MapIcon /> },
 ];
 
-export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
+export function AppSidebar({
+	organizationName,
+	...props
+}: ComponentProps<typeof Sidebar> & { organizationName: string }) {
 	return (
 		<Sidebar collapsible="icon" {...props}>
 			<SidebarHeader>
-				<TeamSwitcher teams={teams} />
+				<TeamSwitcher
+					teams={[
+						{
+							name: organizationName,
+							logo: <GalleryVerticalEndIcon />,
+							plan: "Organization",
+						},
+					]}
+				/>
 			</SidebarHeader>
 			<SidebarContent>
 				<NavMain items={navMain} />

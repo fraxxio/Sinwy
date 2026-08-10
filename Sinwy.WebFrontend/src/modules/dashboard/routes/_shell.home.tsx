@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/organizations/$id/_dashboard/home")({
+export const Route = createFileRoute("/$organizationSlug/_shell/home")({
 	staticData: { crumb: "Home" },
 	component: OrganizationHomePage,
 });
