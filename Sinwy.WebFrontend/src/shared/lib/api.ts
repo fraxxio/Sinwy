@@ -1,3 +1,4 @@
+import appConfig from "@config";
 import type { ApiResponse } from "@sinwy/shared";
 import { createIsomorphicFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
@@ -9,7 +10,7 @@ import { getRequestHeaders } from "@tanstack/react-start/server";
  */
 const origin = createIsomorphicFn()
 	.client(() => "")
-	.server(() => process.env["BACKEND_URL"] ?? "http://localhost:3001");
+	.server(() => appConfig.BACKEND_URL);
 
 const forwardedCookie = createIsomorphicFn()
 	.client((): string | null => null)
