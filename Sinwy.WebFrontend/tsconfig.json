@@ -5,7 +5,8 @@
 		"types": ["vite/client"],
 		"paths": {
 			"#/*": ["./src/*"],
-			"@/*": ["./src/*"]
+			"@/*": ["./src/*"],
+			"@config": ["./src/shared/lib/appConfig.ts"]
 		}
 	},
 	"include": ["**/*.ts", "**/*.tsx"]

@@ -1,14 +1,17 @@
-import { afterEach, expect, it } from "bun:test";
+import { afterEach, expect, it, mock } from "bun:test";
+import appConfig from "@config";
 import type { ApiResponse } from "@sinwy/shared";
 import { api } from "../lib/api";
 
 const realFetch = globalThis.fetch;
-const realBackendUrl = process.env["BACKEND_URL"];
+
+function stubConfig(overrides: Partial<typeof appConfig>) {
+	mock.module("@config", () => ({ default: { ...appConfig, ...overrides } }));
+}
 
 afterEach(() => {
 	globalThis.fetch = realFetch;
-	if (realBackendUrl === undefined) delete process.env["BACKEND_URL"];
-	else process.env["BACKEND_URL"] = realBackendUrl;
+	mock.module("@config", () => ({ default: appConfig }));
 });
 
 function stubFetch(impl: (input: string) => Promise<Response>) {
@@ -47,7 +50,7 @@ it("keeps the status when the body isn't our envelope", async () => {
 // bun test is a server runtime, so these exercise the server half of the
 // isomorphic split, in the browser the same call is relative and same-origin
 it("addresses the backend absolutely when there is no origin", async () => {
-	process.env["BACKEND_URL"] = "http://backend.internal:3001";
+	stubConfig({ BACKEND_URL: "http://backend.internal:3001" });
 	let seen = "";
 	stubFetch((input) => {
 		seen = input;
