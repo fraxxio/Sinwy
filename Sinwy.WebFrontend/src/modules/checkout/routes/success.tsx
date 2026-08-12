@@ -16,12 +16,30 @@ export const Route = createFileRoute("/checkout/success")({
 	component: CheckoutSuccessPage,
 });
 
-type Phase = "activating" | "unknown-org" | "timed-out";
+type Phase = "activating" | "unknown-org" | "unreachable" | "timed-out";
 
 function CheckoutSuccessPage() {
+	const { checkout_id: checkoutId } = Route.useSearch();
+	const [attempt, setAttempt] = useState(0);
+
+	return (
+		<Activation
+			key={attempt}
+			checkoutId={checkoutId}
+			onRetry={() => setAttempt((n) => n + 1)}
+		/>
+	);
+}
+
+function Activation({
+	checkoutId,
+	onRetry,
+}: {
+	checkoutId: string | undefined;
+	onRetry: () => void;
+}) {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
-	const { checkout_id: checkoutId } = Route.useSearch();
 	const [phase, setPhase] = useState<Phase>(
 		checkoutId ? "activating" : "unknown-org",
 	);
@@ -38,7 +56,10 @@ function CheckoutSuccessPage() {
 			);
 			if (cancelled) return;
 			if (!res.isSuccess) {
-				setPhase("unknown-org");
+				// only a 4xx is the API telling us this checkout is unknown;
+				// anything else means we never got an answer
+				const answered = res.code >= 400 && res.code < 500;
+				setPhase(answered ? "unknown-org" : "unreachable");
 				return;
 			}
 			const orgId = res.data.organizationId;
@@ -83,13 +104,23 @@ function CheckoutSuccessPage() {
 							Back to home
 						</Link>
 					</>
+				) : phase === "unreachable" ? (
+					<>
+						<p className="text-sm text-muted-foreground">
+							Your payment went through but we couldn't reach the server to
+							finish setting up your organization.
+						</p>
+						<Button variant="outline" onClick={onRetry}>
+							Try again
+						</Button>
+					</>
 				) : phase === "timed-out" ? (
 					<>
 						<p className="text-sm text-muted-foreground">
 							Activation is taking longer than expected. The webhook may still
 							be on its way.
 						</p>
-						<Button variant="outline" onClick={() => location.reload()}>
+						<Button variant="outline" onClick={onRetry}>
 							Check again
 						</Button>
 					</>

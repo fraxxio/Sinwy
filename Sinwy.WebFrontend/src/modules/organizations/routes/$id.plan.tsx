@@ -1,5 +1,5 @@
 import type { OrganizationStatus, PlanSlug } from "@sinwy/shared";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient } from "#/modules/auth/lib/auth-client";
 import { requireAuth } from "#/modules/auth/lib/protected-route";
@@ -11,7 +11,8 @@ export const Route = createFileRoute("/organizations/$id/plan")({
 	ssr: false,
 	beforeLoad: async ({ location, params }) => {
 		const ctx = await requireAuth({ location });
-		// an already-active org must not buy a second subscription
+		// an already-active org must not buy a second subscription, so an
+		// unreadable status blocks checkout rather than falling through
 		const res = await api<{ status: OrganizationStatus }>(
 			`/organizations/${params.id}/status`,
 		);
@@ -20,7 +21,7 @@ export const Route = createFileRoute("/organizations/$id/plan")({
 				to: "/organizations/$id/onboarding",
 				params: { id: params.id },
 			});
-		return ctx;
+		return { ...ctx, statusError: res.isSuccess ? null : res.message };
 	},
 	component: PlanPage,
 });
@@ -45,8 +46,28 @@ const plans = [
 
 function PlanPage() {
 	const { id } = Route.useParams();
+	const { statusError } = Route.useRouteContext();
+	const router = useRouter();
 	const [serverError, setServerError] = useState<string | null>(null);
 	const [pendingSlug, setPendingSlug] = useState<string | null>(null);
+
+	if (statusError)
+		return (
+			<main className="page-wrap py-14">
+				<div className="mx-auto w-full max-w-sm space-y-3 text-center">
+					<h1 className="text-2xl font-bold tracking-tight">
+						We couldn't verify this organization
+					</h1>
+					<p className="text-sm text-muted-foreground">
+						{statusError}. We won't start a checkout until we can confirm it
+						doesn't already have a subscription.
+					</p>
+					<Button variant="outline" onClick={() => void router.invalidate()}>
+						Try again
+					</Button>
+				</div>
+			</main>
+		);
 
 	const choosePlan = async (slug: string) => {
 		setServerError(null);
