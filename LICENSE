@@ -1,0 +1,218 @@
+# Sinwy Source-Available License v1.0
+
+Copyright (c) 2026 Sinwy
+
+All rights reserved except as expressly granted below.
+
+## 1. Definitions
+
+For purposes of this License:
+
+**"Software"** means the source code, object code, documentation, configuration, assets, scripts, and other materials contained in this repository that are owned by the Copyright Holder and made available under this License.
+
+**"Copyright Holder"** means Sinwy, being the owner of the copyright in the Software.
+
+**"You"** means any individual or legal entity exercising rights under this License.
+
+**"Private Use"** means use of the Software by You for purposes of development, testing, evaluation, education, research, experimentation, or operation within a private environment where access to the Software and its functionality is restricted to You and persons authorized by You, and where the Software is not made accessible to the general public.
+
+Private Use includes, without limitation:
+
+* running the Software on a personal computer;
+* running the Software on a local network;
+* running the Software on private infrastructure;
+* running the Software on a private server;
+* running the Software within a private company or organization;
+* modifying the Software for internal use;
+* using the Software for learning, research, testing, or evaluation.
+
+**"Public Deployment"** means making the Software, a modified version of the Software, or a derivative work based on the Software accessible to members of the general public, whether directly or indirectly, through the Internet, a public network, a publicly accessible server, hosted service, website, API, application, downloadable product, or other publicly accessible interface.
+
+Public Deployment includes both commercial and non-commercial deployment.
+
+**"Contribution"** means a modification, enhancement, bug fix, documentation change, or other material that You intentionally submit to the Copyright Holder for possible inclusion in the Software, including through a pull request, patch, issue attachment, or other contribution mechanism designated by the Copyright Holder.
+
+## 2. Limited License Grant
+
+Subject to the terms and conditions of this License, the Copyright Holder grants You a limited, non-exclusive, worldwide, royalty-free, non-transferable license to:
+
+1. view and inspect the Software;
+2. download and retain copies of the Software;
+3. copy the Software for purposes permitted by this License;
+4. fork the repository through GitHub or another repository-hosting service for purposes permitted by this License;
+5. modify the Software for Private Use;
+6. compile and execute the Software for Private Use;
+7. use the Software for development, testing, evaluation, education, research, and experimentation;
+8. create and submit Contributions to the Software; and
+9. submit modified versions of the Software to the Copyright Holder for consideration for inclusion in the upstream project.
+
+These permissions do not constitute a transfer of ownership or copyright in the Software.
+
+## 3. Public Repository and GitHub Forks
+
+The Software may be publicly hosted by the Copyright Holder for the purposes of source-code inspection, collaboration, discussion, issue tracking, development, and contribution.
+
+You may use GitHub's repository and fork functionality to inspect the Software, develop modifications, and submit Contributions to the upstream project.
+
+A GitHub fork, mirror, copy, or other repository containing the Software does not, by itself, grant You permission to use that Software for purposes outside the permissions expressly granted by this License.
+
+Where GitHub's Terms of Service or functionality permits a copy or fork to exist within the GitHub service, such permission is limited to the rights granted by GitHub and does not constitute additional permission from the Copyright Holder to use, distribute, deploy, or commercialize the Software outside the GitHub service.
+
+## 4. Public Deployment Prohibited
+
+You may not Publicly Deploy the Software.
+
+You may not, without prior written permission from the Copyright Holder:
+
+1. deploy the Software or any modified version of the Software on a publicly accessible server;
+2. operate the Software as a publicly accessible website, application, service, API, platform, or other service;
+3. provide access to the Software's functionality to members of the general public;
+4. make the Software available as a hosted or managed service;
+5. distribute a modified or unmodified version of the Software for the purpose of enabling Public Deployment;
+6. create or operate a publicly accessible product or service substantially based on the Software; or
+7. make any derivative work based on the Software publicly accessible.
+
+The prohibition in this section applies regardless of whether the Public Deployment:
+
+* generates revenue;
+* is offered commercially;
+* is offered free of charge;
+* is operated by an individual;
+* is operated by a company or organization;
+* is operated for educational purposes;
+* is operated for non-profit purposes; or
+* is otherwise intended to generate monetary gain.
+
+**Non-commercial or free Public Deployment is still prohibited.**
+
+## 5. Private Deployment Permitted
+
+Private Use and Private Deployment are expressly permitted.
+
+You may deploy and operate the Software on infrastructure that is not publicly accessible, including private computers, private servers, private networks, internal organizational infrastructure, and other environments where access is restricted to authorized users.
+
+Private Use does not become Public Deployment merely because multiple authorized users can access the Software.
+
+However, making the Software accessible to the general public, even without charging a fee, constitutes Public Deployment and is prohibited by Section 4.
+
+## 6. Modification
+
+You may modify the Software for purposes permitted by this License.
+
+Modified versions remain subject to this License unless the Copyright Holder expressly grants different terms in writing.
+
+Modification of the Software does not grant You any right to Publicly Deploy the modified Software.
+
+You may maintain private branches, forks, patches, and modified versions for Private Use.
+
+## 7. Contributions
+
+You are expressly permitted to submit Contributions to the upstream project.
+
+By intentionally submitting a Contribution to the Copyright Holder for inclusion in the Software, You grant the Copyright Holder a perpetual, worldwide, non-exclusive, irrevocable, royalty-free, transferable, and sublicensable license to use, reproduce, modify, adapt, publish, distribute, publicly display, publicly perform, sublicense, and otherwise exploit the Contribution as part of the Software or a derivative work of the Software.
+
+This grant includes the right for the Copyright Holder to:
+
+* modify the Contribution;
+* combine the Contribution with other code;
+* distribute the Contribution as part of the Software;
+* license the Contribution under future versions of this License;
+* license the Contribution under different terms;
+* use the Contribution in commercial versions of the Software; and
+* discontinue or remove the Contribution from the Software.
+
+You represent that You have sufficient rights to grant the license described in this section.
+
+Submitting a Contribution does not transfer ownership of Your copyright in the Contribution to the Copyright Holder unless You separately agree to such a transfer in writing.
+
+## 8. Ownership
+
+The Software is licensed, not sold.
+
+Except for the limited rights expressly granted by this License, all rights, title, and interest in and to the Software remain with the Copyright Holder.
+
+This License does not transfer ownership of the Software or its copyright to You.
+
+You may not represent that You are the owner of the Software or that the Software is your original work.
+
+## 9. Trademarks and Branding
+
+This License does not grant You any rights to use the Copyright Holder's trademarks, service marks, logos, trade names, product names, or branding.
+
+You may refer to the Software by its name for purposes of accurately identifying the Software, but You may not use the Copyright Holder's branding in a manner that suggests endorsement, sponsorship, affiliation, or ownership by You without prior written permission.
+
+## 10. Redistribution
+
+Except for copies created and maintained as part of GitHub's or another repository-hosting service's functionality for purposes permitted by this License, You may not distribute the Software or any modified or derivative version of the Software to third parties without prior written permission from the Copyright Holder.
+
+In particular, You may not:
+
+* publish the Software as a separate public repository for the purpose of operating it as an independent product;
+* package and distribute the Software as a downloadable product;
+* publish the Software through a package registry for general consumption;
+* distribute the Software as part of another publicly available software product; or
+* provide copies of the Software to third parties for the purpose of enabling Public Deployment.
+
+## 11. No Sublicensing
+
+You may not sublicense, assign, transfer, or otherwise grant additional rights to the Software to another person or entity.
+
+Any attempt to do so is void unless expressly authorized in writing by the Copyright Holder.
+
+## 12. No Circumvention
+
+You may not circumvent, disable, or remove technical, contractual, or licensing mechanisms implemented by the Copyright Holder for the purpose of enforcing the restrictions of this License.
+
+## 13. Exceptions by Written Permission
+
+The Copyright Holder may grant additional permissions or exceptions to any person or organization in writing.
+
+Such permission may be limited to a particular version, use case, deployment, organization, product, territory, or period of time.
+
+A written exception does not modify this License for any other person or use unless expressly stated otherwise.
+
+## 14. Termination
+
+Your rights under this License automatically terminate if You materially violate its terms.
+
+Upon termination, You must cease all uses of the Software that are not otherwise authorized by applicable law or a separate written agreement with the Copyright Holder.
+
+Termination does not affect rights or licenses that were validly granted before termination where such rights cannot legally be revoked.
+
+Sections concerning ownership, Contributions, disclaimers, limitations of liability, and other provisions that by their nature should survive termination shall survive termination.
+
+## 15. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, OR ANY WARRANTY THAT THE SOFTWARE WILL OPERATE WITHOUT INTERRUPTION OR ERROR.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR INABILITY TO USE THE SOFTWARE.
+
+## 16. No Obligation to Provide Support
+
+Nothing in this License requires the Copyright Holder to provide support, maintenance, updates, security fixes, documentation, or other services relating to the Software.
+
+## 17. Applicable Law
+
+This License shall be interpreted and enforced in accordance with the laws applicable to the Copyright Holder, except to the extent that applicable law requires otherwise.
+
+Nothing in this License is intended to limit rights that cannot legally be waived or restricted under applicable law.
+
+## 18. Entire Agreement
+
+This License constitutes the complete agreement concerning the licensing of the Software, except for separate written agreements expressly entered into by the Copyright Holder.
+
+If any provision of this License is determined to be unenforceable, the remaining provisions shall remain in effect to the maximum extent permitted by law.
+
+## 19. License Identification
+
+This License may be referred to as:
+
+**Sinwy Source-Available License v1.0 (SSAL-1.0)**
+
+This License is not an Open Source Initiative-approved open-source license and does not grant the freedoms associated with an open-source license.
+
+---
+
+Copyright © 2026 Sinwy
+
+All rights reserved except as expressly granted by this License.
