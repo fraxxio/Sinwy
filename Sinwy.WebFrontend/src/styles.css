@@ -31,7 +31,11 @@
 	--page-gutter: clamp(1rem, 4vw, 2rem);
 	--page-max: 90rem;
 	/* Distance from the viewport edge to the capped content column */
-	--page-edge: calc((100% - min(100%, var(--page-max))) / 2 + var(--page-gutter));
+	--page-edge: calc(
+		(100% - min(100%, var(--page-max))) /
+		2 +
+		var(--page-gutter)
+	);
 
 	/* Brand palette (unchanged) */
 	--sea-ink: #173a40;
@@ -543,6 +547,32 @@
 		box-shadow 150ms var(--ease-glide);
 	&:active {
 		transform: scale(0.98);
+	}
+}
+
+/* Loading placeholders: a light sweep across the surface.
+   Named apart from tw-animate-css's text-only `shimmer`. */
+@utility skeleton-shimmer {
+	position: relative;
+	overflow: hidden;
+	&::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		background-image: linear-gradient(
+			90deg,
+			transparent,
+			var(--highlight),
+			transparent
+		);
+		transform: translateX(-100%);
+		animation: shimmer-sweep 1.6s var(--ease-glide) infinite;
+	}
+}
+
+@keyframes shimmer-sweep {
+	to {
+		transform: translateX(100%);
 	}
 }
 
