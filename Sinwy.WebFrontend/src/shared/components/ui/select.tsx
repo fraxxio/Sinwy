@@ -93,7 +93,7 @@ function SelectContent({
 					data-slot="select-content"
 					data-align-trigger={alignItemWithTrigger}
 					className={cn(
-						"z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-3xl text-popover-foreground shadow-lg ring-1 ring-foreground/5 duration-100 outline-none data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dark:ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95 animate-none! relative bg-popover/70 before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:rounded-[inherit] before:backdrop-blur-2xl before:backdrop-saturate-150 **:data-[slot$=-item]:focus:bg-foreground/10 **:data-[slot$=-item]:data-highlighted:bg-foreground/10 **:data-[slot$=-separator]:bg-foreground/5",
+						"surface-floating relative z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-md text-popover-foreground duration-100 outline-none data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95 animate-none!",
 						className,
 					)}
 					{...props}
@@ -129,7 +129,10 @@ function SelectItem({
 		<SelectPrimitive.Item
 			data-slot="select-item"
 			className={cn(
-				"relative flex w-full cursor-default items-center gap-2.5 rounded-2xl py-2 pr-8 pl-3 text-sm font-medium outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+				"relative flex w-full cursor-default items-center gap-2.5 rounded-md border border-transparent py-2 pr-8 pl-3 text-sm font-medium transition-[box-shadow,border-color,background-color] duration-150 ease-glide outline-hidden select-none",
+				"data-highlighted:depth-1 data-highlighted:border-(--line-soft) data-highlighted:bg-accent data-highlighted:text-accent-foreground data-highlighted:**:text-accent-foreground cursor-pointer",
+				"data-disabled:pointer-events-none data-disabled:opacity-50",
+				"[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
 				className,
 			)}
 			{...props}
@@ -172,7 +175,7 @@ function SelectScrollUpButton({
 		<SelectPrimitive.ScrollUpArrow
 			data-slot="select-scroll-up-button"
 			className={cn(
-				"top-0 z-10 flex w-full cursor-default items-center justify-center bg-popover/70 py-1 text-muted-foreground backdrop-blur-2xl backdrop-saturate-150 [&_svg:not([class*='size-'])]:size-4",
+				"top-0 z-10 flex w-full cursor-default items-center justify-center bg-surface-3 py-1 text-muted-foreground [&_svg:not([class*='size-'])]:size-4",
 				className,
 			)}
 			{...props}
@@ -190,7 +193,7 @@ function SelectScrollDownButton({
 		<SelectPrimitive.ScrollDownArrow
 			data-slot="select-scroll-down-button"
 			className={cn(
-				"bottom-0 z-10 flex w-full cursor-default items-center justify-center bg-popover/70 py-1 text-muted-foreground backdrop-blur-2xl backdrop-saturate-150 [&_svg:not([class*='size-'])]:size-4",
+				"bottom-0 z-10 flex w-full cursor-default items-center justify-center bg-surface-3 py-1 text-muted-foreground [&_svg:not([class*='size-'])]:size-4",
 				className,
 			)}
 			{...props}
