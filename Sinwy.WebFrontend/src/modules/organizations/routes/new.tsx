@@ -1,4 +1,5 @@
 import {
+	FunnelStep,
 	ORGANIZATION_INDUSTRIES,
 	ORGANIZATION_INDUSTRY_OPTIONS,
 	type OrganizationDto,
@@ -8,6 +9,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { protectedRoute } from "#/modules/auth/lib/protected-route";
+import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
 import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { FieldError } from "#/shared/components/ui/field";
 import { api } from "#/shared/lib/api";
@@ -59,6 +61,8 @@ function NewOrganizationPage() {
 	return (
 		<main className="page-wrap py-14">
 			<div className="mx-auto w-full max-w-sm">
+				<FunnelProgress current={FunnelStep.Create} className="mb-8" />
+
 				<div className="mb-6 space-y-1.5">
 					<h1 className="text-2xl font-bold tracking-tight">
 						Create your organization
