@@ -1,3 +1,7 @@
+import {
+	DEFAULT_ORGANIZATION_INDUSTRY,
+	ORGANIZATION_INDUSTRIES,
+} from "@sinwy/shared";
 import z from "zod";
 
 export const slugify = (name: string) =>
@@ -52,4 +56,7 @@ export const uniqueSlug = async (
 
 export const createOrganizationBody = z.object({
 	name: z.string().trim().min(1).max(100),
+	industry: z
+		.enum(ORGANIZATION_INDUSTRIES)
+		.default(DEFAULT_ORGANIZATION_INDUSTRY),
 });

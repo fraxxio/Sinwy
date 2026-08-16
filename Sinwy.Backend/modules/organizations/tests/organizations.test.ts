@@ -106,7 +106,13 @@ const post = (path: string, body: unknown, cookie?: string) =>
 		body: JSON.stringify(body),
 	});
 
-type OrgDto = { id: string; name: string; slug: string; status: string };
+type OrgDto = {
+	id: string;
+	name: string;
+	slug: string;
+	status: string;
+	industry: string;
+};
 
 const unwrap = async <T>(res: Response) => {
 	const body = (await res.json()) as ApiResponse<T>;
@@ -131,21 +137,61 @@ test("invalid body → 400", async () => {
 		{ name: "" },
 		{ name: "  " },
 		{ name: "a".repeat(101) },
+		{ name: "Acme", industry: "" },
+		{ name: "Acme", industry: "astrology" },
 	]) {
 		const res = await post("/api/organizations", body, cookie);
 		expect(res.status).toBe(400);
 	}
 });
 
-test("valid request → 201 with exactly { id, name, slug, status: 'inactive' }", async () => {
+test("valid request → 201 with exactly { id, name, slug, status, industry }", async () => {
 	const { cookie } = await createUserWithSession();
-	const res = await post("/api/organizations", { name: "Acme Corp" }, cookie);
+	const res = await post(
+		"/api/organizations",
+		{ name: "Acme Corp", industry: "beauty" },
+		cookie,
+	);
 	expect(res.status).toBe(201);
 	const org = await unwrap<OrgDto>(res);
-	expect(Object.keys(org).sort()).toEqual(["id", "name", "slug", "status"]);
+	expect(Object.keys(org).sort()).toEqual([
+		"id",
+		"industry",
+		"name",
+		"slug",
+		"status",
+	]);
 	expect(org.name).toBe("Acme Corp");
 	expect(org.slug).toBe("acme-corp");
 	expect(org.status).toBe("inactive");
+	expect(org.industry).toBe("beauty");
+});
+
+test("industry is persisted", async () => {
+	const { cookie } = await createUserWithSession();
+	const { id } = await unwrap<OrgDto>(
+		await post(
+			"/api/organizations",
+			{ name: "Bright Smile", industry: "healthcare" },
+			cookie,
+		),
+	);
+	const [row] = await db
+		.select({ industry: organization.industry })
+		.from(organization)
+		.where(eq(organization.id, id));
+	expect(row?.industry).toBe("healthcare");
+});
+
+test("omitted industry → 'other', never null", async () => {
+	const { cookie } = await createUserWithSession();
+	const org = await createOrg("Acme", cookie);
+	expect(org.industry).toBe("other");
+	const [row] = await db
+		.select({ industry: organization.industry })
+		.from(organization)
+		.where(eq(organization.id, org.id));
+	expect(row?.industry).toBe("other");
 });
 
 test("creator has an owner membership row", async () => {

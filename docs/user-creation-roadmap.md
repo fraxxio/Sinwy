@@ -176,7 +176,12 @@ This flow can be triggered anytime from:
 User enters:
 
 - Organization Name
-- (optional later: slug, category)
+- Industry (required; persisted on the organization, defaults to `other`)
+- (optional later: slug)
+
+Industry drives template/layout preselection in onboarding, and is the category
+dimension for discovery, public-page SEO and segmentation later. The value list
+lives in `@sinwy/shared` so validation and the select can't drift.
 
 Creation goes through a **custom backend endpoint only** (`POST /organizations` in an `organizations` module). Client-side creation is disabled via `allowUserToCreateOrganization: false`; the endpoint calls `auth.api.createOrganization` server-side. This endpoint is the future home of org-creation business rules and custom org data.
 

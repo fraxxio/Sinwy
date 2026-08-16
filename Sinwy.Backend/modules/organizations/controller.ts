@@ -16,7 +16,11 @@ export const createOrganizationHandler: Handler = async (c) => {
 	);
 	if (!body.success) return fail("Invalid body", 400);
 
-	const org = await createOrganization(user.id, body.data.name);
+	const org = await createOrganization(
+		user.id,
+		body.data.name,
+		body.data.industry,
+	);
 	return ok(org, 201, "Organization created");
 };
 

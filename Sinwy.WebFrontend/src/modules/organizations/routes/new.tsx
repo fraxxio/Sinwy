@@ -1,4 +1,8 @@
-import type { OrganizationDto } from "@sinwy/shared";
+import {
+	ORGANIZATION_INDUSTRIES,
+	ORGANIZATION_INDUSTRY_OPTIONS,
+	type OrganizationDto,
+} from "@sinwy/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -20,6 +24,10 @@ const createOrgSchema = z.object({
 		.trim()
 		.min(1, "Name is required")
 		.max(100, "Max 100 characters"),
+	industry: z
+		.string()
+		.min(1, "Industry is required")
+		.pipe(z.enum(ORGANIZATION_INDUSTRIES)),
 });
 
 function NewOrganizationPage() {
@@ -28,7 +36,7 @@ function NewOrganizationPage() {
 	const [serverError, setServerError] = useState<string | null>(null);
 
 	const form = useAppForm({
-		defaultValues: { name: "" },
+		defaultValues: { name: "", industry: "" },
 		validators: { onSubmit: createOrgSchema },
 		onSubmit: async ({ value }) => {
 			setServerError(null);
@@ -53,7 +61,7 @@ function NewOrganizationPage() {
 			<div className="mx-auto w-full max-w-sm">
 				<div className="mb-6 space-y-1.5">
 					<h1 className="text-2xl font-bold tracking-tight">
-						Name your organization
+						Create your organization
 					</h1>
 					<p className="text-sm text-muted-foreground">
 						You can change this later. Next, you'll pick a plan.
@@ -72,6 +80,16 @@ function NewOrganizationPage() {
 							<field.TextField
 								label="Organization name"
 								autoComplete="organization"
+							/>
+						)}
+					</form.AppField>
+
+					<form.AppField name="industry">
+						{(field) => (
+							<field.SelectField
+								label="Industry"
+								options={ORGANIZATION_INDUSTRY_OPTIONS}
+								placeholder="Select your industry"
 							/>
 						)}
 					</form.AppField>

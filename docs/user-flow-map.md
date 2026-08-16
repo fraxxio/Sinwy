@@ -54,7 +54,7 @@ User can always switch:
 ```text
 Trigger (empty dashboard | sidebar | onboarding CTA | settings)
 │
-→ enter organization name
+→ enter organization name + industry
 → POST /organizations (custom endpoint)
 → organization created: status = inactive, user = owner
 → Plan selection (Starter | Professional | Enterprise)
