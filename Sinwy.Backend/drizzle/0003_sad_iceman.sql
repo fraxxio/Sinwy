@@ -1,0 +1,1 @@
+ALTER TABLE "organization" ADD COLUMN "industry" text DEFAULT 'other' NOT NULL;

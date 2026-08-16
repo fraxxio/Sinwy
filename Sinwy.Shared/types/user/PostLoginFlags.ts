@@ -1,9 +1,12 @@
+import type { FunnelStep } from "../organization/FunnelStep";
+
 /**
- * A funnel the user entered but never finished. Only billing is representable
+ * The funnel steps a user can be sent back to. `Create` has no organization to
+ * resume and `Pay` belongs to Polar, so billing is the only one representable
  * today; an organization that is already `active` has nothing left to resume
  * until organization onboarding tracks its own completion.
  */
-export type OnboardingStep = "select-plan";
+export type OnboardingStep = typeof FunnelStep.Plan;
 
 export type UnfinishedOnboarding = {
 	step: OnboardingStep;

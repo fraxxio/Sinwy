@@ -116,6 +116,11 @@ export const auth = betterAuth({
 							defaultValue: "inactive",
 							input: false,
 						},
+						industry: {
+							type: "string",
+							defaultValue: "other",
+							required: false,
+						},
 					},
 				},
 			},

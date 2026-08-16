@@ -1,4 +1,4 @@
-import type { PostLoginFlags } from "@sinwy/shared";
+import { FunnelStep, type PostLoginFlags } from "@sinwy/shared";
 import { findUnpaidOwnedOrganization } from "./repository";
 
 /**
@@ -13,7 +13,7 @@ export const getPostLoginFlags = async (
 	const organizationId = await findUnpaidOwnedOrganization(userId);
 	return {
 		unfinishedOnboarding: organizationId
-			? { step: "select-plan", organizationId }
+			? { step: FunnelStep.Plan, organizationId }
 			: null,
 	};
 };

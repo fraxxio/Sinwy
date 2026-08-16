@@ -1,8 +1,13 @@
-import type { OrganizationStatus, PlanSlug } from "@sinwy/shared";
+import {
+	FunnelStep,
+	type OrganizationStatus,
+	type PlanSlug,
+} from "@sinwy/shared";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient } from "#/modules/auth/lib/auth-client";
 import { requireAuth } from "#/modules/auth/lib/protected-route";
+import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { api } from "#/shared/lib/api";
@@ -82,6 +87,8 @@ function PlanPage() {
 
 	return (
 		<main className="page-wrap py-14">
+			<FunnelProgress current={FunnelStep.Plan} className="mb-8" />
+
 			<div className="mb-8 space-y-1.5 text-center">
 				<h1 className="text-2xl font-bold tracking-tight">Pick a plan</h1>
 				<p className="text-sm text-muted-foreground">
