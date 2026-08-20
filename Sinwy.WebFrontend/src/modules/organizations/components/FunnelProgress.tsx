@@ -34,9 +34,11 @@ export function FunnelProgress({
 						<span
 							className={cn(
 								"flex size-6 items-center justify-center rounded-full border text-xs font-medium",
-								done && "border-primary bg-primary text-primary-foreground",
-								active && "border-primary text-primary",
-								!done && !active && "border-border text-muted-foreground",
+								done &&
+									"border-primary bg-primary text-primary-foreground dark:border-[color-mix(in_oklch,var(--primary),white_25%)] dark:bg-[color-mix(in_oklch,var(--primary),white_25%)]",
+								active &&
+									"border-primary text-primary dark:border-[color-mix(in_oklch,var(--primary),white_30%)] dark:text-[color-mix(in_oklch,var(--primary),white_30%)]",
+								!done && !active && "border-foreground/30 text-foreground/60",
 							)}
 						>
 							{done ? (
@@ -58,8 +60,10 @@ export function FunnelProgress({
 						{index < FUNNEL_STEP_ORDER.length - 1 && (
 							<span
 								className={cn(
-									"ml-1 h-px w-6 sm:w-10",
-									done ? "bg-primary" : "bg-border",
+									"ml-1 h-0.5 w-6 rounded-full sm:w-10",
+									done
+										? "bg-primary dark:bg-[color-mix(in_oklch,var(--primary),white_25%)]"
+										: "bg-foreground/25",
 								)}
 								aria-hidden
 							/>
