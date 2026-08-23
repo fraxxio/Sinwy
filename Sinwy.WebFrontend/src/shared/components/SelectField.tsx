@@ -13,6 +13,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "#/shared/components/ui/select";
+import { fieldErrorState } from "#/shared/lib/field-error";
 import { useFieldContext } from "#/shared/lib/form-contexts";
 import { cn } from "#/shared/lib/utils";
 
@@ -44,10 +45,12 @@ export const SelectField = ({
 	const [shaking, setShaking] = useState(false);
 	const shakenToken = useRef(shakeToken);
 
-	const revealed =
-		field.state.meta.isBlurred || field.form.state.submissionAttempts > 0;
-	const error = revealed ? field.state.meta.errors[0]?.message : undefined;
-	const valid = revealed && !error && !!field.state.value;
+	const { error, valid } = fieldErrorState({
+		isBlurred: field.state.meta.isBlurred,
+		submissionAttempts: field.form.state.submissionAttempts,
+		errors: field.state.meta.errors,
+		value: field.state.value,
+	});
 
 	useEffect(() => {
 		if (shakeToken === shakenToken.current) return;

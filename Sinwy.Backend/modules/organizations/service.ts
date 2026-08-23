@@ -1,12 +1,27 @@
 import { auth, polarClient } from "@authModule";
-import { uniqueSlug } from "@backend/modules/organizations/utils";
-import type {
-	OrganizationDto,
-	OrganizationIndustry,
-	OrganizationStatus,
+import {
+	type OrganizationProfileInput,
+	uniqueSlug,
+} from "@backend/modules/organizations/utils";
+import {
+	EMPTY_ORGANIZATION_PROFILE,
+	type OrganizationDto,
+	type OrganizationIndustry,
+	type OrganizationOnboardingDto,
+	type OrganizationProfileDto,
+	type OrganizationStatus,
 } from "@sinwy/shared";
 import { reconcileInactiveStatus } from "./reconcileStatus";
-import { findStatusForMember, isSlugTaken, setStatus } from "./repository";
+import {
+	findMemberRole,
+	findOnboardingCompletedAt,
+	findProfile,
+	findStatusForMember,
+	isSlugTaken,
+	markOnboardingCompleted,
+	setStatus,
+	upsertProfile,
+} from "./repository";
 
 export const createOrganization = async (
 	userId: string,
@@ -60,4 +75,79 @@ export const getCheckoutOrganization = async (
 	return typeof referenceId === "string"
 		? { organizationId: referenceId }
 		: null;
+};
+
+type WriteResult<T> =
+	| { ok: true; data: T }
+	| { ok: false; error: "not-found" | "forbidden" };
+
+// better-auth stores a member's roles in one comma separated column
+const canManage = (role: string) =>
+	role.split(",").some((r) => r.trim() === "owner" || r.trim() === "admin");
+
+/** `null` when allowed, otherwise the reason to refuse. */
+const denyManage = async (userId: string, organizationId: string) => {
+	const role = await findMemberRole(userId, organizationId);
+	if (!role) return "not-found" as const;
+	return canManage(role) ? null : ("forbidden" as const);
+};
+
+const toProfileDto = (
+	row: Awaited<ReturnType<typeof findProfile>> | undefined,
+): OrganizationProfileDto =>
+	row
+		? {
+				tagline: row.tagline,
+				description: row.description,
+				email: row.email,
+				phone: row.phone,
+				website: row.website,
+				city: row.city,
+				country: row.country,
+			}
+		: EMPTY_ORGANIZATION_PROFILE;
+
+export const getOrganizationOnboarding = async (
+	userId: string,
+	organizationId: string,
+): Promise<OrganizationOnboardingDto | null> => {
+	// null → org doesn't exist or caller isn't a member (both read as not-found)
+	const role = await findMemberRole(userId, organizationId);
+	if (!role) return null;
+
+	const [completedAt, profile] = await Promise.all([
+		findOnboardingCompletedAt(organizationId),
+		findProfile(organizationId),
+	]);
+	return {
+		completedAt: completedAt?.toISOString() ?? null,
+		profile: toProfileDto(profile),
+	};
+};
+
+export const saveOrganizationProfile = async (
+	userId: string,
+	organizationId: string,
+	input: OrganizationProfileInput,
+): Promise<WriteResult<OrganizationProfileDto>> => {
+	const denied = await denyManage(userId, organizationId);
+	if (denied) return { ok: false, error: denied };
+
+	const row = await upsertProfile(organizationId, input);
+	return { ok: true, data: toProfileDto(row) };
+};
+
+export const completeOrganizationOnboarding = async (
+	userId: string,
+	organizationId: string,
+): Promise<WriteResult<{ completedAt: string }>> => {
+	const denied = await denyManage(userId, organizationId);
+	if (denied) return { ok: false, error: denied };
+
+	const completedAt =
+		(await markOnboardingCompleted(organizationId)) ??
+		(await findOnboardingCompletedAt(organizationId));
+	if (!completedAt) return { ok: false, error: "not-found" };
+
+	return { ok: true, data: { completedAt: completedAt.toISOString() } };
 };

@@ -56,3 +56,12 @@ it("sends select-plan back to the plan page", () => {
 		params: { id: "abc123" },
 	});
 });
+
+it("sends business-profile back to organization onboarding", () => {
+	expect(
+		resumePrompt({ step: "business-profile", organizationId: "abc123" }),
+	).toMatchObject({
+		to: "/organizations/$id/onboarding",
+		params: { id: "abc123" },
+	});
+});

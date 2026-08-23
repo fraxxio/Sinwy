@@ -1,7 +1,11 @@
 import db from "@db";
-import { member, organization } from "@db/schema/organizationSchema";
+import {
+	member,
+	organization,
+	organizationProfile,
+} from "@db/schema/organizationSchema";
 import type { OrganizationStatus } from "@sinwy/shared";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 export const isSlugTaken = async (slug: string) => {
 	const [row] = await db
@@ -36,4 +40,66 @@ export const setStatus = async (
 		.where(eq(organization.id, organizationId))
 		.returning({ id: organization.id });
 	return updated.length > 0;
+};
+
+export const findMemberRole = async (
+	userId: string,
+	organizationId: string,
+) => {
+	const [row] = await db
+		.select({ role: member.role })
+		.from(member)
+		.where(
+			and(eq(member.organizationId, organizationId), eq(member.userId, userId)),
+		);
+	return row?.role ?? null;
+};
+
+export const findOnboardingCompletedAt = async (organizationId: string) => {
+	const [row] = await db
+		.select({ completedAt: organization.onboardingCompletedAt })
+		.from(organization)
+		.where(eq(organization.id, organizationId));
+	return row?.completedAt ?? null;
+};
+
+export const findProfile = async (organizationId: string) => {
+	const [row] = await db
+		.select()
+		.from(organizationProfile)
+		.where(eq(organizationProfile.organizationId, organizationId));
+	return row ?? null;
+};
+
+export const upsertProfile = async (
+	organizationId: string,
+	values: Omit<
+		typeof organizationProfile.$inferInsert,
+		"organizationId" | "updatedAt"
+	>,
+) => {
+	const [row] = await db
+		.insert(organizationProfile)
+		.values({ ...values, organizationId })
+		.onConflictDoUpdate({
+			target: organizationProfile.organizationId,
+			set: { ...values, updatedAt: new Date() },
+		})
+		.returning();
+	return row;
+};
+
+/** Idempotent: an organization keeps the timestamp of its first completion. */
+export const markOnboardingCompleted = async (organizationId: string) => {
+	const [row] = await db
+		.update(organization)
+		.set({ onboardingCompletedAt: new Date() })
+		.where(
+			and(
+				eq(organization.id, organizationId),
+				isNull(organization.onboardingCompletedAt),
+			),
+		)
+		.returning({ completedAt: organization.onboardingCompletedAt });
+	return row?.completedAt ?? null;
 };

@@ -1,12 +1,17 @@
-import type { FunnelStep } from "../organization/FunnelStep";
+import { FunnelStep } from "../organization/FunnelStep";
 
 /**
- * The funnel steps a user can be sent back to. `Create` has no organization to
- * resume and `Pay` belongs to Polar, so billing is the only one representable
- * today; an organization that is already `active` has nothing left to resume
- * until organization onboarding tracks its own completion.
+ * The steps a user can be sent back to. `Create` has no organization to resume
+ * and `Pay` belongs to Polar, so the funnel contributes billing only; once an
+ * organization is paid for, its own setup wizard takes over.
  */
-export type OnboardingStep = typeof FunnelStep.Plan;
+export const OnboardingStep = {
+	Plan: FunnelStep.Plan,
+	Profile: "business-profile",
+} as const;
+
+export type OnboardingStep =
+	(typeof OnboardingStep)[keyof typeof OnboardingStep];
 
 export type UnfinishedOnboarding = {
 	step: OnboardingStep;

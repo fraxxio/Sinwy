@@ -71,12 +71,24 @@ Trigger (empty dashboard | sidebar | onboarding CTA | settings)
 Success page: "Activating your organization…" (poll org status ~2s)
 │
 ├─ status → active (webhook arrived)
-│   ├─ onboarding not completed → Organization Onboarding (placeholder)
+│   ├─ onboarding not completed → Organization Onboarding [7]
 │   └─ onboarding completed → Organization Dashboard
 └─ timeout → fallback message, keep org inactive, retry/poll later
 ```
 
-## 7. Subscription lifecycle (webhook-driven, anytime)
+## 7. Organization Onboarding (post-activation wizard)
+
+```text
+Step 1 — Business profile (tagline, description, contact, location)
+│
+├─ save → organization.onboardingCompletedAt set → Organization Dashboard
+└─ "I'll do this later" → Organization Dashboard, still marked unfinished
+    → resume prompt on later logins, page reachable again anytime
+```
+
+Later steps (page template, plugins) land here as the page builder arrives.
+
+## 8. Subscription lifecycle (webhook-driven, anytime)
 
 ```text
 ├─ subscription active → org status = active

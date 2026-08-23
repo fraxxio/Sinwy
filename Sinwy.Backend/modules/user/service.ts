@@ -1,5 +1,8 @@
-import { FunnelStep, type PostLoginFlags } from "@sinwy/shared";
-import { findUnpaidOwnedOrganization } from "./repository";
+import { OnboardingStep, type PostLoginFlags } from "@sinwy/shared";
+import {
+	findUnfinishedOnboardingOrganization,
+	findUnpaidOwnedOrganization,
+} from "./repository";
 
 /**
  * Prompts the frontend should raise after login. Deliberately reads only
@@ -10,10 +13,20 @@ import { findUnpaidOwnedOrganization } from "./repository";
 export const getPostLoginFlags = async (
 	userId: string,
 ): Promise<PostLoginFlags> => {
-	const organizationId = await findUnpaidOwnedOrganization(userId);
+	// billing comes first, an unpaid organization can do nothing else
+	const unpaid = await findUnpaidOwnedOrganization(userId);
+	if (unpaid)
+		return {
+			unfinishedOnboarding: {
+				step: OnboardingStep.Plan,
+				organizationId: unpaid,
+			},
+		};
+
+	const unfinished = await findUnfinishedOnboardingOrganization(userId);
 	return {
-		unfinishedOnboarding: organizationId
-			? { step: FunnelStep.Plan, organizationId }
+		unfinishedOnboarding: unfinished
+			? { step: OnboardingStep.Profile, organizationId: unfinished }
 			: null,
 	};
 };
