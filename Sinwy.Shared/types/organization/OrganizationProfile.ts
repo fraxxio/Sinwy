@@ -18,13 +18,25 @@ export type OrganizationProfileDto = {
  */
 export const ORGANIZATION_PROFILE_RULES = {
 	minLength: 3,
-	// scheme optional, the API stores the canonical form
-	websitePattern: /^(https?:\/\/)?[^\s.]+\.[^\s]{2,}$/i,
 	// every country writes them differently, so only the shape is checked
 	phonePattern: /^\+?[\d\s().-]+$/,
 	phoneMinDigits: 7,
 	phoneMaxDigits: 15,
 } as const;
+
+/**
+ * Scheme optional, the API stores the canonical https form. The stored value
+ * must be something an anchor can point at, so it has to survive the URL
+ * parser and resolve to a plausible hostname.
+ */
+export const isValidWebsite = (value: string) => {
+	const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+	try {
+		return /^([a-z0-9-]+\.)+[a-z0-9-]{2,}$/i.test(new URL(candidate).hostname);
+	} catch {
+		return false;
+	}
+};
 
 export const countPhoneDigits = (value: string) =>
 	value.replace(/\D/g, "").length;

@@ -5,7 +5,7 @@ import {
 	organizationProfile,
 } from "@db/schema/organizationSchema";
 import type { OrganizationStatus } from "@sinwy/shared";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 export const isSlugTaken = async (slug: string) => {
 	const [row] = await db
@@ -42,17 +42,18 @@ export const setStatus = async (
 	return updated.length > 0;
 };
 
-export const findMemberRole = async (
+export const findMembership = async (
 	userId: string,
 	organizationId: string,
 ) => {
 	const [row] = await db
-		.select({ role: member.role })
+		.select({ role: member.role, status: organization.status })
 		.from(member)
+		.innerJoin(organization, eq(member.organizationId, organization.id))
 		.where(
 			and(eq(member.organizationId, organizationId), eq(member.userId, userId)),
 		);
-	return row?.role ?? null;
+	return row ?? null;
 };
 
 export const findOnboardingCompletedAt = async (organizationId: string) => {
@@ -83,7 +84,7 @@ export const upsertProfile = async (
 		.values({ ...values, organizationId })
 		.onConflictDoUpdate({
 			target: organizationProfile.organizationId,
-			set: { ...values, updatedAt: new Date() },
+			set: { ...values, updatedAt: sql`now()` },
 		})
 		.returning();
 	return row;

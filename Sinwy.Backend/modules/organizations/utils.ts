@@ -1,10 +1,8 @@
 import {
 	COUNTRY_CODES,
-	countPhoneDigits,
 	DEFAULT_ORGANIZATION_INDUSTRY,
 	ORGANIZATION_INDUSTRIES,
-	ORGANIZATION_PROFILE_LIMITS,
-	ORGANIZATION_PROFILE_RULES,
+	organizationProfileSchema,
 } from "@sinwy/shared";
 import z from "zod";
 
@@ -65,65 +63,24 @@ export const createOrganizationBody = z.object({
 		.default(DEFAULT_ORGANIZATION_INDUSTRY),
 });
 
-const RULES = ORGANIZATION_PROFILE_RULES;
-
-const requiredText = (label: string, max: number) =>
+const optional = <T extends z.ZodType<string, string>>(base: T) =>
 	z
 		.string()
-		.trim()
-		.min(1, `${label} is required`)
-		.min(
-			RULES.minLength,
-			`${label} needs at least ${RULES.minLength} characters`,
-		)
-		.max(max, `Max ${max} characters`);
+		.nullish()
+		.transform((value) => value ?? "")
+		.pipe(base);
 
-/** Never trust the form: these mirror it, and they are what actually decides. */
-export const organizationProfileBody = z.object({
-	tagline: requiredText("Tagline", ORGANIZATION_PROFILE_LIMITS.tagline),
-	description: requiredText(
-		"A description",
-		ORGANIZATION_PROFILE_LIMITS.description,
-	),
-	email: z
-		.string()
-		.trim()
-		.min(1, "Contact email is required")
-		.max(ORGANIZATION_PROFILE_LIMITS.email)
-		.pipe(z.email("Enter a valid email address")),
-	phone: z
-		.string()
-		.trim()
-		.min(1, "Phone number is required")
-		.max(ORGANIZATION_PROFILE_LIMITS.phone)
-		.regex(RULES.phonePattern, "Use digits, spaces and + ( ) - . only")
-		.refine((value) => {
-			const digits = countPhoneDigits(value);
-			return digits >= RULES.phoneMinDigits && digits <= RULES.phoneMaxDigits;
-		}, `Enter ${RULES.phoneMinDigits} to ${RULES.phoneMaxDigits} digits`),
+/** Never trust the form: the shared rules plus canonicalization decide here. */
+export const organizationProfileBody = organizationProfileSchema.extend({
 	// optional, but people type "example.com", so store something an anchor
 	// can point at
-	website: z
-		.string()
-		.nullish()
-		.transform((value) => value?.trim() ?? "")
-		.refine(
-			(value) => value.length <= ORGANIZATION_PROFILE_LIMITS.website,
-			`Max ${ORGANIZATION_PROFILE_LIMITS.website} characters`,
-		)
-		.refine(
-			(value) => !value || RULES.websitePattern.test(value),
-			"Enter a valid website, like example.com",
-		)
-		.transform((value) =>
+	website: optional(organizationProfileSchema.shape.website).transform(
+		(value) =>
 			value ? (/^https?:\/\//i.test(value) ? value : `https://${value}`) : null,
-		),
-	city: z
-		.string()
-		.trim()
-		.max(ORGANIZATION_PROFILE_LIMITS.city)
-		.nullish()
-		.transform((value) => value || null),
+	),
+	city: optional(organizationProfileSchema.shape.city).transform(
+		(value) => value || null,
+	),
 	country: z.enum(COUNTRY_CODES, "Select a country from the list"),
 });
 

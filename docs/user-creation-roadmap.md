@@ -308,6 +308,12 @@ choice (bookings / payments / calendar) join the wizard once there is something
 real behind them, since a stored preference that switches nothing on is worse
 than not asking.
 
+Known rewrite when they land: the single `organization.onboardingCompletedAt`
+timestamp can only say "step 1 done", so completion becomes per-step — the
+column, `OrganizationOnboardingDto`, the resume-flag precedence and the
+completion endpoint all change, and already-stamped values must be read as
+"completed the business profile", not "completed everything".
+
 ---
 
 # 6. Customer Mode vs Organization Mode

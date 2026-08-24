@@ -155,6 +155,18 @@ test("owner of an active organization mid-setup → resume at business-profile",
 	});
 });
 
+test("owner holding several roles in one column → still prompted", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	// better-auth stores multi-role membership comma separated
+	const orgId = await createOrg(userId, {
+		status: "inactive",
+		role: "owner,admin",
+	});
+	expect(await getFlags(cookie)).toEqual({
+		unfinishedOnboarding: { step: "select-plan", organizationId: orgId },
+	});
+});
+
 test("non-owner member of an active org mid-setup → not prompted", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	await createOrg(userId, { status: "active", role: "member" });

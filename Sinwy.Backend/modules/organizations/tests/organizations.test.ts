@@ -125,6 +125,13 @@ const createOrg = async (name: string, cookie: string) => {
 	return unwrap<OrgDto>(res);
 };
 
+// profile/onboarding writes are gated on a paid organization
+const createActiveOrg = async (name: string, cookie: string) => {
+	const org = await createOrg(name, cookie);
+	await setStatus(org.id, "active");
+	return org;
+};
+
 test("POST /api/organizations without session → 401", async () => {
 	const res = await post("/api/organizations", { name: "Acme" });
 	expect(res.status).toBe(401);
@@ -404,7 +411,7 @@ const saveProfile = (
 
 test("PUT profile: saves the profile and reads back through onboarding", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	const saved = await unwrap<ProfileDto>(
 		await saveProfile(id, cookie, { tagline: "  Sharp cuts, no waiting  " }),
@@ -424,7 +431,7 @@ test("PUT profile: saves the profile and reads back through onboarding", async (
 
 test("PUT profile: city and website may be left out", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	const saved = await unwrap<ProfileDto>(
 		await saveProfile(id, cookie, { city: "   ", website: "   " }),
@@ -440,7 +447,7 @@ test("PUT profile: city and website may be left out", async () => {
 
 test("PUT profile: a second save overwrites the first", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	await saveProfile(id, cookie, { city: "Vilnius" });
 	const second = await unwrap<ProfileDto>(
@@ -453,10 +460,26 @@ test("PUT profile: a second save overwrites the first", async () => {
 // the form checks the same rules, so these all stand in for a bypassed form
 test("PUT profile: every field except city and website is required", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
-	for (const field of ["tagline", "description", "email", "phone", "country"]) {
-		for (const value of ["", "   ", null, undefined]) {
+	const requiredMessage = {
+		tagline: /Tagline is required/,
+		description: /A description is required/,
+		email: /Contact email is required/,
+		phone: /Phone number is required/,
+		country: /Select a country/,
+	} as const;
+
+	for (const [field, message] of Object.entries(requiredMessage)) {
+		for (const value of ["", "   "]) {
+			const res = await saveProfile(id, cookie, { [field]: value });
+			expect(res.status).toBe(400);
+			// the rejection must be for this field, any 400 is not enough
+			const body = (await res.json()) as ApiResponse<never>;
+			expect(body.message).toMatch(message);
+		}
+		// JSON.stringify drops undefined keys, so this also covers omission
+		for (const value of [null, undefined]) {
 			const res = await saveProfile(id, cookie, { [field]: value });
 			expect(res.status).toBe(400);
 		}
@@ -465,7 +488,7 @@ test("PUT profile: every field except city and website is required", async () =>
 
 test("PUT profile: text fields need at least three characters", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	for (const field of ["tagline", "description"]) {
 		expect((await saveProfile(id, cookie, { [field]: "ab" })).status).toBe(400);
@@ -477,7 +500,7 @@ test("PUT profile: text fields need at least three characters", async () => {
 
 test("PUT profile: rejects text fields over their limit", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	for (const [field, max] of [
 		["tagline", 120],
@@ -490,7 +513,7 @@ test("PUT profile: rejects text fields over their limit", async () => {
 
 test("PUT profile: rejects malformed emails", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	for (const email of ["not-an-email", "someone@", "@acme.dev", "a b@acme.dev"])
 		expect((await saveProfile(id, cookie, { email })).status).toBe(400);
@@ -502,7 +525,7 @@ test("PUT profile: rejects malformed emails", async () => {
 
 test("PUT profile: takes phone numbers from any country, within 7-15 digits", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	for (const phone of [
 		"+370 600 00000",
@@ -518,7 +541,7 @@ test("PUT profile: takes phone numbers from any country, within 7-15 digits", as
 
 test("PUT profile: an offered website still has to be one", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	for (const website of ["acme", "not a website", "https://"])
 		expect((await saveProfile(id, cookie, { website })).status).toBe(400);
@@ -531,7 +554,7 @@ test("PUT profile: an offered website still has to be one", async () => {
 
 test("PUT profile: country must be one we know, by code", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	// a typed country name is exactly what the select stops the form sending
 	for (const country of ["Lithuania", "lt", "ZZ", "XX", "L"])
@@ -543,7 +566,7 @@ test("PUT profile: country must be one we know, by code", async () => {
 
 test("PUT profile: a rejection says which rule failed", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	const res = await saveProfile(id, cookie, { tagline: "" });
 	const body = (await res.json()) as ApiResponse<never>;
@@ -552,7 +575,7 @@ test("PUT profile: a rejection says which rule failed", async () => {
 
 test("PUT profile: non-member → 404, plain member → 403", async () => {
 	const owner = await createUserWithSession();
-	const { id } = await createOrg("Acme", owner.cookie);
+	const { id } = await createActiveOrg("Acme", owner.cookie);
 	const outsider = await createUserWithSession();
 
 	expect((await saveProfile(id, outsider.cookie)).status).toBe(404);
@@ -563,7 +586,7 @@ test("PUT profile: non-member → 404, plain member → 403", async () => {
 
 test("POST onboarding/complete: marks the organization done, idempotently", async () => {
 	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
+	const { id } = await createActiveOrg("Acme", cookie);
 
 	const first = await unwrap<{ completedAt: string }>(
 		await post(`/api/organizations/${id}/onboarding/complete`, {}, cookie),
@@ -584,7 +607,7 @@ test("POST onboarding/complete: marks the organization done, idempotently", asyn
 
 test("POST onboarding/complete: non-member → 404, plain member → 403", async () => {
 	const owner = await createUserWithSession();
-	const { id } = await createOrg("Acme", owner.cookie);
+	const { id } = await createActiveOrg("Acme", owner.cookie);
 	const outsider = await createUserWithSession();
 
 	expect(
@@ -607,4 +630,22 @@ test("POST onboarding/complete: non-member → 404, plain member → 403", async
 			)
 		).status,
 	).toBe(403);
+});
+
+// pay → then onboard: the wizard never runs for an unpaid organization, so the
+// API refuses too instead of leaving that ordering to the frontend guard
+test("PUT profile & complete on an unpaid organization → 409", async () => {
+	const { cookie } = await createUserWithSession();
+	const { id } = await createOrg("Acme", cookie);
+
+	expect((await saveProfile(id, cookie)).status).toBe(409);
+	expect(
+		(await post(`/api/organizations/${id}/onboarding/complete`, {}, cookie))
+			.status,
+	).toBe(409);
+
+	const onboarding = await unwrap<{ completedAt: string | null }>(
+		await get(`/api/organizations/${id}/onboarding`, cookie),
+	);
+	expect(onboarding.completedAt).toBeNull();
 });

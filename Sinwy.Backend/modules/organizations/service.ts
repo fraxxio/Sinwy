@@ -3,6 +3,7 @@ import {
 	type OrganizationProfileInput,
 	uniqueSlug,
 } from "@backend/modules/organizations/utils";
+import { parseMemberRoles } from "@db/memberRole";
 import {
 	EMPTY_ORGANIZATION_PROFILE,
 	type OrganizationDto,
@@ -13,7 +14,7 @@ import {
 } from "@sinwy/shared";
 import { reconcileInactiveStatus } from "./reconcileStatus";
 import {
-	findMemberRole,
+	findMembership,
 	findOnboardingCompletedAt,
 	findProfile,
 	findStatusForMember,
@@ -79,17 +80,20 @@ export const getCheckoutOrganization = async (
 
 type WriteResult<T> =
 	| { ok: true; data: T }
-	| { ok: false; error: "not-found" | "forbidden" };
+	| { ok: false; error: "not-found" | "forbidden" | "inactive" };
 
-// better-auth stores a member's roles in one comma separated column
 const canManage = (role: string) =>
-	role.split(",").some((r) => r.trim() === "owner" || r.trim() === "admin");
+	parseMemberRoles(role).some((r) => r === "owner" || r === "admin");
 
-/** `null` when allowed, otherwise the reason to refuse. */
+/**
+ * `null` when allowed, otherwise the reason to refuse. Onboarding writes are
+ * for paid organizations only; the funnel activates before the wizard starts.
+ */
 const denyManage = async (userId: string, organizationId: string) => {
-	const role = await findMemberRole(userId, organizationId);
-	if (!role) return "not-found" as const;
-	return canManage(role) ? null : ("forbidden" as const);
+	const membership = await findMembership(userId, organizationId);
+	if (!membership) return "not-found" as const;
+	if (!canManage(membership.role)) return "forbidden" as const;
+	return membership.status === "active" ? null : ("inactive" as const);
 };
 
 const toProfileDto = (
@@ -112,8 +116,8 @@ export const getOrganizationOnboarding = async (
 	organizationId: string,
 ): Promise<OrganizationOnboardingDto | null> => {
 	// null → org doesn't exist or caller isn't a member (both read as not-found)
-	const role = await findMemberRole(userId, organizationId);
-	if (!role) return null;
+	const membership = await findMembership(userId, organizationId);
+	if (!membership) return null;
 
 	const [completedAt, profile] = await Promise.all([
 		findOnboardingCompletedAt(organizationId),

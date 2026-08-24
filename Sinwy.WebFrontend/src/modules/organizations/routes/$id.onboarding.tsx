@@ -38,7 +38,8 @@ export const Route = createFileRoute("/organizations/$id/onboarding")({
 		const { data: organization, error } =
 			await authClient.organization.setActive({ organizationId: params.id });
 		if (error || !organization) throw redirect({ to: "/" });
-		if (organization.status === "inactive")
+		// fail closed: anything but a confirmed active org goes back to the funnel
+		if (organization.status !== "active")
 			throw redirect({
 				to: "/organizations/$id/plan",
 				params: { id: params.id },
@@ -160,7 +161,7 @@ function OnboardingPage() {
 		return (
 			<PageShell
 				title="We couldn't load your setup"
-				description={`${error}. Your organization is active, this page just couldn't reach the server.`}
+				description={`${error}. Try again, or head to your dashboard and come back later.`}
 			>
 				<div className="flex gap-2">
 					<Button variant="outline" onClick={() => void router.invalidate()}>
@@ -191,7 +192,8 @@ function OnboardingPage() {
 			const done = await api(`/organizations/${id}/onboarding/complete`, {
 				method: "POST",
 			});
-			if (!done.isSuccess) return done.message;
+			if (!done.isSuccess)
+				return `Your profile was saved, but the step couldn't be marked done (${done.message}). Submitting again is safe.`;
 			await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
 		}
 

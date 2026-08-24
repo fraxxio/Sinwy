@@ -1,4 +1,5 @@
 import db from "@db";
+import { memberHasRole } from "@db/memberRole";
 import { member, organization } from "@db/schema/organizationSchema";
 import { and, asc, eq, isNull } from "drizzle-orm";
 
@@ -15,7 +16,7 @@ export const findUnpaidOwnedOrganization = async (userId: string) => {
 		.where(
 			and(
 				eq(member.userId, userId),
-				eq(member.role, "owner"),
+				memberHasRole("owner"),
 				eq(organization.status, "inactive"),
 			),
 		)
@@ -33,7 +34,7 @@ export const findUnfinishedOnboardingOrganization = async (userId: string) => {
 		.where(
 			and(
 				eq(member.userId, userId),
-				eq(member.role, "owner"),
+				memberHasRole("owner"),
 				eq(organization.status, "active"),
 				isNull(organization.onboardingCompletedAt),
 			),

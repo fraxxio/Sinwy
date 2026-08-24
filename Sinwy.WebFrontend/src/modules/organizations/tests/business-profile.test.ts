@@ -1,6 +1,9 @@
 import { expect, it } from "bun:test";
-import { COUNTRY_OPTIONS } from "@sinwy/shared";
-import { businessProfileSchema } from "../components/BusinessProfileForm";
+import {
+	COUNTRY_CODES,
+	COUNTRY_OPTIONS,
+	organizationProfileSchema,
+} from "@sinwy/shared";
 
 const valid = {
 	tagline: "Sharp cuts, no waiting",
@@ -13,15 +16,21 @@ const valid = {
 };
 
 const errorFor = (field: keyof typeof valid, value: string) => {
-	const result = businessProfileSchema.safeParse({ ...valid, [field]: value });
-	return result.success
-		? null
-		: (result.error.issues.find((issue) => issue.path[0] === field)?.message ??
-				null);
+	const result = organizationProfileSchema.safeParse({
+		...valid,
+		[field]: value,
+	});
+	if (result.success) return null;
+	const stray = result.error.issues.find((issue) => issue.path[0] !== field);
+	if (stray)
+		throw new Error(
+			`unexpected issue on ${String(stray.path[0])}: ${stray.message}`,
+		);
+	return result.error.issues[0]?.message ?? null;
 };
 
 it("accepts a filled in profile", () => {
-	expect(businessProfileSchema.safeParse(valid).success).toBe(true);
+	expect(organizationProfileSchema.safeParse(valid).success).toBe(true);
 });
 
 it.each([
@@ -80,6 +89,14 @@ it("only asks that a country was picked, the API checks which", () => {
 it("checks the shape of a website when one is given", () => {
 	expect(errorFor("website", "acme.dev")).toBeNull();
 	expect(errorFor("website", "https://acme.dev/book")).toBeNull();
+	expect(errorFor("website", "sub.domain.co.uk")).toBeNull();
 	expect(errorFor("website", "acme")).toMatch(/valid website/);
 	expect(errorFor("website", "not a website")).toMatch(/valid website/);
+	// junk the old pattern let through: these end up on public pages
+	for (const website of ["a.,,,", 'x.y"onclick=z', "foo.b#$%", "https://"])
+		expect(errorFor("website", website)).toMatch(/valid website/);
+});
+
+it("country list has no duplicate codes", () => {
+	expect(new Set(COUNTRY_CODES).size).toBe(COUNTRY_CODES.length);
 });

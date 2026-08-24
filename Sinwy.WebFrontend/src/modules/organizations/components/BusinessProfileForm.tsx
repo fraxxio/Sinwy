@@ -1,13 +1,11 @@
 import {
 	COUNTRY_OPTIONS,
-	countPhoneDigits,
 	ORGANIZATION_PROFILE_LIMITS as LIMITS,
 	type OrganizationProfileDto,
-	ORGANIZATION_PROFILE_RULES as RULES,
+	organizationProfileSchema,
 } from "@sinwy/shared";
 import { revalidateLogic } from "@tanstack/react-form";
 import { useState } from "react";
-import { z } from "zod";
 import { FieldError } from "#/shared/components/ui/field";
 import { useAppForm } from "#/shared/lib/form";
 
@@ -15,49 +13,6 @@ export type BusinessProfileValues = Record<
 	keyof OrganizationProfileDto,
 	string
 >;
-
-const requiredText = (label: string, max: number) =>
-	z
-		.string()
-		.trim()
-		.min(1, `${label} is required`)
-		.min(
-			RULES.minLength,
-			`${label} needs at least ${RULES.minLength} characters`,
-		)
-		.max(max, `Max ${max} characters`);
-
-export const businessProfileSchema = z.object({
-	tagline: requiredText("Tagline", LIMITS.tagline),
-	description: requiredText("A description", LIMITS.description),
-	email: z
-		.string()
-		.trim()
-		.min(1, "Contact email is required")
-		.max(LIMITS.email, `Max ${LIMITS.email} characters`)
-		.pipe(z.email("Enter a valid email address")),
-	phone: z
-		.string()
-		.trim()
-		.min(1, "Phone number is required")
-		.max(LIMITS.phone, `Max ${LIMITS.phone} characters`)
-		.regex(RULES.phonePattern, "Use digits, spaces and + ( ) - . only")
-		.refine((value) => {
-			const digits = countPhoneDigits(value);
-			return digits >= RULES.phoneMinDigits && digits <= RULES.phoneMaxDigits;
-		}, `Enter ${RULES.phoneMinDigits} to ${RULES.phoneMaxDigits} digits, including the country code`),
-	website: z
-		.string()
-		.trim()
-		.max(LIMITS.website, `Max ${LIMITS.website} characters`)
-		.refine(
-			(value) => !value || RULES.websitePattern.test(value),
-			"Enter a valid website, like example.com",
-		),
-	city: z.string().trim().max(LIMITS.city, `Max ${LIMITS.city} characters`),
-	// picked from a list, so the API is what checks it is a country we know
-	country: z.string().trim().min(1, "Country is required"),
-});
 
 const toFormValues = (
 	profile: OrganizationProfileDto,
@@ -91,7 +46,7 @@ export function BusinessProfileForm({
 		defaultValues: toFormValues(profile),
 		// errors surface under the field on blur or on submit, never mid-typing
 		validationLogic: revalidateLogic({ mode: "change" }),
-		validators: { onDynamic: businessProfileSchema },
+		validators: { onDynamic: organizationProfileSchema },
 		onSubmit: async ({ value }) => {
 			setServerError(await onSubmit(value));
 		},

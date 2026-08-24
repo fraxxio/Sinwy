@@ -14,10 +14,16 @@ import {
 	saveOrganizationProfile,
 } from "./service";
 
-const respondWriteError = (error: "not-found" | "forbidden") =>
-	error === "forbidden"
-		? fail("You don't have permission to change this organization", 403)
-		: fail("Not found", 404);
+const respondWriteError = (error: "not-found" | "forbidden" | "inactive") => {
+	switch (error) {
+		case "forbidden":
+			return fail("You don't have permission to change this organization", 403);
+		case "inactive":
+			return fail("This organization doesn't have an active plan yet", 409);
+		case "not-found":
+			return fail("Not found", 404);
+	}
+};
 
 export const createOrganizationHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);

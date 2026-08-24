@@ -35,6 +35,9 @@
     },
     "Sinwy.Shared": {
       "name": "@sinwy/shared",
+      "dependencies": {
+        "zod": "^4.4.3",
+      },
     },
     "Sinwy.WebFrontend": {
       "name": "@sinwy/webfrontend",
