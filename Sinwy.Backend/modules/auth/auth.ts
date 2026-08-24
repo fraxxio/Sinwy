@@ -121,6 +121,11 @@ export const auth = betterAuth({
 							defaultValue: "other",
 							required: false,
 						},
+						onboardingCompletedAt: {
+							type: "date",
+							required: false,
+							input: false,
+						},
 					},
 				},
 			},

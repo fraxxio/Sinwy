@@ -1,12 +1,29 @@
 import { sessionFrom } from "@authModule";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler } from "@backend/lib/app/types";
-import { createOrganizationBody } from "@backend/modules/organizations/utils";
 import {
+	createOrganizationBody,
+	organizationProfileBody,
+} from "@backend/modules/organizations/utils";
+import {
+	completeOrganizationOnboarding,
 	createOrganization,
 	getCheckoutOrganization,
+	getOrganizationOnboarding,
 	getOrganizationStatus,
+	saveOrganizationProfile,
 } from "./service";
+
+const respondWriteError = (error: "not-found" | "forbidden" | "inactive") => {
+	switch (error) {
+		case "forbidden":
+			return fail("You don't have permission to change this organization", 403);
+		case "inactive":
+			return fail("This organization doesn't have an active plan yet", 409);
+		case "not-found":
+			return fail("Not found", 404);
+	}
+};
 
 export const createOrganizationHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
@@ -42,4 +59,41 @@ export const getCheckoutOrganizationHandler: Handler = async (c) => {
 	if (!result) return fail("Not found", 404);
 
 	return ok(result);
+};
+
+export const getOrganizationOnboardingHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+
+	const { id } = c.req.params as { id: string };
+	const onboarding = await getOrganizationOnboarding(user.id, id);
+	if (!onboarding) return fail("Not found", 404);
+
+	return ok(onboarding);
+};
+
+export const saveOrganizationProfileHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+
+	const { id } = c.req.params as { id: string };
+	const body = organizationProfileBody.safeParse(
+		await c.req.json().catch(() => null),
+	);
+	// the form validates the same rules, so a rejection here is worth naming
+	if (!body.success)
+		return fail(body.error.issues[0]?.message ?? "Invalid body", 400);
+
+	const result = await saveOrganizationProfile(user.id, id, body.data);
+	if (!result.ok) return respondWriteError(result.error);
+
+	return ok(result.data, 200, "Profile saved");
+};
+
+export const completeOrganizationOnboardingHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+
+	const { id } = c.req.params as { id: string };
+	const result = await completeOrganizationOnboarding(user.id, id);
+	if (!result.ok) return respondWriteError(result.error);
+
+	return ok(result.data);
 };

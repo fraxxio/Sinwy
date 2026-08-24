@@ -1,7 +1,10 @@
 {
 	"extends": "../tsconfig.json",
 	"compilerOptions": {
-		"moduleResolution": "bundler"
+		"moduleResolution": "bundler",
+		// shared code runs in the browser and in Bun; DOM covers the common
+		// globals (URL, fetch, …) both provide
+		"lib": ["ESNext", "DOM"]
 	},
 	"include": ["**/*.ts"]
 }

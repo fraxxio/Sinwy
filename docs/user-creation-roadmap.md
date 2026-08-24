@@ -277,13 +277,42 @@ After activation:
 System checks:
 
 ```
-Has organization completed onboarding?
+Is organization.onboardingCompletedAt set?
 ```
 
 If not:
 
-- start onboarding wizard (page builder setup)
-- otherwise go to dashboard
+- start the onboarding wizard
+- otherwise go to the dashboard
+
+## Step 1 — Business profile
+
+The organization's public identity: tagline, description, contact email, phone,
+website, city and country. It lives in `organization_profile` (one row per
+organization) rather than on the organization itself, because it is page and
+discovery content, not billing or identity state.
+
+This step exists before the page builder on purpose: templates prefill from it,
+discovery lists it and public-page SEO reads it, so none of it is rewritten when
+the builder arrives.
+
+Finishing the step stamps `organization.onboardingCompletedAt`; skipping leaves
+it null, so login routing and the resume prompt keep offering the wizard. The
+page stays reachable afterwards and doubles as the edit screen until settings
+exist.
+
+## Later steps
+
+Template selection (seeded by the industry captured at creation) and plugin
+choice (bookings / payments / calendar) join the wizard once there is something
+real behind them, since a stored preference that switches nothing on is worse
+than not asking.
+
+Known rewrite when they land: the single `organization.onboardingCompletedAt`
+timestamp can only say "step 1 done", so completion becomes per-step — the
+column, `OrganizationOnboardingDto`, the resume-flag precedence and the
+completion endpoint all change, and already-stamped values must be read as
+"completed the business profile", not "completed everything".
 
 ---
 

@@ -1,6 +1,8 @@
 import {
+	COUNTRY_CODES,
 	DEFAULT_ORGANIZATION_INDUSTRY,
 	ORGANIZATION_INDUSTRIES,
+	organizationProfileSchema,
 } from "@sinwy/shared";
 import z from "zod";
 
@@ -60,3 +62,26 @@ export const createOrganizationBody = z.object({
 		.enum(ORGANIZATION_INDUSTRIES)
 		.default(DEFAULT_ORGANIZATION_INDUSTRY),
 });
+
+const optional = <T extends z.ZodType<string, string>>(base: T) =>
+	z
+		.string()
+		.nullish()
+		.transform((value) => value ?? "")
+		.pipe(base);
+
+/** Never trust the form: the shared rules plus canonicalization decide here. */
+export const organizationProfileBody = organizationProfileSchema.extend({
+	// optional, but people type "example.com", so store something an anchor
+	// can point at
+	website: optional(organizationProfileSchema.shape.website).transform(
+		(value) =>
+			value ? (/^https?:\/\//i.test(value) ? value : `https://${value}`) : null,
+	),
+	city: optional(organizationProfileSchema.shape.city).transform(
+		(value) => value || null,
+	),
+	country: z.enum(COUNTRY_CODES, "Select a country from the list"),
+});
+
+export type OrganizationProfileInput = z.infer<typeof organizationProfileBody>;

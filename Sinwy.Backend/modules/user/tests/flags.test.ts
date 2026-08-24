@@ -84,7 +84,13 @@ const createOrg = async (
 		status,
 		role = "owner",
 		createdAt = new Date(),
-	}: { status: "active" | "inactive"; role?: string; createdAt?: Date },
+		onboardingCompletedAt = null,
+	}: {
+		status: "active" | "inactive";
+		role?: string;
+		createdAt?: Date;
+		onboardingCompletedAt?: Date | null;
+	},
 ) => {
 	const id = `org_flags_${++seq}`;
 	await db.insert(organization).values({
@@ -93,6 +99,7 @@ const createOrg = async (
 		slug: id,
 		status,
 		createdAt,
+		onboardingCompletedAt,
 	});
 	await db.insert(member).values({
 		id: `member_${id}`,
@@ -131,15 +138,45 @@ test("owner of an inactive organization → resume at select-plan", async () => 
 	});
 });
 
-test("owner of an active organization → no flags raised", async () => {
+test("owner of a fully set up organization → no flags raised", async () => {
 	const { userId, cookie } = await createUserWithSession();
-	await createOrg(userId, { status: "active" });
+	await createOrg(userId, {
+		status: "active",
+		onboardingCompletedAt: new Date(),
+	});
+	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
+});
+
+test("owner of an active organization mid-setup → resume at business-profile", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const orgId = await createOrg(userId, { status: "active" });
+	expect(await getFlags(cookie)).toEqual({
+		unfinishedOnboarding: { step: "business-profile", organizationId: orgId },
+	});
+});
+
+test("owner holding several roles in one column → still prompted", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	// better-auth stores multi-role membership comma separated
+	const orgId = await createOrg(userId, {
+		status: "inactive",
+		role: "owner,admin",
+	});
+	expect(await getFlags(cookie)).toEqual({
+		unfinishedOnboarding: { step: "select-plan", organizationId: orgId },
+	});
+});
+
+test("non-owner member of an active org mid-setup → not prompted", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, { status: "active", role: "member" });
 	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
 });
 
 test("active org alongside an unpaid one → still surfaces the unpaid one", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	await createOrg(userId, { status: "active" });
+	// paying comes before finishing setup, even though both are pending
 	const unpaid = await createOrg(userId, { status: "inactive" });
 	expect(await getFlags(cookie)).toEqual({
 		unfinishedOnboarding: { step: "select-plan", organizationId: unpaid },

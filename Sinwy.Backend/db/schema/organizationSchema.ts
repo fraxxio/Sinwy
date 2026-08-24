@@ -16,12 +16,27 @@ export const organization = pgTable(
 		slug: text("slug").notNull().unique(),
 		status: text("status").notNull().default("inactive"),
 		industry: text("industry").notNull().default("other"),
+		onboardingCompletedAt: timestamp("onboarding_completed_at"),
 		logo: text("logo"),
 		createdAt: timestamp("created_at").notNull(),
 		metadata: text("metadata"),
 	},
 	(table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
 );
+
+export const organizationProfile = pgTable("organization_profile", {
+	organizationId: text("organization_id")
+		.primaryKey()
+		.references(() => organization.id, { onDelete: "cascade" }),
+	tagline: text("tagline"),
+	description: text("description"),
+	email: text("email"),
+	phone: text("phone"),
+	website: text("website"),
+	city: text("city"),
+	country: text("country"),
+	updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 
 export const member = pgTable(
 	"member",
@@ -64,10 +79,27 @@ export const invitation = pgTable(
 	],
 );
 
-export const organizationRelations = relations(organization, ({ many }) => ({
-	members: many(member),
-	invitations: many(invitation),
-}));
+export const organizationRelations = relations(
+	organization,
+	({ many, one }) => ({
+		members: many(member),
+		invitations: many(invitation),
+		profile: one(organizationProfile, {
+			fields: [organization.id],
+			references: [organizationProfile.organizationId],
+		}),
+	}),
+);
+
+export const organizationProfileRelations = relations(
+	organizationProfile,
+	({ one }) => ({
+		organization: one(organization, {
+			fields: [organizationProfile.organizationId],
+			references: [organization.id],
+		}),
+	}),
+);
 
 export const memberRelations = relations(member, ({ one }) => ({
 	organization: one(organization, {

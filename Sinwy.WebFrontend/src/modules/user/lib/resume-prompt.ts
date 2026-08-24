@@ -1,6 +1,6 @@
 import {
 	FUNNEL_STEP_ORDER,
-	FunnelStep,
+	OnboardingStep,
 	type PostLoginFlags,
 	type UnfinishedOnboarding,
 } from "@sinwy/shared";
@@ -36,12 +36,20 @@ export function shouldPromptResume(
 
 export function resumePrompt(unfinished: UnfinishedOnboarding) {
 	switch (unfinished.step) {
-		case FunnelStep.Plan:
+		case OnboardingStep.Plan:
 			return {
 				title: "Finish setting up your organization",
 				description: "Pick a plan to activate it.",
 				action: "Choose a plan",
 				to: FUNNEL_STEPS[unfinished.step].to,
+				params: { id: unfinished.organizationId },
+			} as const;
+		case OnboardingStep.Profile:
+			return {
+				title: "Your organization isn't set up yet",
+				description: "Add your business details so customers know who you are.",
+				action: "Finish setup",
+				to: "/organizations/$id/onboarding",
 				params: { id: unfinished.organizationId },
 			} as const;
 	}
