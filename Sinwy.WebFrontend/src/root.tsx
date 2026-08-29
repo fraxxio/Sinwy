@@ -61,11 +61,11 @@ function RouteShell({ children }: { children: React.ReactNode }) {
 	if (hasOwnAppShell) return children;
 
 	return (
-		<>
+		<div className="flex min-h-svh flex-col">
 			<Header />
-			{children}
+			<div className="flex-1">{children}</div>
 			<Footer />
-		</>
+		</div>
 	);
 }
 

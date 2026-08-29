@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { authClient } from "#/modules/auth/lib/auth-client.ts";
+import NavLinks from "#/shared/components/NavLinks.tsx";
 import { Button } from "#/shared/components/ui/button.tsx";
 import {
 	DropdownMenu,
@@ -25,47 +26,11 @@ import { Separator } from "#/shared/components/ui/separator.tsx";
 import SinwyLogo from "./SinwyLogo.tsx";
 import ThemeToggle from "./ThemeToggle.tsx";
 
-const NAV_ITEMS = [
-	{ label: "Products", href: "#products" },
-	{ label: "Solutions", href: "#solutions" },
-	{ label: "About us", to: "/about" },
-	{ label: "Pricing", href: "#pricing" },
-] as const;
-
 const ACCOUNT_LINKS = [
 	{ label: "My bookings", href: "/account/bookings", icon: CalendarDays },
 	{ label: "Payments", href: "/account/payments", icon: CreditCard },
 	{ label: "Profile settings", href: "/account/settings", icon: Settings },
 ] as const;
-
-type NavLinksProps = {
-	linkClassName: string;
-	onNavigate?: () => void;
-};
-
-const NavLinks = ({ linkClassName, onNavigate }: NavLinksProps) =>
-	NAV_ITEMS.map((item) =>
-		"to" in item ? (
-			<Link
-				key={item.label}
-				to={item.to}
-				className={linkClassName}
-				activeProps={{ className: `${linkClassName} is-active` }}
-				onClick={onNavigate}
-			>
-				{item.label}
-			</Link>
-		) : (
-			<a
-				key={item.label}
-				href={item.href}
-				className={linkClassName}
-				onClick={onNavigate}
-			>
-				{item.label}
-			</a>
-		),
-	);
 
 type UserMenuProps = {
 	name: string;
