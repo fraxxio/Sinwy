@@ -404,6 +404,16 @@
 /* Material utilities                                                  */
 /* ------------------------------------------------------------------ */
 
+@utility text-link {
+	color: var(--primary);
+	cursor: pointer;
+
+	&:hover {
+		text-decoration-line: underline;
+		text-underline-offset: 2px;
+	}
+}
+
 /* Standard glass: floating panels, dropdowns, popovers, command palette */
 @utility glass {
 	background: var(--glass-bg);
@@ -636,17 +646,6 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
-a:not([data-slot="button"]) {
-	color: var(--lagoon-deep);
-	text-decoration-color: rgba(50, 143, 151, 0.4);
-	text-decoration-thickness: 1px;
-	text-underline-offset: 2px;
-}
-
-a:not([data-slot="button"]):hover {
-	color: #246f76;
-}
-
 @layer base {
 	* {
 		@apply border-border outline-ring/50;
@@ -654,6 +653,7 @@ a:not([data-slot="button"]):hover {
 	body {
 		@apply bg-background text-foreground;
 	}
+	a,
 	button:not(:disabled),
 	[role="button"]:not(:disabled) {
 		cursor: pointer;

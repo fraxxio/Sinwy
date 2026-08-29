@@ -1,8 +1,27 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Menu, X } from "lucide-react";
+import {
+	CalendarDays,
+	CreditCard,
+	LayoutDashboard,
+	LogOut,
+	Menu,
+	Settings,
+	User,
+	X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { authClient } from "#/modules/auth/lib/auth-client.ts";
 import { Button } from "#/shared/components/ui/button.tsx";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuGroup,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "#/shared/components/ui/dropdown-menu.tsx";
+import { Separator } from "#/shared/components/ui/separator.tsx";
 import SinwyLogo from "./SinwyLogo.tsx";
 import ThemeToggle from "./ThemeToggle.tsx";
 
@@ -11,6 +30,12 @@ const NAV_ITEMS = [
 	{ label: "Solutions", href: "#solutions" },
 	{ label: "About us", to: "/about" },
 	{ label: "Pricing", href: "#pricing" },
+] as const;
+
+const ACCOUNT_LINKS = [
+	{ label: "My bookings", href: "/account/bookings", icon: CalendarDays },
+	{ label: "Payments", href: "/account/payments", icon: CreditCard },
+	{ label: "Profile settings", href: "/account/settings", icon: Settings },
 ] as const;
 
 type NavLinksProps = {
@@ -41,6 +66,118 @@ const NavLinks = ({ linkClassName, onNavigate }: NavLinksProps) =>
 			</a>
 		),
 	);
+
+type UserMenuProps = {
+	name: string;
+	email: string;
+	onSignOut: () => void;
+	onNavigate: () => void;
+};
+
+const UserMenu = ({ name, email, onSignOut, onNavigate }: UserMenuProps) => {
+	const { data: organizations } = authClient.useListOrganizations();
+
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger
+				render={<Button variant="secondary" className="min-w-0" />}
+			>
+				<User />
+				<span className="truncate">{name}</span>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" sideOffset={8} className="min-w-56">
+				<DropdownMenuGroup>
+					<DropdownMenuLabel className="p-0 font-normal">
+						<div className="grid px-3 py-2.5 text-left leading-tight">
+							<span className="truncate text-sm font-medium text-foreground">
+								{name}
+							</span>
+							<span className="truncate text-xs">{email}</span>
+						</div>
+					</DropdownMenuLabel>
+				</DropdownMenuGroup>
+				<DropdownMenuSeparator />
+				{organizations?.length ? (
+					<>
+						<DropdownMenuItem
+							render={<Link to="/auth/postlogin" />}
+							onClick={onNavigate}
+						>
+							<LayoutDashboard />
+							Organization dashboard
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
+					</>
+				) : null}
+				<DropdownMenuGroup>
+					{ACCOUNT_LINKS.map((item) => (
+						<DropdownMenuItem
+							key={item.label}
+							render={
+								<a href={item.href}>
+									<item.icon />
+									{item.label}
+								</a>
+							}
+							onClick={onNavigate}
+						/>
+					))}
+				</DropdownMenuGroup>
+				<DropdownMenuSeparator />
+				<DropdownMenuItem onClick={onSignOut}>
+					<LogOut />
+					Log out
+				</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+};
+
+const MobileUserMenu = ({
+	name,
+	email,
+	onSignOut,
+	onNavigate,
+}: UserMenuProps) => {
+	const { data: organizations } = authClient.useListOrganizations();
+	const itemClassName =
+		"nav-link flex items-center gap-3 rounded-xl px-4 py-3 text-lg text-foreground";
+
+	return (
+		<>
+			<Separator className="my-2" />
+			<div className="px-4 leading-tight">
+				<p className="font-medium">{name}</p>
+				<p className="text-sm text-muted-foreground">{email}</p>
+			</div>
+			{organizations?.length ? (
+				<Link
+					to="/auth/postlogin"
+					className={itemClassName}
+					onClick={onNavigate}
+				>
+					<LayoutDashboard className="size-5" />
+					Organization dashboard
+				</Link>
+			) : null}
+			{ACCOUNT_LINKS.map((item) => (
+				<a
+					key={item.label}
+					href={item.href}
+					className={itemClassName}
+					onClick={onNavigate}
+				>
+					<item.icon className="size-5" />
+					{item.label}
+				</a>
+			))}
+			<button type="button" className={itemClassName} onClick={onSignOut}>
+				<LogOut className="size-5" />
+				Log out
+			</button>
+		</>
+	);
+};
 
 const Header = () => {
 	const navigate = useNavigate();
@@ -81,14 +218,12 @@ const Header = () => {
 	}
 
 	const authActions = session ? (
-		<>
-			<span className="hidden text-sm text-muted-foreground sm:inline">
-				{session.user.name || session.user.email}
-			</span>
-			<Button variant="outline" onClick={signOut}>
-				Sign out
-			</Button>
-		</>
+		<UserMenu
+			name={session.user.name || session.user.email}
+			email={session.user.email}
+			onSignOut={signOut}
+			onNavigate={() => setIsMenuOpen(false)}
+		/>
 	) : (
 		<>
 			<Button
@@ -157,9 +292,18 @@ const Header = () => {
 							linkClassName="nav-link rounded-xl px-4 py-3 text-lg"
 							onNavigate={() => setIsMenuOpen(false)}
 						/>
-						<div className="mt-4 flex flex-col gap-2 [&>button]:h-11 [&>a]:h-11">
-							{authActions}
-						</div>
+						{session ? (
+							<MobileUserMenu
+								name={session.user.name || session.user.email}
+								email={session.user.email}
+								onSignOut={signOut}
+								onNavigate={() => setIsMenuOpen(false)}
+							/>
+						) : (
+							<div className="mt-4 flex flex-col gap-2 [&>button]:h-11 [&>a]:h-11">
+								{authActions}
+							</div>
+						)}
 					</div>
 				</div>
 			) : null}
