@@ -1,12 +1,8 @@
-import { linkOptions } from "@tanstack/react-router";
-import { LayoutDashboardIcon } from "lucide-react";
 import type { ComponentProps } from "react";
+import { organizationNav } from "#/modules/org-dashboard/lib/nav";
 import { NavUser } from "#/shared/components/shell/NavUser";
 import { OrganizationSwitcher } from "#/shared/components/shell/OrganizationSwitcher";
-import {
-	SidebarNav,
-	type SidebarNavItem,
-} from "#/shared/components/shell/SidebarNav";
+import { SidebarNav } from "#/shared/components/shell/SidebarNav";
 import {
 	Sidebar,
 	SidebarContent,
@@ -15,18 +11,7 @@ import {
 	SidebarRail,
 } from "#/shared/components/ui/sidebar";
 
-const navItems = (organizationSlug: string): SidebarNavItem[] => [
-	{
-		title: "Home",
-		icon: <LayoutDashboardIcon />,
-		link: linkOptions({
-			to: "/$organizationSlug/home",
-			params: { organizationSlug },
-		}),
-	},
-];
-
-export function AppSidebar({
+export function OrganizationSidebar({
 	organizationSlug,
 	...props
 }: ComponentProps<typeof Sidebar> & {
@@ -38,7 +23,7 @@ export function AppSidebar({
 				<OrganizationSwitcher activeOrganizationSlug={organizationSlug} />
 			</SidebarHeader>
 			<SidebarContent>
-				<SidebarNav label="Manage" items={navItems(organizationSlug)} />
+				<SidebarNav label="Manage" items={organizationNav(organizationSlug)} />
 			</SidebarContent>
 			<SidebarFooter>
 				<NavUser />

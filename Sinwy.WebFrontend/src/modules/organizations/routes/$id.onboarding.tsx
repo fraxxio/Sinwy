@@ -177,7 +177,7 @@ function OnboardingPage() {
 
 	const goToDashboard = () =>
 		navigate({
-			to: "/$organizationSlug/home",
+			to: "/$organizationSlug",
 			params: { organizationSlug: organization.slug },
 		});
 
@@ -264,10 +264,7 @@ function DashboardButton({ slug, label }: { slug: string; label: string }) {
 	return (
 		<Button
 			render={
-				<Link
-					to="/$organizationSlug/home"
-					params={{ organizationSlug: slug }}
-				/>
+				<Link to="/$organizationSlug" params={{ organizationSlug: slug }} />
 			}
 		>
 			{label}

@@ -1,4 +1,4 @@
-# Phase 0 — Two shells and real navigation (steps 1–3 done)
+# Phase 0 — Two shells and real navigation (steps 1–6 done)
 
 Implementation plan for [issue #28](https://github.com/fraxxio/Sinwy/issues/28).
 Companion: the route map and mode-differentiation rules in the

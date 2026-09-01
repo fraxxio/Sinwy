@@ -1,5 +1,5 @@
 import type { OrganizationStatus, OrganizationSummary } from "@sinwy/shared";
-import { Link, type LinkOptions } from "@tanstack/react-router";
+import { Link, linkOptions } from "@tanstack/react-router";
 import {
 	Building2Icon,
 	ChevronsUpDownIcon,
@@ -23,9 +23,7 @@ import {
 	useSidebar,
 } from "#/shared/components/ui/sidebar";
 
-// Not typeable until the account-dashboard module registers /account in the
-// route tree; drop the cast once it lands.
-const personalAccountLink = { to: "/account" } as unknown as LinkOptions;
+const personalAccountLink = linkOptions({ to: "/account" });
 
 export function OrganizationSwitcher({
 	activeOrganizationSlug,
