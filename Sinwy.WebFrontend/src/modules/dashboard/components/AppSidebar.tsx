@@ -1,19 +1,12 @@
-import {
-	BookOpenIcon,
-	CalendarCheckIcon,
-	FrameIcon,
-	GalleryVerticalEndIcon,
-	LayoutDashboardIcon,
-	MapIcon,
-	PieChartIcon,
-	Settings2Icon,
-	UsersIcon,
-} from "lucide-react";
+import { linkOptions } from "@tanstack/react-router";
+import { GalleryVerticalEndIcon, LayoutDashboardIcon } from "lucide-react";
 import type { ComponentProps } from "react";
-import { NavMain } from "#/modules/dashboard/components/NavMain";
-import { NavProjects } from "#/modules/dashboard/components/NavProjects";
-import { NavUser } from "#/modules/dashboard/components/NavUser";
 import { TeamSwitcher } from "#/modules/dashboard/components/TeamSwitcher";
+import { NavUser } from "#/shared/components/shell/NavUser";
+import {
+	SidebarNav,
+	type SidebarNavItem,
+} from "#/shared/components/shell/SidebarNav";
 import {
 	Sidebar,
 	SidebarContent,
@@ -22,66 +15,25 @@ import {
 	SidebarRail,
 } from "#/shared/components/ui/sidebar";
 
-const navMain = [
+const navItems = (organizationSlug: string): SidebarNavItem[] => [
 	{
-		title: "Overview",
-		url: "#",
+		title: "Home",
 		icon: <LayoutDashboardIcon />,
-		isActive: true,
-		items: [
-			{ title: "Home", url: "#" },
-			{ title: "Activity", url: "#" },
-		],
+		link: linkOptions({
+			to: "/$organizationSlug/home",
+			params: { organizationSlug },
+		}),
 	},
-	{
-		title: "Bookings",
-		url: "#",
-		icon: <CalendarCheckIcon />,
-		items: [
-			{ title: "Calendar", url: "#" },
-			{ title: "Requests", url: "#" },
-		],
-	},
-	{
-		title: "Customers",
-		url: "#",
-		icon: <UsersIcon />,
-		items: [
-			{ title: "All customers", url: "#" },
-			{ title: "Segments", url: "#" },
-		],
-	},
-	{
-		title: "Documentation",
-		url: "#",
-		icon: <BookOpenIcon />,
-		items: [
-			{ title: "Introduction", url: "#" },
-			{ title: "Get started", url: "#" },
-		],
-	},
-	{
-		title: "Settings",
-		url: "#",
-		icon: <Settings2Icon />,
-		items: [
-			{ title: "General", url: "#" },
-			{ title: "Team", url: "#" },
-			{ title: "Billing", url: "#" },
-		],
-	},
-];
-
-const projects = [
-	{ name: "Design Engineering", url: "#", icon: <FrameIcon /> },
-	{ name: "Sales & Marketing", url: "#", icon: <PieChartIcon /> },
-	{ name: "Travel", url: "#", icon: <MapIcon /> },
 ];
 
 export function AppSidebar({
 	organizationName,
+	organizationSlug,
 	...props
-}: ComponentProps<typeof Sidebar> & { organizationName: string }) {
+}: ComponentProps<typeof Sidebar> & {
+	organizationName: string;
+	organizationSlug: string;
+}) {
 	return (
 		<Sidebar collapsible="icon" {...props}>
 			<SidebarHeader>
@@ -96,8 +48,7 @@ export function AppSidebar({
 				/>
 			</SidebarHeader>
 			<SidebarContent>
-				<NavMain items={navMain} />
-				<NavProjects projects={projects} />
+				<SidebarNav label="Manage" items={navItems(organizationSlug)} />
 			</SidebarContent>
 			<SidebarFooter>
 				<NavUser />

@@ -1,12 +1,8 @@
-import {
-	createFileRoute,
-	Outlet,
-	redirect,
-	useMatches,
-} from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { authClient } from "#/modules/auth/lib/auth-client";
 import { requireAuth } from "#/modules/auth/lib/protected-route";
-import { DashboardLayout } from "#/modules/dashboard/components/DashboardLayout";
+import { AppSidebar } from "#/modules/dashboard/components/AppSidebar";
+import { AppShell } from "#/shared/components/shell/AppShell";
 
 export const Route = createFileRoute("/$organizationSlug/_shell")({
 	ssr: false,
@@ -24,19 +20,18 @@ export const Route = createFileRoute("/$organizationSlug/_shell")({
 
 function DashboardShell() {
 	const { organization } = Route.useRouteContext();
-	const matches = useMatches();
-	const breadcrumbs = matches.flatMap((match) =>
-		match.staticData.crumb
-			? [{ label: match.staticData.crumb, href: match.pathname }]
-			: [],
-	);
 
 	return (
-		<DashboardLayout
-			organizationName={organization.name}
-			breadcrumbs={breadcrumbs}
+		<AppShell
+			sidebar={
+				<AppSidebar
+					organizationName={organization.name}
+					organizationSlug={organization.slug}
+				/>
+			}
+			rootCrumb={{ label: organization.name, href: `/${organization.slug}` }}
 		>
 			<Outlet />
-		</DashboardLayout>
+		</AppShell>
 	);
 }
