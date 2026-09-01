@@ -23,12 +23,7 @@ function DashboardShell() {
 
 	return (
 		<AppShell
-			sidebar={
-				<AppSidebar
-					organizationName={organization.name}
-					organizationSlug={organization.slug}
-				/>
-			}
+			sidebar={<AppSidebar organizationSlug={organization.slug} />}
 			rootCrumb={{ label: organization.name, href: `/${organization.slug}` }}
 		>
 			<Outlet />

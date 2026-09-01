@@ -1,8 +1,8 @@
 import { linkOptions } from "@tanstack/react-router";
-import { GalleryVerticalEndIcon, LayoutDashboardIcon } from "lucide-react";
+import { LayoutDashboardIcon } from "lucide-react";
 import type { ComponentProps } from "react";
-import { TeamSwitcher } from "#/modules/dashboard/components/TeamSwitcher";
 import { NavUser } from "#/shared/components/shell/NavUser";
+import { OrganizationSwitcher } from "#/shared/components/shell/OrganizationSwitcher";
 import {
 	SidebarNav,
 	type SidebarNavItem,
@@ -27,25 +27,15 @@ const navItems = (organizationSlug: string): SidebarNavItem[] => [
 ];
 
 export function AppSidebar({
-	organizationName,
 	organizationSlug,
 	...props
 }: ComponentProps<typeof Sidebar> & {
-	organizationName: string;
 	organizationSlug: string;
 }) {
 	return (
 		<Sidebar collapsible="icon" {...props}>
 			<SidebarHeader>
-				<TeamSwitcher
-					teams={[
-						{
-							name: organizationName,
-							logo: <GalleryVerticalEndIcon />,
-							plan: "Organization",
-						},
-					]}
-				/>
+				<OrganizationSwitcher activeOrganizationSlug={organizationSlug} />
 			</SidebarHeader>
 			<SidebarContent>
 				<SidebarNav label="Manage" items={navItems(organizationSlug)} />
