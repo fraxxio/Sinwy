@@ -2,7 +2,7 @@ import { formOptions, revalidateLogic } from "@tanstack/react-form";
 import { BASE_ERROR_CODES } from "better-auth";
 import { useState } from "react";
 import z from "zod";
-import { authClient } from "#/modules/auth/lib/auth-client";
+import { authClient } from "#/shared/lib/auth/auth-client";
 import { useAppForm } from "#/shared/lib/form";
 
 const loginSchema = z.object({

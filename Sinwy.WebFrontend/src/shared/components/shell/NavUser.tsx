@@ -7,7 +7,7 @@ import {
 	LogOutIcon,
 	SparklesIcon,
 } from "lucide-react";
-import { authClient } from "#/modules/auth/lib/auth-client";
+import { displayName } from "#/shared/components/shell/display-name";
 import {
 	Avatar,
 	AvatarFallback,
@@ -28,6 +28,7 @@ import {
 	SidebarMenuItem,
 	useSidebar,
 } from "#/shared/components/ui/sidebar";
+import { authClient } from "#/shared/lib/auth/auth-client";
 
 const initials = (name: string) =>
 	name
@@ -42,7 +43,7 @@ export function NavUser() {
 	const navigate = useNavigate();
 	const { data: session } = authClient.useSession();
 
-	const name = session?.user.name || session?.user.email || "";
+	const name = displayName(session?.user);
 	const email = session?.user.email ?? "";
 	const avatar = session?.user.image ?? undefined;
 

@@ -1,4 +1,4 @@
-import { useMatches } from "@tanstack/react-router";
+import { Link, type LinkOptions, useMatches } from "@tanstack/react-router";
 import { Fragment, type ReactNode } from "react";
 import {
 	Breadcrumb,
@@ -15,7 +15,7 @@ import {
 	SidebarTrigger,
 } from "#/shared/components/ui/sidebar";
 
-export type Crumb = { label: string; href: string };
+export type Crumb = { label: string; link: LinkOptions };
 
 /** SidebarProvider persists its state to this cookie but never reads it back. */
 const readSidebarCookie = () =>
@@ -28,8 +28,10 @@ const readSidebarCookie = () =>
  * sidebar keeps its open/collapsed state across navigations.
  *
  * The trail starts at `rootCrumb` (runtime data, e.g. the organization name)
- * followed by every matched route that declares `staticData.crumb` — so index
- * routes must not declare one, or the root would appear twice.
+ * followed by every matched route that declares `staticData.crumb`. Sections
+ * with child pages declare the crumb on a layout route (`_shell.bookings.tsx`)
+ * so detail pages inherit it; their index routes must not declare one, or the
+ * section (or root) crumb would appear twice.
  */
 export function AppShell({
 	sidebar,
@@ -45,7 +47,12 @@ export function AppShell({
 		rootCrumb,
 		...matches.flatMap((match) =>
 			match.staticData.crumb
-				? [{ label: match.staticData.crumb, href: match.pathname }]
+				? [
+						{
+							label: match.staticData.crumb,
+							link: { to: match.fullPath, params: match.params } as LinkOptions,
+						},
+					]
 				: [],
 		),
 	];
@@ -66,7 +73,7 @@ export function AppShell({
 								{breadcrumbs.map((crumb, index) => {
 									const isLast = index === breadcrumbs.length - 1;
 									return (
-										<Fragment key={crumb.label}>
+										<Fragment key={String(crumb.link.to)}>
 											{index > 0 && (
 												<BreadcrumbSeparator className="hidden md:block" />
 											)}
@@ -76,7 +83,7 @@ export function AppShell({
 												{isLast ? (
 													<BreadcrumbPage>{crumb.label}</BreadcrumbPage>
 												) : (
-													<BreadcrumbLink href={crumb.href}>
+													<BreadcrumbLink render={<Link {...crumb.link} />}>
 														{crumb.label}
 													</BreadcrumbLink>
 												)}

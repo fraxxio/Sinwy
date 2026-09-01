@@ -1,5 +1,5 @@
 import { redirect } from "@tanstack/react-router";
-import { authClient } from "#/modules/auth/lib/auth-client";
+import { authClient } from "#/shared/lib/auth/auth-client";
 
 /**
  * Guard: throws a redirect to login if there's no session, else returns it.

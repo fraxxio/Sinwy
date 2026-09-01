@@ -1,4 +1,4 @@
-import type { OrganizationStatus, OrganizationSummary } from "@sinwy/shared";
+import { type OrganizationSummary, toOrganizationStatus } from "@sinwy/shared";
 import { Link, linkOptions } from "@tanstack/react-router";
 import {
 	Building2Icon,
@@ -6,7 +6,7 @@ import {
 	PlusIcon,
 	UserIcon,
 } from "lucide-react";
-import { authClient } from "#/modules/auth/lib/auth-client";
+import { displayName } from "#/shared/components/shell/display-name";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -22,6 +22,7 @@ import {
 	SidebarMenuItem,
 	useSidebar,
 } from "#/shared/components/ui/sidebar";
+import { authClient } from "#/shared/lib/auth/auth-client";
 
 const personalAccountLink = linkOptions({ to: "/account" });
 
@@ -38,7 +39,7 @@ export function OrganizationSwitcher({
 		id: org.id,
 		name: org.name,
 		slug: org.slug,
-		status: org.status as OrganizationStatus,
+		status: toOrganizationStatus(org.status),
 	}));
 	const activeOrganization = organizations.find(
 		(org) => org.slug === activeOrganizationSlug,
@@ -50,7 +51,7 @@ export function OrganizationSwitcher({
 		activeOrganizationSlug !== null && (isPending || !!activeOrganization);
 	const label = inOrganization
 		? (activeOrganization?.name ?? activeOrganizationSlug)
-		: session?.user.name || session?.user.email || "";
+		: displayName(session?.user);
 	const caption = inOrganization ? "Organization" : "Personal account";
 
 	return (

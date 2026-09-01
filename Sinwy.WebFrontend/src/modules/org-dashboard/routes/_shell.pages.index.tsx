@@ -4,7 +4,6 @@ import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
 
 export const Route = createFileRoute("/$organizationSlug/_shell/pages/")({
-	staticData: { crumb: "Pages" },
 	component: PagesPage,
 });
 

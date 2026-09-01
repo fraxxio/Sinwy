@@ -10,7 +10,6 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { authClient } from "#/modules/auth/lib/auth-client.ts";
 import NavLinks from "#/shared/components/NavLinks.tsx";
 import { Button } from "#/shared/components/ui/button.tsx";
 import {
@@ -23,6 +22,7 @@ import {
 	DropdownMenuTrigger,
 } from "#/shared/components/ui/dropdown-menu.tsx";
 import { Separator } from "#/shared/components/ui/separator.tsx";
+import { authClient } from "#/shared/lib/auth/auth-client.ts";
 import SinwyLogo from "./SinwyLogo.tsx";
 import ThemeToggle from "./ThemeToggle.tsx";
 

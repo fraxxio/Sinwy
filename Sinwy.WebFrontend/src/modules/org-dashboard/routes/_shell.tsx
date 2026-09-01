@@ -1,8 +1,13 @@
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { authClient } from "#/modules/auth/lib/auth-client";
-import { requireAuth } from "#/modules/auth/lib/protected-route";
+import {
+	createFileRoute,
+	linkOptions,
+	Outlet,
+	redirect,
+} from "@tanstack/react-router";
 import { OrganizationSidebar } from "#/modules/org-dashboard/components/OrganizationSidebar";
 import { AppShell } from "#/shared/components/shell/AppShell";
+import { authClient } from "#/shared/lib/auth/auth-client";
+import { requireAuth } from "#/shared/lib/auth/protected-route";
 
 export const Route = createFileRoute("/$organizationSlug/_shell")({
 	ssr: false,
@@ -24,7 +29,13 @@ function OrganizationShell() {
 	return (
 		<AppShell
 			sidebar={<OrganizationSidebar organizationSlug={organization.slug} />}
-			rootCrumb={{ label: organization.name, href: `/${organization.slug}` }}
+			rootCrumb={{
+				label: organization.name,
+				link: linkOptions({
+					to: "/$organizationSlug",
+					params: { organizationSlug: organization.slug },
+				}),
+			}}
 		>
 			<Outlet />
 		</AppShell>

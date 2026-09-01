@@ -60,7 +60,6 @@ export const organizationNav = (organizationSlug: string): SidebarNavItem[] => {
 		{
 			title: "Settings",
 			icon: <Settings2Icon />,
-			link: linkOptions({ to: "/$organizationSlug/settings", params }),
 			items: [
 				{
 					title: "General",

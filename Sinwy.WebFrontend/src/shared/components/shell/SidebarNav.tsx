@@ -17,13 +17,24 @@ import {
 	SidebarMenuSubItem,
 } from "#/shared/components/ui/sidebar";
 
-export type SidebarNavItem = {
+type SidebarNavLink = {
 	title: string;
 	icon: ReactNode;
 	link: LinkOptions;
 	activeOptions?: { exact: boolean };
-	items?: { title: string; link: LinkOptions }[];
+	items?: never;
 };
+
+/** Collapsible group: the parent only toggles, so it carries no link. */
+type SidebarNavGroup = {
+	title: string;
+	icon: ReactNode;
+	items: { title: string; link: LinkOptions }[];
+	link?: never;
+	activeOptions?: never;
+};
+
+export type SidebarNavItem = SidebarNavLink | SidebarNavGroup;
 
 export function SidebarNav({
 	label,

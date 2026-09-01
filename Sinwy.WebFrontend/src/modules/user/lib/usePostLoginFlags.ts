@@ -1,7 +1,7 @@
 import type { PostLoginFlags } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
-import { authClient } from "#/modules/auth/lib/auth-client";
 import { api } from "#/shared/lib/api";
+import { authClient } from "#/shared/lib/auth/auth-client";
 
 export const postLoginFlagsKey = ["user", "flags"] as const;
 

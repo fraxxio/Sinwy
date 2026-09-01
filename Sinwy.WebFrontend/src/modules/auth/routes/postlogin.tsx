@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { authClient } from "#/modules/auth/lib/auth-client";
 import { postLoginDestination } from "#/modules/auth/lib/post-login";
-import { requireAuth } from "#/modules/auth/lib/protected-route";
+import { authClient } from "#/shared/lib/auth/auth-client";
+import { requireAuth } from "#/shared/lib/auth/protected-route";
 
 // Dispatcher both login paths converge on: email login navigates here,
 // Google OAuth uses it as callbackURL (can't run routing logic client-side).

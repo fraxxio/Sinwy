@@ -5,8 +5,6 @@ import {
 } from "@sinwy/shared";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient } from "#/modules/auth/lib/auth-client";
-import { requireAuth } from "#/modules/auth/lib/protected-route";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
 import {
 	getPlanName,
@@ -26,6 +24,8 @@ import {
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { api } from "#/shared/lib/api";
+import { authClient } from "#/shared/lib/auth/auth-client";
+import { requireAuth } from "#/shared/lib/auth/protected-route";
 import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/organizations/$id/plan")({

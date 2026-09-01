@@ -10,13 +10,13 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { protectedRoute } from "#/modules/auth/lib/protected-route";
 import { pollUntilActive } from "#/modules/checkout/lib/poll-until-active";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
 import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { Button } from "#/shared/components/ui/button";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { api } from "#/shared/lib/api";
+import { protectedRoute } from "#/shared/lib/auth/protected-route";
 import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/checkout/success")({

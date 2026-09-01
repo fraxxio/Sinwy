@@ -16,6 +16,13 @@ it("prefers the active organization", () => {
 	});
 });
 
+it("falls back to the last organization when the active id is stale", () => {
+	expect(postLoginDestination(orgs, "deleted-org")).toEqual({
+		to: "/$organizationSlug",
+		params: { organizationSlug: "slug-c" },
+	});
+});
+
 it("falls back to the last organization when none is active", () => {
 	expect(postLoginDestination(orgs, null)).toEqual({
 		to: "/$organizationSlug",
