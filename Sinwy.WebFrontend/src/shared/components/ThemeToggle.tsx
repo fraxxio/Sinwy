@@ -12,7 +12,7 @@ function applyTheme(theme: Theme) {
 	root.style.colorScheme = theme;
 }
 
-const ThemeToggle = () => {
+export function useTheme() {
 	const [theme, setTheme] = useState<Theme>("light");
 
 	useEffect(() => {
@@ -27,6 +27,12 @@ const ThemeToggle = () => {
 		applyTheme(nextTheme);
 		window.localStorage.setItem("theme", nextTheme);
 	}
+
+	return { theme, toggleTheme };
+}
+
+const ThemeToggle = () => {
+	const { theme, toggleTheme } = useTheme();
 
 	const label =
 		theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
