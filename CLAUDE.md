@@ -24,6 +24,10 @@ Cross-module imports must go through each module's `index.ts`. Never import from
 
 **Path aliases** (defined in `Sinwy.Backend/import_map.json` and `tsconfig.json`):
 
+## Frontend Architecture
+
+`Sinwy.WebFrontend/src/shared/` must never import from `src/modules/`. Cross-cutting infrastructure (e.g. the Better Auth client in `shared/lib/auth/`) lives in `shared/`; modules depend on shared, not the other way around.
+
 ## Code Style
 
 - **Formatter/linter:** Biome (tabs, double quotes for JS/TS strings)

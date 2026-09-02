@@ -1,5 +1,5 @@
+import { Link, type LinkOptions, useMatches } from "@tanstack/react-router";
 import { Fragment, type ReactNode } from "react";
-import { AppSidebar } from "#/modules/dashboard/components/AppSidebar";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -15,7 +15,7 @@ import {
 	SidebarTrigger,
 } from "#/shared/components/ui/sidebar";
 
-export type Breadcrumbs = { label: string; href?: string }[];
+export type Crumb = { label: string; link: LinkOptions };
 
 /** SidebarProvider persists its state to this cookie but never reads it back. */
 const readSidebarCookie = () =>
@@ -26,21 +26,42 @@ const readSidebarCookie = () =>
  * App shell for every dashboard page: collapsible sidebar, sticky header with
  * a breadcrumb trail, and the page body. Mount it once per layout route so the
  * sidebar keeps its open/collapsed state across navigations.
+ *
+ * The trail starts at `rootCrumb` (runtime data, e.g. the organization name)
+ * followed by every matched route that declares `staticData.crumb`. Sections
+ * with child pages declare the crumb on a layout route (`_shell.bookings.tsx`)
+ * so detail pages inherit it; their index routes must not declare one, or the
+ * section (or root) crumb would appear twice.
  */
-export function DashboardLayout({
-	organizationName,
-	breadcrumbs = [],
+export function AppShell({
+	sidebar,
+	rootCrumb,
 	children,
 }: {
-	organizationName: string;
-	breadcrumbs?: Breadcrumbs;
+	sidebar: ReactNode;
+	rootCrumb: Crumb;
 	children: ReactNode;
 }) {
+	const matches = useMatches();
+	const breadcrumbs: Crumb[] = [
+		rootCrumb,
+		...matches.flatMap((match) =>
+			match.staticData.crumb
+				? [
+						{
+							label: match.staticData.crumb,
+							link: { to: match.fullPath, params: match.params } as LinkOptions,
+						},
+					]
+				: [],
+		),
+	];
+
 	return (
 		<SidebarProvider defaultOpen={readSidebarCookie()}>
-			<AppSidebar organizationName={organizationName} />
+			{sidebar}
 			<SidebarInset>
-				<header className="flex h-16 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+				<header className="chrome-edge relative z-[1] flex h-16 shrink-0 items-center gap-2 border-b border-sidebar-border bg-sidebar transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
 					<div className="flex items-center gap-2 px-4">
 						<SidebarTrigger className="-ml-1" />
 						<Separator
@@ -52,17 +73,17 @@ export function DashboardLayout({
 								{breadcrumbs.map((crumb, index) => {
 									const isLast = index === breadcrumbs.length - 1;
 									return (
-										<Fragment key={crumb.label}>
+										<Fragment key={String(crumb.link.to)}>
 											{index > 0 && (
 												<BreadcrumbSeparator className="hidden md:block" />
 											)}
 											<BreadcrumbItem
 												className={isLast ? undefined : "hidden md:block"}
 											>
-												{isLast || !crumb.href ? (
+												{isLast ? (
 													<BreadcrumbPage>{crumb.label}</BreadcrumbPage>
 												) : (
-													<BreadcrumbLink href={crumb.href}>
+													<BreadcrumbLink render={<Link {...crumb.link} />}>
 														{crumb.label}
 													</BreadcrumbLink>
 												)}

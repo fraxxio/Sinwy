@@ -2,7 +2,7 @@ import { RESEND_COOLDOWN_SECONDS } from "@sinwy/shared";
 import { formOptions, revalidateLogic } from "@tanstack/react-form";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
-import { authClient } from "#/modules/auth/lib/auth-client";
+import { authClient } from "#/shared/lib/auth/auth-client";
 import { useAppForm } from "#/shared/lib/form";
 
 export const PASSWORD_RULES =

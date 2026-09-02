@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { authClient } from "#/modules/auth/lib/auth-client";
 import { Icon } from "#/shared/components/icons";
 import { FieldError } from "#/shared/components/ui/field";
+import { authClient } from "#/shared/lib/auth/auth-client";
 
 export const GoogleSignInButton = ({
 	callbackURL,

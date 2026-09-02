@@ -8,12 +8,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { protectedRoute } from "#/modules/auth/lib/protected-route";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
 import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { api } from "#/shared/lib/api";
+import { protectedRoute } from "#/shared/lib/auth/protected-route";
 import { useAppForm } from "#/shared/lib/form";
 import { cn } from "#/shared/lib/utils";
 

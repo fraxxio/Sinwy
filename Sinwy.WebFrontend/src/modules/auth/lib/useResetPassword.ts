@@ -3,8 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { BASE_ERROR_CODES } from "better-auth";
 import { useState } from "react";
 import z from "zod";
-import { authClient } from "#/modules/auth/lib/auth-client";
 import { passwordSchema } from "#/modules/auth/lib/useRegister";
+import { authClient } from "#/shared/lib/auth/auth-client";
 import { useAppForm } from "#/shared/lib/form";
 
 export const resetPasswordSchema = z

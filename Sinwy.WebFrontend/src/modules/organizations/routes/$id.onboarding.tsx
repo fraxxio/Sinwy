@@ -12,8 +12,6 @@ import {
 	useRouter,
 } from "@tanstack/react-router";
 import { LockIcon } from "lucide-react";
-import { authClient } from "#/modules/auth/lib/auth-client";
-import { requireAuth } from "#/modules/auth/lib/protected-route";
 import {
 	BusinessProfileForm,
 	type BusinessProfileValues,
@@ -29,6 +27,8 @@ import {
 } from "#/shared/components/ui/card";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { api } from "#/shared/lib/api";
+import { authClient } from "#/shared/lib/auth/auth-client";
+import { requireAuth } from "#/shared/lib/auth/protected-route";
 import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/organizations/$id/onboarding")({
@@ -177,7 +177,7 @@ function OnboardingPage() {
 
 	const goToDashboard = () =>
 		navigate({
-			to: "/$organizationSlug/home",
+			to: "/$organizationSlug",
 			params: { organizationSlug: organization.slug },
 		});
 
@@ -264,10 +264,7 @@ function DashboardButton({ slug, label }: { slug: string; label: string }) {
 	return (
 		<Button
 			render={
-				<Link
-					to="/$organizationSlug/home"
-					params={{ organizationSlug: slug }}
-				/>
+				<Link to="/$organizationSlug" params={{ organizationSlug: slug }} />
 			}
 		>
 			{label}

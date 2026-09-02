@@ -94,7 +94,7 @@
 	--sidebar-primary-foreground: oklch(0.979 0.021 166.113);
 	--sidebar-accent: oklch(0.96 0.003 325.6);
 	--sidebar-accent-foreground: oklch(0.212 0.019 322.12);
-	--sidebar-border: oklch(0.922 0.005 325.62);
+	--sidebar-border: var(--line);
 	--sidebar-ring: oklch(0.596 0.145 163.225);
 
 	/* Surface layering — base page → card → floating */
@@ -118,6 +118,7 @@
 	--inset-soft-shadow:
 		inset 0 1px 2px rgb(var(--shadow-tint) / 0.06),
 		inset 0 1px 1px rgb(var(--shadow-tint) / 0.03);
+	--depth-chrome: 0 0 28px -6px rgb(var(--shadow-tint) / 0.18);
 
 	/* Edge lighting */
 	--highlight: rgba(255, 255, 255, 0.75);
@@ -195,7 +196,7 @@
 	--sidebar-primary-foreground: oklch(0.262 0.051 172.552);
 	--sidebar-accent: oklch(0.263 0.024 320.12);
 	--sidebar-accent-foreground: oklch(0.985 0 0);
-	--sidebar-border: oklch(1 0 0 / 10%);
+	--sidebar-border: var(--line);
 	--sidebar-ring: oklch(0.696 0.17 162.48);
 
 	--surface-1: var(--background);
@@ -217,6 +218,7 @@
 	--inset-soft-shadow:
 		inset 0 1px 2px rgb(var(--shadow-tint) / 0.4),
 		inset 0 1px 1px rgb(var(--shadow-tint) / 0.25);
+	--depth-chrome: 0 0 28px -6px rgb(var(--shadow-tint) / 0.65);
 
 	--highlight: rgba(255, 255, 255, 0.09);
 	--highlight-faint: rgba(255, 255, 255, 0.06);
@@ -276,7 +278,7 @@
 		--sidebar-primary-foreground: oklch(0.262 0.051 172.552);
 		--sidebar-accent: oklch(0.263 0.024 320.12);
 		--sidebar-accent-foreground: oklch(0.985 0 0);
-		--sidebar-border: oklch(1 0 0 / 10%);
+		--sidebar-border: var(--line);
 		--sidebar-ring: oklch(0.696 0.17 162.48);
 
 		--surface-1: var(--background);
@@ -298,6 +300,7 @@
 		--inset-soft-shadow:
 			inset 0 1px 2px rgb(var(--shadow-tint) / 0.4),
 			inset 0 1px 1px rgb(var(--shadow-tint) / 0.25);
+		--depth-chrome: 0 0 28px -6px rgb(var(--shadow-tint) / 0.65);
 
 		--highlight: rgba(255, 255, 255, 0.09);
 		--highlight-faint: rgba(255, 255, 255, 0.06);
@@ -523,6 +526,28 @@
 	box-shadow:
 		inset 0 1px 0 0 var(--highlight-faint),
 		var(--depth-3);
+}
+
+/* App-shell chrome (sidebar rail, top bar): lit top edge, soft cast onto the page */
+@utility chrome-edge {
+	box-shadow:
+		inset 0 1px 0 0 var(--highlight-faint),
+		var(--depth-chrome);
+}
+
+/* Raised selection: active nav links, highlighted menu items.
+   Hairline ring and inner top light sit inside the box so layout never shifts. */
+@utility surface-raised {
+	background-color: var(--surface-3);
+	background-image: linear-gradient(
+		to bottom,
+		var(--highlight-faint),
+		transparent 55%
+	);
+	box-shadow:
+		inset 0 0 0 1px var(--line),
+		inset 0 2px 0 0 var(--highlight),
+		var(--depth-1);
 }
 
 /* Inset surfaces: inputs, checkboxes, wells, track of switches */

@@ -5,9 +5,12 @@ import {
 	ChevronsUpDownIcon,
 	CreditCardIcon,
 	LogOutIcon,
+	MoonIcon,
 	SparklesIcon,
+	SunIcon,
 } from "lucide-react";
-import { authClient } from "#/modules/auth/lib/auth-client";
+import { displayName } from "#/shared/components/shell/display-name";
+import { useTheme } from "#/shared/components/ThemeToggle";
 import {
 	Avatar,
 	AvatarFallback,
@@ -28,6 +31,7 @@ import {
 	SidebarMenuItem,
 	useSidebar,
 } from "#/shared/components/ui/sidebar";
+import { authClient } from "#/shared/lib/auth/auth-client";
 
 const initials = (name: string) =>
 	name
@@ -41,8 +45,9 @@ export function NavUser() {
 	const { isMobile } = useSidebar();
 	const navigate = useNavigate();
 	const { data: session } = authClient.useSession();
+	const { theme, toggleTheme } = useTheme();
 
-	const name = session?.user.name || session?.user.email || "";
+	const name = displayName(session?.user);
 	const email = session?.user.email ?? "";
 	const avatar = session?.user.image ?? undefined;
 
@@ -104,6 +109,10 @@ export function NavUser() {
 							<DropdownMenuItem>
 								<BellIcon />
 								Notifications
+							</DropdownMenuItem>
+							<DropdownMenuItem closeOnClick={false} onClick={toggleTheme}>
+								{theme === "dark" ? <SunIcon /> : <MoonIcon />}
+								Toggle theme
 							</DropdownMenuItem>
 						</DropdownMenuGroup>
 						<DropdownMenuSeparator />
