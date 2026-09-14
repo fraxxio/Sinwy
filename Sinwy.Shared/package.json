@@ -5,6 +5,7 @@
 		".": "./index.ts"
 	},
 	"dependencies": {
+		"better-auth": "^1.6.11",
 		"zod": "^4.4.3"
 	}
 }
