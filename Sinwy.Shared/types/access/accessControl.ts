@@ -45,7 +45,7 @@ const toStatements = (permissions: readonly Permission[]): RoleStatements => {
 // Built-in owner/admin/member statements are kept so better-auth's own
 // endpoints (invite, update role, remove member, delete org) keep their
 // default semantics per role; staff inherits memberAc.
-export const orgAccgssRoles = {
+export const orgAccessRoles = {
 	owner: ac.newRole({
 		...ownerAc.statements,
 		...toStatements(ROLE_PERMISSIONS.owner),

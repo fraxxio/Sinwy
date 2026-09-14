@@ -1,4 +1,4 @@
-import { requireAuth } from "@authModule";
+import { requireAuth, requirePermission } from "@authModule";
 import type { IApp } from "@backend/lib/app/types";
 import {
 	completeOrganizationOnboardingHandler,
@@ -14,23 +14,34 @@ export const registerOrganizationRoutes = (app: IApp) => {
 		method: "POST",
 		routeMiddlewares: [requireAuth],
 	});
-	app.route("/api/organizations/:id/status", getOrganizationStatusHandler, {
-		routeMiddlewares: [requireAuth],
-	});
 	app.route(
-		"/api/organizations/:id/onboarding",
+		"/api/organizations/:organizationId/status",
+		getOrganizationStatusHandler,
+		{
+			routeMiddlewares: [requireAuth],
+		},
+	);
+	app.route(
+		"/api/organizations/:organizationId/onboarding",
 		getOrganizationOnboardingHandler,
 		{ routeMiddlewares: [requireAuth] },
 	);
 	app.route(
-		"/api/organizations/:id/onboarding/complete",
+		"/api/organizations/:organizationId/onboarding/complete",
 		completeOrganizationOnboardingHandler,
-		{ method: "POST", routeMiddlewares: [requireAuth] },
+		{
+			method: "POST",
+			routeMiddlewares: [requireAuth, requirePermission("settings:manage")],
+		},
 	);
-	app.route("/api/organizations/:id/profile", saveOrganizationProfileHandler, {
-		method: "PUT",
-		routeMiddlewares: [requireAuth],
-	});
+	app.route(
+		"/api/organizations/:organizationId/profile",
+		saveOrganizationProfileHandler,
+		{
+			method: "PUT",
+			routeMiddlewares: [requireAuth, requirePermission("settings:manage")],
+		},
+	);
 	app.route(
 		"/api/organizations/checkout/:checkoutId",
 		getCheckoutOrganizationHandler,

@@ -3,7 +3,6 @@ import {
 	type OrganizationProfileInput,
 	uniqueSlug,
 } from "@backend/modules/organizations/utils";
-import { parseMemberRoles } from "@db/memberRole";
 import {
 	EMPTY_ORGANIZATION_PROFILE,
 	type OrganizationDto,
@@ -17,6 +16,7 @@ import {
 	findMembership,
 	findOnboardingCompletedAt,
 	findProfile,
+	findStatus,
 	findStatusForMember,
 	isSlugTaken,
 	markOnboardingCompleted,
@@ -80,20 +80,16 @@ export const getCheckoutOrganization = async (
 
 type WriteResult<T> =
 	| { ok: true; data: T }
-	| { ok: false; error: "not-found" | "forbidden" | "inactive" };
-
-const canManage = (role: string) =>
-	parseMemberRoles(role).some((r) => r === "owner" || r === "admin");
+	| { ok: false; error: "not-found" | "inactive" };
 
 /**
- * `null` when allowed, otherwise the reason to refuse. Onboarding writes are
+ * `null` when writable, otherwise the reason to refuse. Onboarding writes are
  * for paid organizations only; the funnel activates before the wizard starts.
  */
-const denyManage = async (userId: string, organizationId: string) => {
-	const membership = await findMembership(userId, organizationId);
-	if (!membership) return "not-found" as const;
-	if (!canManage(membership.role)) return "forbidden" as const;
-	return membership.status === "active" ? null : ("inactive" as const);
+const denyInactive = async (organizationId: string) => {
+	const status = await findStatus(organizationId);
+	if (status === null) return "not-found" as const;
+	return status === "active" ? null : ("inactive" as const);
 };
 
 const toProfileDto = (
@@ -130,11 +126,10 @@ export const getOrganizationOnboarding = async (
 };
 
 export const saveOrganizationProfile = async (
-	userId: string,
 	organizationId: string,
 	input: OrganizationProfileInput,
 ): Promise<WriteResult<OrganizationProfileDto>> => {
-	const denied = await denyManage(userId, organizationId);
+	const denied = await denyInactive(organizationId);
 	if (denied) return { ok: false, error: denied };
 
 	const row = await upsertProfile(organizationId, input);
@@ -142,10 +137,9 @@ export const saveOrganizationProfile = async (
 };
 
 export const completeOrganizationOnboarding = async (
-	userId: string,
 	organizationId: string,
 ): Promise<WriteResult<{ completedAt: string }>> => {
-	const denied = await denyManage(userId, organizationId);
+	const denied = await denyInactive(organizationId);
 	if (denied) return { ok: false, error: denied };
 
 	const completedAt =

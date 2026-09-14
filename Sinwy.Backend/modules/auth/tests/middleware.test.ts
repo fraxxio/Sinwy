@@ -1,18 +1,6 @@
 import { expect, test } from "bun:test";
-import type { IReqContext } from "@backend/lib/app/types";
-import type { ReqContextValues } from "@backend/lib/sharedTypes";
+import { fakeCtx } from "@backend/test/helpers";
 import { requireAuth, sessionFrom } from "../middleware";
-
-const fakeCtx = (): IReqContext => {
-	const store: Partial<ReqContextValues> = {};
-	return {
-		req: new Request("http://localhost/") as IReqContext["req"],
-		set: (key, value) => {
-			store[key] = value;
-		},
-		get: (key) => store[key],
-	};
-};
 
 test("requireAuth without a session cookie → 401 envelope", async () => {
 	const res = await requireAuth(fakeCtx(), async () => new Response("next"));

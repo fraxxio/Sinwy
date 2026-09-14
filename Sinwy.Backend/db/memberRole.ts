@@ -1,10 +1,7 @@
+import type { OrgRole } from "@sinwy/shared";
 import { sql } from "drizzle-orm";
 import { member } from "./schema/organizationSchema";
 
-/** better-auth stores a member's roles in one comma separated column. */
-export const parseMemberRoles = (role: string) =>
-	role.split(",").map((r) => r.trim());
-
-/** SQL counterpart of {@link parseMemberRoles} for filtering on the column. */
-export const memberHasRole = (role: string) =>
+/** SQL counterpart of parseMemberRoles: matches one role inside better-auth's comma separated column. */
+export const memberHasRole = (role: OrgRole) =>
 	sql`${role} = ANY(string_to_array(replace(${member.role}, ' ', ''), ','))`;

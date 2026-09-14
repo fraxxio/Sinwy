@@ -29,6 +29,14 @@ export const findStatusForMember = async (
 	return row?.status ?? null;
 };
 
+export const findStatus = async (organizationId: string) => {
+	const [row] = await db
+		.select({ status: organization.status })
+		.from(organization)
+		.where(eq(organization.id, organizationId));
+	return row?.status ?? null;
+};
+
 /** False when no row matched, i.e. the id belongs to no organization. */
 export const setStatus = async (
 	organizationId: string,
