@@ -1,5 +1,12 @@
+import { hasPermission, type Permission } from "@sinwy/shared";
+import type { QueryClient } from "@tanstack/react-query";
 import { redirect } from "@tanstack/react-router";
+import { raiseAccessDenied } from "#/shared/lib/auth/access-denied";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import {
+	memberAccessQuery,
+	type OrgRouteContext,
+} from "#/shared/lib/auth/permissions";
 
 /**
  * Guard: throws a redirect to login if there's no session, else returns it.
@@ -26,3 +33,35 @@ export const protectedRoute = {
 	ssr: false,
 	beforeLoad: requireAuth,
 } as const;
+
+/**
+ * Guard: resolves the caller's roles in the organization. Cached briefly so
+ * in-dashboard navigation does not refetch; a role change in the DB shows up
+ * on the next fresh load. Unreadable membership leaves the dashboard.
+ */
+export const requireMember = async (
+	queryClient: QueryClient,
+	organizationId: string,
+) => {
+	const member = await queryClient
+		.fetchQuery(memberAccessQuery(organizationId))
+		.catch(() => null);
+	if (!member) throw redirect({ to: "/" });
+	return member;
+};
+
+/**
+ * beforeLoad for routes under the org shell. Denied → redirect to the
+ * organization Overview, which needs no permission so this can never loop.
+ * Link preloads still redirect but raise no notice.
+ */
+export const requirePermission =
+	(permission: Permission) =>
+	({ context, preload }: { context: OrgRouteContext; preload: boolean }) => {
+		if (hasPermission(context.member.roles, permission)) return;
+		if (!preload) raiseAccessDenied();
+		throw redirect({
+			to: "/$organizationSlug",
+			params: { organizationSlug: context.organization.slug },
+		});
+	};

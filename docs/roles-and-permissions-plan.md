@@ -8,6 +8,15 @@ Done when: flipping a member's role in the DB visibly changes the sidebar and
 redirects them off pages they cannot use, and no feature page or service
 contains an inline role check.
 
+## Status
+
+| Phase | State |
+| --- | --- |
+| 1 — Shared | Done |
+| 2 — Backend | Done |
+| 3 — Frontend | Done (see deviations at the end of Phase 3) |
+| 4 — End-to-end check and docs | Open |
+
 ## Decisions (already made, do not re-open)
 
 | Topic | Decision |
@@ -425,6 +434,27 @@ differs.
 `bun run test:web`, `bun run typecheck`, `bun run check`.
 `grep -rn '"owner"\|"admin"\|"staff"' Sinwy.WebFrontend/src` should match
 nothing outside tests.
+
+### 3.9 Deviations from this plan (as implemented)
+
+- **3.3 toast:** not fired inside the guard. base-ui's toast provider
+  subscribes in a passive effect, so a hard load onto a denied URL would drop
+  it. The guard raises a flag in `shared/lib/auth/access-denied.ts`;
+  `shared/components/AccessDeniedToast.tsx` (rendered after the `Toaster` in
+  `root.tsx`) shows the toast once the router is idle.
+- **3.3 preloads:** `requirePermission` reads `preload` from `beforeLoad` and
+  redirects silently on link-hover preloads, so no toast on hover.
+- **3.2 caching:** `queryClient.fetchQuery` instead of `ensureQueryData`, so
+  the 60 s `staleTime` is actually honoured.
+- **3.2 endpoint:** `authClient.organization.getActiveMemberRole({ query: { organizationId } })`
+  instead of `getActiveMember()`; the request names the org the key describes.
+- **3.6 onboarding:** reuses `requirePermission("settings:manage")` with a
+  hand-built `{ organization, member }` context instead of an inline check.
+- **New `requireMember(queryClient, organizationId)`** in
+  `protected-route.ts`: loads roles, redirects to `/` on failure; used by the
+  org shell and the onboarding route.
+- **3.7 tests:** `permissions-route.test.ts` asserts via `takeAccessDenied()`,
+  so no `mock.module` of the toast is needed.
 
 ---
 

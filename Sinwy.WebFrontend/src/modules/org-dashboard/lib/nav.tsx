@@ -26,36 +26,43 @@ export const organizationNav = (organizationSlug: string): SidebarNavItem[] => {
 			title: "Bookings",
 			icon: <CalendarCheckIcon />,
 			link: linkOptions({ to: "/$organizationSlug/bookings", params }),
+			permission: "bookings:read",
 		},
 		{
 			title: "Services",
 			icon: <WrenchIcon />,
 			link: linkOptions({ to: "/$organizationSlug/services", params }),
+			permission: "services:read",
 		},
 		{
 			title: "Customers",
 			icon: <UsersIcon />,
 			link: linkOptions({ to: "/$organizationSlug/customers", params }),
+			permission: "customers:read",
 		},
 		{
 			title: "Pages",
 			icon: <FileTextIcon />,
 			link: linkOptions({ to: "/$organizationSlug/pages", params }),
+			permission: "pages:read",
 		},
 		{
 			title: "Payments",
 			icon: <CreditCardIcon />,
 			link: linkOptions({ to: "/$organizationSlug/payments", params }),
+			permission: "payments:read",
 		},
 		{
 			title: "Analytics",
 			icon: <ChartNoAxesColumnIcon />,
 			link: linkOptions({ to: "/$organizationSlug/analytics", params }),
+			permission: "analytics:read",
 		},
 		{
 			title: "Team",
 			icon: <UsersRoundIcon />,
 			link: linkOptions({ to: "/$organizationSlug/team", params }),
+			permission: "team:manage",
 		},
 		{
 			title: "Settings",
@@ -64,6 +71,7 @@ export const organizationNav = (organizationSlug: string): SidebarNavItem[] => {
 				{
 					title: "General",
 					link: linkOptions({ to: "/$organizationSlug/settings", params }),
+					permission: "settings:manage",
 				},
 				{
 					title: "Billing",
@@ -71,6 +79,7 @@ export const organizationNav = (organizationSlug: string): SidebarNavItem[] => {
 						to: "/$organizationSlug/settings/billing",
 						params,
 					}),
+					permission: "billing:manage",
 				},
 			],
 		},

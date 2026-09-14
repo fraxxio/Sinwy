@@ -2,8 +2,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ChartNoAxesColumnIcon } from "lucide-react";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
+import { requirePermission } from "#/shared/lib/auth/protected-route";
 
 export const Route = createFileRoute("/$organizationSlug/_shell/analytics")({
+	beforeLoad: requirePermission("analytics:read"),
 	staticData: { crumb: "Analytics" },
 	component: AnalyticsPage,
 });

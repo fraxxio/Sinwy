@@ -1,6 +1,8 @@
+import type { Permission } from "@sinwy/shared";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { filterNav } from "#/shared/components/shell/nav-filter";
 import {
 	Collapsible,
 	CollapsibleContent,
@@ -16,22 +18,32 @@ import {
 	SidebarMenuSubButton,
 	SidebarMenuSubItem,
 } from "#/shared/components/ui/sidebar";
+import { usePermissions } from "#/shared/lib/auth/permissions";
 
+/** Items with a permission are hidden from members who lack it. */
 type SidebarNavLink = {
 	title: string;
 	icon: ReactNode;
 	link: LinkOptions;
 	activeOptions?: { exact: boolean };
+	permission?: Permission;
 	items?: never;
 };
 
-/** Collapsible group: the parent only toggles, so it carries no link. */
+type SidebarNavSubItem = {
+	title: string;
+	link: LinkOptions;
+	permission?: Permission;
+};
+
+/** Collapsible group: the parent only toggles, so it carries no link or permission. */
 type SidebarNavGroup = {
 	title: string;
 	icon: ReactNode;
-	items: { title: string; link: LinkOptions }[];
+	items: SidebarNavSubItem[];
 	link?: never;
 	activeOptions?: never;
+	permission?: never;
 };
 
 export type SidebarNavItem = SidebarNavLink | SidebarNavGroup;
@@ -43,11 +55,13 @@ export function SidebarNav({
 	label: string;
 	items: SidebarNavItem[];
 }) {
+	const { can } = usePermissions();
+
 	return (
 		<SidebarGroup>
 			<SidebarGroupLabel>{label}</SidebarGroupLabel>
 			<SidebarMenu>
-				{items.map((item) =>
+				{filterNav(items, can).map((item) =>
 					item.items ? (
 						<Collapsible
 							key={item.title}
