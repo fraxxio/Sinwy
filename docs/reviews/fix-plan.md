@@ -50,7 +50,7 @@ bun run build:web
 | D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Done (7ecd111) |
 | E | Frontend: `signOut` helper, single nav/route declaration | Done (8b5b751) |
 | F | Frontend: funnel gate, preload-safe shell | Done (f50e75c) |
-| G | Schema: composite unique on `member`, run migrations | Done (pending) |
+| G | Schema: composite unique on `member`, run migrations | Done (c8e2329) |
 
 Deferred findings (not scheduled, see the last section) stay out of every
 phase.
