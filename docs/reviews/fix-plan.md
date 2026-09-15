@@ -47,7 +47,7 @@ bun run build:web
 | A | Shared: rename the `team` resource, overlap guard, `toStatements` cleanup | Done (f51b946) |
 | B | Shared/backend: strict role parsing, plan notes for Phase 10 | Done (7cdc35c) |
 | C | Backend: missing tests | Done (437bb39) |
-| D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Done (pending) |
+| D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Done (7ecd111) |
 | E | Frontend: `signOut` helper, single nav/route declaration | Next |
 | F | Frontend: funnel gate, preload-safe shell | Open |
 | G | Schema: composite unique on `member`, run migrations | Open |
