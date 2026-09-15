@@ -11,11 +11,17 @@ import { requireAuth, requireMember } from "#/shared/lib/auth/protected-route";
 
 export const Route = createFileRoute("/$organizationSlug/_shell")({
 	ssr: false,
-	beforeLoad: async ({ location, params, context }) => {
+	beforeLoad: async ({ location, params, context, preload }) => {
 		const ctx = await requireAuth({ location });
-		const { data, error } = await authClient.organization.setActive({
-			organizationSlug: params.organizationSlug,
-		});
+		// preloads must not move the active organization; the destination's own
+		// non-preload load still activates it
+		const { data, error } = preload
+			? await authClient.organization.getFullOrganization({
+					query: { organizationSlug: params.organizationSlug, membersLimit: 1 },
+				})
+			: await authClient.organization.setActive({
+					organizationSlug: params.organizationSlug,
+				});
 		if (error || !data) throw redirect({ to: "/" });
 		const member = await requireMember(context.queryClient, data.id);
 		return { ...ctx, organization: data, member };
