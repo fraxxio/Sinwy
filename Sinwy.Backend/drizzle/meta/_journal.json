@@ -43,6 +43,13 @@
       "when": 1789408110129,
       "tag": "0005_huge_loa",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789495352563,
+      "tag": "0006_goofy_wallop",
+      "breakpoints": true
     }
   ]
 }

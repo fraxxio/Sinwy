@@ -50,7 +50,7 @@ bun run build:web
 | D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Done (7ecd111) |
 | E | Frontend: `signOut` helper, single nav/route declaration | Done (8b5b751) |
 | F | Frontend: funnel gate, preload-safe shell | Done (f50e75c) |
-| G | Schema: composite unique on `member`, run migrations | Next |
+| G | Schema: composite unique on `member`, run migrations | Done (pending) |
 
 Deferred findings (not scheduled, see the last section) stay out of every
 phase.
@@ -356,8 +356,8 @@ Findings: P2-6, P2-5 (verify item).
 
 ### Done when
 
-- [ ] Inserting the same `(organizationId, userId)` twice fails at the DB.
-- [ ] `db:migrate` applied cleanly and the note is in this file.
+- [x] Inserting the same `(organizationId, userId)` twice fails at the DB.
+- [x] `db:migrate` applied cleanly and the note is in this file.
 
 ---
 
@@ -439,3 +439,14 @@ needs to know.
   check`; fixed here since it blocked Verify. Both hand checks (hover
   another org, `staff` on `/organizations/<id>/plan`) were not run — they
   need a dev server and a second account.
+- 2026-09-15, Phase G: migration is `drizzle/0006_goofy_wallop.sql`. The local
+  dev database (`bunapp`) was already at `0005`, so the "from `0004`" check
+  ran on a scratch database (`sinwy_migrate_check`, dropped afterwards):
+  `0000`–`0004` applied by hand with matching journal rows, one `member`
+  row seeded with the legacy `member` role, then `POSTGRES_DB=… bun run
+  db:migrate`. Outcome: both `0005` and `0006` applied in one run, the seeded
+  row became `admin`, the column default became `'staff'`, and a second
+  `(organization_id, user_id)` insert failed with `member_org_user_uq`.
+  `db:migrate` was then run against `bunapp` as well, so the dev database is
+  at `0006`. Plan complete; Phase 4 of `roles-and-permissions-plan.md` (the
+  end-to-end hand check and the roadmap doc section) is still owed.
