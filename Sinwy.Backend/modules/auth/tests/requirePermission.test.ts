@@ -1,0 +1,226 @@
+import { beforeEach, expect, test } from "bun:test";
+import type { Middleware } from "@backend/lib/app/types";
+import {
+	createUserWithSession,
+	fakeCtx,
+	insertOrganization,
+	joinOrganization,
+} from "@backend/test/helpers";
+import db from "@db";
+import { organization } from "@db/schema/organizationSchema";
+import { user } from "@db/schema/userSchema";
+import type { Permission } from "@sinwy/shared";
+import { auth } from "../auth";
+import { requireAuth } from "../middleware";
+import {
+	membershipFrom,
+	requireMember,
+	requirePermission,
+} from "../requirePermission";
+
+beforeEach(async () => {
+	await db.delete(organization);
+	await db.delete(user);
+});
+
+let nextCalls = 0;
+const next = () => {
+	nextCalls++;
+	return Promise.resolve(new Response("next"));
+};
+
+type RunOptions = { params?: Record<string, string>; cookie?: string };
+
+/** Runs the real requireAuth first so the session comes from the cookie like in production. */
+const runMiddleware = async (middleware: Middleware, options: RunOptions) => {
+	nextCalls = 0;
+	const ctx = fakeCtx(options);
+	const res = await requireAuth(ctx, () => middleware(ctx, next));
+	return { ctx, res };
+};
+
+const run = (permission: Permission, options: RunOptions) =>
+	runMiddleware(requirePermission(permission), options);
+
+const runMember = (options: RunOptions) =>
+	runMiddleware(requireMember, options);
+
+const seedMember = async (role: string) => {
+	const organizationId = await insertOrganization("Acme");
+	const { userId, cookie } = await createUserWithSession();
+	await joinOrganization(organizationId, userId, role);
+	return { organizationId, userId, cookie };
+};
+
+test("without requireAuth → throws", async () => {
+	await expect(
+		requirePermission("bookings:read")(fakeCtx(), next),
+	).rejects.toThrow();
+	await expect(requireMember(fakeCtx(), next)).rejects.toThrow();
+});
+
+test("requireMember: outsider → 404", async () => {
+	const organizationId = await insertOrganization("Acme");
+	const { cookie } = await createUserWithSession();
+	const { res } = await runMember({ params: { organizationId }, cookie });
+	expect(res.status).toBe(404);
+	expect(nextCalls).toBe(0);
+});
+
+test("requireMember: any role passes and the membership carries the org status", async () => {
+	const { organizationId, cookie } = await seedMember("staff");
+	const { ctx, res } = await runMember({ params: { organizationId }, cookie });
+	expect(res.status).toBe(200);
+	expect(nextCalls).toBe(1);
+	expect(membershipFrom(ctx)).toEqual({
+		organizationId,
+		roles: ["staff"],
+		status: "inactive",
+	});
+});
+
+test("requireMember: unknown role still passes, with no roles", async () => {
+	const { organizationId, cookie } = await seedMember("member");
+	const { ctx, res } = await runMember({ params: { organizationId }, cookie });
+	expect(res.status).toBe(200);
+	expect(membershipFrom(ctx).roles).toEqual([]);
+});
+
+test("no organizationId param and no active organization → 400", async () => {
+	const { cookie } = await createUserWithSession();
+	const { res } = await run("bookings:read", { cookie });
+	expect(res.status).toBe(400);
+	expect(nextCalls).toBe(0);
+});
+
+test("outsider → 404", async () => {
+	const organizationId = await insertOrganization("Acme");
+	const { cookie } = await createUserWithSession();
+	const { res } = await run("bookings:read", {
+		params: { organizationId },
+		cookie,
+	});
+	expect(res.status).toBe(404);
+});
+
+test("staff: bookings:read passes, settings:manage → 403", async () => {
+	const { organizationId, cookie } = await seedMember("staff");
+	const params = { organizationId };
+
+	const allowed = await run("bookings:read", { params, cookie });
+	expect(allowed.res.status).toBe(200);
+	expect(nextCalls).toBe(1);
+
+	const denied = await run("settings:manage", { params, cookie });
+	expect(denied.res.status).toBe(403);
+	expect(nextCalls).toBe(0);
+});
+
+test("billing:manage: admin → 403, owner passes", async () => {
+	const admin = await seedMember("admin");
+	expect(
+		(
+			await run("billing:manage", {
+				params: { organizationId: admin.organizationId },
+				cookie: admin.cookie,
+			})
+		).res.status,
+	).toBe(403);
+
+	const owner = await seedMember("owner");
+	expect(
+		(
+			await run("billing:manage", {
+				params: { organizationId: owner.organizationId },
+				cookie: owner.cookie,
+			})
+		).res.status,
+	).toBe(200);
+});
+
+test("legacy role 'member' → 403", async () => {
+	const { organizationId, cookie } = await seedMember("member");
+	const { res } = await run("bookings:read", {
+		params: { organizationId },
+		cookie,
+	});
+	expect(res.status).toBe(403);
+});
+
+test("combined roles are unioned", async () => {
+	const { organizationId, cookie } = await seedMember("staff,admin");
+	const { res } = await run("settings:manage", {
+		params: { organizationId },
+		cookie,
+	});
+	expect(res.status).toBe(200);
+});
+
+test("falls back to the session's active organization", async () => {
+	const organizationId = await insertOrganization("Acme");
+	const { userId, cookie } = await createUserWithSession({
+		activeOrganizationId: organizationId,
+	});
+	await joinOrganization(organizationId, userId, "staff");
+
+	const { ctx, res } = await run("bookings:read", { cookie });
+	expect(res.status).toBe(200);
+	expect(membershipFrom(ctx).organizationId).toBe(organizationId);
+});
+
+test("route param wins over the session's active organization", async () => {
+	const orgA = await insertOrganization("Acme");
+	const orgB = await insertOrganization("Globex");
+	const { userId, cookie } = await createUserWithSession({
+		activeOrganizationId: orgA,
+	});
+	await joinOrganization(orgA, userId, "owner");
+	await joinOrganization(orgB, userId, "staff");
+	const params = { organizationId: orgB };
+
+	const denied = await run("settings:manage", { params, cookie });
+	expect(denied.res.status).toBe(403);
+	expect(nextCalls).toBe(0);
+
+	const allowed = await run("bookings:read", { params, cookie });
+	expect(allowed.res.status).toBe(200);
+	expect(membershipFrom(allowed.ctx).organizationId).toBe(orgB);
+});
+
+test("membershipFrom returns the resolved membership", async () => {
+	const { organizationId, cookie } = await seedMember("owner");
+	const { ctx } = await run("bookings:read", {
+		params: { organizationId },
+		cookie,
+	});
+	expect(membershipFrom(ctx)).toEqual({
+		organizationId,
+		roles: ["owner"],
+		status: "inactive",
+	});
+});
+
+test("membershipFrom throws when the middleware did not run", () => {
+	expect(() => membershipFrom(fakeCtx())).toThrow();
+});
+
+test("better-auth's own hasPermission sees our roles", async () => {
+	const organizationId = await insertOrganization("Acme");
+	const { userId, cookie } = await createUserWithSession({
+		activeOrganizationId: organizationId,
+	});
+	await joinOrganization(organizationId, userId, "staff");
+	const headers = new Headers({ cookie });
+
+	const canWriteBookings = await auth.api.hasPermission({
+		headers,
+		body: { permissions: { bookings: ["write"] } },
+	});
+	expect(canWriteBookings.success).toBe(true);
+
+	const canManageSettings = await auth.api.hasPermission({
+		headers,
+		body: { permissions: { settings: ["manage"] } },
+	});
+	expect(canManageSettings.success).toBe(false);
+});

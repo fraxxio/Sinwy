@@ -1,6 +1,5 @@
 import db from "@db";
 import {
-	member,
 	organization,
 	organizationProfile,
 } from "@db/schema/organizationSchema";
@@ -15,20 +14,6 @@ export const isSlugTaken = async (slug: string) => {
 	return row !== undefined;
 };
 
-export const findStatusForMember = async (
-	userId: string,
-	organizationId: string,
-) => {
-	const [row] = await db
-		.select({ status: organization.status })
-		.from(member)
-		.innerJoin(organization, eq(member.organizationId, organization.id))
-		.where(
-			and(eq(member.organizationId, organizationId), eq(member.userId, userId)),
-		);
-	return row?.status ?? null;
-};
-
 /** False when no row matched, i.e. the id belongs to no organization. */
 export const setStatus = async (
 	organizationId: string,
@@ -40,20 +25,6 @@ export const setStatus = async (
 		.where(eq(organization.id, organizationId))
 		.returning({ id: organization.id });
 	return updated.length > 0;
-};
-
-export const findMembership = async (
-	userId: string,
-	organizationId: string,
-) => {
-	const [row] = await db
-		.select({ role: member.role, status: organization.status })
-		.from(member)
-		.innerJoin(organization, eq(member.organizationId, organization.id))
-		.where(
-			and(eq(member.organizationId, organizationId), eq(member.userId, userId)),
-		);
-	return row ?? null;
 };
 
 export const findOnboardingCompletedAt = async (organizationId: string) => {

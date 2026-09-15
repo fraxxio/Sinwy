@@ -5,6 +5,8 @@ import { createLogger } from "@logger";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import { Polar } from "@polar-sh/sdk";
 import {
+	ac,
+	orgAccessRoles,
 	PLAN_SLUGS,
 	type PlanSlug,
 	RESEND_COOLDOWN_SECONDS,
@@ -106,6 +108,8 @@ export const auth = betterAuth({
 	},
 	plugins: [
 		organization({
+			ac,
+			roles: orgAccessRoles,
 			// creation goes through POST /api/organizations only
 			allowUserToCreateOrganization: false,
 			schema: {

@@ -1,9 +1,8 @@
-import { auth, polarClient } from "@authModule";
+import { auth, type Membership, polarClient } from "@authModule";
 import {
 	type OrganizationProfileInput,
 	uniqueSlug,
 } from "@backend/modules/organizations/utils";
-import { parseMemberRoles } from "@db/memberRole";
 import {
 	EMPTY_ORGANIZATION_PROFILE,
 	type OrganizationDto,
@@ -14,10 +13,8 @@ import {
 } from "@sinwy/shared";
 import { reconcileInactiveStatus } from "./reconcileStatus";
 import {
-	findMembership,
 	findOnboardingCompletedAt,
 	findProfile,
-	findStatusForMember,
 	isSlugTaken,
 	markOnboardingCompleted,
 	setStatus,
@@ -46,16 +43,12 @@ export const createOrganization = async (
 	};
 };
 
-export const getOrganizationStatus = async (
-	userId: string,
-	organizationId: string,
-): Promise<OrganizationStatus | null> => {
-	// null → org doesn't exist or caller isn't a member (both read as not-found)
-	const status = await findStatusForMember(userId, organizationId);
-	if (status === null) return null;
-	if (status === "active") return "active";
-	return reconcileInactiveStatus(organizationId);
-};
+export const getOrganizationStatus = (
+	membership: Membership,
+): Promise<OrganizationStatus> =>
+	membership.status === "active"
+		? Promise.resolve("active")
+		: reconcileInactiveStatus(membership.organizationId);
 
 /** Billing projection entry point: Polar subscription state → organization. */
 export const setOrganizationStatus = (
@@ -80,21 +73,14 @@ export const getCheckoutOrganization = async (
 
 type WriteResult<T> =
 	| { ok: true; data: T }
-	| { ok: false; error: "not-found" | "forbidden" | "inactive" };
-
-const canManage = (role: string) =>
-	parseMemberRoles(role).some((r) => r === "owner" || r === "admin");
+	| { ok: false; error: "not-found" | "inactive" };
 
 /**
- * `null` when allowed, otherwise the reason to refuse. Onboarding writes are
+ * `null` when writable, otherwise the reason to refuse. Onboarding writes are
  * for paid organizations only; the funnel activates before the wizard starts.
  */
-const denyManage = async (userId: string, organizationId: string) => {
-	const membership = await findMembership(userId, organizationId);
-	if (!membership) return "not-found" as const;
-	if (!canManage(membership.role)) return "forbidden" as const;
-	return membership.status === "active" ? null : ("inactive" as const);
-};
+const denyInactive = (membership: Membership) =>
+	membership.status === "active" ? null : ("inactive" as const);
 
 const toProfileDto = (
 	row: Awaited<ReturnType<typeof findProfile>> | undefined,
@@ -111,14 +97,9 @@ const toProfileDto = (
 			}
 		: EMPTY_ORGANIZATION_PROFILE;
 
-export const getOrganizationOnboarding = async (
-	userId: string,
-	organizationId: string,
-): Promise<OrganizationOnboardingDto | null> => {
-	// null → org doesn't exist or caller isn't a member (both read as not-found)
-	const membership = await findMembership(userId, organizationId);
-	if (!membership) return null;
-
+export const getOrganizationOnboarding = async ({
+	organizationId,
+}: Membership): Promise<OrganizationOnboardingDto> => {
 	const [completedAt, profile] = await Promise.all([
 		findOnboardingCompletedAt(organizationId),
 		findProfile(organizationId),
@@ -130,24 +111,23 @@ export const getOrganizationOnboarding = async (
 };
 
 export const saveOrganizationProfile = async (
-	userId: string,
-	organizationId: string,
+	membership: Membership,
 	input: OrganizationProfileInput,
 ): Promise<WriteResult<OrganizationProfileDto>> => {
-	const denied = await denyManage(userId, organizationId);
+	const denied = denyInactive(membership);
 	if (denied) return { ok: false, error: denied };
 
-	const row = await upsertProfile(organizationId, input);
+	const row = await upsertProfile(membership.organizationId, input);
 	return { ok: true, data: toProfileDto(row) };
 };
 
 export const completeOrganizationOnboarding = async (
-	userId: string,
-	organizationId: string,
+	membership: Membership,
 ): Promise<WriteResult<{ completedAt: string }>> => {
-	const denied = await denyManage(userId, organizationId);
+	const denied = denyInactive(membership);
 	if (denied) return { ok: false, error: denied };
 
+	const { organizationId } = membership;
 	const completedAt =
 		(await markOnboardingCompleted(organizationId)) ??
 		(await findOnboardingCompletedAt(organizationId));

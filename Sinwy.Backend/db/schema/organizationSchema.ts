@@ -5,6 +5,7 @@ import {
 	pgTable,
 	text,
 	timestamp,
+	unique,
 	uniqueIndex,
 } from "drizzle-orm/pg-core";
 
@@ -48,12 +49,13 @@ export const member = pgTable(
 		userId: text("user_id")
 			.notNull()
 			.references(() => user.id, { onDelete: "cascade" }),
-		role: text("role").default("member").notNull(),
+		role: text("role").default("staff").notNull(),
 		createdAt: timestamp("created_at").notNull(),
 	},
 	(table) => [
 		index("member_organizationId_idx").on(table.organizationId),
 		index("member_userId_idx").on(table.userId),
+		unique("member_org_user_uq").on(table.organizationId, table.userId),
 	],
 );
 

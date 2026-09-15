@@ -10,6 +10,7 @@ import {
 	UsersRoundIcon,
 	WrenchIcon,
 } from "lucide-react";
+import { ORG_SECTIONS } from "#/modules/org-dashboard/lib/sections";
 import type { SidebarNavItem } from "#/shared/components/shell/SidebarNav";
 
 export const organizationNav = (organizationSlug: string): SidebarNavItem[] => {
@@ -25,37 +26,44 @@ export const organizationNav = (organizationSlug: string): SidebarNavItem[] => {
 		{
 			title: "Bookings",
 			icon: <CalendarCheckIcon />,
-			link: linkOptions({ to: "/$organizationSlug/bookings", params }),
+			link: linkOptions({ to: ORG_SECTIONS.bookings.to, params }),
+			permission: ORG_SECTIONS.bookings.permission,
 		},
 		{
 			title: "Services",
 			icon: <WrenchIcon />,
-			link: linkOptions({ to: "/$organizationSlug/services", params }),
+			link: linkOptions({ to: ORG_SECTIONS.services.to, params }),
+			permission: ORG_SECTIONS.services.permission,
 		},
 		{
 			title: "Customers",
 			icon: <UsersIcon />,
-			link: linkOptions({ to: "/$organizationSlug/customers", params }),
+			link: linkOptions({ to: ORG_SECTIONS.customers.to, params }),
+			permission: ORG_SECTIONS.customers.permission,
 		},
 		{
 			title: "Pages",
 			icon: <FileTextIcon />,
-			link: linkOptions({ to: "/$organizationSlug/pages", params }),
+			link: linkOptions({ to: ORG_SECTIONS.pages.to, params }),
+			permission: ORG_SECTIONS.pages.permission,
 		},
 		{
 			title: "Payments",
 			icon: <CreditCardIcon />,
-			link: linkOptions({ to: "/$organizationSlug/payments", params }),
+			link: linkOptions({ to: ORG_SECTIONS.payments.to, params }),
+			permission: ORG_SECTIONS.payments.permission,
 		},
 		{
 			title: "Analytics",
 			icon: <ChartNoAxesColumnIcon />,
-			link: linkOptions({ to: "/$organizationSlug/analytics", params }),
+			link: linkOptions({ to: ORG_SECTIONS.analytics.to, params }),
+			permission: ORG_SECTIONS.analytics.permission,
 		},
 		{
 			title: "Team",
 			icon: <UsersRoundIcon />,
-			link: linkOptions({ to: "/$organizationSlug/team", params }),
+			link: linkOptions({ to: ORG_SECTIONS.team.to, params }),
+			permission: ORG_SECTIONS.team.permission,
 		},
 		{
 			title: "Settings",
@@ -63,14 +71,13 @@ export const organizationNav = (organizationSlug: string): SidebarNavItem[] => {
 			items: [
 				{
 					title: "General",
-					link: linkOptions({ to: "/$organizationSlug/settings", params }),
+					link: linkOptions({ to: ORG_SECTIONS.settings.to, params }),
+					permission: ORG_SECTIONS.settings.permission,
 				},
 				{
 					title: "Billing",
-					link: linkOptions({
-						to: "/$organizationSlug/settings/billing",
-						params,
-					}),
+					link: linkOptions({ to: ORG_SECTIONS.billing.to, params }),
+					permission: ORG_SECTIONS.billing.permission,
 				},
 			],
 		},

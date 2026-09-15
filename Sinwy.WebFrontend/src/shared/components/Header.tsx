@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import {
 	CalendarDays,
 	CreditCard,
@@ -23,6 +23,7 @@ import {
 } from "#/shared/components/ui/dropdown-menu.tsx";
 import { Separator } from "#/shared/components/ui/separator.tsx";
 import { authClient } from "#/shared/lib/auth/auth-client.ts";
+import { useSignOut } from "#/shared/lib/auth/sign-out.ts";
 import SinwyLogo from "./SinwyLogo.tsx";
 import ThemeToggle from "./ThemeToggle.tsx";
 
@@ -145,8 +146,8 @@ const MobileUserMenu = ({
 };
 
 const Header = () => {
-	const navigate = useNavigate();
 	const { data: session } = authClient.useSession();
+	const signOutUser = useSignOut();
 	const [isMenuOpen, setIsMenuOpen] = useState(false);
 
 	useEffect(() => {
@@ -178,8 +179,7 @@ const Header = () => {
 
 	async function signOut() {
 		setIsMenuOpen(false);
-		await authClient.signOut();
-		await navigate({ to: "/" });
+		await signOutUser();
 	}
 
 	const authActions = session ? (

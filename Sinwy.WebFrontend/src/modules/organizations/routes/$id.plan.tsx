@@ -25,13 +25,25 @@ import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { api } from "#/shared/lib/api";
 import { authClient } from "#/shared/lib/auth/auth-client";
-import { requireAuth } from "#/shared/lib/auth/protected-route";
+import {
+	requireAuth,
+	requireMember,
+	requirePermission,
+} from "#/shared/lib/auth/protected-route";
 import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/organizations/$id/plan")({
 	ssr: false,
-	beforeLoad: async ({ location, params }) => {
+	beforeLoad: async ({ location, params, context, preload }) => {
 		const ctx = await requireAuth({ location });
+		const { data: organization, error } =
+			await authClient.organization.setActive({ organizationId: params.id });
+		if (error || !organization) throw redirect({ to: "/" });
+		const member = await requireMember(context.queryClient, organization.id);
+		requirePermission("billing:manage")({
+			context: { organization, member },
+			preload,
+		});
 		// an already-active org must not buy a second subscription, so an
 		// unreadable status blocks checkout rather than falling through
 		const res = await api<{ status: OrganizationStatus }>(

@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, beforeEach, expect, mock, test } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
 import createApp from "@backend/lib/app";
-import appConfig from "@config";
+import { createUserWithSession, joinOrganization } from "@backend/test/helpers";
 import db from "@db";
-import { session } from "@db/schema/authSchema";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
 import type { ApiResponse } from "@sinwy/shared";
@@ -45,56 +44,6 @@ beforeEach(async () => {
 	reconcileResult = "inactive";
 	reconcileCalls = 0;
 });
-
-// Mirrors better-call's signCookieValue: `${token}.${base64(HMAC-SHA256(token, secret))}`.
-// Forged instead of signing up through better-auth because createCustomerOnSignUp
-// would call the Polar API, which placeholder credentials can't reach.
-const cookieName = appConfig.BETTER_AUTH_URL.startsWith("https")
-	? "__Secure-better-auth.session_token"
-	: "better-auth.session_token";
-
-const sessionCookie = async (token: string) => {
-	const key = await crypto.subtle.importKey(
-		"raw",
-		new TextEncoder().encode(appConfig.BETTER_AUTH_SECRET),
-		{ name: "HMAC", hash: "SHA-256" },
-		false,
-		["sign"],
-	);
-	const sig = btoa(
-		String.fromCharCode(
-			...new Uint8Array(
-				await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(token)),
-			),
-		),
-	);
-	return `${cookieName}=${encodeURIComponent(`${token}.${sig}`)}`;
-};
-
-let seq = 0;
-
-const createUserWithSession = async () => {
-	const id = `user_test_${++seq}`;
-	const token = `token_${id}`;
-	const now = new Date();
-	await db.insert(user).values({
-		id,
-		name: "Test User",
-		email: `${id}@test.dev`,
-		emailVerified: true,
-		createdAt: now,
-		updatedAt: now,
-	});
-	await db.insert(session).values({
-		id: `session_${id}`,
-		token,
-		userId: id,
-		expiresAt: new Date(Date.now() + 86_400_000),
-		createdAt: now,
-		updatedAt: now,
-	});
-	return { userId: id, cookie: await sessionCookie(token) };
-};
 
 const post = (path: string, body: unknown, cookie?: string) =>
 	fetch(new URL(path, base), {
@@ -356,15 +305,11 @@ const emptyProfile: ProfileDto = {
 	country: null,
 };
 
-const joinAsMember = async (organizationId: string, userId: string) => {
-	await db.insert(member).values({
-		id: `member_${userId}_${organizationId}`,
-		organizationId,
-		userId,
-		role: "member",
-		createdAt: new Date(),
-	});
-};
+const joinAsStaff = (organizationId: string, userId: string) =>
+	joinOrganization(organizationId, userId, "staff");
+
+const joinAsAdmin = (organizationId: string, userId: string) =>
+	joinOrganization(organizationId, userId, "admin");
 
 test("GET onboarding: fresh organization → nothing completed, empty profile", async () => {
 	const { cookie } = await createUserWithSession();
@@ -573,15 +518,24 @@ test("PUT profile: a rejection says which rule failed", async () => {
 	expect(body.message).toMatch(/Tagline is required/);
 });
 
-test("PUT profile: non-member → 404, plain member → 403", async () => {
+test("PUT profile: non-member → 404, staff → 403", async () => {
 	const owner = await createUserWithSession();
 	const { id } = await createActiveOrg("Acme", owner.cookie);
 	const outsider = await createUserWithSession();
 
 	expect((await saveProfile(id, outsider.cookie)).status).toBe(404);
 
-	await joinAsMember(id, outsider.userId);
+	await joinAsStaff(id, outsider.userId);
 	expect((await saveProfile(id, outsider.cookie)).status).toBe(403);
+});
+
+test("PUT profile: admin → 200", async () => {
+	const owner = await createUserWithSession();
+	const { id } = await createActiveOrg("Acme", owner.cookie);
+	const admin = await createUserWithSession();
+	await joinAsAdmin(id, admin.userId);
+
+	expect((await saveProfile(id, admin.cookie)).status).toBe(200);
 });
 
 test("POST onboarding/complete: marks the organization done, idempotently", async () => {
@@ -605,7 +559,7 @@ test("POST onboarding/complete: marks the organization done, idempotently", asyn
 	expect(onboarding.completedAt).toBe(first.completedAt);
 });
 
-test("POST onboarding/complete: non-member → 404, plain member → 403", async () => {
+test("POST onboarding/complete: non-member → 404, staff → 403", async () => {
 	const owner = await createUserWithSession();
 	const { id } = await createActiveOrg("Acme", owner.cookie);
 	const outsider = await createUserWithSession();
@@ -620,7 +574,7 @@ test("POST onboarding/complete: non-member → 404, plain member → 403", async
 		).status,
 	).toBe(404);
 
-	await joinAsMember(id, outsider.userId);
+	await joinAsStaff(id, outsider.userId);
 	expect(
 		(
 			await post(
@@ -630,6 +584,23 @@ test("POST onboarding/complete: non-member → 404, plain member → 403", async
 			)
 		).status,
 	).toBe(403);
+});
+
+test("POST onboarding/complete: admin → 200", async () => {
+	const owner = await createUserWithSession();
+	const { id } = await createActiveOrg("Acme", owner.cookie);
+	const admin = await createUserWithSession();
+	await joinAsAdmin(id, admin.userId);
+
+	expect(
+		(
+			await post(
+				`/api/organizations/${id}/onboarding/complete`,
+				{},
+				admin.cookie,
+			)
+		).status,
+	).toBe(200);
 });
 
 // pay → then onboard: the wizard never runs for an unpaid organization, so the

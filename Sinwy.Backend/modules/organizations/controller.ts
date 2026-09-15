@@ -1,4 +1,4 @@
-import { sessionFrom } from "@authModule";
+import { membershipFrom, sessionFrom } from "@authModule";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler } from "@backend/lib/app/types";
 import {
@@ -14,10 +14,8 @@ import {
 	saveOrganizationProfile,
 } from "./service";
 
-const respondWriteError = (error: "not-found" | "forbidden" | "inactive") => {
+const respondWriteError = (error: "not-found" | "inactive") => {
 	switch (error) {
-		case "forbidden":
-			return fail("You don't have permission to change this organization", 403);
 		case "inactive":
 			return fail("This organization doesn't have an active plan yet", 409);
 		case "not-found":
@@ -42,12 +40,7 @@ export const createOrganizationHandler: Handler = async (c) => {
 };
 
 export const getOrganizationStatusHandler: Handler = async (c) => {
-	const { user } = sessionFrom(c);
-
-	const { id } = c.req.params as { id: string };
-	const status = await getOrganizationStatus(user.id, id);
-	if (!status) return fail("Not found", 404);
-
+	const status = await getOrganizationStatus(membershipFrom(c));
 	return ok({ status });
 };
 
@@ -62,19 +55,11 @@ export const getCheckoutOrganizationHandler: Handler = async (c) => {
 };
 
 export const getOrganizationOnboardingHandler: Handler = async (c) => {
-	const { user } = sessionFrom(c);
-
-	const { id } = c.req.params as { id: string };
-	const onboarding = await getOrganizationOnboarding(user.id, id);
-	if (!onboarding) return fail("Not found", 404);
-
+	const onboarding = await getOrganizationOnboarding(membershipFrom(c));
 	return ok(onboarding);
 };
 
 export const saveOrganizationProfileHandler: Handler = async (c) => {
-	const { user } = sessionFrom(c);
-
-	const { id } = c.req.params as { id: string };
 	const body = organizationProfileBody.safeParse(
 		await c.req.json().catch(() => null),
 	);
@@ -82,17 +67,14 @@ export const saveOrganizationProfileHandler: Handler = async (c) => {
 	if (!body.success)
 		return fail(body.error.issues[0]?.message ?? "Invalid body", 400);
 
-	const result = await saveOrganizationProfile(user.id, id, body.data);
+	const result = await saveOrganizationProfile(membershipFrom(c), body.data);
 	if (!result.ok) return respondWriteError(result.error);
 
 	return ok(result.data, 200, "Profile saved");
 };
 
 export const completeOrganizationOnboardingHandler: Handler = async (c) => {
-	const { user } = sessionFrom(c);
-
-	const { id } = c.req.params as { id: string };
-	const result = await completeOrganizationOnboarding(user.id, id);
+	const result = await completeOrganizationOnboarding(membershipFrom(c));
 	if (!result.ok) return respondWriteError(result.error);
 
 	return ok(result.data);
