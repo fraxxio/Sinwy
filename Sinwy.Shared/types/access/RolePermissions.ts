@@ -34,6 +34,3 @@ export const hasPermission = (
 	permission: Permission,
 ): boolean =>
 	roles.some((role) => ROLE_PERMISSIONS[role]?.includes(permission) ?? false);
-
-export const permissionsOf = (roles: readonly OrgRole[]): Set<Permission> =>
-	new Set(roles.flatMap((role) => ROLE_PERMISSIONS[role] ?? []));

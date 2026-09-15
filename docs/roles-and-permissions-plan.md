@@ -26,6 +26,7 @@ contains an inline role check.
 | Matrix | owner: everything. admin: everything except `billing:manage`. staff: `bookings:read/write`, `customers:read/write`, `services:read`, `pages:read`. |
 | Legacy `member` rows | One-off SQL migration to `admin`; column default becomes `staff`. Unknown roles fail closed (no permissions). |
 | Backend org resolution | Route param `:organizationId` wins; fallback `session.activeOrganizationId`; neither → 400. Non-member → 404, member without permission → 403. |
+| Backend org handlers | Every org-scoped route runs `requireMember` or `requirePermission`. Handlers read `organizationId` from `membershipFrom(ctx)`, never from `ctx.req.params`; services take the `Membership` and never look up membership or status themselves. |
 | Access controller | Built once in `@sinwy/shared` from `ROLE_PERMISSIONS`; both Better Auth plugin configs import it. Shared adds `better-auth` as a dependency. |
 | Overview page | Membership only, no permission. It is the denial redirect target so it can never loop. |
 | Existing `denyManage` | Replaced by `requirePermission("settings:manage")` on the route; the org‑inactive 409 check stays in the service. |

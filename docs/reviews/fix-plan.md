@@ -47,8 +47,8 @@ bun run build:web
 | A | Shared: rename the `team` resource, overlap guard, `toStatements` cleanup | Done (f51b946) |
 | B | Shared/backend: strict role parsing, plan notes for Phase 10 | Done (7cdc35c) |
 | C | Backend: missing tests | Done (437bb39) |
-| D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Next |
-| E | Frontend: `signOut` helper, single nav/route declaration | Open |
+| D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Done (pending) |
+| E | Frontend: `signOut` helper, single nav/route declaration | Next |
 | F | Frontend: funnel gate, preload-safe shell | Open |
 | G | Schema: composite unique on `member`, run migrations | Open |
 
@@ -247,13 +247,13 @@ themselves.
 
 ### Done when
 
-- [ ] `grep -rn "findMemberRole\|findStatusForMember" Sinwy.Backend/modules`
+- [x] `grep -rn "findMemberRole\|findStatusForMember" Sinwy.Backend/modules`
       returns nothing.
-- [ ] No service in `modules/organizations` takes a `userId` for an
+- [x] No service in `modules/organizations` takes a `userId` for an
       org-scoped read or write.
-- [ ] A `staff` member of an inactive org gets `FORBIDDEN` from
+- [x] A `staff` member of an inactive org gets `FORBIDDEN` from
       `ensureCheckoutAllowed`; the owner still proceeds.
-- [ ] One DB query per write for membership + status (the join), not two.
+- [x] One DB query per write for membership + status (the join), not two.
 
 ---
 
@@ -401,3 +401,17 @@ needs to know.
   tests ("PUT profile: admin → 200", "POST onboarding/complete: admin →
   200") rather than additions to the existing 404/403 tests, so Phase D's
   "must pass unchanged" expectation covers them too.
+- 2026-09-15, Phase D: one commit, not two. The membership lookup + role
+  parsing + unknown-role warn live in one `resolveMembership(userId,
+  organizationId)` in `modules/auth/requirePermission.ts`, shared by
+  `requireMember` and `ensureCheckoutAllowed` (the plan had the guard call
+  `findMembership` directly; the helper keeps the warn in one place). `status`
+  on `Membership` goes through `toOrganizationStatus`, which throws on a value
+  outside `active`/`inactive` — the column is free text, only the webhook
+  projection writes it. `getOrganizationStatus` / `getOrganizationOnboarding`
+  no longer return `null`; the 404 is the middleware's. `WriteResult` keeps
+  `"not-found"` only for `completeOrganizationOnboarding` (org deleted
+  mid-request). `checkoutGuard.test.ts` now seeds owner/admin/staff rows and
+  the "already active" case was missing an `await` — fixed. Phase F: the
+  backend guard now refuses admin/staff with a FORBIDDEN whose message names
+  the permission ("You don't have permission to buy a plan…").

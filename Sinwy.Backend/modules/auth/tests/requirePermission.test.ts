@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
+import type { Middleware } from "@backend/lib/app/types";
 import {
 	createUserWithSession,
 	fakeCtx,
@@ -11,7 +12,11 @@ import { user } from "@db/schema/userSchema";
 import type { Permission } from "@sinwy/shared";
 import { auth } from "../auth";
 import { requireAuth } from "../middleware";
-import { membershipFrom, requirePermission } from "../requirePermission";
+import {
+	membershipFrom,
+	requireMember,
+	requirePermission,
+} from "../requirePermission";
 
 beforeEach(async () => {
 	await db.delete(organization);
@@ -24,18 +29,21 @@ const next = () => {
 	return Promise.resolve(new Response("next"));
 };
 
+type RunOptions = { params?: Record<string, string>; cookie?: string };
+
 /** Runs the real requireAuth first so the session comes from the cookie like in production. */
-const run = async (
-	permission: Permission,
-	options: { params?: Record<string, string>; cookie?: string },
-) => {
+const runMiddleware = async (middleware: Middleware, options: RunOptions) => {
 	nextCalls = 0;
 	const ctx = fakeCtx(options);
-	const res = await requireAuth(ctx, () =>
-		requirePermission(permission)(ctx, next),
-	);
+	const res = await requireAuth(ctx, () => middleware(ctx, next));
 	return { ctx, res };
 };
+
+const run = (permission: Permission, options: RunOptions) =>
+	runMiddleware(requirePermission(permission), options);
+
+const runMember = (options: RunOptions) =>
+	runMiddleware(requireMember, options);
 
 const seedMember = async (role: string) => {
 	const organizationId = await insertOrganization("Acme");
@@ -48,6 +56,34 @@ test("without requireAuth → throws", async () => {
 	await expect(
 		requirePermission("bookings:read")(fakeCtx(), next),
 	).rejects.toThrow();
+	await expect(requireMember(fakeCtx(), next)).rejects.toThrow();
+});
+
+test("requireMember: outsider → 404", async () => {
+	const organizationId = await insertOrganization("Acme");
+	const { cookie } = await createUserWithSession();
+	const { res } = await runMember({ params: { organizationId }, cookie });
+	expect(res.status).toBe(404);
+	expect(nextCalls).toBe(0);
+});
+
+test("requireMember: any role passes and the membership carries the org status", async () => {
+	const { organizationId, cookie } = await seedMember("staff");
+	const { ctx, res } = await runMember({ params: { organizationId }, cookie });
+	expect(res.status).toBe(200);
+	expect(nextCalls).toBe(1);
+	expect(membershipFrom(ctx)).toEqual({
+		organizationId,
+		roles: ["staff"],
+		status: "inactive",
+	});
+});
+
+test("requireMember: unknown role still passes, with no roles", async () => {
+	const { organizationId, cookie } = await seedMember("member");
+	const { ctx, res } = await runMember({ params: { organizationId }, cookie });
+	expect(res.status).toBe(200);
+	expect(membershipFrom(ctx).roles).toEqual([]);
 });
 
 test("no organizationId param and no active organization → 400", async () => {
@@ -157,7 +193,11 @@ test("membershipFrom returns the resolved membership", async () => {
 		params: { organizationId },
 		cookie,
 	});
-	expect(membershipFrom(ctx)).toEqual({ organizationId, roles: ["owner"] });
+	expect(membershipFrom(ctx)).toEqual({
+		organizationId,
+		roles: ["owner"],
+		status: "inactive",
+	});
 });
 
 test("membershipFrom throws when the middleware did not run", () => {
