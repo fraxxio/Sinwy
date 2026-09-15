@@ -49,8 +49,8 @@ bun run build:web
 | C | Backend: missing tests | Done (437bb39) |
 | D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Done (7ecd111) |
 | E | Frontend: `signOut` helper, single nav/route declaration | Done (8b5b751) |
-| F | Frontend: funnel gate, preload-safe shell | Next |
-| G | Schema: composite unique on `member`, run migrations | Open |
+| F | Frontend: funnel gate, preload-safe shell | Done (f50e75c) |
+| G | Schema: composite unique on `member`, run migrations | Next |
 
 Deferred findings (not scheduled, see the last section) stay out of every
 phase.
@@ -328,8 +328,8 @@ member, `/organizations/<id>/plan` redirects.
 
 ### Done when
 
-- [ ] No `setActive` call is reachable from a preload.
-- [ ] Hovering a gated link as `staff` produces no console error and no
+- [x] No `setActive` call is reachable from a preload.
+- [x] Hovering a gated link as `staff` produces no console error and no
       toast.
 
 ---
@@ -426,3 +426,16 @@ needs to know.
   not fixed here; verify with `cd Sinwy.WebFrontend && bun run build` until
   someone corrects `package.json`. The sign-out hand check (owner → other
   member within a minute) was not run; needs a dev server and two accounts.
+- 2026-09-15, Phase F: `$id.plan.tsx` takes the `setActive` route (option 1),
+  so the funnel now activates the org the same way onboarding does; the
+  permission gate runs before the status call, so a `staff` member is
+  redirected to `/$organizationSlug` instead of seeing the status error card.
+  The status redirect still uses the backend `/status` endpoint rather than
+  `organization.status` from `setActive`, as the plan asked. In `_shell.tsx`
+  the preload branch's `getFullOrganization` clears the active org
+  server-side for a non-member (Better Auth does that itself before its 403)
+  — harmless, the switcher only lists the user's orgs. Root `package.json`
+  was missing its trailing newline (left by ce16c6a) and failed `bun run
+  check`; fixed here since it blocked Verify. Both hand checks (hover
+  another org, `staff` on `/organizations/<id>/plan`) were not run — they
+  need a dev server and a second account.
