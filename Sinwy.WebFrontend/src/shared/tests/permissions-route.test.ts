@@ -11,6 +11,15 @@ const routeArgs = (roles: OrgRole[], preload = false) => ({
 
 const guard = requirePermission("people:manage");
 
+const thrownBy = (run: () => unknown) => {
+	try {
+		run();
+	} catch (error) {
+		return error;
+	}
+	return undefined;
+};
+
 beforeEach(() => {
 	takeAccessDenied();
 });
@@ -21,12 +30,7 @@ it("lets an owner through without raising a notice", () => {
 });
 
 it("redirects staff to the organization overview", () => {
-	let thrown: unknown;
-	try {
-		guard(routeArgs(["staff"]));
-	} catch (error) {
-		thrown = error;
-	}
+	const thrown = thrownBy(() => guard(routeArgs(["staff"])));
 
 	expect(isRedirect(thrown)).toBe(true);
 	expect(isRedirect(thrown) && thrown.options).toMatchObject({
@@ -41,10 +45,12 @@ it("passes on the union of several roles", () => {
 });
 
 it("denies a member with no recognised role", () => {
-	expect(() => guard(routeArgs([]))).toThrow();
+	expect(isRedirect(thrownBy(() => guard(routeArgs([]))))).toBe(true);
 });
 
 it("stays silent when denying a preload", () => {
-	expect(() => guard(routeArgs(["staff"], true))).toThrow();
+	expect(isRedirect(thrownBy(() => guard(routeArgs(["staff"], true))))).toBe(
+		true,
+	);
 	expect(takeAccessDenied()).toBe(false);
 });

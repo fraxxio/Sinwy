@@ -1,4 +1,3 @@
-import { useNavigate } from "@tanstack/react-router";
 import {
 	BadgeCheckIcon,
 	BellIcon,
@@ -32,6 +31,7 @@ import {
 	useSidebar,
 } from "#/shared/components/ui/sidebar";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { useSignOut } from "#/shared/lib/auth/sign-out";
 
 const initials = (name: string) =>
 	name
@@ -43,8 +43,8 @@ const initials = (name: string) =>
 
 export function NavUser() {
 	const { isMobile } = useSidebar();
-	const navigate = useNavigate();
 	const { data: session } = authClient.useSession();
+	const signOut = useSignOut();
 	const { theme, toggleTheme } = useTheme();
 
 	const name = displayName(session?.user);
@@ -116,12 +116,7 @@ export function NavUser() {
 							</DropdownMenuItem>
 						</DropdownMenuGroup>
 						<DropdownMenuSeparator />
-						<DropdownMenuItem
-							onClick={async () => {
-								await authClient.signOut();
-								await navigate({ to: "/" });
-							}}
-						>
+						<DropdownMenuItem onClick={signOut}>
 							<LogOutIcon />
 							Log out
 						</DropdownMenuItem>

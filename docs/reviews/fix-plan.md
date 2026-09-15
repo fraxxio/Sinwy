@@ -48,8 +48,8 @@ bun run build:web
 | B | Shared/backend: strict role parsing, plan notes for Phase 10 | Done (7cdc35c) |
 | C | Backend: missing tests | Done (437bb39) |
 | D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Done (7ecd111) |
-| E | Frontend: `signOut` helper, single nav/route declaration | Next |
-| F | Frontend: funnel gate, preload-safe shell | Open |
+| E | Frontend: `signOut` helper, single nav/route declaration | Done (PENDING) |
+| F | Frontend: funnel gate, preload-safe shell | Next |
 | G | Schema: composite unique on `member`, run migrations | Open |
 
 Deferred findings (not scheduled, see the last section) stay out of every
@@ -286,9 +286,9 @@ within a minute, open the org — sidebar reflects the new user's role.
 
 ### Done when
 
-- [ ] `grep -rn "authClient.signOut" Sinwy.WebFrontend/src` matches only
+- [x] `grep -rn "authClient.signOut" Sinwy.WebFrontend/src` matches only
       the helper.
-- [ ] `grep -rn '"[a-z]*:\(read\|write\|manage\)"'
+- [x] `grep -rn '"[a-z]*:\(read\|write\|manage\)"'
       Sinwy.WebFrontend/src/modules/org-dashboard` matches only the sections
       table (and tests).
 
@@ -415,3 +415,14 @@ needs to know.
   the "already active" case was missing an `await` — fixed. Phase F: the
   backend guard now refuses admin/staff with a FORBIDDEN whose message names
   the permission ("You don't have permission to buy a plan…").
+- 2026-09-15, Phase E: the helper is a hook, `useSignOut()` in
+  `shared/lib/auth/sign-out.ts` (pulls `useQueryClient` + `useNavigate`).
+  `ORG_SECTIONS` lives in `modules/org-dashboard/lib/sections.ts`; `nav.tsx`
+  reads both `to` and `permission` from it, so the only literals left in the
+  module are in that table. The agreement test is
+  `modules/org-dashboard/tests/sections.test.ts` and also asserts no nav link
+  is gated outside the table. The root `build:web` script runs `bun build`
+  (the bundler CLI) instead of `bun run build` and fails on a clean tree —
+  not fixed here; verify with `cd Sinwy.WebFrontend && bun run build` until
+  someone corrects `package.json`. The sign-out hand check (owner → other
+  member within a minute) was not run; needs a dev server and two accounts.
