@@ -44,8 +44,10 @@ const seedMember = async (role: string) => {
 	return { organizationId, userId, cookie };
 };
 
-test("without requireAuth → throws", () => {
-	expect(() => requirePermission("bookings:read")(fakeCtx(), next)).toThrow();
+test("without requireAuth → throws", async () => {
+	await expect(
+		requirePermission("bookings:read")(fakeCtx(), next),
+	).rejects.toThrow();
 });
 
 test("no organizationId param and no active organization → 400", async () => {
@@ -128,6 +130,25 @@ test("falls back to the session's active organization", async () => {
 	const { ctx, res } = await run("bookings:read", { cookie });
 	expect(res.status).toBe(200);
 	expect(membershipFrom(ctx).organizationId).toBe(organizationId);
+});
+
+test("route param wins over the session's active organization", async () => {
+	const orgA = await insertOrganization("Acme");
+	const orgB = await insertOrganization("Globex");
+	const { userId, cookie } = await createUserWithSession({
+		activeOrganizationId: orgA,
+	});
+	await joinOrganization(orgA, userId, "owner");
+	await joinOrganization(orgB, userId, "staff");
+	const params = { organizationId: orgB };
+
+	const denied = await run("settings:manage", { params, cookie });
+	expect(denied.res.status).toBe(403);
+	expect(nextCalls).toBe(0);
+
+	const allowed = await run("bookings:read", { params, cookie });
+	expect(allowed.res.status).toBe(200);
+	expect(membershipFrom(allowed.ctx).organizationId).toBe(orgB);
 });
 
 test("membershipFrom returns the resolved membership", async () => {

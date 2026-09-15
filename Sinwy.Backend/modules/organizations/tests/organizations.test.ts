@@ -308,6 +308,9 @@ const emptyProfile: ProfileDto = {
 const joinAsStaff = (organizationId: string, userId: string) =>
 	joinOrganization(organizationId, userId, "staff");
 
+const joinAsAdmin = (organizationId: string, userId: string) =>
+	joinOrganization(organizationId, userId, "admin");
+
 test("GET onboarding: fresh organization → nothing completed, empty profile", async () => {
 	const { cookie } = await createUserWithSession();
 	const { id } = await createOrg("Acme", cookie);
@@ -526,6 +529,15 @@ test("PUT profile: non-member → 404, staff → 403", async () => {
 	expect((await saveProfile(id, outsider.cookie)).status).toBe(403);
 });
 
+test("PUT profile: admin → 200", async () => {
+	const owner = await createUserWithSession();
+	const { id } = await createActiveOrg("Acme", owner.cookie);
+	const admin = await createUserWithSession();
+	await joinAsAdmin(id, admin.userId);
+
+	expect((await saveProfile(id, admin.cookie)).status).toBe(200);
+});
+
 test("POST onboarding/complete: marks the organization done, idempotently", async () => {
 	const { cookie } = await createUserWithSession();
 	const { id } = await createActiveOrg("Acme", cookie);
@@ -572,6 +584,23 @@ test("POST onboarding/complete: non-member → 404, staff → 403", async () => 
 			)
 		).status,
 	).toBe(403);
+});
+
+test("POST onboarding/complete: admin → 200", async () => {
+	const owner = await createUserWithSession();
+	const { id } = await createActiveOrg("Acme", owner.cookie);
+	const admin = await createUserWithSession();
+	await joinAsAdmin(id, admin.userId);
+
+	expect(
+		(
+			await post(
+				`/api/organizations/${id}/onboarding/complete`,
+				{},
+				admin.cookie,
+			)
+		).status,
+	).toBe(200);
 });
 
 // pay → then onboard: the wizard never runs for an unpaid organization, so the

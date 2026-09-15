@@ -46,8 +46,8 @@ bun run build:web
 | --- | --- | --- |
 | A | Shared: rename the `team` resource, overlap guard, `toStatements` cleanup | Done (f51b946) |
 | B | Shared/backend: strict role parsing, plan notes for Phase 10 | Done (7cdc35c) |
-| C | Backend: missing tests | Next |
-| D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Open |
+| C | Backend: missing tests | Done (PENDING) |
+| D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Next |
 | E | Frontend: `signOut` helper, single nav/route declaration | Open |
 | F | Frontend: funnel gate, preload-safe shell | Open |
 | G | Schema: composite unique on `member`, run migrations | Open |
@@ -180,10 +180,10 @@ Findings: P2-1, P2-2, P2-8 first bullet. No production code changes.
 
 ### Done when
 
-- [ ] Flipping `params["organizationId"] ?? activeOrganizationId` to
+- [x] Flipping `params["organizationId"] ?? activeOrganizationId` to
       `activeOrganizationId ?? params["organizationId"]` fails a test
       (check by hand, then revert).
-- [ ] Removing `"settings:manage"` from `ROLE_PERMISSIONS.admin` fails an
+- [x] Removing `"settings:manage"` from `ROLE_PERMISSIONS.admin` fails an
       HTTP-level test (check by hand, then revert).
 
 ---
@@ -397,3 +397,7 @@ needs to know.
   comma") via `findUnpaidOwnedOrganization`, not a new repository test —
   it reuses the existing seeding helpers. The Phase 10 notes live under a
   new "### Phase 10 prerequisites" heading at the end of the plan.
+- 2026-09-15, Phase C: no surprises. The admin cases are two standalone
+  tests ("PUT profile: admin → 200", "POST onboarding/complete: admin →
+  200") rather than additions to the existing 404/403 tests, so Phase D's
+  "must pass unchanged" expectation covers them too.
