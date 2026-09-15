@@ -12,7 +12,7 @@
 		"start:server": "cd Sinwy.Backend && bun start",
 		"start:localproxy": "ngrok start sinwy",
 		"build": "bun run build:web",
-		"build:web": "cd Sinwy.WebFrontend && bun build",
+		"build:web": "cd Sinwy.WebFrontend && bun run build",
 		"test": "bun run test:server && bun run test:web",
 		"test:web": "cd Sinwy.WebFrontend && bun test",
 		"test:server": "cd Sinwy.Backend && bun test",
