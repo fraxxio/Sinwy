@@ -48,7 +48,7 @@ bun run build:web
 | B | Shared/backend: strict role parsing, plan notes for Phase 10 | Done (7cdc35c) |
 | C | Backend: missing tests | Done (437bb39) |
 | D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Done (7ecd111) |
-| E | Frontend: `signOut` helper, single nav/route declaration | Done (PENDING) |
+| E | Frontend: `signOut` helper, single nav/route declaration | Done (8b5b751) |
 | F | Frontend: funnel gate, preload-safe shell | Next |
 | G | Schema: composite unique on `member`, run migrations | Open |
 
