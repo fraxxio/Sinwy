@@ -5,7 +5,7 @@ import { PageHeader } from "#/shared/components/PageHeader";
 import { requirePermission } from "#/shared/lib/auth/protected-route";
 
 export const Route = createFileRoute("/$organizationSlug/_shell/team")({
-	beforeLoad: requirePermission("team:manage"),
+	beforeLoad: requirePermission("people:manage"),
 	staticData: { crumb: "Team" },
 	component: TeamPage,
 });

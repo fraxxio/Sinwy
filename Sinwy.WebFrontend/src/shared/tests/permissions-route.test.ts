@@ -9,7 +9,7 @@ const routeArgs = (roles: OrgRole[], preload = false) => ({
 	preload,
 });
 
-const guard = requirePermission("team:manage");
+const guard = requirePermission("people:manage");
 
 beforeEach(() => {
 	takeAccessDenied();

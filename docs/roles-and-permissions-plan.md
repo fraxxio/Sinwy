@@ -78,7 +78,7 @@ export const PERMISSION_STATEMENTS = {
 	pages: ["read", "write"],
 	payments: ["read"],
 	analytics: ["read"],
-	team: ["manage"],
+	people: ["manage"],
 	billing: ["manage"],
 	settings: ["manage"],
 } as const;
@@ -387,7 +387,7 @@ Outside the org shell (account dashboard, funnel) `can` is always false and
 | Pages | `pages:read` |
 | Payments | `payments:read` |
 | Analytics | `analytics:read` |
-| Team | `team:manage` |
+| Team | `people:manage` |
 | Settings › General | `settings:manage` |
 | Settings › Billing | `billing:manage` |
 
@@ -404,7 +404,7 @@ Declare once on the section layout route so index and detail children inherit it
 | `_shell.pages.tsx` | `requirePermission("pages:read")` |
 | `_shell.payments.tsx` | `requirePermission("payments:read")` |
 | `_shell.analytics.tsx` | `requirePermission("analytics:read")` |
-| `_shell.team.tsx` | `requirePermission("team:manage")` |
+| `_shell.team.tsx` | `requirePermission("people:manage")` |
 | `_shell.settings.tsx` | `requirePermission("settings:manage")` |
 | `_shell.settings.billing.tsx` | `requirePermission("billing:manage")` (on top of the parent's) |
 
@@ -423,7 +423,7 @@ differs.
 - `shared/tests/nav-filter.test.ts`: unpermissioned items kept; gated items
   dropped when `can` is false; group hidden when all children drop; group kept
   with the surviving subset.
-- `shared/tests/permissions-route.test.ts`: `requirePermission("team:manage")`
+- `shared/tests/permissions-route.test.ts`: `requirePermission("people:manage")`
   returns `undefined` for an owner context; for a staff context it throws a
   value for which `isRedirect()` is true with `to: "/$organizationSlug"`.
   Mock `#/shared/components/ui/toast` with `mock.module` so the manager is not

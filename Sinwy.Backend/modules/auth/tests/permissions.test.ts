@@ -19,7 +19,7 @@ test("owner holds every permission", () => {
 		"pages:write",
 		"payments:read",
 		"analytics:read",
-		"team:manage",
+		"people:manage",
 		"billing:manage",
 		"settings:manage",
 	]);
@@ -38,7 +38,7 @@ test("admin holds everything except billing:manage", () => {
 		"pages:write",
 		"payments:read",
 		"analytics:read",
-		"team:manage",
+		"people:manage",
 		"settings:manage",
 	]);
 });
@@ -89,4 +89,14 @@ test("orgAccessRoles mirror the matrix and keep better-auth's built-in rights", 
 		"delete",
 	]);
 	expect(orgAccessRoles.admin.statements.billing).toEqual([]);
+	expect(orgAccessRoles.owner.statements.team).toEqual([
+		"create",
+		"update",
+		"delete",
+	]);
+	expect(orgAccessRoles.staff.statements.team).toEqual([]);
+	expect(orgAccessRoles.admin.statements.people).toEqual(["manage"]);
+	expect(orgAccessRoles.owner.authorize({ team: ["create"] }).success).toBe(
+		true,
+	);
 });

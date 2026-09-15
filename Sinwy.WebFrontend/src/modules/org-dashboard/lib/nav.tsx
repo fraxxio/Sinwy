@@ -62,7 +62,7 @@ export const organizationNav = (organizationSlug: string): SidebarNavItem[] => {
 			title: "Team",
 			icon: <UsersRoundIcon />,
 			link: linkOptions({ to: "/$organizationSlug/team", params }),
-			permission: "team:manage",
+			permission: "people:manage",
 		},
 		{
 			title: "Settings",

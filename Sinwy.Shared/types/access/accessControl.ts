@@ -7,6 +7,7 @@ import {
 } from "better-auth/plugins/organization/access";
 import type { OrgRole } from "./OrgRole";
 import {
+	PERMISSION_RESOURCES,
 	PERMISSION_STATEMENTS,
 	type Permission,
 	type PermissionAction,
@@ -15,26 +16,26 @@ import {
 } from "./Permission";
 import { ROLE_PERMISSIONS } from "./RolePermissions";
 
+// Our resources must not shadow better-auth's built-ins (organization,
+// member, invitation, team, ac); a collision fails typecheck here.
+type Overlap = Extract<keyof typeof defaultStatements, PermissionResource>;
+type NoOverlap<T> = Overlap extends never ? T : never;
+
 export const ac = createAccessControl({
 	...defaultStatements,
-	...PERMISSION_STATEMENTS,
+	...(PERMISSION_STATEMENTS satisfies NoOverlap<typeof PERMISSION_STATEMENTS>),
 });
 
 type RoleStatements = { [R in PermissionResource]: PermissionAction<R>[] };
 
 // toStatements(["bookings:read", "bookings:write"]) → { bookings: ["read", "write"], services: [], … }
 const toStatements = (permissions: readonly Permission[]): RoleStatements => {
-	const statements: Record<PermissionResource, string[]> = {
-		bookings: [],
-		services: [],
-		customers: [],
-		pages: [],
-		payments: [],
-		analytics: [],
-		team: [],
-		billing: [],
-		settings: [],
-	};
+	const statements = Object.fromEntries(
+		PERMISSION_RESOURCES.map((resource): [PermissionResource, string[]] => [
+			resource,
+			[],
+		]),
+	) as Record<PermissionResource, string[]>;
 	for (const permission of permissions) {
 		const [resource, action] = splitPermission(permission);
 		statements[resource].push(action);

@@ -8,7 +8,7 @@ const link = linkOptions({ to: "/" });
 
 const items: SidebarNavItem[] = [
 	{ title: "Overview", icon: null, link },
-	{ title: "Team", icon: null, link, permission: "team:manage" },
+	{ title: "Team", icon: null, link, permission: "people:manage" },
 	{
 		title: "Settings",
 		icon: null,
@@ -47,7 +47,7 @@ it("keeps a group with only its surviving sub-items", () => {
 });
 
 it("hides a group when all of its sub-items drop", () => {
-	expect(titles(filterNav(items, allow("team:manage")))).toEqual([
+	expect(titles(filterNav(items, allow("people:manage")))).toEqual([
 		"Overview",
 		"Team",
 	]);
