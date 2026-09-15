@@ -75,9 +75,14 @@ test("hasPermission is the union over held roles", () => {
 });
 
 test("parseMemberRoles keeps known roles and drops the rest", () => {
-	expect(parseMemberRoles("owner, admin")).toEqual(["owner", "admin"]);
+	expect(parseMemberRoles("owner,admin")).toEqual(["owner", "admin"]);
 	expect(parseMemberRoles("member")).toEqual([]);
 	expect(parseMemberRoles("")).toEqual([]);
+});
+
+test("parseMemberRoles does not trim, matching better-auth's own split", () => {
+	expect(parseMemberRoles("owner, admin")).toEqual(["owner"]);
+	expect(parseMemberRoles("staff, admin")).toEqual(["staff"]);
 });
 
 test("orgAccessRoles mirror the matrix and keep better-auth's built-in rights", () => {

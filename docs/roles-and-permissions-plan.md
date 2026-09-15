@@ -481,3 +481,17 @@ nothing outside tests.
 - Write permissions on detail pages and any `hasPermission`-driven UI inside a
   page (buttons, forms); `usePermissions().can(...)` is ready for that.
 - Live propagation of role changes to open sessions.
+
+### Phase 10 prerequisites
+
+- Every role that reaches Better Auth (invite, update role) is validated with
+  `z.enum(ORG_ROLES)` first. `member` and comma-joined values must not reach
+  `createInvitation`, which stores the string untrimmed; both
+  `parseMemberRoles` and `memberHasRole` split on `,` without trimming, so a
+  stray space silently drops the role.
+- Buying a plan is `billing:manage`: the funnel route
+  (`/organizations/$id/plan`) and the checkout hook (`ensureCheckoutAllowed`)
+  are gated on it (fix-plan Phases D and F).
+- The per-request warn in `requirePermission` for unknown roles becomes noisy
+  if `member` can be set. Fix at the source (the enum above), do not
+  rate-limit the log.

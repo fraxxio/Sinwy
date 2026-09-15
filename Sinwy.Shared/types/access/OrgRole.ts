@@ -9,9 +9,10 @@ const isOrgRole = (value: string): value is OrgRole =>
 export const toOrgRole = (value: string): OrgRole | null =>
 	isOrgRole(value) ? value : null;
 
-/** better-auth stores several roles in one comma separated column; unknown names are dropped */
+/**
+ * better-auth stores several roles in one comma separated column and splits
+ * it without trimming; we match that exactly so both readers agree.
+ * Unknown names (including " admin") are dropped.
+ */
 export const parseMemberRoles = (role: string): OrgRole[] =>
-	role
-		.split(",")
-		.map((r) => r.trim())
-		.filter(isOrgRole);
+	role.split(",").filter(isOrgRole);

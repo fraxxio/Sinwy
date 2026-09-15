@@ -167,6 +167,13 @@ test("owner holding several roles in one column → still prompted", async () =>
 	});
 });
 
+test("role column with a space after the comma → owner not recognised", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	// memberHasRole splits on "," without trimming, same as parseMemberRoles
+	await createOrg(userId, { status: "inactive", role: "staff, owner" });
+	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
+});
+
 test("non-owner member of an active org mid-setup → not prompted", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	await createOrg(userId, { status: "active", role: "member" });

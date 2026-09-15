@@ -32,7 +32,8 @@ export const ROLE_PERMISSIONS: Record<OrgRole, readonly Permission[]> = {
 export const hasPermission = (
 	roles: readonly OrgRole[],
 	permission: Permission,
-): boolean => roles.some((role) => ROLE_PERMISSIONS[role].includes(permission));
+): boolean =>
+	roles.some((role) => ROLE_PERMISSIONS[role]?.includes(permission) ?? false);
 
 export const permissionsOf = (roles: readonly OrgRole[]): Set<Permission> =>
-	new Set(roles.flatMap((role) => ROLE_PERMISSIONS[role]));
+	new Set(roles.flatMap((role) => ROLE_PERMISSIONS[role] ?? []));

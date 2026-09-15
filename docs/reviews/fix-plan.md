@@ -45,8 +45,8 @@ bun run build:web
 | Phase | Scope | State |
 | --- | --- | --- |
 | A | Shared: rename the `team` resource, overlap guard, `toStatements` cleanup | Done (f51b946) |
-| B | Shared/backend: strict role parsing, plan notes for Phase 10 | Next |
-| C | Backend: missing tests | Open |
+| B | Shared/backend: strict role parsing, plan notes for Phase 10 | Done (see follow-up commit) |
+| C | Backend: missing tests | Next |
 | D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Open |
 | E | Frontend: `signOut` helper, single nav/route declaration | Open |
 | F | Frontend: funnel gate, preload-safe shell | Open |
@@ -150,10 +150,10 @@ produce values both can read.
 
 ### Done when
 
-- [ ] `parseMemberRoles("staff, admin")` → `["staff"]` in both TS and the
+- [x] `parseMemberRoles("staff, admin")` → `["staff"]` in both TS and the
       `memberHasRole` SQL (add a repository-level test only if cheap; the
       `user` module tests already exercise `memberHasRole("owner")`).
-- [ ] Plan document carries the three Phase 10 notes.
+- [x] Plan document carries the three Phase 10 notes.
 
 ---
 
@@ -392,3 +392,8 @@ needs to know.
   by hand (`member: ["x"]` → TS1360). `docs/roles-and-permissions-plan.md`
   line ~81 (the `PERMISSION_STATEMENTS` listing) was also renamed; the plan
   only listed the three `team:manage` mentions.
+- 2026-09-15, Phase B: SQL strictness is covered in
+  `modules/user/tests/flags.test.ts` ("role column with a space after the
+  comma") via `findUnpaidOwnedOrganization`, not a new repository test —
+  it reuses the existing seeding helpers. The Phase 10 notes live under a
+  new "### Phase 10 prerequisites" heading at the end of the plan.
