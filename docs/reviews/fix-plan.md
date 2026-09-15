@@ -44,7 +44,7 @@ bun run build:web
 
 | Phase | Scope | State |
 | --- | --- | --- |
-| A | Shared: rename the `team` resource, overlap guard, `toStatements` cleanup | Done (87096ac) |
+| A | Shared: rename the `team` resource, overlap guard, `toStatements` cleanup | Done (f51b946) |
 | B | Shared/backend: strict role parsing, plan notes for Phase 10 | Next |
 | C | Backend: missing tests | Open |
 | D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Open |
