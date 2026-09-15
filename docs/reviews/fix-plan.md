@@ -45,7 +45,7 @@ bun run build:web
 | Phase | Scope | State |
 | --- | --- | --- |
 | A | Shared: rename the `team` resource, overlap guard, `toStatements` cleanup | Done (f51b946) |
-| B | Shared/backend: strict role parsing, plan notes for Phase 10 | Done (see follow-up commit) |
+| B | Shared/backend: strict role parsing, plan notes for Phase 10 | Done (7cdc35c) |
 | C | Backend: missing tests | Next |
 | D | Backend: `requireMember`, status on `Membership`, checkout guard, dead code | Open |
 | E | Frontend: `signOut` helper, single nav/route declaration | Open |
