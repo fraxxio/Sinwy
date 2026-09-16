@@ -1,10 +1,8 @@
+import { PASSWORD_RULES } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
 import { AuthLayout } from "#/modules/auth/components/AuthLayout";
 import { GoogleSignInButton } from "#/modules/auth/components/GoogleSignInButton";
-import {
-	PASSWORD_RULES,
-	registerFormOpts,
-} from "#/modules/auth/lib/useRegister";
+import { registerFormOpts } from "#/modules/auth/lib/useRegister";
 import { FieldError } from "#/shared/components/ui/field";
 import { withForm } from "#/shared/lib/form";
 

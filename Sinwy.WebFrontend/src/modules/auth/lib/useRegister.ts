@@ -1,29 +1,17 @@
-import { RESEND_COOLDOWN_SECONDS } from "@sinwy/shared";
+import {
+	passwordSchema,
+	RESEND_COOLDOWN_SECONDS,
+	userNameSchema,
+} from "@sinwy/shared";
 import { formOptions, revalidateLogic } from "@tanstack/react-form";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import { useAppForm } from "#/shared/lib/form";
 
-export const PASSWORD_RULES =
-	"At least 10 characters, including one number and one symbol.";
-
-// 128 mirrors better-auth's maxPasswordLength, which rejects server-side otherwise
-export const passwordSchema = z
-	.string()
-	.regex(/^(?=.*\d)(?=.*[^\p{L}\d])[^\s]{10,}$/u, PASSWORD_RULES)
-	.max(128, "Password must be at most 128 characters");
-
 export const registerSchema = z
 	.object({
-		name: z
-			.string()
-			.trim()
-			.min(3, "Name must be at least 3 characters")
-			.regex(
-				/^\p{L}+(?:[ -]\p{L}+)*$/u,
-				"Use letters, spaces and hyphens only",
-			),
+		name: userNameSchema,
 		email: z.email("Enter a valid email"),
 		password: passwordSchema,
 		confirmPassword: z.string(),
