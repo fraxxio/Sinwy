@@ -2,6 +2,7 @@ import { emailClient } from "@backend/infrastructure/email";
 import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
+import { deleteSoleOwnedOrganizations } from "@organizationsModule";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import { Polar } from "@polar-sh/sdk";
 import {
@@ -102,6 +103,10 @@ export const auth = betterAuth({
 					template: DeleteAccountEmail,
 					props: { deleteUrl: url },
 				});
+			},
+			// throws APIError on a Polar revoke failure, which aborts the deletion
+			beforeDelete: async (user) => {
+				await deleteSoleOwnedOrganizations(user.id);
 			},
 		},
 	},

@@ -4,7 +4,7 @@ import {
 	organization,
 	organizationProfile,
 } from "@db/schema/organizationSchema";
-import type { OrgRole, OrganizationStatus } from "@sinwy/shared";
+import type { OrganizationStatus, OrgRole } from "@sinwy/shared";
 import {
 	and,
 	eq,
