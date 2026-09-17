@@ -63,10 +63,11 @@ export function DangerZone({ user }: { user: SessionUser }) {
 			id="danger"
 			title="Delete account"
 			description="Permanently removes your profile, bookings and memberships. This cannot be undone."
-			className="ring-1 ring-destructive/30"
 		>
 			<AlertDialog open={open} onOpenChange={onOpenChange}>
-				<AlertDialogTrigger render={<Button variant="destructive" />}>
+				<AlertDialogTrigger
+					render={<Button variant="destructive" className="w-fit" />}
+				>
 					Delete my account
 				</AlertDialogTrigger>
 				<AlertDialogContent>

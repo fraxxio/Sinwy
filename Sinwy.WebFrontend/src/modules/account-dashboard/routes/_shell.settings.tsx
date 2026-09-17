@@ -7,6 +7,7 @@ import { EmailSection } from "#/modules/account-dashboard/components/settings/Em
 import { PasswordSection } from "#/modules/account-dashboard/components/settings/PasswordSection";
 import { ProfileSection } from "#/modules/account-dashboard/components/settings/ProfileSection";
 import { SessionsSection } from "#/modules/account-dashboard/components/settings/SessionsSection";
+import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { toast } from "#/shared/components/ui/toast";
 import { authClient } from "#/shared/lib/auth/auth-client";
@@ -43,14 +44,14 @@ function SettingsPage() {
 				title="Settings"
 				description="Your profile, security and preferences."
 			/>
-			<div className="grid max-w-3xl gap-4">
+			<ContentBox className="divide-y">
 				<ProfileSection user={user} />
 				<EmailSection key={user.email} user={user} />
 				<PasswordSection />
 				<ConnectedAccountsSection />
 				<SessionsSection currentToken={currentToken} />
 				<DangerZone user={user} />
-			</div>
+			</ContentBox>
 		</>
 	);
 }

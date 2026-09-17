@@ -1,36 +1,28 @@
 import type { ReactNode } from "react";
-import {
-	Card,
-	CardAction,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "#/shared/components/ui/card";
 
 export function SettingsSection({
 	id,
 	title,
 	description,
 	action,
-	className,
 	children,
 }: {
 	id: string;
 	title: string;
 	description: string;
 	action?: ReactNode;
-	className?: string;
 	children: ReactNode;
 }) {
 	return (
-		<Card id={id} className={className}>
-			<CardHeader>
-				<CardTitle>{title}</CardTitle>
-				<CardDescription>{description}</CardDescription>
-				{action && <CardAction>{action}</CardAction>}
-			</CardHeader>
-			<CardContent>{children}</CardContent>
-		</Card>
+		<section id={id} className="grid max-w-3xl gap-4 py-8 first:pt-0 last:pb-0">
+			<div className="flex items-start justify-between gap-4">
+				<div className="space-y-1">
+					<h2 className="font-heading font-medium text-base">{title}</h2>
+					<p className="text-muted-foreground text-sm">{description}</p>
+				</div>
+				{action}
+			</div>
+			{children}
+		</section>
 	);
 }
