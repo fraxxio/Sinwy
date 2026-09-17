@@ -24,22 +24,18 @@ const forwardedCookie = createIsomorphicFn()
 		}
 	});
 
-export async function api<T>(
+async function send<T>(
 	path: string,
-	init?: RequestInit,
+	init: RequestInit,
 ): Promise<ApiResponse<T>> {
-	const { headers, ...rest } = init ?? {};
+	const { headers, ...rest } = init;
 	const cookie = forwardedCookie();
 
 	let res: Response;
 	try {
 		res = await fetch(`${origin()}/api${path}`, {
 			...rest,
-			headers: {
-				"Content-Type": "application/json",
-				...(cookie ? { cookie } : {}),
-				...headers,
-			},
+			headers: { ...(cookie ? { cookie } : {}), ...headers },
 		});
 	} catch {
 		return { isSuccess: false, data: null, message: "Network error", code: 0 };
@@ -56,4 +52,17 @@ export async function api<T>(
 			code: res.status,
 		};
 	}
+}
+
+export function api<T>(path: string, init?: RequestInit) {
+	const { headers, ...rest } = init ?? {};
+	return send<T>(path, {
+		...rest,
+		headers: { "Content-Type": "application/json", ...headers },
+	});
+}
+
+/** Multipart POST; no Content-Type so the browser can set the boundary itself. */
+export function apiUpload<T>(path: string, body: FormData) {
+	return send<T>(path, { method: "POST", body });
 }

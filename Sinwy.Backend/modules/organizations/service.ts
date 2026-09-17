@@ -3,23 +3,31 @@ import {
 	type OrganizationProfileInput,
 	uniqueSlug,
 } from "@backend/modules/organizations/utils";
+import { createLogger } from "@logger";
 import {
+	type AccountDeletionPreviewDto,
 	EMPTY_ORGANIZATION_PROFILE,
 	type OrganizationDto,
 	type OrganizationIndustry,
 	type OrganizationOnboardingDto,
 	type OrganizationProfileDto,
 	type OrganizationStatus,
+	toOrganizationStatus,
 } from "@sinwy/shared";
+import { APIError } from "better-auth/api";
 import { reconcileInactiveStatus } from "./reconcileStatus";
 import {
+	deleteOrganizations,
 	findOnboardingCompletedAt,
 	findProfile,
+	findSoleOwnedOrganizations,
 	isSlugTaken,
 	markOnboardingCompleted,
 	setStatus,
 	upsertProfile,
 } from "./repository";
+
+const organizationsLogger = createLogger("organizations");
 
 export const createOrganization = async (
 	userId: string,
@@ -134,4 +142,55 @@ export const completeOrganizationOnboarding = async (
 	if (!completedAt) return { ok: false, error: "not-found" };
 
 	return { ok: true, data: { completedAt: completedAt.toISOString() } };
+};
+
+export const getAccountDeletionPreview = async (
+	userId: string,
+): Promise<AccountDeletionPreviewDto> => {
+	const rows = await findSoleOwnedOrganizations(userId);
+	return {
+		soleOwnedOrganizations: rows.map((row) => ({
+			id: row.id,
+			name: row.name,
+			status: toOrganizationStatus(row.status),
+		})),
+	};
+};
+
+/** Idempotent: no active subscription → no-op. Throws so a paying subscription is never orphaned. */
+const revokeOrganizationSubscription = async (organizationId: string) => {
+	try {
+		const subscriptions = await polarClient.subscriptions.list({
+			metadata: { referenceId: organizationId },
+			active: true,
+			limit: 1,
+		});
+		const subscription = subscriptions.result.items[0];
+		if (!subscription) return;
+		await polarClient.subscriptions.revoke({ id: subscription.id });
+		organizationsLogger.info("Revoked subscription before deletion", {
+			organizationId,
+			subscriptionId: subscription.id,
+		});
+	} catch (error) {
+		organizationsLogger.error("Polar subscription revoke failed", {
+			organizationId,
+			error: error instanceof Error ? error.message : String(error),
+		});
+		throw new APIError("INTERNAL_SERVER_ERROR", {
+			message:
+				"Could not cancel an organization subscription. Try again later.",
+		});
+	}
+};
+
+/**
+ * Revokes each sole-owned organization's active Polar subscription, then
+ * deletes the rows. A revoke failure throws before anything is deleted.
+ */
+export const deleteSoleOwnedOrganizations = async (userId: string) => {
+	const orgs = await findSoleOwnedOrganizations(userId);
+	if (orgs.length === 0) return;
+	for (const org of orgs) await revokeOrganizationSubscription(org.id);
+	await deleteOrganizations(orgs.map((org) => org.id));
 };

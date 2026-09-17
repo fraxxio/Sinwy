@@ -1,5 +1,6 @@
-export { auth, polarClient } from "./auth";
+export { auth } from "./auth";
 export { requireAuth, sessionFrom } from "./middleware";
+export { polarClient } from "./polarClient";
 export {
 	type Membership,
 	membershipFrom,

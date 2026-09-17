@@ -2,7 +2,7 @@ import type { IReqContext } from "@backend/lib/app/types";
 import type { ReqContextValues } from "@backend/lib/sharedTypes";
 import appConfig from "@config";
 import db from "@db";
-import { session } from "@db/schema/authSchema";
+import { account, session } from "@db/schema/authSchema";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
 
@@ -33,8 +33,10 @@ export const sessionCookie = async (token: string) => {
 
 let seq = 0;
 
+type AccountSeed = { providerId: "credential" | "google"; password?: string };
+
 export const createUserWithSession = async (
-	options: { activeOrganizationId?: string } = {},
+	options: { activeOrganizationId?: string; accounts?: AccountSeed[] } = {},
 ) => {
 	const id = `user_test_${++seq}`;
 	const token = `token_${id}`;
@@ -56,6 +58,17 @@ export const createUserWithSession = async (
 		createdAt: now,
 		updatedAt: now,
 	});
+	for (const seed of options.accounts ?? []) {
+		await db.insert(account).values({
+			id: `account_${id}_${seed.providerId}`,
+			accountId: id,
+			providerId: seed.providerId,
+			userId: id,
+			password: seed.password ?? null,
+			createdAt: now,
+			updatedAt: now,
+		});
+	}
 	return { userId: id, cookie: await sessionCookie(token) };
 };
 

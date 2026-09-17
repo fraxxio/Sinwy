@@ -1,6 +1,6 @@
+import { PASSWORD_RULES } from "@sinwy/shared";
 import { AuthLayout } from "#/modules/auth/components/AuthLayout";
 import ExpiredPasswordLink from "#/modules/auth/components/ExpiredPasswordLink";
-import { PASSWORD_RULES } from "#/modules/auth/lib/useRegister";
 import useResetPassword from "#/modules/auth/lib/useResetPassword";
 import { FieldError } from "#/shared/components/ui/field";
 

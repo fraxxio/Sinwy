@@ -30,6 +30,9 @@ class ReqContext implements IReqContext {
 	}
 }
 
+// the largest body any route accepts is an avatar upload; everything else is small JSON
+const MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024;
+
 const compose = (middlewares: Middleware[], handler: Handler): Handler => {
 	return (ctx) => {
 		let index = -1;
@@ -102,6 +105,7 @@ const createApp = (): IApp => {
 
 			return Bun.serve({
 				port,
+				maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
 				routes: bunRoutes,
 				error(err) {
 					console.error(err);

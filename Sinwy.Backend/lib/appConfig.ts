@@ -1,4 +1,4 @@
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 import { z } from "zod";
@@ -14,6 +14,8 @@ const configSchema = z
 		PORT: z.coerce.number().default(3001),
 		LOG_DRIVER: z.enum(["console"]).default("console"),
 		LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+		STORAGE_DRIVER: z.enum(["local"]).default("local"),
+		STORAGE_LOCAL_DIR: z.string().default(".storage"),
 		BETTER_AUTH_SECRET: z.string(),
 		BETTER_AUTH_URL: z.string(),
 		WEB_APP_URL: z.url(),
@@ -57,6 +59,8 @@ const configSchema = z
 			...env,
 			EMAIL_DRIVER,
 			DB_URL,
+			// relative paths resolve against the backend root, not the process cwd
+			STORAGE_LOCAL_DIR: resolve(__dirname, "..", env.STORAGE_LOCAL_DIR),
 		};
 	});
 

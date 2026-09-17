@@ -1,9 +1,9 @@
+import { passwordSchema } from "@sinwy/shared";
 import { revalidateLogic } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import { BASE_ERROR_CODES } from "better-auth";
 import { useState } from "react";
 import z from "zod";
-import { passwordSchema } from "#/modules/auth/lib/useRegister";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import { useAppForm } from "#/shared/lib/form";
 
