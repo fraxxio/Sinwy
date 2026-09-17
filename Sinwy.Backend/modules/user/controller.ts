@@ -2,7 +2,7 @@ import { sessionFrom } from "@authModule";
 import { readFormData } from "@backend/lib/app/formData";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler } from "@backend/lib/app/types";
-import { setPasswordSchema } from "@sinwy/shared";
+import { AVATAR_LIMITS, setPasswordSchema } from "@sinwy/shared";
 import { APIError } from "better-auth/api";
 import { AvatarError } from "./avatar";
 import {
@@ -36,8 +36,16 @@ export const setPasswordHandler: Handler = async (c) => {
 	return ok(null, 200, "Password set");
 };
 
+// multipart framing around the file: boundaries, part headers, field name
+const UPLOAD_OVERHEAD_BYTES = 16 * 1024;
+
 export const uploadAvatarHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
+	// refuse before the whole body is buffered by the multipart parser
+	const declared = Number(c.req.headers.get("content-length"));
+	if (declared > AVATAR_LIMITS.maxBytes + UPLOAD_OVERHEAD_BYTES) {
+		return fail("Image must be 2 MB or smaller", 413);
+	}
 	const form = await readFormData(c.req);
 	const file = form?.get("file");
 	if (!(file instanceof File)) return fail("Missing file", 400);

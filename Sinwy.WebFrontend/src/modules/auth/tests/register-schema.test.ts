@@ -17,10 +17,11 @@ it("accepts a valid registration", () => {
 	expect(registerSchema.safeParse(valid).success).toBe(true);
 });
 
-it("rejects short or punctuated names", () => {
-	expect(errorFor({ name: "Jo" })).toBe("name");
-	expect(errorFor({ name: "J. Rivera" })).toBe("name");
-	expect(errorFor({ name: "O'Neil" })).toBe("name");
+it("accepts initials and apostrophes, rejects one-letter or non-letter names", () => {
+	expect(errorFor({ name: "J. Rivera" })).toBeNull();
+	expect(errorFor({ name: "O'Neil" })).toBeNull();
+	expect(errorFor({ name: "J" })).toBe("name");
+	expect(errorFor({ name: "Jordan2" })).toBe("name");
 });
 
 it("rejects invalid emails", () => {

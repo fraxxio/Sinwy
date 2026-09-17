@@ -1,5 +1,6 @@
 import { unlink } from "node:fs/promises";
 import { resolve, sep } from "node:path";
+import appConfig from "@config";
 import type { StorageClient } from "./storageClientTypes";
 
 // keys are random, so a served object never changes under its URL
@@ -36,5 +37,5 @@ export const createLocalStorageClient = (rootDir: string): StorageClient => {
 };
 
 export const localStorageClient = createLocalStorageClient(
-	resolve(import.meta.dir, "../../.storage"),
+	appConfig.STORAGE_LOCAL_DIR,
 );

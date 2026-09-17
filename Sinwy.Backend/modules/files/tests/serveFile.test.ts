@@ -37,3 +37,15 @@ test("empty key → 404", async () => {
 	const res = await fetch(new URL("/api/files/", base));
 	expect(res.status).toBe(404);
 });
+
+test("malformed escape → 404", async () => {
+	const res = await fetch(new URL("/api/files/%E0%A4%A", base));
+	expect(res.status).toBe(404);
+});
+
+test("encoded traversal → 404", async () => {
+	const res = await fetch(
+		new URL("/api/files/%2e%2e%2f%2e%2e%2fpackage.json", base),
+	);
+	expect(res.status).toBe(404);
+});

@@ -9,7 +9,9 @@ import { FieldError } from "#/shared/components/ui/field";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import { useAppForm } from "#/shared/lib/form";
 
-const CALLBACK_URL = "/account/settings?email=changed";
+// both hops of the change-email flow land here; `to` lets the page tell them apart
+const callbackUrl = (newEmail: string) =>
+	`/account/settings?email=changed&to=${encodeURIComponent(newEmail)}`;
 
 const changeEmailSchema = (current: string) =>
 	z.object({
@@ -32,7 +34,7 @@ export function EmailSection({ user }: { user: SessionUser }) {
 			setServerError(null);
 			const { error } = await authClient.changeEmail({
 				newEmail: value.newEmail,
-				callbackURL: CALLBACK_URL,
+				callbackURL: callbackUrl(value.newEmail),
 			});
 			if (error) {
 				setServerError(error.message ?? "Couldn't start the email change");

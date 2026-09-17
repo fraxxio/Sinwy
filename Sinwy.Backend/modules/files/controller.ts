@@ -4,9 +4,16 @@ import type { Handler } from "@backend/lib/app/types";
 
 const FILES_PREFIX = "/api/files/";
 
-export const serveFileHandler: Handler = (c) => {
+const notFound = () => fail("Not found", 404);
+
+export const serveFileHandler: Handler = async (c) => {
 	const { pathname } = new URL(c.req.url);
-	const key = decodeURIComponent(pathname.slice(FILES_PREFIX.length));
-	if (!key) return fail("Not found", 404);
-	return storageClient.serve(key);
+	// malformed escapes and traversal keys are client errors, not ours
+	try {
+		const key = decodeURIComponent(pathname.slice(FILES_PREFIX.length));
+		if (!key) return notFound();
+		return await storageClient.serve(key);
+	} catch {
+		return notFound();
+	}
 };

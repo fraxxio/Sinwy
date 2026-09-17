@@ -4,7 +4,6 @@ import db from "@db";
 import { createLogger } from "@logger";
 import { deleteSoleOwnedOrganizations } from "@organizationsModule";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
-import { Polar } from "@polar-sh/sdk";
 import {
 	ac,
 	orgAccessRoles,
@@ -13,7 +12,6 @@ import {
 	profileSchema,
 	RESEND_COOLDOWN_SECONDS,
 } from "@sinwy/shared";
-import { cleanupDeletedUser } from "@userModule";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
@@ -24,19 +22,15 @@ import {
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
 import { ensureCheckoutAllowed } from "./checkoutGuard";
+import { cleanupDeletedUser } from "./deletedUserCleanup";
 import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
+import { polarClient } from "./polarClient";
 import { projectSubscriptionStatus } from "./subscriptionStatus";
 
 const authLogger = createLogger("auth");
-
-// If this client is going to be used elsewhere or new logic specific to polar appears we will move that to it's own module
-export const polarClient = new Polar({
-	accessToken: appConfig.POLAR_ACCESS_TOKEN,
-	server: appConfig.POLAR_SERVER,
-});
 
 // keyed by PlanSlug so adding/renaming a plan in @sinwy/shared fails here at compile time
 const planProducts = {
@@ -44,6 +38,15 @@ const planProducts = {
 	professional: appConfig.POLAR_PRODUCT_PROFESSIONAL,
 	enterprise: appConfig.POLAR_PRODUCT_ENTERPRISE,
 } satisfies Record<PlanSlug, string>;
+
+// better-auth only type-checks name; apply the shared length/character rule
+const validName = (name: unknown) => {
+	const result = profileSchema.safeParse({ name });
+	if (!result.success) {
+		throw new APIError("BAD_REQUEST", { message: "Invalid name" });
+	}
+	return result.data.name;
+};
 
 export const auth = betterAuth({
 	baseURL: appConfig.BETTER_AUTH_URL,
@@ -105,9 +108,19 @@ export const auth = betterAuth({
 					props: { deleteUrl: url },
 				});
 			},
-			// throws APIError on a Polar revoke failure, which aborts the deletion
+			// only reached from the emailed link, so a failure must land on a page, not JSON
 			beforeDelete: async (user) => {
-				await deleteSoleOwnedOrganizations(user.id);
+				try {
+					await deleteSoleOwnedOrganizations(user.id);
+				} catch (error) {
+					if (!(error instanceof APIError)) throw error;
+					throw new APIError("FOUND", undefined, {
+						location: new URL(
+							"/auth/goodbye?error=SUBSCRIPTION_REVOKE_FAILED",
+							appConfig.WEB_APP_URL,
+						).toString(),
+					});
+				}
 			},
 			afterDelete: async (user) => {
 				await cleanupDeletedUser(user);
@@ -116,15 +129,21 @@ export const auth = betterAuth({
 	},
 	databaseHooks: {
 		user: {
+			create: {
+				// social sign-ups keep whatever the provider sends; only our own form is held to the rule
+				before: (data, ctx) => {
+					if (ctx?.path !== "/sign-up/email") return Promise.resolve();
+					return Promise.resolve({
+						data: { ...data, name: validName(data.name) },
+					});
+				},
+			},
 			update: {
-				// better-auth only type-checks name; apply the shared length/character rule
 				before: (data) => {
 					if (data.name === undefined) return Promise.resolve();
-					const result = profileSchema.safeParse({ name: data.name });
-					if (!result.success) {
-						throw new APIError("BAD_REQUEST", { message: "Invalid name" });
-					}
-					return Promise.resolve({ data: { ...data, name: result.data.name } });
+					return Promise.resolve({
+						data: { ...data, name: validName(data.name) },
+					});
 				},
 			},
 		},

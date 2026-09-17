@@ -10,7 +10,13 @@ export const Route = createFileRoute("/auth/goodbye")({
 	component: GoodbyePage,
 });
 
-const humanize = (code: string) => code.replaceAll("_", " ");
+const ERROR_MESSAGES: Record<string, string> = {
+	SUBSCRIPTION_REVOKE_FAILED:
+		"We couldn't cancel one of your organization subscriptions.",
+};
+
+const describe = (code: string) =>
+	ERROR_MESSAGES[code] ?? "Something went wrong on our side.";
 
 function GoodbyePage() {
 	const { error } = Route.useSearch();
@@ -29,8 +35,9 @@ function GoodbyePage() {
 						We couldn't delete your account
 					</h1>
 					<p className="text-sm text-muted-foreground">
-						{humanize(error)}. Nothing was removed; you can try again from your
-						settings.
+						{describe(error)} Nothing was removed. The link you used is now
+						spent, so request a new confirmation email from your settings to try
+						again.
 					</p>
 				</div>
 				<Button

@@ -76,8 +76,9 @@ export function DangerZone({ user }: { user: SessionUser }) {
 							<AlertDialogHeader>
 								<AlertDialogTitle>Check your email</AlertDialogTitle>
 								<AlertDialogDescription>
-									We sent a confirmation link to {user.email}. Your account is
-									deleted only once you open it; ignore the email to keep it.
+									We sent a confirmation link to {user.email}. Open it in this
+									browser, where you are signed in, to delete your account;
+									ignore the email to keep it.
 								</AlertDialogDescription>
 							</AlertDialogHeader>
 							<AlertDialogFooter>

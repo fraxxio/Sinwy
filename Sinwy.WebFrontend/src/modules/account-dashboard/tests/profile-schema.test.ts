@@ -18,3 +18,15 @@ it("rejects a name over the limit", () => {
 		profileSchema.safeParse({ name: "a".repeat(PROFILE_LIMITS.name) }).success,
 	).toBe(true);
 });
+
+it("accepts real-world names", () => {
+	for (const name of ["Li", "O'Brien", "J. Smith", "Jean-Luc", "Zoë Müller"]) {
+		expect(profileSchema.safeParse({ name }).success).toBe(true);
+	}
+});
+
+it("rejects one-letter names, digits and stray punctuation", () => {
+	for (const name of ["J", "John2", "...", "-Jo", "Jo-", "'Jo"]) {
+		expect(profileSchema.safeParse({ name }).success).toBe(false);
+	}
+});

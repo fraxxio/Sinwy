@@ -1,10 +1,15 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SQL } from "bun";
 import { config } from "dotenv";
 
-// Force the test database BEFORE any app module loads appConfig —
-// integration tests truncate tables and must never touch the dev DB.
+// Force the test database and storage dir BEFORE any app module loads appConfig —
+// integration tests truncate tables and write files, and must never touch dev data.
 process.env["POSTGRES_DB"] = "sinwy_test";
+process.env["STORAGE_LOCAL_DIR"] = mkdtempSync(
+	join(tmpdir(), "sinwy-storage-"),
+);
 
 // dotenv never overrides already-set vars, so POSTGRES_DB stays "sinwy_test"
 config({ path: join(import.meta.dir, "../.env") });

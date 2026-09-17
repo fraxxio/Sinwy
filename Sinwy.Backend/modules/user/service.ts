@@ -1,10 +1,9 @@
-import { auth, polarClient } from "@authModule";
+import { auth } from "@authModule";
 import {
 	fileUrl,
 	keyFromFileUrl,
 	storageClient,
 } from "@backend/infrastructure/storage";
-import { createLogger } from "@logger";
 import { getAccountDeletionPreview as getSoleOwnedOrganizationsPreview } from "@organizationsModule";
 import {
 	type AccountDeletionPreviewDto,
@@ -18,8 +17,6 @@ import {
 	findUnfinishedOnboardingOrganization,
 	findUnpaidOwnedOrganization,
 } from "./repository";
-
-const userLogger = createLogger("user");
 
 type SessionUser = (typeof auth.$Infer.Session)["user"];
 
@@ -82,26 +79,3 @@ export const getAccountDeletionPreview = (
 	userId: string,
 ): Promise<AccountDeletionPreviewDto> =>
 	getSoleOwnedOrganizationsPreview(userId);
-
-/** Best-effort cleanup after the user row is gone; failures are logged, never surfaced. */
-export const cleanupDeletedUser = async (user: {
-	id: string;
-	image?: string | null | undefined;
-}) => {
-	try {
-		await deleteStoredAvatar(user.image);
-	} catch (error) {
-		userLogger.warn("Failed to delete avatar of deleted user", {
-			userId: user.id,
-			error,
-		});
-	}
-	try {
-		await polarClient.customers.deleteExternal({ externalId: user.id });
-	} catch (error) {
-		userLogger.warn("Failed to delete Polar customer of deleted user", {
-			userId: user.id,
-			error,
-		});
-	}
-};

@@ -58,6 +58,7 @@ export function PasswordSection() {
 }
 
 function ChangePasswordForm() {
+	const queryClient = useQueryClient();
 	const [serverError, setServerError] = useState<string | null>(null);
 
 	const form = useAppForm({
@@ -80,6 +81,8 @@ function ChangePasswordForm() {
 				return;
 			}
 			form.reset();
+			// every other session is revoked and this one gets a new token
+			await queryClient.invalidateQueries({ queryKey: accountKeys.sessions });
 			toast.add({
 				type: "success",
 				title: "Password changed",

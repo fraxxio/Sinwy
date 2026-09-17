@@ -13,12 +13,15 @@ import { registerUserRoutes } from "../routes";
 
 let server: Server<never>;
 let base: URL;
+let updateSpy: ReturnType<typeof spyOn>;
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
 
 beforeAll(() => {
 	// the polar plugin syncs every user update to the Polar customer; keep tests offline
-	spyOn(polarClient.customers, "updateExternal").mockResolvedValue({} as never);
+	updateSpy = spyOn(polarClient.customers, "updateExternal").mockResolvedValue(
+		{} as never,
+	);
 	const app = createApp();
 	registerAuthRoutes(app);
 	registerUserRoutes(app);
@@ -27,7 +30,10 @@ beforeAll(() => {
 	base = server.url;
 });
 
-afterAll(() => server.stop(true));
+afterAll(() => {
+	updateSpy.mockRestore();
+	server.stop(true);
+});
 
 beforeEach(async () => {
 	await db.delete(user);

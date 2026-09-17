@@ -1,2 +1,2 @@
 export { registerUserRoutes } from "./routes";
-export { cleanupDeletedUser, getPostLoginFlags } from "./service";
+export { getPostLoginFlags } from "./service";

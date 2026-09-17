@@ -88,8 +88,7 @@ export function SessionsSection({ currentToken }: { currentToken: string }) {
 									</div>
 									<span className="text-xs text-muted-foreground">
 										{session.ipAddress || "Unknown IP"} · signed in{" "}
-										{format(session.createdAt)} · last active{" "}
-										{format(session.updatedAt)}
+										{format(session.createdAt)}
 									</span>
 								</div>
 								{!current && (

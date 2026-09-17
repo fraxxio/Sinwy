@@ -1,10 +1,11 @@
 import db from "@db";
+import { memberHasRole } from "@db/memberRole";
 import {
 	member,
 	organization,
 	organizationProfile,
 } from "@db/schema/organizationSchema";
-import type { OrganizationStatus, OrgRole } from "@sinwy/shared";
+import type { OrganizationStatus } from "@sinwy/shared";
 import {
 	and,
 	eq,
@@ -85,10 +86,6 @@ export const markOnboardingCompleted = async (organizationId: string) => {
 		.returning({ completedAt: organization.onboardingCompletedAt });
 	return row?.completedAt ?? null;
 };
-
-// `member.role` is a comma-separated list, mirroring parseMemberRoles
-const memberHasRole = (role: OrgRole) =>
-	sql`${role} = ANY(string_to_array(${member.role}, ','))`;
 
 /** Organizations where this user is an owner and no other member is. */
 export const findSoleOwnedOrganizations = (userId: string) =>

@@ -4,13 +4,17 @@ import type { OrganizationStatus } from "../organization/Organization";
 
 export const PROFILE_LIMITS = { name: 100 } as const;
 
-// One name rule for sign-up and profile edits, so a user can always save what they registered with
+// One name rule for sign-up and profile edits, so a user can always save what they registered with.
+// Words are letters with optional apostrophes and a trailing period (O'Brien, J. Smith), joined by spaces or hyphens.
 export const userNameSchema = z
 	.string()
 	.trim()
-	.min(3, "Name must be at least 3 characters")
+	.min(2, "Name must be at least 2 characters")
 	.max(PROFILE_LIMITS.name, `Max ${PROFILE_LIMITS.name} characters`)
-	.regex(/^\p{L}+(?:[ -]\p{L}+)*$/u, "Use letters, spaces and hyphens only");
+	.regex(
+		/^\p{L}[\p{L}'’]*\.?(?:[ -]\p{L}[\p{L}'’]*\.?)*$/u,
+		"Use letters, spaces, hyphens, apostrophes and periods only",
+	);
 
 export const profileSchema = z.object({
 	name: userNameSchema,

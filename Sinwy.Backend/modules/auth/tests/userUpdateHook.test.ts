@@ -1,15 +1,22 @@
-import { beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { createUserWithSession } from "@backend/test/helpers";
 import db from "@db";
 import { user } from "@db/schema/userSchema";
 import { APIError } from "better-auth/api";
 import { eq } from "drizzle-orm";
-import { auth, polarClient } from "../auth";
+import { auth } from "../auth";
+import { polarClient } from "../polarClient";
+
+let updateSpy: ReturnType<typeof spyOn>;
 
 // the polar plugin syncs every user update to the Polar customer; keep tests offline
 beforeAll(() => {
-	spyOn(polarClient.customers, "updateExternal").mockResolvedValue({} as never);
+	updateSpy = spyOn(polarClient.customers, "updateExternal").mockResolvedValue(
+		{} as never,
+	);
 });
+
+afterAll(() => updateSpy.mockRestore());
 
 beforeEach(async () => {
 	await db.delete(user);
@@ -38,7 +45,7 @@ test("updateUser rejects a name that fails the shared rule", async () => {
 	const { userId, cookie } = await createUserWithSession();
 
 	const attempt = auth.api.updateUser({
-		body: { name: "ab" },
+		body: { name: "a1" },
 		headers: { cookie },
 	});
 
