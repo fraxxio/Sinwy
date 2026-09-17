@@ -18,7 +18,7 @@ subscription revoked — all from the settings page, in both dashboards.
 | 1 — Shared | Done |
 | 2 — Backend: Better Auth config + emails | Done |
 | 3 — Backend: owned-org cascade on delete | Done |
-| 4 — Backend: user module endpoints + storage | Open |
+| 4 — Backend: user module endpoints + storage | Done |
 | 5 — Frontend: settings page + NavUser | Open |
 | 6 — End-to-end check and docs | Open |
 
@@ -34,7 +34,7 @@ subscription revoked — all from the settings page, in both dashboards.
 | Change password | `revokeOtherSessions: true`, always. Matches `revokeSessionsOnPasswordReset`. |
 | Profile fields | `name` and `image` only (Better Auth core). Timezone and locale are deferred to the features that read them (bookings, i18n); no schema change in this ticket. `name` is validated in `databaseHooks.user.update.before` since Better Auth checks types only. |
 | Avatar storage | New `infrastructure/storage/` mirroring the email client: a `StorageClient` contract keyed by object key, drivers picked by `STORAGE_DRIVER`. Only the `local` driver (files under `Sinwy.Backend/.storage/`) ships now; a provider driver (S3/R2/… via Bun's native `S3Client`) is one added file later. |
-| Avatar URLs | Always ours: `${BETTER_AUTH_URL}/api/files/<key>`, never a provider URL. `GET /api/files/*` delegates to `storageClient.serve(key)`, so switching provider later needs no data migration and no frontend change. |
+| Avatar URLs | Always ours: `<origin of BETTER_AUTH_URL>/api/files/<key>` (`BETTER_AUTH_URL` itself carries the `/api/auth` path), never a provider URL. `GET /api/files/*` delegates to `storageClient.serve(key)`, so switching provider later needs no data migration and no frontend change. |
 | Avatar limits | PNG/JPEG/WebP, ≤ 2 MB, magic-byte checked. Key `avatars/<userId>/<random>.<ext>`; the previous object is deleted on replace/remove. |
 | Session refresh after server-side user writes | Frontend calls `authClient.$store.notify("$sessionSignal")` so `useSession` refetches; no cookie cache is configured so nothing else can go stale. |
 | Polar customer | Deleted best-effort in `afterDelete` via `customers.deleteExternal`; failure is logged, never surfaced. |
@@ -269,7 +269,10 @@ values keep working because they only ever point at `/api/files/<key>`.
 | `POST` | `/api/user/avatar` | `uploadAvatarHandler` | `requireAuth` |
 | `DELETE` | `/api/user/avatar` | `removeAvatarHandler` | `requireAuth` |
 | `GET` | `/api/user/deletion-preview` | `getDeletionPreviewHandler` | `requireAuth` |
-| `GET` | `/api/files/*` | `serveFileHandler` → `storageClient.serve(key)` | — |
+
+`GET /api/files/*` → `storageClient.serve(key)` lives in its own `modules/files/`
+(`@filesModule`): serving is a storage concern shared by every module that
+stores objects, not a user one.
 
 ### 4.3 Service — `modules/user/service.ts`
 

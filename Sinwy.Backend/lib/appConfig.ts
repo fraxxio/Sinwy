@@ -14,6 +14,7 @@ const configSchema = z
 		PORT: z.coerce.number().default(3001),
 		LOG_DRIVER: z.enum(["console"]).default("console"),
 		LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+		STORAGE_DRIVER: z.enum(["local"]).default("local"),
 		BETTER_AUTH_SECRET: z.string(),
 		BETTER_AUTH_URL: z.string(),
 		WEB_APP_URL: z.url(),

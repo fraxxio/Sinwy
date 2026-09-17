@@ -2,6 +2,11 @@
 
 All commands run from the repo root unless noted. The runtime and package manager is **Bun** — use `bun` (not `npm`/`npx`).
 
+- `bun run verify` — Biome check, type check of every workspace and all tests; the one command to run before calling work done.
+- `bun run check` / `bun run typecheck` / `bun run test` — the individual steps.
+
+When running linters, type checks or tests, never truncate their output (`tail`, `head`, `grep`) before reading it. Report the exit code and the full diagnostics. Only say "clean" or "passing" when the command exited 0.
+
 ## Workspace Layout
 
 ```

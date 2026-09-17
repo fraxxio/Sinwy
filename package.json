@@ -24,6 +24,7 @@
 		"format:check": "biome format . --check",
 		"check": "biome check .",
 		"check:fix": "biome check . --write",
+		"verify": "bun run check && bun run typecheck && bun run test",
 		"db:up": "docker compose -f ./Sinwy.Backend/docker-compose.yml up -d",
 		"db:down": "docker compose -f ./Sinwy.Backend/docker-compose.yml down",
 		"db:migrate": "cd Sinwy.Backend && bunx drizzle-kit migrate",

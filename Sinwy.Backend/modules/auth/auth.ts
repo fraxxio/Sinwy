@@ -13,6 +13,7 @@ import {
 	profileSchema,
 	RESEND_COOLDOWN_SECONDS,
 } from "@sinwy/shared";
+import { cleanupDeletedUser } from "@userModule";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
@@ -107,6 +108,9 @@ export const auth = betterAuth({
 			// throws APIError on a Polar revoke failure, which aborts the deletion
 			beforeDelete: async (user) => {
 				await deleteSoleOwnedOrganizations(user.id);
+			},
+			afterDelete: async (user) => {
+				await cleanupDeletedUser(user);
 			},
 		},
 	},

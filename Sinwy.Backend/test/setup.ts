@@ -16,14 +16,20 @@ const {
 	POSTGRES_PORT = "5432",
 } = process.env;
 
+const serverUrl = `postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}`;
+
 // create the test DB if missing (CREATE DATABASE has no IF NOT EXISTS)
-const admin = new SQL(
-	`postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/postgres`,
-);
+const admin = new SQL(`${serverUrl}/postgres`);
 await admin.unsafe("CREATE DATABASE sinwy_test").catch((e) => {
 	if (e.errno !== "42P04") throw e; // 42P04 = duplicate_database
 });
 await admin.close();
+
+// start from an empty schema: leftover rows make drizzle-kit push prompt for
+// data-loss confirmation, which it cannot do without a TTY yet still exits 0
+const testDb = new SQL(`${serverUrl}/sinwy_test`);
+await testDb.unsafe("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
+await testDb.close();
 
 // push current schema into the test DB
 const push = Bun.spawnSync(["bun", "x", "drizzle-kit", "push", "--force"], {
