@@ -14,6 +14,7 @@ import { Route as AboutRouteImport } from './modules/home/routes/about'
 import { Route as OrganizationSlugShellRouteImport } from './modules/org-dashboard/routes/_shell'
 import { Route as AccountShellRouteImport } from './modules/account-dashboard/routes/_shell'
 import { Route as AuthForgotPasswordRouteImport } from './modules/auth/routes/forgot-password'
+import { Route as AuthGoodbyeRouteImport } from './modules/auth/routes/goodbye'
 import { Route as AuthLoginRouteImport } from './modules/auth/routes/login'
 import { Route as AuthPostloginRouteImport } from './modules/auth/routes/postlogin'
 import { Route as AuthRegisterRouteImport } from './modules/auth/routes/register'
@@ -73,6 +74,11 @@ const AccountShellRoute = AccountShellRouteImport.update({
 const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
   id: '/auth/forgot-password',
   path: '/auth/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthGoodbyeRoute = AuthGoodbyeRouteImport.update({
+  id: '/auth/goodbye',
+  path: '/auth/goodbye',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
@@ -281,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/$organizationSlug': typeof OrganizationSlugShellRouteWithChildren
   '/account': typeof AccountShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
+  '/auth/goodbye': typeof AuthGoodbyeRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/postlogin': typeof AuthPostloginRoute
   '/auth/register': typeof AuthRegisterRoute
@@ -321,6 +328,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
+  '/auth/goodbye': typeof AuthGoodbyeRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/postlogin': typeof AuthPostloginRoute
   '/auth/register': typeof AuthRegisterRoute
@@ -358,6 +366,7 @@ export interface FileRoutesById {
   '/$organizationSlug/_shell': typeof OrganizationSlugShellRouteWithChildren
   '/account/_shell': typeof AccountShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
+  '/auth/goodbye': typeof AuthGoodbyeRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/postlogin': typeof AuthPostloginRoute
   '/auth/register': typeof AuthRegisterRoute
@@ -402,6 +411,7 @@ export interface FileRouteTypes {
     | '/$organizationSlug'
     | '/account'
     | '/auth/forgot-password'
+    | '/auth/goodbye'
     | '/auth/login'
     | '/auth/postlogin'
     | '/auth/register'
@@ -442,6 +452,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/auth/forgot-password'
+    | '/auth/goodbye'
     | '/auth/login'
     | '/auth/postlogin'
     | '/auth/register'
@@ -478,6 +489,7 @@ export interface FileRouteTypes {
     | '/$organizationSlug/_shell'
     | '/account/_shell'
     | '/auth/forgot-password'
+    | '/auth/goodbye'
     | '/auth/login'
     | '/auth/postlogin'
     | '/auth/register'
@@ -521,6 +533,7 @@ export interface RootRouteChildren {
   OrganizationSlugShellRoute: typeof OrganizationSlugShellRouteWithChildren
   AccountShellRoute: typeof AccountShellRouteWithChildren
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
+  AuthGoodbyeRoute: typeof AuthGoodbyeRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthPostloginRoute: typeof AuthPostloginRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
@@ -566,6 +579,13 @@ declare module '@tanstack/react-router' {
       path: '/auth/forgot-password'
       fullPath: '/auth/forgot-password'
       preLoaderRoute: typeof AuthForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/goodbye': {
+      id: '/auth/goodbye'
+      path: '/auth/goodbye'
+      fullPath: '/auth/goodbye'
+      preLoaderRoute: typeof AuthGoodbyeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/login': {
@@ -985,6 +1005,7 @@ const rootRouteChildren: RootRouteChildren = {
   OrganizationSlugShellRoute: OrganizationSlugShellRouteWithChildren,
   AccountShellRoute: AccountShellRouteWithChildren,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
+  AuthGoodbyeRoute: AuthGoodbyeRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthPostloginRoute: AuthPostloginRoute,
   AuthRegisterRoute: AuthRegisterRoute,

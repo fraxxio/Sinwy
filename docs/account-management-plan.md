@@ -19,7 +19,7 @@ subscription revoked — all from the settings page, in both dashboards.
 | 2 — Backend: Better Auth config + emails | Done |
 | 3 — Backend: owned-org cascade on delete | Done |
 | 4 — Backend: user module endpoints + storage | Done |
-| 5 — Frontend: settings page + NavUser | Open |
+| 5 — Frontend: settings page + NavUser | Done |
 | 6 — End-to-end check and docs | Open |
 
 ## Decisions (already made, do not re-open)

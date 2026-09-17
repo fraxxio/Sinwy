@@ -1,14 +1,13 @@
+import { Link } from "@tanstack/react-router";
 import {
 	BadgeCheckIcon,
 	BellIcon,
 	ChevronsUpDownIcon,
-	CreditCardIcon,
 	LogOutIcon,
 	MoonIcon,
-	SparklesIcon,
 	SunIcon,
 } from "lucide-react";
-import { displayName } from "#/shared/components/shell/display-name";
+import { displayName, initials } from "#/shared/components/shell/display-name";
 import { useTheme } from "#/shared/components/ThemeToggle";
 import {
 	Avatar,
@@ -32,14 +31,6 @@ import {
 } from "#/shared/components/ui/sidebar";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import { useSignOut } from "#/shared/lib/auth/sign-out";
-
-const initials = (name: string) =>
-	name
-		.split(" ")
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((part) => part[0]?.toUpperCase() ?? "")
-		.join("") || "?";
 
 export function NavUser() {
 	const { isMobile } = useSidebar();
@@ -91,22 +82,11 @@ export function NavUser() {
 						</DropdownMenuGroup>
 						<DropdownMenuSeparator />
 						<DropdownMenuGroup>
-							<DropdownMenuItem>
-								<SparklesIcon />
-								Upgrade to Pro
-							</DropdownMenuItem>
-						</DropdownMenuGroup>
-						<DropdownMenuSeparator />
-						<DropdownMenuGroup>
-							<DropdownMenuItem>
+							<DropdownMenuItem render={<Link to="/account/settings" />}>
 								<BadgeCheckIcon />
-								Account
+								Account settings
 							</DropdownMenuItem>
-							<DropdownMenuItem>
-								<CreditCardIcon />
-								Billing
-							</DropdownMenuItem>
-							<DropdownMenuItem>
+							<DropdownMenuItem render={<Link to="/account/notifications" />}>
 								<BellIcon />
 								Notifications
 							</DropdownMenuItem>
