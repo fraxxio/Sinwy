@@ -9,6 +9,7 @@ import {
 	orgAccessRoles,
 	PLAN_SLUGS,
 	type PlanSlug,
+	profileSchema,
 	RESEND_COOLDOWN_SECONDS,
 } from "@sinwy/shared";
 import { betterAuth } from "better-auth";
@@ -21,6 +22,8 @@ import {
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
 import { ensureCheckoutAllowed } from "./checkoutGuard";
+import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
+import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
 import { projectSubscriptionStatus } from "./subscriptionStatus";
@@ -76,6 +79,45 @@ export const auth = betterAuth({
 	rateLimit: {
 		customRules: {
 			"/send-verification-email": { window: RESEND_COOLDOWN_SECONDS, max: 3 },
+			"/change-email": { window: 60, max: 3 },
+			"/delete-user": { window: 60, max: 3 },
+		},
+	},
+	user: {
+		changeEmail: {
+			enabled: true,
+			sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+				await emailClient.send({
+					to: user.email,
+					template: ChangeEmailConfirmationEmail,
+					props: { newEmail, confirmUrl: url },
+				});
+			},
+		},
+		deleteUser: {
+			enabled: true,
+			sendDeleteAccountVerification: async ({ user, url }) => {
+				await emailClient.send({
+					to: user.email,
+					template: DeleteAccountEmail,
+					props: { deleteUrl: url },
+				});
+			},
+		},
+	},
+	databaseHooks: {
+		user: {
+			update: {
+				// better-auth only type-checks name; apply the shared length/character rule
+				before: (data) => {
+					if (data.name === undefined) return Promise.resolve();
+					const result = profileSchema.safeParse({ name: data.name });
+					if (!result.success) {
+						throw new APIError("BAD_REQUEST", { message: "Invalid name" });
+					}
+					return Promise.resolve({ data: { ...data, name: result.data.name } });
+				},
+			},
 		},
 	},
 	emailVerification: {

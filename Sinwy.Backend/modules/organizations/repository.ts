@@ -1,10 +1,20 @@
 import db from "@db";
 import {
+	member,
 	organization,
 	organizationProfile,
 } from "@db/schema/organizationSchema";
-import type { OrganizationStatus } from "@sinwy/shared";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import type { OrgRole, OrganizationStatus } from "@sinwy/shared";
+import {
+	and,
+	eq,
+	exists,
+	inArray,
+	isNull,
+	ne,
+	notExists,
+	sql,
+} from "drizzle-orm";
 
 export const isSlugTaken = async (slug: string) => {
 	const [row] = await db
@@ -75,3 +85,50 @@ export const markOnboardingCompleted = async (organizationId: string) => {
 		.returning({ completedAt: organization.onboardingCompletedAt });
 	return row?.completedAt ?? null;
 };
+
+// `member.role` is a comma-separated list, mirroring parseMemberRoles
+const memberHasRole = (role: OrgRole) =>
+	sql`${role} = ANY(string_to_array(${member.role}, ','))`;
+
+/** Organizations where this user is an owner and no other member is. */
+export const findSoleOwnedOrganizations = (userId: string) =>
+	db
+		.select({
+			id: organization.id,
+			name: organization.name,
+			status: organization.status,
+		})
+		.from(organization)
+		.where(
+			and(
+				exists(
+					db
+						.select({ id: member.id })
+						.from(member)
+						.where(
+							and(
+								eq(member.organizationId, organization.id),
+								eq(member.userId, userId),
+								memberHasRole("owner"),
+							),
+						),
+				),
+				notExists(
+					db
+						.select({ id: member.id })
+						.from(member)
+						.where(
+							and(
+								eq(member.organizationId, organization.id),
+								ne(member.userId, userId),
+								memberHasRole("owner"),
+							),
+						),
+				),
+			),
+		)
+		.orderBy(organization.name);
+
+/** FK cascades remove members, invitations and the profile. */
+export const deleteOrganizations = (ids: string[]) =>
+	db.delete(organization).where(inArray(organization.id, ids));

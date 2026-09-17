@@ -15,8 +15,8 @@ subscription revoked — all from the settings page, in both dashboards.
 
 | Phase | State |
 | --- | --- |
-| 1 — Shared | Open |
-| 2 — Backend: Better Auth config + emails | Open |
+| 1 — Shared | Done |
+| 2 — Backend: Better Auth config + emails | Done |
 | 3 — Backend: owned-org cascade on delete | Open |
 | 4 — Backend: user module endpoints + storage | Open |
 | 5 — Frontend: settings page + NavUser | Open |
