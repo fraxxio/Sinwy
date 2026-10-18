@@ -1,28 +1,18 @@
-import { afterAll, beforeAll, beforeEach, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
 import createApp from "@backend/lib/app";
-import { createUserWithSession, joinOrganization } from "@backend/test/helpers";
+import {
+	activateOrganization,
+	createUserWithSession,
+	joinOrganization,
+} from "@backend/test/helpers";
 import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
 import type { ApiResponse } from "@sinwy/shared";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
-import { setStatus } from "../repository";
 import { registerOrganizationRoutes } from "../routes";
-
-// The status endpoint falls back to Polar for inactive orgs; stub that reach so
-// these tests stay offline, and so calls can be counted.
-let reconcileResult: "active" | "inactive" = "inactive";
-let reconcileCalls = 0;
-
-mock.module("../reconcileStatus", () => ({
-	reconcileInactiveStatus: async (organizationId: string) => {
-		reconcileCalls++;
-		if (reconcileResult === "active") await setStatus(organizationId, "active");
-		return reconcileResult;
-	},
-}));
 
 let server: Server<never>;
 let base: URL;
@@ -41,8 +31,6 @@ beforeEach(async () => {
 	// cascades clean member/session rows
 	await db.delete(organization);
 	await db.delete(user);
-	reconcileResult = "inactive";
-	reconcileCalls = 0;
 });
 
 const post = (path: string, body: unknown, cookie?: string) =>
@@ -60,6 +48,7 @@ type OrgDto = {
 	name: string;
 	slug: string;
 	status: string;
+	plan: string | null;
 	industry: string;
 };
 
@@ -77,7 +66,7 @@ const createOrg = async (name: string, cookie: string) => {
 // profile/onboarding writes are gated on a paid organization
 const createActiveOrg = async (name: string, cookie: string) => {
 	const org = await createOrg(name, cookie);
-	await setStatus(org.id, "active");
+	await activateOrganization(org.id);
 	return org;
 };
 
@@ -101,7 +90,7 @@ test("invalid body → 400", async () => {
 	}
 });
 
-test("valid request → 201 with exactly { id, name, slug, status, industry }", async () => {
+test("valid request → 201 with exactly { id, name, slug, status, plan, industry }", async () => {
 	const { cookie } = await createUserWithSession();
 	const res = await post(
 		"/api/organizations",
@@ -114,12 +103,14 @@ test("valid request → 201 with exactly { id, name, slug, status, industry }", 
 		"id",
 		"industry",
 		"name",
+		"plan",
 		"slug",
 		"status",
 	]);
 	expect(org.name).toBe("Acme Corp");
 	expect(org.slug).toBe("acme-corp");
 	expect(org.status).toBe("inactive");
+	expect(org.plan).toBeNull();
 	expect(org.industry).toBe("beauty");
 });
 
@@ -180,96 +171,6 @@ test("built-in organization.create endpoint → rejected", async () => {
 	);
 	// regression guard for allowUserToCreateOrganization: false
 	expect(res.status).toBe(403);
-});
-
-test("GET status: member → { status }", async () => {
-	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
-	const res = await fetch(new URL(`/api/organizations/${id}/status`, base), {
-		headers: { cookie },
-	});
-	expect(res.status).toBe(200);
-	expect(await res.json()).toEqual({
-		isSuccess: true,
-		data: { status: "inactive" },
-		message: null,
-		code: 0,
-	});
-});
-
-test("GET status: non-member → 404", async () => {
-	const owner = await createUserWithSession();
-	const { id } = await createOrg("Acme", owner.cookie);
-	const outsider = await createUserWithSession();
-	const res = await fetch(new URL(`/api/organizations/${id}/status`, base), {
-		headers: { cookie: outsider.cookie },
-	});
-	expect(res.status).toBe(404);
-});
-
-test("GET status: no session → 401", async () => {
-	const res = await fetch(new URL("/api/organizations/some-id/status", base));
-	expect(res.status).toBe(401);
-});
-
-const getStatus = async (id: string, cookie: string) => {
-	const res = await fetch(new URL(`/api/organizations/${id}/status`, base), {
-		headers: { cookie },
-	});
-	return unwrap<{ status: string }>(res);
-};
-
-const storedStatus = async (id: string) => {
-	const [row] = await db
-		.select({ status: organization.status })
-		.from(organization)
-		.where(eq(organization.id, id));
-	return row?.status;
-};
-
-test("GET status: inactive org with an active Polar subscription → active", async () => {
-	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
-	reconcileResult = "active";
-
-	expect(await getStatus(id, cookie)).toEqual({ status: "active" });
-	// self-healed, so the next read no longer needs Polar
-	expect(await storedStatus(id)).toBe("active");
-});
-
-test("GET status: inactive org with no Polar subscription → stays inactive", async () => {
-	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
-
-	expect(await getStatus(id, cookie)).toEqual({ status: "inactive" });
-	expect(reconcileCalls).toBe(1);
-	expect(await storedStatus(id)).toBe("inactive");
-});
-
-test("GET status: already-active org never reaches for Polar", async () => {
-	const { cookie } = await createUserWithSession();
-	const { id } = await createOrg("Acme", cookie);
-	await setStatus(id, "active");
-
-	expect(await getStatus(id, cookie)).toEqual({ status: "active" });
-	expect(reconcileCalls).toBe(0);
-});
-
-test("GET status: non-member of an inactive org → 404 without touching Polar", async () => {
-	const owner = await createUserWithSession();
-	const { id } = await createOrg("Acme", owner.cookie);
-	const outsider = await createUserWithSession();
-	reconcileResult = "active";
-
-	const res = await fetch(new URL(`/api/organizations/${id}/status`, base), {
-		headers: { cookie: outsider.cookie },
-	});
-	expect(res.status).toBe(404);
-	expect(reconcileCalls).toBe(0);
-});
-
-test("setStatus: unknown organization id → false", async () => {
-	expect(await setStatus("org_does_not_exist", "active")).toBe(false);
 });
 
 const put = (path: string, body: unknown, cookie?: string) =>

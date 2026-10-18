@@ -6,8 +6,10 @@ import {
 	type OrganizationStatus,
 	type OrgRole,
 	type Permission,
+	type PlanSlug,
 	parseMemberRoles,
 	toOrganizationStatus,
+	toPlanSlug,
 } from "@sinwy/shared";
 import { sessionFrom } from "./middleware";
 import { findMembership } from "./repository";
@@ -18,9 +20,13 @@ export type Membership = {
 	organizationId: string;
 	roles: OrgRole[];
 	status: OrganizationStatus;
+	plan: PlanSlug | null;
 };
 
 export const ORGANIZATION_PARAM = "organizationId";
+
+export const organizationPath = (suffix: string) =>
+	`/api/organizations/:${ORGANIZATION_PARAM}/${suffix}`;
 
 /** null when the user is not a member of the organization. */
 export const resolveMembership = async (
@@ -37,15 +43,22 @@ export const resolveMembership = async (
 			organizationId,
 			role: found.role,
 		});
-	return { organizationId, roles, status: toOrganizationStatus(found.status) };
+	return {
+		organizationId,
+		roles,
+		status: toOrganizationStatus(found.status),
+		plan: toPlanSlug(found.plan),
+	};
 };
 
 /**
  * Scopes the request to one organization (route param first, then the
  * session's active organization) and requires the caller to be a member.
- * Non-member → 404.
+ * Non-member → 404. Resolved once per request, so guards can be stacked.
  */
 export const requireMember: Middleware = async (ctx, next) => {
+	if (ctx.get("membership")) return next();
+
 	const session = sessionFrom(ctx);
 	const params = ctx.req.params as Record<string, string | undefined>;
 	const organizationId =

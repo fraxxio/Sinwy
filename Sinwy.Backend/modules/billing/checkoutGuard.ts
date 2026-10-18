@@ -1,7 +1,7 @@
-import { getOrganizationStatus } from "@organizationsModule";
+import { resolveMembership } from "@authModule";
 import { hasPermission } from "@sinwy/shared";
 import { APIError } from "better-auth/api";
-import { resolveMembership } from "./requirePermission";
+import { getOrganizationStatus } from "./service";
 
 /**
  * Guards POST /checkout: buying a plan is `billing:manage` on the org the

@@ -256,7 +256,9 @@ System behavior — **organization status is a pure projection of Polar subscrip
 
 `inactive` means: data kept, management features gated, public pages unpublished. No grace-period logic of our own — Polar's retry/dunning settings are the grace period.
 
-Plans entitle nothing else yet: no entitlement storage, no per-plan feature flags. When a feature first needs to differ by plan, read subscription state from the Polar plugin.
+The projection also carries `organization.plan` (entitlement) and `organization.subscription_id` (the Polar subscription backing the org). Every subscription webhook re-reads the subscription from Polar and projects it, so delivery order never matters; only the bound subscription may deactivate an org, so a late revocation of an old subscription can't lock out a re-subscribed one.
+
+Features per plan live in `@sinwy/shared` (`PLAN_FEATURES`, `featuresFor`, `hasFeature`). Routes gate on them with `requireFeature(feature)` (→ `402`), which reads the projected plan and never calls Polar. Paid plan changes go through `POST /api/organizations/:organizationId/subscription/plan`, not a new checkout.
 
 ---
 
@@ -363,7 +365,7 @@ Features:
 ## 7.2 No Custom Subscription Tables
 
 - Subscriptions are managed entirely by Polar
-- Application reads subscription state from Better Auth Polar plugin
+- Application reads its own projection (`organization.status`, `plan`, `subscription_id`) on every request; only the billing page and billing actions talk to Polar (`modules/billing`)
 
 ---
 

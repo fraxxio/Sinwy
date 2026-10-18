@@ -8,9 +8,7 @@ import {
 import {
 	completeOrganizationOnboarding,
 	createOrganization,
-	getCheckoutOrganization,
 	getOrganizationOnboarding,
-	getOrganizationStatus,
 	saveOrganizationProfile,
 } from "./service";
 
@@ -37,21 +35,6 @@ export const createOrganizationHandler: Handler = async (c) => {
 		body.data.industry,
 	);
 	return ok(org, 201, "Organization created");
-};
-
-export const getOrganizationStatusHandler: Handler = async (c) => {
-	const status = await getOrganizationStatus(membershipFrom(c));
-	return ok({ status });
-};
-
-export const getCheckoutOrganizationHandler: Handler = async (c) => {
-	const { user } = sessionFrom(c);
-
-	const { checkoutId } = c.req.params as { checkoutId: string };
-	const result = await getCheckoutOrganization(user.id, checkoutId);
-	if (!result) return fail("Not found", 404);
-
-	return ok(result);
 };
 
 export const getOrganizationOnboardingHandler: Handler = async (c) => {

@@ -1,3 +1,5 @@
+import type { PlanSlug } from "../plan/Plan";
+
 export const ORGANIZATION_STATUSES = ["active", "inactive"] as const;
 
 export type OrganizationStatus = (typeof ORGANIZATION_STATUSES)[number];
@@ -54,5 +56,6 @@ export type OrganizationDto = {
 	name: string;
 	slug: string;
 	status: OrganizationStatus;
+	plan: PlanSlug | null;
 	industry: OrganizationIndustry;
 };

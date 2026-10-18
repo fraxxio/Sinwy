@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { polarClient } from "@backend/infrastructure/polar";
 import { storageClient } from "@backend/infrastructure/storage";
 import createApp from "@backend/lib/app";
 import {
@@ -13,7 +14,6 @@ import { organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
-import { polarClient } from "../polarClient";
 import { registerAuthRoutes } from "../routes";
 
 let server: Server<never>;

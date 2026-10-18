@@ -50,6 +50,13 @@
       "when": 1789495352563,
       "tag": "0006_goofy_wallop",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790102971613,
+      "tag": "0007_powerful_toad_men",
+      "breakpoints": true
     }
   ]
 }

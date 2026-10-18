@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { polarClient } from "@authModule";
+import { polarClient } from "@backend/infrastructure/polar";
 import {
 	createUserWithSession,
 	insertOrganization,

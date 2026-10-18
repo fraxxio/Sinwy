@@ -1,6 +1,6 @@
+import { polarClient } from "@backend/infrastructure/polar";
 import { keyFromFileUrl, storageClient } from "@backend/infrastructure/storage";
 import { createLogger } from "@logger";
-import { polarClient } from "./polarClient";
 
 const authLogger = createLogger("auth");
 

@@ -1,4 +1,5 @@
-import { beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { polarClient } from "@backend/infrastructure/polar";
 import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
@@ -46,6 +47,17 @@ const seed = async (status: "active" | "inactive") => {
 		})),
 	);
 };
+
+// an inactive org asks Polar for a missed activation; Polar has none here
+let listSpy: ReturnType<typeof spyOn>;
+
+beforeAll(() => {
+	listSpy = spyOn(polarClient.subscriptions, "list").mockResolvedValue({
+		result: { items: [], pagination: {} },
+	} as never);
+});
+
+afterAll(() => listSpy.mockRestore());
 
 beforeEach(() => seed("inactive"));
 

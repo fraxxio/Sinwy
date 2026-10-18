@@ -1,11 +1,13 @@
 export { registerOrganizationRoutes } from "./routes";
 export {
+	activateSubscription,
 	completeOrganizationOnboarding,
 	createOrganization,
+	deactivateSubscription,
 	deleteSoleOwnedOrganizations,
 	getAccountDeletionPreview,
 	getOrganizationOnboarding,
-	getOrganizationStatus,
+	getSubscriptionState,
+	type SubscriptionState,
 	saveOrganizationProfile,
-	setOrganizationStatus,
 } from "./service";

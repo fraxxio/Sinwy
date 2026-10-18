@@ -8,6 +8,7 @@
 			"@config": ["./lib/appConfig.ts"],
 			"@logger": ["./lib/logger"],
 			"@authModule": ["./modules/auth"],
+			"@billingModule": ["./modules/billing"],
 			"@organizationsModule": ["./modules/organizations"],
 			"@userModule": ["./modules/user"],
 			"@filesModule": ["./modules/files"],

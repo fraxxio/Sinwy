@@ -16,6 +16,9 @@ export const organization = pgTable(
 		name: text("name").notNull(),
 		slug: text("slug").notNull().unique(),
 		status: text("status").notNull().default("inactive"),
+		// projection of the Polar subscription backing the org; null while inactive
+		plan: text("plan"),
+		subscriptionId: text("subscription_id").unique(),
 		industry: text("industry").notNull().default("other"),
 		onboardingCompletedAt: timestamp("onboarding_completed_at"),
 		logo: text("logo"),

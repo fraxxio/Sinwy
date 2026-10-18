@@ -5,6 +5,8 @@ import db from "@db";
 import { account, session } from "@db/schema/authSchema";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
+import type { PlanSlug } from "@sinwy/shared";
+import { eq } from "drizzle-orm";
 
 // Mirrors better-call's signCookieValue: `${token}.${base64(HMAC-SHA256(token, secret))}`.
 // Forged instead of signing up through better-auth because createCustomerOnSignUp
@@ -83,6 +85,17 @@ export const insertOrganization = async (name: string) => {
 	});
 	return id;
 };
+
+/** The state the webhook projection leaves behind for a paying organization. */
+export const activateOrganization = (
+	organizationId: string,
+	plan: PlanSlug = "starter",
+	subscriptionId = `sub_${organizationId}`,
+) =>
+	db
+		.update(organization)
+		.set({ status: "active", plan, subscriptionId })
+		.where(eq(organization.id, organizationId));
 
 /** `role` is the raw column value, so tests can also seed legacy or combined roles. */
 export const joinOrganization = async (

@@ -1,4 +1,6 @@
 import { emailClient } from "@backend/infrastructure/email";
+import { polarClient, productIdFor } from "@backend/infrastructure/polar";
+import { ensureCheckoutAllowed, syncSubscription } from "@billingModule";
 import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
@@ -8,7 +10,6 @@ import {
 	ac,
 	orgAccessRoles,
 	PLAN_SLUGS,
-	type PlanSlug,
 	profileSchema,
 	RESEND_COOLDOWN_SECONDS,
 } from "@sinwy/shared";
@@ -21,23 +22,13 @@ import {
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
-import { ensureCheckoutAllowed } from "./checkoutGuard";
 import { cleanupDeletedUser } from "./deletedUserCleanup";
 import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
-import { polarClient } from "./polarClient";
-import { projectSubscriptionStatus } from "./subscriptionStatus";
 
 const authLogger = createLogger("auth");
-
-// keyed by PlanSlug so adding/renaming a plan in @sinwy/shared fails here at compile time
-const planProducts = {
-	starter: appConfig.POLAR_PRODUCT_STARTER,
-	professional: appConfig.POLAR_PRODUCT_PROFESSIONAL,
-	enterprise: appConfig.POLAR_PRODUCT_ENTERPRISE,
-} satisfies Record<PlanSlug, string>;
 
 // better-auth only type-checks name; apply the shared length/character rule
 const validName = (name: unknown) => {
@@ -160,14 +151,22 @@ export const auth = betterAuth({
 		},
 	},
 	hooks: {
-		// The polar checkout endpoint forwards referenceId into metadata with no
-		// ownership check — enforce membership (and no double-purchase) here.
+		// The polar plugin trusts referenceId with no membership check. Checkout
+		// is guarded here; the org-scoped subscription read is ours instead
+		// (GET /api/organizations/:organizationId/subscription).
 		before: createAuthMiddleware(async (ctx) => {
 			if (ctx.path === "/checkout" && ctx.body?.referenceId) {
 				const session = await getSessionFromCtx(ctx);
 				if (!session) throw new APIError("UNAUTHORIZED");
 				await ensureCheckoutAllowed(session.user.id, ctx.body.referenceId);
 			}
+			if (
+				ctx.path === "/customer/subscriptions/list" &&
+				ctx.query?.["referenceId"]
+			)
+				throw new APIError("FORBIDDEN", {
+					message: "Read organization subscriptions through the organization",
+				});
 		}),
 	},
 	socialProviders: {
@@ -190,6 +189,11 @@ export const auth = betterAuth({
 							defaultValue: "inactive",
 							input: false,
 						},
+						plan: {
+							type: "string",
+							required: false,
+							input: false,
+						},
 						industry: {
 							type: "string",
 							defaultValue: "other",
@@ -210,7 +214,7 @@ export const auth = betterAuth({
 			use: [
 				checkout({
 					products: PLAN_SLUGS.map((slug) => ({
-						productId: planProducts[slug],
+						productId: productIdFor(slug),
 						slug,
 					})),
 					successUrl: new URL(
@@ -222,8 +226,11 @@ export const auth = betterAuth({
 				portal(),
 				webhooks({
 					secret: appConfig.POLAR_WEBHOOK_SECRET,
-					onSubscriptionActive: projectSubscriptionStatus,
-					onSubscriptionRevoked: projectSubscriptionStatus,
+					// `updated` fires on every change (plan change, cancel, renewal);
+					// all events converge on the same sync, so order doesn't matter
+					onSubscriptionUpdated: (payload) => syncSubscription(payload.data.id),
+					onSubscriptionActive: (payload) => syncSubscription(payload.data.id),
+					onSubscriptionRevoked: (payload) => syncSubscription(payload.data.id),
 				}),
 			],
 		}),

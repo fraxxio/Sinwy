@@ -468,15 +468,24 @@ Each step leaves `bun run verify` green.
    calling `subscriptions.update`. Alternative: rely on Polar's customer
    portal to switch products (no code, but the portal is per user and shows all
    orgs' subscriptions; the user could change the wrong one).
+   Answer: Let's create our POST endpoint.
 2. **Downgrade timing** — immediate with proration (simplest; recommended for
    now), or schedule for period end? Polar exposes `pendingUpdate` on the
    subscription, but whether `subscriptions.update` can request a deferred
    change needs checking in the sandbox.
+   Answer: we should use this proration_behavior from polar:
+Prorate on next invoice (prorate)
+The subscription is updated immediately, but the prorated difference is carried over and applied on the next scheduled invoice instead of triggering a charge now. The customer’s billing cycle is unchanged.
+This is typically the smoothest experience for the customer: their plan changes instantly, and they see the adjustment on their regular renewal invoice.
+If you need more info try using Polar MCP.
 3. **Initial `FEATURES`** — accept the four-row seed above, or start with
    `page-builder` alone and grow at Phase 8?
+   Answer: Let's do the seed right now, we only have local dev DB so we can change pretty much what ever we want.
 4. **Invoice list filter** — all orders, or `paid`/`refunded` only (hide
    `pending`/`void`)? Recommended: return all with `status`, let the UI decide.
+   Answer: Let's return all.
 5. **`402` vs `403`** for plan gating — recommended `402` + shared code.
+Answer: 402.
 
 ## Definition of done
 
