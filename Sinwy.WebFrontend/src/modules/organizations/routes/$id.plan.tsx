@@ -6,10 +6,7 @@ import {
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
-import {
-	getPlanName,
-	PlanCards,
-} from "#/modules/organizations/components/PlanCards";
+import { PlanCards } from "#/modules/organizations/components/PlanCards";
 import {
 	clearPreselectedPlan,
 	readPreselectedPlan,
@@ -30,6 +27,7 @@ import {
 	requireMember,
 	requirePermission,
 } from "#/shared/lib/auth/protected-route";
+import { getPlanName } from "#/shared/lib/plans";
 import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/organizations/$id/plan")({

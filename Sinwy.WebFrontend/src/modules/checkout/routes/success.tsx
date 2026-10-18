@@ -10,13 +10,13 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { pollUntilActive } from "#/modules/checkout/lib/poll-until-active";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
 import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { Button } from "#/shared/components/ui/button";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { api } from "#/shared/lib/api";
 import { protectedRoute } from "#/shared/lib/auth/protected-route";
+import { pollUntil } from "#/shared/lib/poll-until";
 import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/checkout/success")({
@@ -112,13 +112,14 @@ function Activation({
 			const orgId = res.data.organizationId;
 			setPhase(Phase.Activating);
 
-			const active = await pollUntilActive(
+			const active = await pollUntil(
 				async () => {
 					const status = await api<{ status: OrganizationStatus }>(
 						`/organizations/${orgId}/status`,
 					);
 					return status.isSuccess ? status.data.status : null;
 				},
+				(status) => status === "active",
 				{ isCancelled: () => cancelled },
 			);
 			if (cancelled) return;

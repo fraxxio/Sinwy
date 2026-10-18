@@ -10,12 +10,14 @@ export const authClient = createAuthClient({
 			// on invite/update calls are typed from one source
 			ac,
 			roles: orgAccessRoles,
-			// mirrors the backend organization plugin schema so list() and
-			// setActive() type our own columns
+			// mirrors the organization plugin schema in
+			// Sinwy.Backend/modules/auth/auth.ts so list() and setActive() type
+			// our own columns; there is no compile-time link between the two
 			schema: {
 				organization: {
 					additionalFields: {
 						status: { type: "string", input: false, required: true },
+						plan: { type: "string", input: false, required: false },
 						industry: { type: "string", required: true },
 						onboardingCompletedAt: {
 							type: "date",

@@ -420,7 +420,7 @@ org-dashboard/lib/billing-queries.ts, subscription-status.ts, download-invoice.t
 organizations/components/PlanCards.tsx   reads PLAN_NAMES
 organizations/routes/$id.plan.tsx        ?intent=renew copy
 checkout/routes/success.tsx              dashboard when onboarding already complete
-shell/OrganizationSwitcher.tsx           maps plan into OrganizationSummary (compile-forced), optional "Inactive" hint
+shell/OrganizationSwitcher.tsx           maps plan into OrganizationSummary (compile-forced), "Inactive" hint
 ```
 
 Import direction stays `modules → shared`. `org-dashboard` may import
@@ -429,7 +429,9 @@ only need `shared/lib/plans.ts` after the move.
 
 ## Implementation order
 
-Each step leaves `bun run verify` green. Steps 1–4 do not need the backend
+Each step leaves `bun run verify` green and ends with its own commit, titled
+in the style of the existing history (`feat(web): …`, `feat(web, shared): …`,
+`docs: …`). Steps 1–4 do not need the backend
 endpoints and can start once `plan` exists in `@sinwy/shared`
 `OrganizationDto` (backend step 1).
 
@@ -535,8 +537,10 @@ endpoints and can start once `plan` exists in `@sinwy/shared`
    need Polar's status in the shell, i.e. a request per shell load. Recommend
    no: the billing page shows it, and Polar emails the customer.
 4. **Switcher hint** — show "Inactive" next to inactive organizations in the
-   `OrganizationSwitcher`? Cheap once `plan`/`status` are mapped; purely a
-   product call.
+   `OrganizationSwitcher`? **Decided: yes.** An outline "Inactive" badge on
+   the organization's row in the switcher menu. Display only, read from the
+   listed `OrganizationSummary.status`; it gates nothing, so it is the one
+   allowed `status === "inactive"` outside `read-only.ts` / `entitlements.ts`.
 5. **Where invoices for a previous subscription go** — if the backend filters
    by the current `subscription_id`, an org that was revoked and re-purchased
    loses its earlier invoices from this list. The portal still has them; say

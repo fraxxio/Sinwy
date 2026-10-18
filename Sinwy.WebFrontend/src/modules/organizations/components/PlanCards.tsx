@@ -11,12 +11,13 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/shared/components/ui/card";
+import { PLAN_NAMES } from "#/shared/lib/plans";
 import { cn } from "#/shared/lib/utils";
 
 export const plans = [
 	{
 		slug: "starter",
-		name: "Starter",
+		name: PLAN_NAMES.starter,
 		description:
 			"Everything a small business needs to get online and reach new customers",
 		price: 12,
@@ -37,7 +38,7 @@ export const plans = [
 	},
 	{
 		slug: "professional",
-		name: "Business",
+		name: PLAN_NAMES.professional,
 		description:
 			"Best for growing businesses that want more customization and reach",
 		price: 48,
@@ -59,7 +60,7 @@ export const plans = [
 	},
 	{
 		slug: "enterprise",
-		name: "Enterprise",
+		name: PLAN_NAMES.enterprise,
 		description:
 			"For established businesses with multiple locations and larger teams",
 		price: 96,
@@ -79,10 +80,6 @@ export const plans = [
 		],
 	},
 ] satisfies readonly ({ slug: PlanSlug } & Record<string, unknown>)[];
-
-export function getPlanName(slug: PlanSlug) {
-	return plans.find((plan) => plan.slug === slug)?.name ?? slug;
-}
 
 const PRICE_PLACES = [1000, 100, 10, 1];
 // 9 sits at the top of the strip so rolling to a higher digit moves the

@@ -1,4 +1,8 @@
-import { type OrganizationSummary, toOrganizationStatus } from "@sinwy/shared";
+import {
+	type OrganizationSummary,
+	toOrganizationStatus,
+	toPlanSlug,
+} from "@sinwy/shared";
 import { Link, linkOptions } from "@tanstack/react-router";
 import {
 	Building2Icon,
@@ -7,6 +11,7 @@ import {
 	UserIcon,
 } from "lucide-react";
 import { displayName } from "#/shared/components/shell/display-name";
+import { Badge } from "#/shared/components/ui/badge";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -40,6 +45,7 @@ export function OrganizationSwitcher({
 		name: org.name,
 		slug: org.slug,
 		status: toOrganizationStatus(org.status),
+		plan: toPlanSlug(org.plan ?? null),
 	}));
 	const activeOrganization = organizations.find(
 		(org) => org.slug === activeOrganizationSlug,
@@ -102,6 +108,11 @@ export function OrganizationSwitcher({
 												<Building2Icon className="size-4" />
 											</div>
 											{org.name}
+											{org.status === "inactive" && (
+												<Badge variant="outline" className="ml-auto">
+													Inactive
+												</Badge>
+											)}
 										</DropdownMenuItem>
 									))}
 								</DropdownMenuGroup>
