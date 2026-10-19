@@ -15,6 +15,8 @@ Use `psql` with the service entries created by `bun run db:agent:setup`. Never p
 
 Drive the browser with `bunx playwright-cli` (see the `playwright-cli` skill, which writes the command without `bunx`). Use the Chrome DevTools MCP only for performance traces, Lighthouse audits and memory debugging, if it's disabled ask user to enable it.
 
+New repo skills go in `.agents/skills/<name>/` (format rules: Skills > Format in `docs/ai-agent-tooling.md`), never directly in `.claude/skills/`. Run `bun run skills:link` after adding or removing one; `bun run skills:check` validates them.
+
 ## Workspace Layout
 ```
 Sinwy/
