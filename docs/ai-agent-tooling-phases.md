@@ -54,7 +54,12 @@ Plan items: sinwy-dev Toolkit > `login-as`, `last-email`.
 
 **Notes**
 
-_None yet._
+- `playwright-cli` appears in this session's skill list, so Claude Code follows the `.claude/skills/` symlink.
+- Toolkit: `Sinwy.Backend/scripts/dev/<tool>.ts`, run from the repo root as `bun run dev:<tool>` (no `cd`, so relative paths resolve against the root; the backend tsconfig aliases still apply). Each file exports a function for tests and runs its CLI under `import.meta.main`, which calls `assertLocalDev` first (it rejects `NODE_ENV=test`, so tests call the function). Tests live in `scripts/dev/tests/` and run with `test:server`.
+- `login-as` calls `testUtils().init(await auth.$context)` from Better Auth's `testUtils` plugin (`better-auth/plugins`) and then `test.login`: `internalAdapter.createSession` and Better Auth's own cookie signing, on the app's own auth context. The plugin is never added to the app's auth config (its docs advise against that). A second `betterAuth` instance with the plugin failed to type-check under `exactOptionalPropertyTypes`; `init()` needs an `as unknown as AuthContext` widening instead. It refuses unverified users (real sign-in would too), checks the cookie with `auth.api.getSession` and prints JSON with `cookie`. `--state` writes `.playwright-cli/auth/<userId>.json` with the cookie domain set to the `WEB_APP_URL` host; load it with `playwright-cli state-load <file>`. Unlike a real sign-in, the session has empty `ipAddress`/`userAgent`.
+- `last-email`: the console driver now also writes each email (subject, rendered `html`, props) as JSON to `EMAIL_OUTBOX_DIR` (default `Sinwy.Backend/.emails`, gitignored; tests use a temp dir). File names are UUIDv7, so sorting gives the send order. The tool prints the newest matches without `html`, with `links` (hrefs from the html) and `file` for the full body. Nothing prunes the directory; delete it when it gets large.
+- Checked manually against the running stack (2026-10-19): the `login-as` cookie got 200 from `/api/user/flags` (401 without it); after `state-load`, `/auth/postlogin` took the browser to the user's org dashboard; a password-reset request made over HTTP showed up in `last-email` with its link.
+- `test/helpers.ts` still forges session cookies with hand-rolled HMAC for the existing tests. `testUtils` login could replace that later; it's out of scope here.
 
 ## Phase 3: Polar Webhooks
 

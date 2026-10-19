@@ -61,11 +61,11 @@ The toolkit is only useful if it behaves like the real thing. A webhook payload 
 - [ ] `seed-scenario`: seed named data sets (e.g. owner with org, org with staff, subscribed org)
   - [ ] Creates data through module services, so it gets the same validation and invariants as the app, not raw SQL
   - [ ] A subscribed org becomes `active` through `simulate-polar-webhook`, not by setting the status column
-- [ ] `login-as`: get a session for any user, for API calls and browser tests
-  - [ ] Creates the session through Better Auth, not by inserting session rows or forging cookies
-  - [ ] Checks its own output: the session works against a protected endpoint
-- [ ] `last-email`: read the latest email sent by the console email driver
-  - [ ] The console driver logs the template subject and props, not the rendered body, so rendering and Resend delivery are untested. Before release, send each new template once through Resend to a dev domain
+- [x] `login-as`: get a session for any user, for API calls and browser tests (`bun run dev:login-as --email <email> [--state]`)
+  - [x] Creates the session through Better Auth, not by inserting session rows or forging cookies
+  - [x] Checks its own output: the session works against a protected endpoint
+- [x] `last-email`: read the latest email sent by the console email driver (`bun run dev:last-email [--to <email>] [--subject <text>] [--count <n>]`)
+  - [ ] The console driver renders each template into its outbox file, but Resend delivery is untested. Before release, send each new template once through Resend to a dev domain
 - [ ] `simulate-polar-webhook`: send a signed Polar webhook event to the local backend
   - [ ] Payloads are fixtures recorded from real Polar sandbox deliveries, not written by hand; the tool substitutes only ids and `referenceId`
   - [ ] Fixtures record the capture date and `@polar-sh/sdk` version, and a test parses them with the SDK's webhook schemas, so an SDK upgrade that changes the shape fails `bun run verify` until they are re-recorded

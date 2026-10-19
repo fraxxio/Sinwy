@@ -22,6 +22,7 @@ const configSchema = z
 		GOOGLE_CLIENT_ID: z.string(),
 		GOOGLE_CLIENT_SECRET: z.string(),
 		EMAIL_DRIVER: z.enum(["resend", "console"]).optional(),
+		EMAIL_OUTBOX_DIR: z.string().default(".emails"),
 		RESEND_API_KEY: z.string().optional(),
 		RESEND_EMAIL_DOMAIN: z.string(),
 		POLAR_ACCESS_TOKEN: z.string(),
@@ -69,6 +70,7 @@ const configSchema = z
 			DB_URL,
 			// relative paths resolve against the backend root, not the process cwd
 			STORAGE_LOCAL_DIR: resolve(__dirname, "..", env.STORAGE_LOCAL_DIR),
+			EMAIL_OUTBOX_DIR: resolve(__dirname, "..", env.EMAIL_OUTBOX_DIR),
 		};
 	});
 
