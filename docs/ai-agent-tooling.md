@@ -66,12 +66,13 @@ The toolkit is only useful if it behaves like the real thing. A webhook payload 
   - [x] Checks its own output: the session works against a protected endpoint
 - [x] `last-email`: read the latest email sent by the console email driver (`bun run dev:last-email [--to <email>] [--subject <text>] [--count <n>]`)
   - [ ] The console driver renders each template into its outbox file, but Resend delivery is untested. Before release, send each new template once through Resend to a dev domain
-- [ ] `simulate-polar-webhook`: send a signed Polar webhook event to the local backend
-  - [ ] Payloads are fixtures recorded from real Polar sandbox deliveries, not written by hand; the tool substitutes only ids and `referenceId`
-  - [ ] Fixtures record the capture date and `@polar-sh/sdk` version, and a test parses them with the SDK's webhook schemas, so an SDK upgrade that changes the shape fails `bun run verify` until they are re-recorded
-  - [ ] Signs with the Standard Webhooks scheme and `POLAR_WEBHOOK_SECRET`, and posts to the same endpoint Polar calls. A test sends a badly signed event and expects it to be rejected
-  - [ ] Covers what real Polar does: redelivery of the same event, events out of order (`subscription.revoked` before `subscription.active`), an unknown `referenceId`
-  - [ ] Real-delivery check: before billing work is called done, run one sandbox checkout with webhooks delivered through `bun run start:localproxy`, and compare the resulting DB state with what the simulated event produced
+- [x] `simulate-polar-webhook`: send a signed Polar webhook event to the local backend (`bun run dev:simulate-polar-webhook --type <subscription.active|subscription.revoked> --org <id> [--subscription-id <id>] [--timestamp <iso>] [--webhook-id <id>]`)
+  - [x] Payloads are fixtures recorded from real Polar sandbox deliveries, not written by hand (`bun run dev:capture-polar-fixture --type <event>`); the tool substitutes only ids, `referenceId` and the event `timestamp` (the app orders events by it, so a fixed fixture time would make every simulated event after the first look stale)
+  - [x] Fixtures record the capture date, `@polar-sh/sdk` version and Polar API version, and a test parses them with the SDK's webhook schemas, so an SDK upgrade that changes the shape fails `bun run verify` until they are re-recorded
+  - [x] Signs with the Standard Webhooks scheme and `POLAR_WEBHOOK_SECRET`, and posts to the same endpoint Polar calls. A test sends a badly signed event and expects it to be rejected
+  - [x] Covers what real Polar does: redelivery of the same event, events out of order (`subscription.revoked` before `subscription.active`), an unknown `referenceId`
+  - [x] Real-delivery check: before billing work is called done, run one sandbox checkout with webhooks delivered through `bun run start:localproxy`, and compare the resulting DB state with what the simulated event produced
+  - [ ] Limit the Polar webhook endpoints (sandbox and production) to the events the app handles: `@polar-sh/sdk` 0.47.1 can't parse `subscription.paused`/`subscription.resumed`, which the sandbox endpoint subscribes to, so those deliveries would get a 400 and be retried
 - [ ] Each tool has a test in `bun run verify` that checks it against the real code path
 
 ## Skills

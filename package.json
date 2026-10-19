@@ -36,6 +36,8 @@
 		"db:agent:setup": "cd Sinwy.Backend && bun run scripts/setupAgentDb.ts",
 		"dev:login-as": "bun run Sinwy.Backend/scripts/dev/loginAs.ts",
 		"dev:last-email": "bun run Sinwy.Backend/scripts/dev/lastEmail.ts",
+		"dev:capture-polar-fixture": "bun run Sinwy.Backend/scripts/dev/capturePolarFixture.ts",
+		"dev:simulate-polar-webhook": "bun run Sinwy.Backend/scripts/dev/simulatePolarWebhook.ts",
 		"auth:schema:generate": "bunx --bun auth@latest generate --config Sinwy.Backend/modules/auth/auth.ts"
 	},
 	"dependencies": {

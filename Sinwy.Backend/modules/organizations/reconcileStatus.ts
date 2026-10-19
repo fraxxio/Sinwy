@@ -17,6 +17,8 @@ const reconcileLogger = createLogger("organizations:reconcile");
 export const reconcileInactiveStatus = async (
 	organizationId: string,
 ): Promise<OrganizationStatus> => {
+	// a revocation that lands while Polar is being asked must still win
+	const queriedAt = new Date();
 	const subscriptions = await polarClient.subscriptions
 		.list({
 			metadata: { referenceId: organizationId },
@@ -34,7 +36,9 @@ export const reconcileInactiveStatus = async (
 	const subscription = subscriptions?.result.items[0];
 	if (!subscription) return "inactive";
 
-	await setStatus(organizationId, "active");
+	if ((await setStatus(organizationId, "active", queriedAt)) !== "applied") {
+		return "inactive";
+	}
 	reconcileLogger.info("Activated from Polar after a missed webhook", {
 		organizationId,
 		subscriptionId: subscription.id,

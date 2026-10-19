@@ -9,10 +9,11 @@ type Payload = Parameters<typeof projectSubscriptionStatus>[0];
 const payload = (
 	type: "subscription.active" | "subscription.revoked",
 	referenceId?: string,
+	timestamp = new Date(),
 ) =>
 	({
 		type,
-		timestamp: new Date(),
+		timestamp,
 		data: { metadata: referenceId ? { referenceId } : {} },
 	}) as Payload;
 
@@ -42,7 +43,9 @@ test("subscription.active with referenceId → status active", async () => {
 });
 
 test("subscription.revoked → status inactive", async () => {
-	await projectSubscriptionStatus(payload("subscription.active", orgId));
+	await projectSubscriptionStatus(
+		payload("subscription.active", orgId, new Date(Date.now() - 60_000)),
+	);
 	await projectSubscriptionStatus(payload("subscription.revoked", orgId));
 	expect(await getStatus()).toBe("inactive");
 });
@@ -63,4 +66,22 @@ test("referenceId of non-existent org → no throw", async () => {
 		payload("subscription.active", "org_does_not_exist"),
 	);
 	expect(await getStatus()).toBe("inactive");
+});
+
+test("subscription.active older than an applied revoke → stays inactive", async () => {
+	const activeAt = new Date(Date.now() - 60_000);
+	await projectSubscriptionStatus(payload("subscription.revoked", orgId));
+	await projectSubscriptionStatus(
+		payload("subscription.active", orgId, activeAt),
+	);
+	expect(await getStatus()).toBe("inactive");
+});
+
+test("revoke of an older subscription after a newer activation → stays active", async () => {
+	const oldRevokeAt = new Date(Date.now() - 60_000);
+	await projectSubscriptionStatus(payload("subscription.active", orgId));
+	await projectSubscriptionStatus(
+		payload("subscription.revoked", orgId, oldRevokeAt),
+	);
+	expect(await getStatus()).toBe("active");
 });

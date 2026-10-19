@@ -19,7 +19,8 @@ let reconcileCalls = 0;
 mock.module("../reconcileStatus", () => ({
 	reconcileInactiveStatus: async (organizationId: string) => {
 		reconcileCalls++;
-		if (reconcileResult === "active") await setStatus(organizationId, "active");
+		if (reconcileResult === "active")
+			await setStatus(organizationId, "active", new Date());
 		return reconcileResult;
 	},
 }));
@@ -77,7 +78,7 @@ const createOrg = async (name: string, cookie: string) => {
 // profile/onboarding writes are gated on a paid organization
 const createActiveOrg = async (name: string, cookie: string) => {
 	const org = await createOrg(name, cookie);
-	await setStatus(org.id, "active");
+	await setStatus(org.id, "active", new Date());
 	return org;
 };
 
@@ -249,7 +250,7 @@ test("GET status: inactive org with no Polar subscription → stays inactive", a
 test("GET status: already-active org never reaches for Polar", async () => {
 	const { cookie } = await createUserWithSession();
 	const { id } = await createOrg("Acme", cookie);
-	await setStatus(id, "active");
+	await setStatus(id, "active", new Date());
 
 	expect(await getStatus(id, cookie)).toEqual({ status: "active" });
 	expect(reconcileCalls).toBe(0);
@@ -268,8 +269,23 @@ test("GET status: non-member of an inactive org → 404 without touching Polar",
 	expect(reconcileCalls).toBe(0);
 });
 
-test("setStatus: unknown organization id → false", async () => {
-	expect(await setStatus("org_does_not_exist", "active")).toBe(false);
+test("setStatus: unknown organization id → unknown", async () => {
+	expect(await setStatus("org_does_not_exist", "active", new Date())).toBe(
+		"unknown",
+	);
+});
+
+test("setStatus: change older than the applied one → outdated, status kept", async () => {
+	const { cookie } = await createUserWithSession();
+	const { id } = await createOrg("Acme", cookie);
+	const revokedAt = new Date();
+
+	expect(await setStatus(id, "inactive", revokedAt)).toBe("applied");
+	expect(
+		await setStatus(id, "active", new Date(revokedAt.getTime() - 1000)),
+	).toBe("outdated");
+	expect(await setStatus(id, "inactive", revokedAt)).toBe("outdated");
+	expect(await storedStatus(id)).toBe("inactive");
 });
 
 const put = (path: string, body: unknown, cookie?: string) =>

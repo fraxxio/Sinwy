@@ -16,6 +16,8 @@ export const organization = pgTable(
 		name: text("name").notNull(),
 		slug: text("slug").notNull().unique(),
 		status: text("status").notNull().default("inactive"),
+		// time of the Polar event behind `status`; older events must not overwrite it
+		subscriptionStatusAt: timestamp("subscription_status_at"),
 		industry: text("industry").notNull().default("other"),
 		onboardingCompletedAt: timestamp("onboarding_completed_at"),
 		logo: text("logo"),

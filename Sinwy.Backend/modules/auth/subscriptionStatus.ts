@@ -7,7 +7,8 @@ const webhookLogger = createLogger("auth:polarWebhook");
 
 /**
  * Projects Polar subscription state onto `organization.status`.
- * Idempotent: a plain status set, safe under webhook re-delivery.
+ * Polar may redeliver or reorder events, so an event older than the last
+ * applied one is ignored.
  */
 export const projectSubscriptionStatus = async (
 	payload: WebhookSubscriptionActivePayload | WebhookSubscriptionRevokedPayload,
@@ -23,12 +24,25 @@ export const projectSubscriptionStatus = async (
 	}
 
 	const status = payload.type === "subscription.active" ? "active" : "inactive";
-	const applied = await setOrganizationStatus(referenceId, status);
-	if (!applied) {
+	const result = await setOrganizationStatus(
+		referenceId,
+		status,
+		payload.timestamp,
+	);
+	if (result === "unknown") {
 		webhookLogger.warn("Subscription webhook references an unknown org", {
 			type: payload.type,
 			organizationId: referenceId,
 			subscriptionId: payload.data.id,
+		});
+		return;
+	}
+	if (result === "outdated") {
+		webhookLogger.info("Ignored subscription webhook older than org status", {
+			type: payload.type,
+			organizationId: referenceId,
+			subscriptionId: payload.data.id,
+			timestamp: payload.timestamp,
 		});
 		return;
 	}
