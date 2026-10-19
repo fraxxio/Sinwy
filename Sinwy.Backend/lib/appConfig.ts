@@ -51,6 +51,14 @@ const configSchema = z
 			});
 		}
 
+		if (env.POLAR_SERVER === "production" && env.NODE_ENV !== "prod") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["POLAR_SERVER"],
+				message: 'POLAR_SERVER "production" requires NODE_ENV "prod"',
+			});
+		}
+
 		const DB_URL =
 			`postgresql://${env.POSTGRES_USER}:${env.POSTGRES_PASSWORD}` +
 			`@${env.POSTGRES_HOST}:${env.POSTGRES_PORT}/${env.POSTGRES_DB}`;

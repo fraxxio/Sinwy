@@ -35,3 +35,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # uploaded files (local storage driver)
 .storage
+
+# Playwright CLI output (may contain credentials)
+.playwright-cli/

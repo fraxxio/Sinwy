@@ -1,5 +1,25 @@
 {
 	"permissions": {
-		"deny": ["Read(**/.env)", "Read(**/.env.*)"]
+		"deny": [
+			"Read(**/.env)",
+			"Read(**/.env.local)",
+			"Read(**/.env.*.local)",
+			"Read(**/.env.dev)",
+			"Read(**/.env.development)",
+			"Read(**/.env.test)",
+			"Read(**/.env.staging)",
+			"Read(**/.env.prod)",
+			"Read(**/.env.production)",
+			"Read(~/.pgpass)",
+			"Read(//proc/*/environ)",
+			"Bash(docker inspect *)",
+			"Bash(docker container inspect *)",
+			"Bash(docker exec *)",
+			"Bash(docker container exec *)",
+			"Bash(docker compose *exec*)",
+			"Bash(docker compose *config*)"
+		],
+		"allow": ["Bash(psql service=sinwy_ro:*)"],
+		"ask": ["Bash(psql service=sinwy_rw:*)"]
 	}
 }
