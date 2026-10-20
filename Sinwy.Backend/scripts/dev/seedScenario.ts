@@ -12,6 +12,7 @@ import { lastEmails } from "./lastEmail";
 import { buildPolarDelivery, sendPolarDelivery } from "./simulatePolarWebhook";
 
 export const scenarios = [
+	"user",
 	"owner-with-org",
 	"subscribed-org",
 	"org-with-staff",
@@ -182,12 +183,24 @@ export const seedScenario = async ({
 		`${local}+seed-${runId}-${label}@${domain}`;
 	const password = `Seed-${runId}-1`;
 
+	if (scenario === "user") {
+		const { userId, email } = await signUp(
+			baseUrl,
+			emailFor("user"),
+			"Seed User",
+			password,
+		);
+		return { scenario, password, users: [{ role: "user", userId, email }] };
+	}
+
 	const owner = await signUp(
 		baseUrl,
 		emailFor("owner"),
 		"Seed Owner",
 		password,
 	);
+	const users = [{ role: "owner", userId: owner.userId, email: owner.email }];
+
 	const org = await callApp<OrganizationDto>(
 		baseUrl,
 		"POST",
@@ -197,7 +210,6 @@ export const seedScenario = async ({
 			body: { name: `Seed ${runId}`, industry: DEFAULT_ORGANIZATION_INDUSTRY },
 		},
 	);
-	const users = [{ role: "owner", userId: owner.userId, email: owner.email }];
 
 	if (scenario === "owner-with-org") {
 		return { scenario, password, organization: org, users };

@@ -13,7 +13,7 @@ import { registerOrganizationRoutes } from "@organizationsModule";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import { loginAs } from "../loginAs";
-import { seedScenario } from "../seedScenario";
+import { type Scenario, seedScenario } from "../seedScenario";
 
 let server: Server<never>;
 let base: URL;
@@ -53,13 +53,19 @@ beforeEach(async () => {
 	createCustomerSpy.mockClear();
 });
 
-const seed = (scenario: Parameters<typeof seedScenario>[0]["scenario"]) =>
+const seedAny = (scenario: Scenario) =>
 	seedScenario({
 		scenario,
 		baseUrl: base,
 		emailBase: "seed@seed-scenario.test",
 		staffCount: 2,
 	});
+
+const seed = async (scenario: Exclude<Scenario, "user">) => {
+	const { organization, ...result } = await seedAny(scenario);
+	if (!organization) throw new Error(`${scenario} made no org`);
+	return { ...result, organization };
+};
 
 const orgRow = async (id: string) => {
 	const [row] = await db
@@ -78,6 +84,24 @@ const roles = (organizationId: string) =>
 		.select({ userId: member.userId, role: member.role })
 		.from(member)
 		.where(eq(member.organizationId, organizationId));
+
+test("user: a verified user with no org", async () => {
+	const result = await seedAny("user");
+	const [seeded] = result.users;
+	if (!seeded) throw new Error("no user");
+
+	expect(seeded.email).toMatch(
+		/^seed\+seed-[0-9a-f]{8}-user@seed-scenario\.test$/,
+	);
+	expect("organization" in result).toBe(false);
+	expect(
+		await db
+			.select({ id: member.id })
+			.from(member)
+			.where(eq(member.userId, seeded.userId)),
+	).toEqual([]);
+	expect((await loginAs({ email: seeded.email })).userId).toBe(seeded.userId);
+});
 
 test("owner-with-org: a verified owner with a credential account and an unpaid org", async () => {
 	const result = await seed("owner-with-org");
