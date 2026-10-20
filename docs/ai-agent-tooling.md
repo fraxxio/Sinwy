@@ -111,4 +111,5 @@ Repo skills use the generic Agent Skills format, so each skill has one canonical
 ## Setup Docs
 
 - [ ] Document which environment variables to export for agents and how to start the stack
+- [ ] Make `Sinwy.Backend/.env.example` work when copied: empty values break config parsing (`POLAR_SERVER`, `LOG_DRIVER`, `EMAIL_DRIVER`, `STORAGE_DRIVER` fail their enums) or resolve to the backend root instead of the defaults (`EMAIL_OUTBOX_DIR`, `STORAGE_LOCAL_DIR`). Either leave optional ones out of the file or treat `""` as unset in `appConfig.ts`
 - [x] `CLAUDE.md` names `.agents/skills/` as the home for new skills and says to run `bun run skills:link` after adding one
