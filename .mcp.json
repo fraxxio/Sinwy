@@ -1,0 +1,31 @@
+{
+	"mcpServers": {
+		"better-auth": {
+			"type": "http",
+			"url": "https://mcp.better-auth.com/mcp"
+		},
+		"Polar-Sandbox": {
+			"type": "http",
+			"url": "https://mcp.polar.sh/mcp/polar-sandbox"
+		},
+		"context7": {
+			"type": "http",
+			"url": "https://mcp.context7.com/mcp"
+		},
+		"shadcn": {
+			"type": "stdio",
+			"command": "bunx",
+			"args": ["shadcn", "mcp"]
+		},
+		"chrome-devtools": {
+			"type": "stdio",
+			"command": "bunx",
+			"args": [
+				"chrome-devtools-mcp",
+				"--isolated",
+				"--executablePath",
+				"${CHROMIUM_PATH:-/run/current-system/sw/bin/chromium}"
+			]
+		}
+	}
+}

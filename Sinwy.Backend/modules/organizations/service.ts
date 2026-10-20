@@ -62,7 +62,8 @@ export const getOrganizationStatus = (
 export const setOrganizationStatus = (
 	organizationId: string,
 	status: OrganizationStatus,
-) => setStatus(organizationId, status);
+	changedAt: Date,
+) => setStatus(organizationId, status, changedAt);
 
 export const getCheckoutOrganization = async (
 	userId: string,

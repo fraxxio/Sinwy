@@ -12,8 +12,10 @@ import {
 	exists,
 	inArray,
 	isNull,
+	lt,
 	ne,
 	notExists,
+	or,
 	sql,
 } from "drizzle-orm";
 
@@ -25,17 +27,32 @@ export const isSlugTaken = async (slug: string) => {
 	return row !== undefined;
 };
 
-/** False when no row matched, i.e. the id belongs to no organization. */
+/** Applies the status only if `changedAt` is newer than the last applied change. */
 export const setStatus = async (
 	organizationId: string,
 	status: OrganizationStatus,
-) => {
+	changedAt: Date,
+): Promise<"applied" | "outdated" | "unknown"> => {
 	const updated = await db
 		.update(organization)
-		.set({ status })
-		.where(eq(organization.id, organizationId))
+		.set({ status, subscriptionStatusAt: changedAt })
+		.where(
+			and(
+				eq(organization.id, organizationId),
+				or(
+					isNull(organization.subscriptionStatusAt),
+					lt(organization.subscriptionStatusAt, changedAt),
+				),
+			),
+		)
 		.returning({ id: organization.id });
-	return updated.length > 0;
+	if (updated.length > 0) return "applied";
+
+	const [row] = await db
+		.select({ id: organization.id })
+		.from(organization)
+		.where(eq(organization.id, organizationId));
+	return row ? "outdated" : "unknown";
 };
 
 export const findOnboardingCompletedAt = async (organizationId: string) => {

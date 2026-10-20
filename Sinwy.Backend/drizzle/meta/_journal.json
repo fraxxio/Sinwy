@@ -50,6 +50,13 @@
       "when": 1789495352563,
       "tag": "0006_goofy_wallop",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792432646772,
+      "tag": "0007_little_sabra",
+      "breakpoints": true
     }
   ]
 }
