@@ -37,7 +37,7 @@ const configSchema = z
 		POSTGRES_HOST: z.string().default("localhost"),
 		POSTGRES_PORT: z.coerce.number().default(5432),
 		// dev:seed-scenario sends to plus-aliases of this address; Polar rejects domains without mail
-		SEED_EMAIL_BASE: z.email().or(z.literal("")).optional(),
+		SEED_EMAIL_BASE: z.email().optional(),
 	})
 	.transform((env, ctx) => {
 		const EMAIL_DRIVER =
@@ -76,4 +76,9 @@ const configSchema = z
 		};
 	});
 
-export default configSchema.parse(process.env);
+// an empty value counts as unset, so a copied .env.example falls back to the defaults
+const env = Object.fromEntries(
+	Object.entries(process.env).filter(([, value]) => value !== ""),
+);
+
+export default configSchema.parse(env);

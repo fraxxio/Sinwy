@@ -11,8 +11,8 @@ Implementation is split into one-session phases in [ai-agent-tooling-phases.md](
 - [x] Only local or sandbox credentials are reachable by agents; no production DSNs or API keys. Agents run the backend and tests, which load `.env`, so anything in it is reachable through a subprocess; keep only local and sandbox values there
   - [x] Backend config rejects `POLAR_SERVER=production` unless `NODE_ENV` is `prod`
   - [x] Local backend `.env` uses `NODE_ENV=local`, Polar sandbox, a local DB and the console email driver
-  - [ ] Remove `RESEND_API_KEY` from the local backend `.env` (the console driver doesn't need it), or replace it with a sending-only key for a dev domain
-  - [ ] Confirm the Google OAuth client in `.env` is a dev client
+  - [ ] Remove `RESEND_API_KEY` from the local backend `.env` (the console driver doesn't need it), or replace it with a sending-only key for a dev domain. Waits for the user (agents can't read `.env`)
+  - [ ] Confirm the Google OAuth client in `.env` is a dev client. Waits for the user
 - [x] Dev helpers refuse to run unless `NODE_ENV` is `local` or `dev` and the DB host is local (`Sinwy.Backend/scripts/assertLocalDev.ts`)
 - [x] Deny commands that print container secrets: `docker inspect`, `docker exec`, `docker compose exec`, `docker compose config` and reads of `/proc/*/environ`. Deny rules match the command text, not the program, so they stop the usual forms only
 - [ ] When another harness (Codex CLI, Cursor) is used: port the deny rules above to its config. They apply only in Claude Code
@@ -38,9 +38,9 @@ Agents drive the browser with `bunx playwright-cli`. Unlike the Playwright MCP, 
 - [x] `@playwright/cli` pinned as a root dev dependency
 - [x] `.playwright/cli.config.json` uses the system Chromium; override with `PLAYWRIGHT_MCP_EXECUTABLE_PATH`
 - [x] `playwright-cli` skill in `.agents/skills/`, linked from `.claude/skills/` (regenerate with `bunx playwright-cli install --skills agents` after upgrading, then `bun run skills:link`)
-- [ ] Decide whether to allow `Bash(bunx playwright-cli:*)` in `.claude/settings.json`: the skill's `allowed-tools` matches only the bare `playwright-cli` command, not the `bunx` form `CLAUDE.md` asks for
+- [x] `Bash(bunx playwright-cli:*)` is allowed in `.claude/settings.json`: the skill's `allowed-tools` matches only the bare `playwright-cli` command, not the `bunx` form `CLAUDE.md` asks for. `run-code` runs arbitrary Playwright code, so this is close to allowing any code in that process
 - [x] Usage rule in `CLAUDE.md`
-- [ ] The Vite dev server forwards server-side `console.error` to the browser and back, so one React warning repeats with growing `[Server]` prefixes and floods `playwright-cli console` and the stack log (seen with the hydration warning on `/organizations/:id/onboarding`; the echo keeps growing while the page sits idle). Until it is fixed, the `e2e-test` skill reads the console through its `scripts/console-errors.sh`
+- [ ] The Vite dev server forwards server-side `console.error` to the browser and back, so one React warning repeats with growing `[Server]` prefixes and floods `playwright-cli console` and the stack log (seen with the hydration warning on `/organizations/:id/onboarding`; the echo keeps growing while the page sits idle). Until it is fixed, the `e2e-test` skill reads the console through its `scripts/console-errors.sh`. Waits for an app fix of the hydration warning, then a check whether the echo itself needs a fix
 
 ## Database Access
 
@@ -74,8 +74,8 @@ The toolkit is only useful if it behaves like the real thing. A webhook payload 
   - [x] Signs with the Standard Webhooks scheme and `POLAR_WEBHOOK_SECRET`, and posts to the same endpoint Polar calls. A test sends a badly signed event and expects it to be rejected
   - [x] Covers what real Polar does: redelivery of the same event, events out of order (`subscription.revoked` before `subscription.active`), an unknown `referenceId`
   - [x] Real-delivery check: before billing work is called done, run one sandbox checkout with webhooks delivered through `bun run start:localproxy`, and compare the resulting DB state with what the simulated event produced
-  - [ ] Limit the Polar webhook endpoints (sandbox and production) to the events the app handles: `@polar-sh/sdk` 0.47.1 can't parse `subscription.paused`/`subscription.resumed`, which the sandbox endpoint subscribes to, so those deliveries would get a 400 and be retried
-- [ ] Each tool has a test in `bun run verify` that checks it against the real code path
+  - [ ] Limit the Polar webhook endpoints (sandbox and production) to the events the app handles: `@polar-sh/sdk` 0.47.1 can't parse `subscription.paused`/`subscription.resumed`, which the sandbox endpoint subscribes to, so those deliveries would get a 400 and be retried. Polar disables an endpoint after 10 consecutive failed deliveries. Upgrading isn't a quick fix: the SDK learns these events in 0.49.0, but `@polar-sh/better-auth` 1.8.4 needs `^0.47.0`, and its next version (2.x) needs SDK `^1.0.2` and `better-auth` `^1.7.0`. Waits for the user's decision
+- [x] Each tool has a test in `bun run verify` that checks it against the real code path
 
 ## Skills
 
@@ -106,10 +106,10 @@ Repo skills use the generic Agent Skills format, so each skill has one canonical
   - [x] Tells the agent to treat the toolkit as a stand-in to be checked, not trusted: if the toolkit's result looks wrong, or the toolkit could hide a bug, check it against the source of truth (Polar docs and SDK types, Better Auth docs, the real sandbox)
   - [x] When the toolkit and the real behaviour disagree, fix the toolkit; never change app code to fit the toolkit
   - [x] The final report lists what was simulated (webhooks, email) and which real checks remain, such as the sandbox delivery check, instead of reporting simulated passes as done
-- [ ] Candidates, confirm before building: `db-migration` (edit `Sinwy.Backend/db/schema/`, `db:generate`, review the SQL, `db:migrate`), `backend-module` (module layout, `index.ts` public API, Zod DTOs)
+- [ ] `db-migration`: edit `Sinwy.Backend/db/schema/`, `db:generate`, review the SQL, `db:migrate` (Phase 7)
 
 ## Setup Docs
 
-- [ ] Document which environment variables to export for agents and how to start the stack
-- [ ] Make `Sinwy.Backend/.env.example` work when copied: empty values break config parsing (`POLAR_SERVER`, `LOG_DRIVER`, `EMAIL_DRIVER`, `STORAGE_DRIVER` fail their enums) or resolve to the backend root instead of the defaults (`EMAIL_OUTBOX_DIR`, `STORAGE_LOCAL_DIR`). Either leave optional ones out of the file or treat `""` as unset in `appConfig.ts`
+- [x] Document which environment variables to export for agents and how to start the stack (`README.md` > AI Agents, linked from `CLAUDE.md`)
+- [x] Make `Sinwy.Backend/.env.example` work when copied: `appConfig.ts` treats empty values as unset, so optional ones fall back to their defaults and empty required ones fail at startup
 - [x] `CLAUDE.md` names `.agents/skills/` as the home for new skills and says to run `bun run skills:link` after adding one

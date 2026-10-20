@@ -133,4 +133,22 @@ Plan items: Setup Docs; everything still unchecked.
 
 **Notes**
 
+- Setup docs: the AI Agents section of `README.md` (one-time setup, environment variables, starting the stack), linked from `CLAUDE.md`. The only variables to export are `CHROMIUM_PATH` (Chrome DevTools MCP) and `PLAYWRIGHT_MCP_EXECUTABLE_PATH` (`playwright-cli`), and only when Chromium isn't at the NixOS path. Checked that the `playwright-cli` variable beats `.playwright/cli.config.json`: a bogus path made `open` fail with "executable doesn't exist at" that path.
+- `.env.example`: `appConfig.ts` drops empty values before parsing, so optional ones get their defaults (checked by parsing the copied template with dummy required values: `sandbox`, `console`, `.emails`, `.storage`) and the `SEED_EMAIL_BASE` `""` special case is gone. Behaviour change: an empty required value (e.g. `GOOGLE_CLIENT_ID=""`) now fails at startup instead of passing as `""`. The real `.env` still parses.
+- Fresh-clone check (2026-10-20): `git clone` into a temp dir keeps `.claude/skills/*` as symlinks (git mode `120000`); `bun install`, `skills:link` ("up to date", tree clean) and `skills:check` all exit 0. A Windows checkout without `core.symlinks` would get text files instead; untested.
+- Added `scripts/dev/tests/capturePolarFixture.test.ts` (Polar API stubbed), so every toolkit tool now has a test: re-capturing the committed fixture with real-looking contact details gives back the committed payload, with the versions recorded.
+- Decisions (user, 2026-10-20): `Bash(bunx playwright-cli:*)` allowed; build `db-migration` (Phase 7); `backend-module` not wanted, removed from the plan. The two user tasks above (`RESEND_API_KEY`, Google client) aren't done yet.
+- Polar endpoint events: left for the user's decision. Findings: SDK 0.47.1 throws `Unknown event type` for `subscription.paused`/`resumed` (the plugin answers 400), but a `paused` status inside `subscription.updated` parses (open enum). Polar disables an endpoint after 10 consecutive failed deliveries. Upgrade path: see the plan item.
+- Found, outside this plan (app): Polar says a paused subscription loses access (`subscription.paused` fires when the pause takes effect at period end), but the app handles only `active`/`revoked`, so a paused org stays `active`. Customers can pause from the portal if its pause setting is on; merchants can always pause through the dashboard or API.
+
+## Phase 7: db-migration Skill
+
+Plan items: Skills > Repo Skills > `db-migration`.
+
+- Write `.agents/skills/db-migration/SKILL.md` following the Format rules: edit `Sinwy.Backend/db/schema/`, `bun run db:generate`, review the generated SQL in `Sinwy.Backend/drizzle/` (data loss, defaults on existing rows, locks), `bun run db:migrate`. Run `skills:link` and `skills:check`.
+- Cover what the repo adds: Better Auth tables come from `bun run auth:schema:generate`; tests build their DB with `drizzle-kit push` (`Sinwy.Backend/test/setup.ts`), so passing tests don't prove a migration exists or applies; check with `psql service=sinwy_ro` that the local DB has the change. New tables need no `db:agent:setup` re-run (it sets default privileges).
+- Try it out on a real small schema change agreed with the user, or on a throwaway change that is reverted (both the schema edit and the migration files), and fix gaps in the skill.
+
+**Notes**
+
 _None yet._

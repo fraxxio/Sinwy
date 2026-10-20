@@ -5,6 +5,8 @@ All commands run from the repo root unless noted. The runtime and package manage
 - `bun run verify` — Biome check, type check of every workspace and all tests; the one command to run before calling work done.
 - `bun run check` / `bun run typecheck` / `bun run test` — the individual steps.
 
+Agent setup, environment variables and starting the stack: the AI Agents section of `README.md`.
+
 When running linters, type checks or tests, never truncate their output (`tail`, `head`, `grep`) before reading it. Report the exit code and the full diagnostics. Only say "clean" or "passing" when the command exited 0.
 
 Use `psql` with the service entries created by `bun run db:agent:setup`. Never pass connection strings or passwords.

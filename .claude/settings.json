@@ -19,7 +19,7 @@
 			"Bash(docker compose *exec*)",
 			"Bash(docker compose *config*)"
 		],
-		"allow": ["Bash(psql service=sinwy_ro:*)"],
+		"allow": ["Bash(psql service=sinwy_ro:*)", "Bash(bunx playwright-cli:*)"],
 		"ask": ["Bash(psql service=sinwy_rw:*)"]
 	}
 }

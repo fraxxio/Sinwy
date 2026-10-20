@@ -34,7 +34,7 @@ Sinwy/
    bun install
    ```
 
-2. **Configure environment** — copy the backend env template and fill in the values (Postgres credentials, Polar/Resend/auth keys):
+2. **Configure environment** — copy the backend env template and fill in the values (Postgres credentials, Polar/Resend/auth keys). Values left empty fall back to their defaults:
 
    ```bash
    cp Sinwy.Backend/.env.example Sinwy.Backend/.env
@@ -86,6 +86,47 @@ Polar can't reach `localhost`, so webhook testing needs a public HTTPS tunnel. W
    ```bash
    bun start:localproxy
    ```
+
+## AI Agents
+
+Agents work against the local stack: the DB through `psql`, the browser through `bunx playwright-cli`, Polar sandbox and docs through the MCP servers in `.mcp.json`, and the dev toolkit (`bun run dev:*`). The plan and the reasoning behind it are in [docs/ai-agent-tooling.md](docs/ai-agent-tooling.md).
+
+### One-time setup
+
+1. Do the [Local Setup](#local-setup) above. The backend `.env` must hold only local and sandbox values, because agents run the backend and tests that load it:
+   - `NODE_ENV=local`, `POLAR_SERVER=sandbox` and a local Postgres
+   - `EMAIL_DRIVER=console` (the default for `local`), so emails go to `Sinwy.Backend/.emails/` for `bun run dev:last-email`
+   - `SEED_EMAIL_BASE`: an address on a domain that receives mail, for `bun run dev:seed-scenario`
+2. Create the agent DB roles and write `~/.pg_service.conf` and `~/.pgpass` (again after recreating the Docker volume):
+
+   ```bash
+   bun run db:agent:setup
+   ```
+
+3. The Polar sandbox MCP server logs in with OAuth in the browser the first time an agent uses it.
+
+Skills live in `.agents/skills/`; the `.claude/skills/` links are committed, so a clone needs no extra step. Run `bun run skills:link` after adding or removing a skill.
+
+### Environment variables
+
+Export these in the shell that starts the agent only if Chromium isn't at `/run/current-system/sw/bin/chromium`:
+
+| Variable | Used by |
+| --- | --- |
+| `CHROMIUM_PATH` | Chrome DevTools MCP server (`.mcp.json`) |
+| `PLAYWRIGHT_MCP_EXECUTABLE_PATH` | `bunx playwright-cli` (overrides `.playwright/cli.config.json`) |
+
+Nothing else needs exporting: the backend and the dev tools read `Sinwy.Backend/.env`, `psql` reads its service file, and the remote MCP servers need no keys.
+
+### Starting the stack
+
+```bash
+bun run db:up
+bun run start:server   # backend on PORT (3001)
+bun run start:web      # frontend on http://localhost:3000
+```
+
+Run the two servers as separate long-running processes, each with its output in a log file the agent can read, rather than `bun start`, which mixes both logs. Add `bun run start:localproxy` only for real Polar webhook deliveries (see above). The `e2e-test` skill (`.agents/skills/e2e-test/`) covers checking what is already running, seeding and logging in.
 
 ## Common Scripts
 
