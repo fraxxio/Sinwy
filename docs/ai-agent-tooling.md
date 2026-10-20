@@ -40,6 +40,7 @@ Agents drive the browser with `bunx playwright-cli`. Unlike the Playwright MCP, 
 - [x] `playwright-cli` skill in `.agents/skills/`, linked from `.claude/skills/` (regenerate with `bunx playwright-cli install --skills agents` after upgrading, then `bun run skills:link`)
 - [ ] Decide whether to allow `Bash(bunx playwright-cli:*)` in `.claude/settings.json`: the skill's `allowed-tools` matches only the bare `playwright-cli` command, not the `bunx` form `CLAUDE.md` asks for
 - [x] Usage rule in `CLAUDE.md`
+- [ ] The Vite dev server forwards server-side `console.error` to the browser and back, so one React warning repeats with growing `[Server]` prefixes and floods `playwright-cli console` and the stack log (seen with the hydration warning on `/organizations/:id/onboarding`)
 
 ## Database Access
 
@@ -58,9 +59,10 @@ Agents use `psql` through libpq service entries, so connection details and passw
 
 The toolkit is only useful if it behaves like the real thing. A webhook payload that differs from what Polar actually sends can make every test pass and still break in production. Each tool replaces only the outside party (Polar, the inbox, the user logging in) and goes through the same app code as production: no test-only branches in app code and no flags that skip signature or session checks.
 
-- [ ] `seed-scenario`: seed named data sets (e.g. owner with org, org with staff, subscribed org)
-  - [ ] Creates data through module services, so it gets the same validation and invariants as the app, not raw SQL
-  - [ ] A subscribed org becomes `active` through `simulate-polar-webhook`, not by setting the status column
+- [x] `seed-scenario`: seed named data sets with fresh users each run (`bun run dev:seed-scenario <owner-with-org|subscribed-org|org-with-staff> [--staff <n>]`, needs the backend running and `SEED_EMAIL_BASE` in the backend `.env`)
+  - [x] Creates data through the backend's HTTP API the way the browser does (sign-up, the emailed verification link, the organization endpoints), so it gets the same validation and invariants as the app, not raw SQL. Staff join through Better Auth's server-side `addMember` until the app has an invite flow
+  - [x] A subscribed org becomes `active` through `simulate-polar-webhook`, not by setting the status column
+  - [ ] Switch staff seeding to the invite flow once the app has one
 - [x] `login-as`: get a session for any user, for API calls and browser tests (`bun run dev:login-as --email <email> [--state]`)
   - [x] Creates the session through Better Auth, not by inserting session rows or forging cookies
   - [x] Checks its own output: the session works against a protected endpoint
