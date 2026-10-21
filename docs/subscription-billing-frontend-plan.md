@@ -498,14 +498,15 @@ put the commit hash next to the phase.
 - [x] Billing route accepts `?change=plan` (`validateSearch`) so the link typechecks; opening the dialog from it is Phase 6
 - [x] Eyeballed on a temporary gate (Enterprise → children, Starter owner → Upgrade plan, Starter staff → ask an owner, revoked → active-plan copy), gate removed
 
-### Phase 5 — Billing page: read · not started
+### Phase 5 — Billing page: read · done (`af11583`)
 
-- [ ] Lift `SettingsSection` from `account-dashboard` to `shared/components/`
-- [ ] `org-dashboard/lib/billing-queries.ts` (`billingKeys`, `subscriptionQuery`)
-- [ ] `org-dashboard/lib/subscription-status.ts`: `describeSubscription` + tests covering all five table rows
-- [ ] `CurrentPlanSection` (Polar price, status badge, renews/ends on, `billing === null` fallback)
-- [ ] `InactivePlanSection` → Choose a plan
-- [ ] "Manage billing on Polar" button (`authClient.customer.portal()`)
+- [x] Lift `SettingsSection` from `account-dashboard` to `shared/components/` (`children` now optional)
+- [x] `org-dashboard/lib/billing-queries.ts` (`billingKeys`, `subscriptionQuery`)
+- [x] `org-dashboard/lib/subscription-status.ts`: `describeSubscription` + `formatPrice`, tests covering all five table rows; `unpaid` reads as "Payment failed", `canceled` as "Cancels on", `incomplete*` as "Payment pending"
+- [x] `CurrentPlanSection` (Polar price, status badge, renews/ends on, `billing === null` fallback with retry)
+- [x] `InactivePlanSection` → Choose a plan
+- [x] "Manage billing on Polar" in `ManageBillingSection` (`authClient.customer.portal()`, error toast)
+- [x] Manual check: seeded active org shows plan + Active badge + unavailable note (seeded subscriptions are not in Polar), portal opens in the same tab; inactive org shows `InactivePlanSection` → plan page
 
 ### Phase 6 — Billing page: change plan · not started
 
