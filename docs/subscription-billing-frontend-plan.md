@@ -601,9 +601,12 @@ rule in SQL.
   (status poll held): no steps. The nesting warning still reproduces with the
   fix stashed.*
 
-### Phase 10 — Docs · not started
+### Phase 10 — Docs · done (`dc413e7`)
 
-- [ ] `user-flow-map.md` §8: plan-change and re-checkout arrows, and login for a lapsed org (Phase 9)
+- [x] `user-flow-map.md` §8: plan-change and re-checkout arrows, and login for a lapsed org (Phase 9)
+  *§8 also covers cancel-at-period-end and the staff line; §4 routes active /
+  lapsed / never-paid orgs and §6 notes that a renewal shows no funnel steps.
+  The roadmap's "plans entitle nothing" line was already gone (backend half).*
 
 ### Backend cross-cutting asks
 
