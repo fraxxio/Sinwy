@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { SettingsSection } from "#/modules/account-dashboard/components/settings/SettingsSection";
 import {
 	accountKeys,
 	accountsQuery,
 	hasCredentialAccount,
 } from "#/modules/account-dashboard/lib/account-queries";
 import { Icon } from "#/shared/components/icons";
+import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Badge } from "#/shared/components/ui/badge";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";

@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { SettingsSection } from "#/modules/account-dashboard/components/settings/SettingsSection";
 import {
 	deletionPreviewQuery,
 	type SessionUser,
 } from "#/modules/account-dashboard/lib/account-queries";
+import { SettingsSection } from "#/shared/components/SettingsSection";
 import {
 	AlertDialog,
 	AlertDialogAction,

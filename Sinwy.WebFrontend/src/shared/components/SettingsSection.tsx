@@ -11,7 +11,7 @@ export function SettingsSection({
 	title: string;
 	description: string;
 	action?: ReactNode;
-	children: ReactNode;
+	children?: ReactNode;
 }) {
 	return (
 		<section id={id} className="grid max-w-3xl gap-4 py-8 first:pt-0 last:pb-0">
