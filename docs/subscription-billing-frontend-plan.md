@@ -529,10 +529,13 @@ put the commit hash next to the phase.
 - [x] Open question 5 needs no copy: the backend lists orders by `referenceId`, so invoices of earlier subscriptions are already in the list
 - [x] Manual check (sandbox orders): generated invoice downloads a PDF without leaving the page; ungenerated → "Generating your invoice" toast → retry downloads. `409` toast + portal action and multi-page pagination checked against mocked responses (no sandbox org has a missing billing address or more than 20 orders)
 
-### Phase 8 — Funnel touch-ups · not started
+### Phase 8 — Funnel touch-ups · done (`81cde64`)
 
-- [ ] `checkout/routes/success.tsx` → dashboard when `onboardingCompletedAt` is set (always goes to onboarding today)
-- [ ] `$id.plan.tsx` `?intent=renew`: reactivation hero copy, hide `FunnelProgress`
+- [x] `activeOrganizationDestination` (`organizations/lib/funnel.ts`, tested in `funnel.test.ts`): onboarding until `onboardingCompletedAt` is set, then the dashboard
+- [x] `checkout/routes/success.tsx` reads the org with `getFullOrganization` after activation and routes through it; onboarding stays the fallback when that read fails
+- [x] `$id.plan.tsx` sends an already-active org through the same helper instead of always to onboarding
+- [x] `$id.plan.tsx` `?intent=renew`: "Pick a plan to reactivate {name}" hero, `FunnelProgress` hidden; the banner and `InactivePlanSection` link with it
+- [x] Manual check (seeded org, revoke/activate simulated, checkout lookup mocked): banner → renew page; success → dashboard with banner gone; plan page for an active onboarded org → dashboard; first-time org still sees `FunnelProgress` and lands on onboarding
 
 ### Phase 9 — Docs · not started
 
