@@ -223,7 +223,14 @@ export const auth = betterAuth({
 					).toString(),
 					authenticatedUsersOnly: true,
 				}),
-				portal(),
+				// the portal spans all of a user's organizations, so return to the
+				// post-login router rather than one organization's billing page
+				portal({
+					returnUrl: new URL(
+						"/auth/postlogin",
+						appConfig.WEB_APP_URL,
+					).toString(),
+				}),
 				webhooks({
 					secret: appConfig.POLAR_WEBHOOK_SECRET,
 					// `updated` fires on every change (plan change, cancel, renewal);

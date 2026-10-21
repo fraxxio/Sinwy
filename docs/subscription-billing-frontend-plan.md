@@ -535,7 +535,7 @@ put the commit hash next to the phase.
 ### Backend cross-cutting asks
 
 - [x] 1. Invoice download returns `{ url }` (`InvoiceDownloadDto`)
-- [ ] 2. `portal({ returnUrl })`: `auth.ts` still calls `portal()` with no return URL
+- [x] 2. `portal({ returnUrl })` → `<WEB_APP_URL>/auth/postlogin`
 - [x] 3. `toPlanSlug` exported from `@sinwy/shared`
 - [x] 4. `PLAN_UPGRADE_REQUIRED` in `@sinwy/shared`: it shipped as `API_ERROR_CODES.PLAN_UPGRADE_REQUIRED`, not `API_CODES`
 - [x] 5. `OrganizationSummary.plan`
