@@ -508,20 +508,23 @@ put the commit hash next to the phase.
 - [x] "Manage billing on Polar" in `ManageBillingSection` (`authClient.customer.portal()`, error toast)
 - [x] Manual check: seeded active org shows plan + Active badge + unavailable note (seeded subscriptions are not in Polar), portal opens in the same tab; inactive org shows `InactivePlanSection` → plan page
 
-### Phase 6 — Billing page: change plan · not started
+### Phase 6 — Billing page: change plan · done (`251c326`)
 
-- [ ] Settle Open questions 1 and 2 (dialog vs sub-route, downgrade copy)
-- [ ] `ChangePlanDialog`: plan rows, feature deltas, confirm step with the proration copy kept in a constant
-- [ ] Mutation → write DTO into the cache, `router.invalidate()`, `pollUntil` on `plan === target`
-- [ ] Error branches: `409`, `400`, anything else (stay on the page)
-- [ ] `?change=plan` deep link opens the dialog
+- [x] Settle Open questions 1 and 2: dialog; immediate change with the difference settled on the next invoice (Polar `prorate`)
+- [x] `org-dashboard/lib/plan-change.ts`: `describePlanChange` (direction, gained/lost features) + `PRORATION_COPY` per direction, tested in `plan-change.test.ts`
+- [x] `ChangePlanDialog`: radio row per plan (catalogue price for the current interval, feature deltas), current plan disabled; the confirm copy appears under the list once a plan is picked and the button reads "Switch to {plan}", instead of a separate confirm screen
+- [x] Mutation → DTO into the cache, `router.invalidate()`; `pollUntil` (10 × 2 s) only when the response does not carry the target plan yet. The backend answers `200`, not `202`, and projects synchronously
+- [x] Errors: inactive `409` → `handleOrganizationInactive` (the page swaps to `InactivePlanSection`, which carries Choose a plan); any other failure shows the backend message in the dialog with Switch re-enabled, and the subscription query is refetched
+- [x] Change plan disabled while the subscription is canceled or set to cancel (Polar refuses those)
+- [x] `?change=plan` is the dialog's open state (`replace` navigation both ways), so the `UpgradePrompt` deep link opens it
+- [x] Manual check (seeded org): button and deep link open the dialog, closing clears the param, downgrade copy and lost features render, switch shows Polar's error in place (seeded subscriptions aren't in Polar). A successful switch still needs a sandbox-checkout org
 
 ### Phase 7 — Invoices · not started
 
 - [ ] `invoicesQuery` + `validateSearch` `page` param, limit 20
 - [ ] `InvoicesSection`: table, pagination, Download / Generate label
 - [ ] `org-dashboard/lib/download-invoice.ts`: popup-safe handoff, `200`/`202`/`409`/other outcomes + tests
-- [ ] Empty/footer copy for invoices from earlier subscriptions (Open question 5)
+- [ ] Footer copy for invoices from earlier subscriptions ("on Polar") + TODO to list them here (Open question 5)
 
 ### Phase 8 — Funnel touch-ups · not started
 
@@ -612,14 +615,21 @@ reads that field.
    vs a sub-route `/settings/billing/plan` reusing `PlanCards`. The sub-route
    needs `billing.tsx` to become a layout and re-sells inside settings; the
    dialog is smaller and keeps `PlanCards` a funnel-only component.
+   **Decided: dialog.**
 2. **Downgrade copy** — depends on the backend's proration decision. If
    downgrades are deferred to period end, the dialog needs a second sentence
    and the badge a "Changes to {plan} on {date}" state (Polar's
-   `pendingUpdate`), which the DTO does not carry yet.
+   `pendingUpdate`), which the DTO does not carry yet. **Decided: no deferred
+   state.** The backend uses Polar's `prorate`: upgrades and downgrades apply
+   immediately, the billing cycle is unchanged, and the per-second prorated
+   difference lands on the next regular invoice (a charge for an upgrade, a
+   credit for a downgrade); nothing is charged at the moment of the switch.
+   The copy lives in `PRORATION_COPY` (`org-dashboard/lib/plan-change.ts`).
 3. **Banner for `past_due`** — the shell context only knows our `status`
    (still `active` while past due). A warning outside the billing page would
    need Polar's status in the shell, i.e. a request per shell load. Recommend
-   no: the billing page shows it, and Polar emails the customer.
+   no: the billing page shows it, and Polar emails the customer. **Decided:
+   no.**
 4. **Switcher hint** — show "Inactive" next to inactive organizations in the
    `OrganizationSwitcher`? **Decided: yes.** An outline "Inactive" badge on
    the organization's row in the switcher menu. Display only, read from the
@@ -629,6 +639,8 @@ reads that field.
    by the current `subscription_id`, an org that was revoked and re-purchased
    loses its earlier invoices from this list. The portal still has them; say
    so in the section's empty/footer copy if that is the chosen filter.
+   **Decided: copy only.** Say in the section's footer that invoices from
+   earlier subscriptions are on Polar, with a TODO to list them here later.
 
 ## Definition of done
 
