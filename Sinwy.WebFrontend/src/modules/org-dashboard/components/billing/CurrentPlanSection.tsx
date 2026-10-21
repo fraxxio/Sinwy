@@ -1,6 +1,7 @@
 import type { OrganizationSubscriptionDto } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { ChangePlanDialog } from "#/modules/org-dashboard/components/billing/ChangePlanDialog";
 import { subscriptionQuery } from "#/modules/org-dashboard/lib/billing-queries";
 import {
 	describeSubscription,
@@ -15,8 +16,12 @@ import { getPlanName } from "#/shared/lib/plans";
 
 export function CurrentPlanSection({
 	organizationId,
+	changePlanOpen,
+	onChangePlanOpenChange,
 }: {
 	organizationId: string;
+	changePlanOpen: boolean;
+	onChangePlanOpenChange: (open: boolean) => void;
 }) {
 	const { data, isPending, isError, isFetching, refetch } = useQuery(
 		subscriptionQuery(organizationId),
@@ -35,11 +40,29 @@ export function CurrentPlanSection({
 		</Button>
 	);
 
+	const plan = data?.plan ?? null;
+	// Polar refuses plan changes on a subscription that is canceled or set to cancel
+	const canChangePlan =
+		plan !== null &&
+		!data?.billing?.cancelAtPeriodEnd &&
+		data?.billing?.subscriptionStatus !== "canceled";
+
 	return (
 		<SettingsSection
 			id="plan"
 			title="Plan"
 			description="What this organization pays for."
+			action={
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					disabled={!canChangePlan}
+					onClick={() => onChangePlanOpenChange(true)}
+				>
+					Change plan
+				</Button>
+			}
 		>
 			{isPending ? (
 				<Skeleton className="h-16" />
@@ -50,6 +73,15 @@ export function CurrentPlanSection({
 				</div>
 			) : (
 				<PlanSummary subscription={data} retry={retry} />
+			)}
+			{plan && (
+				<ChangePlanDialog
+					organizationId={organizationId}
+					current={plan}
+					interval={data?.billing?.interval ?? null}
+					open={changePlanOpen && canChangePlan}
+					onOpenChange={onChangePlanOpenChange}
+				/>
 			)}
 		</SettingsSection>
 	);

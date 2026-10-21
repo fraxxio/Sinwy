@@ -23,6 +23,15 @@ export const Route = createFileRoute(
 function BillingPage() {
 	const { organization } = Route.useRouteContext();
 	const { isActive } = useEntitlements();
+	const { change } = Route.useSearch();
+	const navigate = Route.useNavigate();
+
+	// the URL holds the dialog state so UpgradePrompt can deep-link into it
+	const setChangePlanOpen = (open: boolean) =>
+		void navigate({
+			search: (prev) => ({ ...prev, change: open ? "plan" : undefined }),
+			replace: true,
+		});
 
 	return (
 		<>
@@ -32,7 +41,11 @@ function BillingPage() {
 			/>
 			<ContentBox className="divide-y">
 				{isActive ? (
-					<CurrentPlanSection organizationId={organization.id} />
+					<CurrentPlanSection
+						organizationId={organization.id}
+						changePlanOpen={change === "plan"}
+						onChangePlanOpenChange={setChangePlanOpen}
+					/>
 				) : (
 					<InactivePlanSection organizationId={organization.id} />
 				)}
