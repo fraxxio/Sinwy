@@ -42,6 +42,25 @@ it("sends an unpaid (inactive) organization back to the plan page", () => {
 	});
 });
 
+it("sends a lapsed organization to its read-only dashboard", () => {
+	expect(
+		postLoginDestination(
+			[
+				{
+					id: "a",
+					slug: "slug-a",
+					status: "inactive",
+					onboardingCompletedAt: new Date("2026-01-01"),
+				},
+			],
+			"a",
+		),
+	).toEqual({
+		to: "/$organizationSlug",
+		params: { organizationSlug: "slug-a" },
+	});
+});
+
 it("sends users without organizations to Customer Mode", () => {
 	expect(postLoginDestination([], null)).toEqual({ to: "/account" });
 });

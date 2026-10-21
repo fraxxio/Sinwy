@@ -4,7 +4,8 @@ import { member, organization } from "@db/schema/organizationSchema";
 import { and, asc, eq, isNull } from "drizzle-orm";
 
 /**
- * Oldest organization the user owns that billing has not activated yet.
+ * Oldest organization the user owns that billing has not activated yet. A
+ * lapsed one (onboarding finished) is left to the dashboard's inactive banner.
  * Single index hit on member_userId_idx, then a primary-key join, this runs
  * on every app load, so it must stay a bounded lookup.
  */
@@ -18,6 +19,7 @@ export const findUnpaidOwnedOrganization = async (userId: string) => {
 				eq(member.userId, userId),
 				memberHasRole("owner"),
 				eq(organization.status, "inactive"),
+				isNull(organization.onboardingCompletedAt),
 			),
 		)
 		.orderBy(asc(organization.createdAt))

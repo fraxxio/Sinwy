@@ -1,19 +1,27 @@
+import { isLapsed } from "#/modules/organizations/lib/funnel";
+
 /**
  * Where a signed-in user lands after login: active (or most recent) org →
- * Organization Mode. An unpaid organization goes back to the plan page (the
- * payment funnel must stay reachable). No orgs → Customer Mode. Unfinished
- * onboarding is not routed here — `UnfinishedOnboardingToast` prompts for it
- * from the root on every route outside the funnel. No-session is handled by
- * the route guard, not here.
+ * Organization Mode. An organization that never got paid goes back to the
+ * plan page (the payment funnel must stay reachable); a lapsed one opens its
+ * read-only dashboard, where the banner offers the way back. No orgs →
+ * Customer Mode. Unfinished onboarding is not routed here —
+ * `UnfinishedOnboardingToast` prompts for it from the root on every route
+ * outside the funnel. No-session is handled by the route guard, not here.
  */
 export function postLoginDestination(
-	organizations: { id: string; slug: string; status: string }[],
+	organizations: {
+		id: string;
+		slug: string;
+		status: string;
+		onboardingCompletedAt?: Date | null;
+	}[],
 	activeOrgId: string | null | undefined,
 ) {
 	const org =
 		organizations.find((o) => o.id === activeOrgId) ?? organizations.at(-1);
 	if (!org) return { to: "/account" } as const;
-	if (org.status !== "active")
+	if (org.status !== "active" && !isLapsed(org))
 		return { to: "/organizations/$id/plan", params: { id: org.id } } as const;
 
 	return {

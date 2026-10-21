@@ -138,6 +138,28 @@ test("owner of an inactive organization → resume at select-plan", async () => 
 	});
 });
 
+test("owner of a lapsed organization → not prompted to pay", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, {
+		status: "inactive",
+		onboardingCompletedAt: new Date(),
+	});
+	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
+});
+
+test("lapsed organization alongside one never paid → surfaces the unpaid one", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, {
+		status: "inactive",
+		createdAt: new Date("2020-01-01"),
+		onboardingCompletedAt: new Date("2020-02-01"),
+	});
+	const unpaid = await createOrg(userId, { status: "inactive" });
+	expect(await getFlags(cookie)).toEqual({
+		unfinishedOnboarding: { step: "select-plan", organizationId: unpaid },
+	});
+});
+
 test("owner of a fully set up organization → no flags raised", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	await createOrg(userId, {

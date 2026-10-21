@@ -11,7 +11,10 @@ import {
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
-import { activeOrganizationDestination } from "#/modules/organizations/lib/funnel";
+import {
+	activeOrganizationDestination,
+	hasCompletedSetup,
+} from "#/modules/organizations/lib/funnel";
 import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { Button } from "#/shared/components/ui/button";
 import { Skeleton } from "#/shared/components/ui/skeleton";
@@ -39,11 +42,19 @@ enum Phase {
 	TimedOut = "timed-out",
 }
 
-function PageShell({ children }: { children: React.ReactNode }) {
+function PageShell({
+	showSteps = false,
+	children,
+}: {
+	showSteps?: boolean;
+	children: React.ReactNode;
+}) {
 	return (
 		<main className="page-wrap py-14">
 			<div className="mx-auto w-full max-w-sm">
-				<FunnelProgress current={FunnelStep.Pay} className="mb-8" />
+				{showSteps && (
+					<FunnelProgress current={FunnelStep.Pay} className="mb-8" />
+				)}
 				{children}
 			</div>
 		</main>
@@ -92,6 +103,8 @@ function Activation({
 	const [phase, setPhase] = useState<Phase>(
 		checkoutId ? Phase.Resolving : Phase.MissingCheckout,
 	);
+	// unknown until the checkout resolves, so a renewal never flashes setup steps
+	const [firstTimeSetup, setFirstTimeSetup] = useState(false);
 
 	useEffect(() => {
 		if (!checkoutId) return;
@@ -112,6 +125,13 @@ function Activation({
 				return;
 			}
 			const orgId = res.data.organizationId;
+			// checked on setup, not status: the webhook may have activated it already
+			const { data: organization } =
+				await authClient.organization.getFullOrganization({
+					query: { organizationId: orgId, membersLimit: 1 },
+				});
+			if (cancelled) return;
+			setFirstTimeSetup(!!organization && !hasCompletedSetup(organization));
 			setPhase(Phase.Activating);
 
 			const active = await pollUntil(
@@ -129,11 +149,6 @@ function Activation({
 				setPhase(Phase.TimedOut);
 				return;
 			}
-			const { data: organization } =
-				await authClient.organization.getFullOrganization({
-					query: { organizationId: orgId, membersLimit: 1 },
-				});
-			if (cancelled) return;
 			await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
 			// onboarding is the safe fallback: it also serves a completed profile
 			void navigate(
@@ -151,7 +166,7 @@ function Activation({
 	const activating = phase === Phase.Resolving || phase === Phase.Activating;
 
 	return (
-		<PageShell>
+		<PageShell showSteps={firstTimeSetup}>
 			<div className="space-y-3 text-center">
 				{activating ? (
 					<ActivationProgress phase={phase} />
