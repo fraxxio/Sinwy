@@ -5,10 +5,21 @@ All commands run from the repo root unless noted. The runtime and package manage
 - `bun run verify` — Biome check, type check of every workspace and all tests; the one command to run before calling work done.
 - `bun run check` / `bun run typecheck` / `bun run test` — the individual steps.
 
+Agent setup, environment variables and starting the stack: the AI Agents section of `README.md`.
+
 When running linters, type checks or tests, never truncate their output (`tail`, `head`, `grep`) before reading it. Report the exit code and the full diagnostics. Only say "clean" or "passing" when the command exited 0.
 
-## Workspace Layout
+Use `psql` with the service entries created by `bun run db:agent:setup`. Never pass connection strings or passwords.
 
+- Reads: `psql service=sinwy_ro -c "<sql>"` (read-only role)
+- Writes: `psql service=sinwy_rw -c "<sql>"` (data changes only; schema changes go through Drizzle migrations)
+- Always add `LIMIT` and select only the columns you need. Table definitions live in `Sinwy.Backend/db/schema/`.
+
+Drive the browser with `bunx playwright-cli` (see the `playwright-cli` skill, which writes the command without `bunx`). Use the Chrome DevTools MCP only for performance traces, Lighthouse audits and memory debugging, if it's disabled ask user to enable it.
+
+New repo skills go in `.agents/skills/<name>/` (format rules: Skills > Format in `docs/ai-agent-tooling.md`), never directly in `.claude/skills/`. Run `bun run skills:link` after adding or removing one; `bun run skills:check` validates them.
+
+## Workspace Layout
 ```
 Sinwy/
 ├── Sinwy.Backend/      # Bun HTTP server (@sinwy/backend)
@@ -34,7 +45,6 @@ Cross-module imports must go through each module's `index.ts`. Never import from
 `Sinwy.WebFrontend/src/shared/` must never import from `src/modules/`. Cross-cutting infrastructure (e.g. the Better Auth client in `shared/lib/auth/`) lives in `shared/`; modules depend on shared, not the other way around.
 
 ## Code Style
-
 - **Formatter/linter:** Biome (tabs, double quotes for JS/TS strings)
 - **Validation:** Zod everywhere; infer DTO types from schemas (`z.infer<typeof schema>`)
 - **Style:** prefer plain functions over classes; keep services functional

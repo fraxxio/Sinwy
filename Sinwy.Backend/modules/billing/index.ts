@@ -1,4 +1,4 @@
 export { ensureCheckoutAllowed } from "./checkoutGuard";
-export { syncSubscription } from "./projection";
+export { applySubscriptionEvent } from "./projection";
 export { registerBillingRoutes } from "./routes";
 export { revokeOrganizationSubscription } from "./service";

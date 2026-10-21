@@ -6,3 +6,4 @@ export {
 	type EmailTemplate,
 	type SendOptions,
 } from "./emailClientTypes";
+export { type OutboxEmail, readOutboxEmails } from "./emailOutbox";

@@ -1,5 +1,5 @@
 {
-  "id": "f93dd7c9-f5e6-4770-924f-c866524f49da",
+  "id": "79f71dc3-46d3-46f1-bebe-3b766a438011",
   "prevId": "03d353c0-ca99-44aa-ac79-fdec7a704084",
   "version": "7",
   "dialect": "postgresql",
@@ -555,15 +555,9 @@
           "notNull": true,
           "default": "'inactive'"
         },
-        "plan": {
-          "name": "plan",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "subscription_id": {
-          "name": "subscription_id",
-          "type": "text",
+        "subscription_status_at": {
+          "name": "subscription_status_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -624,13 +618,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "slug"
-          ]
-        },
-        "organization_subscription_id_unique": {
-          "name": "organization_subscription_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "subscription_id"
           ]
         }
       },

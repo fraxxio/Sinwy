@@ -1,6 +1,6 @@
 import { emailClient } from "@backend/infrastructure/email";
 import { polarClient, productIdFor } from "@backend/infrastructure/polar";
-import { ensureCheckoutAllowed, syncSubscription } from "@billingModule";
+import { applySubscriptionEvent, ensureCheckoutAllowed } from "@billingModule";
 import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
@@ -227,10 +227,10 @@ export const auth = betterAuth({
 				webhooks({
 					secret: appConfig.POLAR_WEBHOOK_SECRET,
 					// `updated` fires on every change (plan change, cancel, renewal);
-					// all events converge on the same sync, so order doesn't matter
-					onSubscriptionUpdated: (payload) => syncSubscription(payload.data.id),
-					onSubscriptionActive: (payload) => syncSubscription(payload.data.id),
-					onSubscriptionRevoked: (payload) => syncSubscription(payload.data.id),
+					// all events converge on the same projection
+					onSubscriptionUpdated: applySubscriptionEvent,
+					onSubscriptionActive: applySubscriptionEvent,
+					onSubscriptionRevoked: applySubscriptionEvent,
 				}),
 			],
 		}),

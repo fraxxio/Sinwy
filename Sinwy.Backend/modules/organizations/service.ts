@@ -74,18 +74,21 @@ export const getSubscriptionState = async (
 
 /**
  * Billing projection writes. Both refuse (→ false) a subscription other than
- * the one currently backing the organization, and an unknown organization.
+ * the one currently backing the organization, state observed no later than
+ * the applied one, and an unknown organization.
  */
 export const activateSubscription = (
 	organizationId: string,
 	subscriptionId: string,
 	plan: PlanSlug | null,
-) => bindSubscription(organizationId, subscriptionId, plan);
+	observedAt: Date,
+) => bindSubscription(organizationId, subscriptionId, plan, observedAt);
 
 export const deactivateSubscription = (
 	organizationId: string,
 	subscriptionId: string,
-) => releaseSubscription(organizationId, subscriptionId);
+	observedAt: Date,
+) => releaseSubscription(organizationId, subscriptionId, observedAt);
 
 type WriteResult<T> =
 	| { ok: true; data: T }

@@ -22,6 +22,7 @@ const configSchema = z
 		GOOGLE_CLIENT_ID: z.string(),
 		GOOGLE_CLIENT_SECRET: z.string(),
 		EMAIL_DRIVER: z.enum(["resend", "console"]).optional(),
+		EMAIL_OUTBOX_DIR: z.string().default(".emails"),
 		RESEND_API_KEY: z.string().optional(),
 		RESEND_EMAIL_DOMAIN: z.string(),
 		POLAR_ACCESS_TOKEN: z.string(),
@@ -35,6 +36,8 @@ const configSchema = z
 		POSTGRES_DB: z.string(),
 		POSTGRES_HOST: z.string().default("localhost"),
 		POSTGRES_PORT: z.coerce.number().default(5432),
+		// dev:seed-scenario sends to plus-aliases of this address; Polar rejects domains without mail
+		SEED_EMAIL_BASE: z.email().optional(),
 	})
 	.transform((env, ctx) => {
 		const EMAIL_DRIVER =
@@ -51,6 +54,14 @@ const configSchema = z
 			});
 		}
 
+		if (env.POLAR_SERVER === "production" && env.NODE_ENV !== "prod") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["POLAR_SERVER"],
+				message: 'POLAR_SERVER "production" requires NODE_ENV "prod"',
+			});
+		}
+
 		const DB_URL =
 			`postgresql://${env.POSTGRES_USER}:${env.POSTGRES_PASSWORD}` +
 			`@${env.POSTGRES_HOST}:${env.POSTGRES_PORT}/${env.POSTGRES_DB}`;
@@ -61,7 +72,13 @@ const configSchema = z
 			DB_URL,
 			// relative paths resolve against the backend root, not the process cwd
 			STORAGE_LOCAL_DIR: resolve(__dirname, "..", env.STORAGE_LOCAL_DIR),
+			EMAIL_OUTBOX_DIR: resolve(__dirname, "..", env.EMAIL_OUTBOX_DIR),
 		};
 	});
 
-export default configSchema.parse(process.env);
+// an empty value counts as unset, so a copied .env.example falls back to the defaults
+const env = Object.fromEntries(
+	Object.entries(process.env).filter(([, value]) => value !== ""),
+);
+
+export default configSchema.parse(env);

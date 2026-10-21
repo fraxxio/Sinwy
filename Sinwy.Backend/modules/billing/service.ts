@@ -118,6 +118,7 @@ export const changeOrganizationPlan = async (
 	if (!state.subscriptionId) return { ok: false, error: "inactive" };
 	if (state.plan === plan) return { ok: false, error: "same-plan" };
 
+	const requestedAt = new Date();
 	let subscription: Subscription;
 	try {
 		subscription = await polarClient.subscriptions.update({
@@ -137,7 +138,7 @@ export const changeOrganizationPlan = async (
 
 	// the subscription.updated webhook lands the same state; applying it now
 	// saves the caller from polling
-	await projectSubscription(subscription);
+	await projectSubscription(subscription, requestedAt);
 	const updated = await requireSubscriptionState(membership.organizationId);
 	return { ok: true, data: toSubscriptionDto(updated, subscription) };
 };

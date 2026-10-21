@@ -27,10 +27,13 @@ const planOf = (subscription: Subscription) => {
  * Projects a Polar subscription onto its organization (`status`, `plan`,
  * `subscription_id`). State is derived from the subscription object only,
  * so re-delivery and overlapping events converge on the same result.
- * Returns the status written, or null when the organization was left as is.
+ * `observedAt` is when Polar had this state; anything not newer than the
+ * applied state is ignored. Returns the status written, or null when the
+ * organization was left as is.
  */
 export const projectSubscription = async (
 	subscription: Subscription,
+	observedAt: Date,
 ): Promise<OrganizationStatus | null> => {
 	const organizationId = subscription.metadata["referenceId"];
 	if (typeof organizationId !== "string") {
@@ -46,8 +49,9 @@ export const projectSubscription = async (
 				organizationId,
 				subscription.id,
 				planOf(subscription),
+				observedAt,
 			)
-		: await deactivateSubscription(organizationId, subscription.id);
+		: await deactivateSubscription(organizationId, subscription.id, observedAt);
 
 	const context = {
 		organizationId,
@@ -62,6 +66,17 @@ export const projectSubscription = async (
 	const current = await getSubscriptionState(organizationId);
 	if (!current)
 		billingLogger.warn("Subscription references an unknown org", context);
+	else if (
+		current.subscriptionId === null ||
+		current.subscriptionId === subscription.id
+	)
+		billingLogger.info(
+			"Ignored subscription state older than the applied one",
+			{
+				...context,
+				observedAt: observedAt.toISOString(),
+			},
+		);
 	else if (entitled)
 		// two checkouts raced (e.g. two tabs): the org keeps the first one
 		billingLogger.error(
@@ -76,16 +91,12 @@ export const projectSubscription = async (
 	return null;
 };
 
-/**
- * Webhook entry point. Payloads can be retried late or arrive out of order,
- * so the subscription is re-read from Polar instead of trusting the snapshot.
- * A failed read throws, which makes Polar retry the delivery.
- */
-export const syncSubscription = async (subscriptionId: string) => {
-	const subscription = await polarClient.subscriptions.get({
-		id: subscriptionId,
-	});
-	await projectSubscription(subscription);
+/** Webhook entry point. Late retries and reordered events lose to the newer state by `timestamp`. */
+export const applySubscriptionEvent = async (event: {
+	data: Subscription;
+	timestamp: Date;
+}) => {
+	await projectSubscription(event.data, event.timestamp);
 };
 
 /**
@@ -95,6 +106,8 @@ export const syncSubscription = async (subscriptionId: string) => {
  * Returns whether the organization is now active.
  */
 export const reconcileInactiveOrganization = async (organizationId: string) => {
+	// a revocation that lands while Polar is being asked must still win
+	const queriedAt = new Date();
 	const subscriptions = await polarClient.subscriptions
 		.list({
 			metadata: { referenceId: organizationId },
@@ -112,7 +125,8 @@ export const reconcileInactiveOrganization = async (organizationId: string) => {
 	const subscription = subscriptions?.result.items[0];
 	if (!subscription) return false;
 
-	const activated = (await projectSubscription(subscription)) === "active";
+	const activated =
+		(await projectSubscription(subscription, queriedAt)) === "active";
 	if (activated)
 		billingLogger.info("Activated from Polar after a missed webhook", {
 			organizationId,

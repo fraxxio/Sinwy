@@ -12,6 +12,7 @@ import {
 	exists,
 	inArray,
 	isNull,
+	lt,
 	ne,
 	notExists,
 	or,
@@ -39,39 +40,60 @@ export const findSubscriptionState = async (organizationId: string) => {
 };
 
 // One subscription backs an organization at a time; while bound, no other
-// subscription may change it (stale revocations, a second purchase).
-const changeableBy = (organizationId: string, subscriptionId: string) =>
+// subscription may change it (stale revocations, a second purchase). Polar
+// may also redeliver or reorder state, so only newer state applies.
+const changeableBy = (
+	organizationId: string,
+	subscriptionId: string,
+	observedAt: Date,
+) =>
 	and(
 		eq(organization.id, organizationId),
 		or(
 			isNull(organization.subscriptionId),
 			eq(organization.subscriptionId, subscriptionId),
 		),
+		or(
+			isNull(organization.subscriptionStatusAt),
+			lt(organization.subscriptionStatusAt, observedAt),
+		),
 	);
 
-/** False when nothing matched: unknown organization or bound to another subscription. */
+/** False when nothing matched: unknown organization, bound to another subscription or outdated. */
 export const bindSubscription = async (
 	organizationId: string,
 	subscriptionId: string,
 	plan: PlanSlug | null,
+	observedAt: Date,
 ) => {
 	const updated = await db
 		.update(organization)
-		.set({ status: "active", plan, subscriptionId })
-		.where(changeableBy(organizationId, subscriptionId))
+		.set({
+			status: "active",
+			plan,
+			subscriptionId,
+			subscriptionStatusAt: observedAt,
+		})
+		.where(changeableBy(organizationId, subscriptionId, observedAt))
 		.returning({ id: organization.id });
 	return updated.length > 0;
 };
 
-/** False when nothing matched: unknown organization or bound to another subscription. */
+/** False when nothing matched: unknown organization, bound to another subscription or outdated. */
 export const releaseSubscription = async (
 	organizationId: string,
 	subscriptionId: string,
+	observedAt: Date,
 ) => {
 	const updated = await db
 		.update(organization)
-		.set({ status: "inactive", plan: null, subscriptionId: null })
-		.where(changeableBy(organizationId, subscriptionId))
+		.set({
+			status: "inactive",
+			plan: null,
+			subscriptionId: null,
+			subscriptionStatusAt: observedAt,
+		})
+		.where(changeableBy(organizationId, subscriptionId, observedAt))
 		.returning({ id: organization.id });
 	return updated.length > 0;
 };

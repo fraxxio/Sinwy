@@ -19,6 +19,8 @@ export const organization = pgTable(
 		// projection of the Polar subscription backing the org; null while inactive
 		plan: text("plan"),
 		subscriptionId: text("subscription_id").unique(),
+		// time of the Polar state behind the projection; older state must not overwrite it
+		subscriptionStatusAt: timestamp("subscription_status_at"),
 		industry: text("industry").notNull().default("other"),
 		onboardingCompletedAt: timestamp("onboarding_completed_at"),
 		logo: text("logo"),
