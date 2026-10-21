@@ -25,10 +25,11 @@ import type { Subscription } from "@polar-sh/sdk/models/components/subscription"
 import { AlreadyCanceledSubscription } from "@polar-sh/sdk/models/errors/alreadycanceledsubscription";
 import { MissingInvoiceBillingDetails } from "@polar-sh/sdk/models/errors/missinginvoicebillingdetails";
 import { ResourceNotFound } from "@polar-sh/sdk/models/errors/resourcenotfound";
-import type {
-	ApiResponse,
-	InvoiceListDto,
-	OrganizationSubscriptionDto,
+import {
+	API_ERROR_CODES,
+	type ApiResponse,
+	type InvoiceListDto,
+	type OrganizationSubscriptionDto,
 } from "@sinwy/shared";
 import type { Server } from "bun";
 import { registerBillingRoutes } from "../routes";
@@ -260,9 +261,13 @@ test("POST plan: invalid body → 400, inactive org → 409, same plan → 400",
 	expect(
 		(await changePlan(organizationId, cookie, { plan: "gold" })).status,
 	).toBe(400);
-	expect(
-		(await changePlan(organizationId, cookie, { plan: "enterprise" })).status,
-	).toBe(409);
+	const inactive = await changePlan(organizationId, cookie, {
+		plan: "enterprise",
+	});
+	expect(inactive.status).toBe(409);
+	expect(((await inactive.json()) as ApiResponse).code).toBe(
+		API_ERROR_CODES.ORGANIZATION_INACTIVE,
+	);
 
 	await activateOrganization(organizationId, "enterprise");
 	expect(
@@ -304,9 +309,11 @@ test("POST plan: canceled subscription → 409, plan unchanged", async () => {
 		),
 	);
 
-	expect(
-		(await changePlan(organizationId, cookie, { plan: "enterprise" })).status,
-	).toBe(409);
+	const canceled = await changePlan(organizationId, cookie, {
+		plan: "enterprise",
+	});
+	expect(canceled.status).toBe(409);
+	expect(((await canceled.json()) as ApiResponse).code).toBe(409);
 	expect((await getSubscriptionState(organizationId))?.plan).toBe("starter");
 });
 

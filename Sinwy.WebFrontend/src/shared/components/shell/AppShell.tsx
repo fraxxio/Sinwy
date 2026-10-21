@@ -32,14 +32,19 @@ const readSidebarCookie = () =>
  * with child pages declare the crumb on a layout route (`_shell.bookings.tsx`)
  * so detail pages inherit it; their index routes must not declare one, or the
  * section (or root) crumb would appear twice.
+ *
+ * `banner` is for state of the whole shell (e.g. an inactive organization),
+ * not notifications: it stays pinned above the page body until the state ends.
  */
 export function AppShell({
 	sidebar,
 	rootCrumb,
+	banner,
 	children,
 }: {
 	sidebar: ReactNode;
 	rootCrumb: Crumb;
+	banner?: ReactNode;
 	children: ReactNode;
 }) {
 	const matches = useMatches();
@@ -95,6 +100,11 @@ export function AppShell({
 						</Breadcrumb>
 					</div>
 				</header>
+				{banner && (
+					<div role="status" className="sticky top-0 z-[1] bg-background">
+						{banner}
+					</div>
+				)}
 				<div className="flex flex-1 flex-col gap-4 p-4">{children}</div>
 			</SidebarInset>
 		</SidebarProvider>

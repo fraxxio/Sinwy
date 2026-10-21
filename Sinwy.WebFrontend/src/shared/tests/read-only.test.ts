@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { PERMISSIONS } from "@sinwy/shared";
-import { canActWith, isAllowedWhileInactive } from "../lib/auth/read-only";
+import { API_ERROR_CODES, PERMISSIONS } from "@sinwy/shared";
+import {
+	canActWith,
+	isAllowedWhileInactive,
+	isOrganizationInactive,
+} from "../lib/auth/read-only";
 
 it("keeps only reads and billing management while inactive", () => {
 	expect(PERMISSIONS.filter(isAllowedWhileInactive)).toEqual([
@@ -37,5 +41,28 @@ describe("canActWith", () => {
 		expect(canActWith(["admin"], false, "billing:manage")).toBe(false);
 		expect(canActWith(["staff"], false, "analytics:read")).toBe(false);
 		expect(canActWith([], true, "bookings:read")).toBe(false);
+	});
+});
+
+describe("isOrganizationInactive", () => {
+	it("matches the inactive organization code only", () => {
+		const refused = (code: number) =>
+			({ isSuccess: false, data: null, message: "", code }) as const;
+
+		expect(
+			isOrganizationInactive(refused(API_ERROR_CODES.ORGANIZATION_INACTIVE)),
+		).toBe(true);
+		expect(isOrganizationInactive(refused(409))).toBe(false);
+		expect(
+			isOrganizationInactive(refused(API_ERROR_CODES.PLAN_UPGRADE_REQUIRED)),
+		).toBe(false);
+		expect(
+			isOrganizationInactive({
+				isSuccess: true,
+				data: null,
+				message: null,
+				code: 0,
+			}),
+		).toBe(false);
 	});
 });

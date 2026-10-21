@@ -5,6 +5,7 @@ import {
 	createOrganizationBody,
 	organizationProfileBody,
 } from "@backend/modules/organizations/utils";
+import { API_ERROR_CODES } from "@sinwy/shared";
 import {
 	completeOrganizationOnboarding,
 	createOrganization,
@@ -15,7 +16,11 @@ import {
 const respondWriteError = (error: "not-found" | "inactive") => {
 	switch (error) {
 		case "inactive":
-			return fail("This organization doesn't have an active plan yet", 409);
+			return fail(
+				"This organization doesn't have an active plan yet",
+				409,
+				API_ERROR_CODES.ORGANIZATION_INACTIVE,
+			);
 		case "not-found":
 			return fail("Not found", 404);
 	}

@@ -4,10 +4,14 @@ import {
 	Outlet,
 	redirect,
 } from "@tanstack/react-router";
+import { InactiveOrganizationBanner } from "#/modules/org-dashboard/components/InactiveOrganizationBanner";
 import { OrganizationSidebar } from "#/modules/org-dashboard/components/OrganizationSidebar";
 import { AppShell } from "#/shared/components/shell/AppShell";
 import { authClient } from "#/shared/lib/auth/auth-client";
-import { toEntitlements } from "#/shared/lib/auth/entitlements";
+import {
+	toEntitlements,
+	useEntitlements,
+} from "#/shared/lib/auth/entitlements";
 import { requireAuth, requireMember } from "#/shared/lib/auth/protected-route";
 
 export const Route = createFileRoute("/$organizationSlug/_shell")({
@@ -38,10 +42,16 @@ export const Route = createFileRoute("/$organizationSlug/_shell")({
 
 function OrganizationShell() {
 	const { organization } = Route.useRouteContext();
+	const { isActive } = useEntitlements();
 
 	return (
 		<AppShell
 			sidebar={<OrganizationSidebar organizationSlug={organization.slug} />}
+			banner={
+				!isActive && (
+					<InactiveOrganizationBanner organizationId={organization.id} />
+				)
+			}
 			rootCrumb={{
 				label: organization.name,
 				link: linkOptions({

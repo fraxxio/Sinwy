@@ -1,7 +1,7 @@
 import { membershipFrom, sessionFrom } from "@authModule";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler } from "@backend/lib/app/types";
-import { changePlanBody } from "@sinwy/shared";
+import { API_ERROR_CODES, changePlanBody } from "@sinwy/shared";
 import {
 	getInvoiceDownload,
 	invoiceListQuery,
@@ -47,6 +47,7 @@ export const changePlanHandler: Handler = async (c) => {
 			return fail(
 				"This organization has no active subscription; start a checkout instead",
 				409,
+				API_ERROR_CODES.ORGANIZATION_INACTIVE,
 			);
 		case "same-plan":
 			return fail("The organization is already on this plan", 400);

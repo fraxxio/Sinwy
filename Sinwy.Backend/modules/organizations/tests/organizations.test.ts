@@ -9,7 +9,7 @@ import {
 import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
-import type { ApiResponse } from "@sinwy/shared";
+import { API_ERROR_CODES, type ApiResponse } from "@sinwy/shared";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import { registerOrganizationRoutes } from "../routes";
@@ -510,7 +510,11 @@ test("PUT profile & complete on an unpaid organization → 409", async () => {
 	const { cookie } = await createUserWithSession();
 	const { id } = await createOrg("Acme", cookie);
 
-	expect((await saveProfile(id, cookie)).status).toBe(409);
+	const saved = await saveProfile(id, cookie);
+	expect(saved.status).toBe(409);
+	expect(((await saved.json()) as ApiResponse).code).toBe(
+		API_ERROR_CODES.ORGANIZATION_INACTIVE,
+	);
 	expect(
 		(await post(`/api/organizations/${id}/onboarding/complete`, {}, cookie))
 			.status,

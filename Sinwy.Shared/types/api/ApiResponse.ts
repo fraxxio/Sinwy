@@ -5,4 +5,5 @@ export type ApiResponse<T = unknown> =
 /** `code` defaults to the HTTP status; these tell apart failures that need their own handling. */
 export const API_ERROR_CODES = {
 	PLAN_UPGRADE_REQUIRED: 4021,
+	ORGANIZATION_INACTIVE: 4091,
 } as const;
