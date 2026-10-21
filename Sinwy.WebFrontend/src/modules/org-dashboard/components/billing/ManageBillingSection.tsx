@@ -1,17 +1,13 @@
 import { useMutation } from "@tanstack/react-query";
 import { ExternalLinkIcon } from "lucide-react";
+import { openPolarPortal } from "#/modules/org-dashboard/lib/billing-queries";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Button } from "#/shared/components/ui/button";
 import { toast } from "#/shared/components/ui/toast";
-import { authClient } from "#/shared/lib/auth/auth-client";
 
 export function ManageBillingSection() {
-	// on success the auth client navigates the tab to Polar
 	const openPortal = useMutation({
-		mutationFn: async () => {
-			const { error } = await authClient.customer.portal();
-			if (error) throw new Error(error.message ?? "Couldn't open Polar");
-		},
+		mutationFn: openPolarPortal,
 		onError: (e) =>
 			toast.add({
 				type: "error",

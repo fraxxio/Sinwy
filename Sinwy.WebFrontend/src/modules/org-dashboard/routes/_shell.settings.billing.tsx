@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { CurrentPlanSection } from "#/modules/org-dashboard/components/billing/CurrentPlanSection";
 import { InactivePlanSection } from "#/modules/org-dashboard/components/billing/InactivePlanSection";
+import { InvoicesSection } from "#/modules/org-dashboard/components/billing/InvoicesSection";
 import { ManageBillingSection } from "#/modules/org-dashboard/components/billing/ManageBillingSection";
 import { ORG_SECTIONS } from "#/modules/org-dashboard/lib/sections";
 import { ContentBox } from "#/shared/components/ContentBox";
@@ -16,6 +17,7 @@ export const Route = createFileRoute(
 	staticData: { crumb: "Billing" },
 	validateSearch: z.object({
 		change: z.literal("plan").optional().catch(undefined),
+		page: z.number().int().min(2).optional().catch(undefined),
 	}),
 	component: BillingPage,
 });
@@ -23,7 +25,7 @@ export const Route = createFileRoute(
 function BillingPage() {
 	const { organization } = Route.useRouteContext();
 	const { isActive } = useEntitlements();
-	const { change } = Route.useSearch();
+	const { change, page = 1 } = Route.useSearch();
 	const navigate = Route.useNavigate();
 
 	// the URL holds the dialog state so UpgradePrompt can deep-link into it
@@ -31,6 +33,13 @@ function BillingPage() {
 		void navigate({
 			search: (prev) => ({ ...prev, change: open ? "plan" : undefined }),
 			replace: true,
+		});
+
+	// pushed, so back returns to the previous page of invoices
+	const setInvoicePage = (next: number) =>
+		void navigate({
+			search: (prev) => ({ ...prev, page: next > 1 ? next : undefined }),
+			resetScroll: false,
 		});
 
 	return (
@@ -49,6 +58,11 @@ function BillingPage() {
 				) : (
 					<InactivePlanSection organizationId={organization.id} />
 				)}
+				<InvoicesSection
+					organizationId={organization.id}
+					page={page}
+					onPageChange={setInvoicePage}
+				/>
 				<ManageBillingSection />
 			</ContentBox>
 		</>
