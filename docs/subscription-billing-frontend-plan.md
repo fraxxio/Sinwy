@@ -457,9 +457,13 @@ endpoints and can start once `plan` exists in `@sinwy/shared`
    `download-invoice.ts` with the `202` / `409` branches.
 8. **Funnel touch-ups** — success page → dashboard when onboarding is
    complete; plan page `?intent=renew` copy.
-9. **Docs** — `user-flow-map.md` §8 gains the plan-change and re-checkout
-   arrows; roadmap "plans entitle nothing else yet" line is the backend's to
-   update.
+9. **Fixes** — issues found while checking step 8: funnel steps on the
+   success page during a renewal, login and the resume toast sending a lapsed
+   org into the first-time funnel, and an invalid-nesting warning on the
+   onboarding page's loading state.
+10. **Docs** — `user-flow-map.md` §8 gains the plan-change and re-checkout
+    arrows; roadmap "plans entitle nothing else yet" line is the backend's to
+    update.
 
 ## Work log
 
@@ -537,9 +541,69 @@ put the commit hash next to the phase.
 - [x] `$id.plan.tsx` `?intent=renew`: "Pick a plan to reactivate {name}" hero, `FunnelProgress` hidden; the banner and `InactivePlanSection` link with it
 - [x] Manual check (seeded org, revoke/activate simulated, checkout lookup mocked): banner → renew page; success → dashboard with banner gone; plan page for an active onboarded org → dashboard; first-time org still sees `FunnelProgress` and lands on onboarding
 
-### Phase 9 — Docs · not started
+### Phase 9 — Fixes · done (`60eecc0`)
 
-- [ ] `user-flow-map.md` §8: plan-change and re-checkout arrows
+Found during the Phase 8 manual check. A *lapsed* organization is an inactive
+one whose `onboardingCompletedAt` is set: it was paid and set up before, so it
+belongs in read-only mode, not the first-time funnel. Name that rule once
+(next to `activeOrganizationDestination` in `organizations/lib/funnel.ts`),
+test it, and use it in every item below.
+
+Shipped as two rules in `funnel.ts`, tested in `funnel.test.ts`:
+`hasCompletedSetup` (onboarding finished, any status) and `isLapsed` (inactive
+and `hasCompletedSetup`). The backend's unpaid-owner query applies the same
+rule in SQL.
+
+- [x] **Funnel steps after a renewal payment.** `checkout/routes/success.tsx`
+  always renders `FunnelProgress` at "Pay", so a reactivation shows setup
+  steps the owner finished long ago. Polar can't carry the intent: `successUrl`
+  is static in the backend's `checkout()` config. Instead, read the org right
+  after the checkout resolves (the `getFullOrganization` call Phase 8 makes
+  after activation, moved earlier), and render `FunnelProgress` only for an
+  org that is not lapsed. While the checkout is still resolving, render no
+  steps, so they don't appear and then vanish.
+  *Done with `hasCompletedSetup`, not `isLapsed`: the webhook often activates
+  the org before Polar redirects back, and an active org is never lapsed, so
+  a renewal would still show the steps.*
+- [x] **Login skips the read-only dashboard.** `postLoginDestination`
+  (`auth/lib/post-login.ts`) sends every non-active org to
+  `/organizations/$id/plan` with first-time copy. Staff can't use that page
+  (it requires `billing:manage`). Send a lapsed org to `/$organizationSlug`,
+  where the banner carries Choose a plan; keep the plan page for an org that
+  never finished setup. Check that `organization.list()` returns
+  `onboardingCompletedAt` (it is in the client schema), and extend
+  `post-login.test.ts`.
+  *`list()` joins the full org row and only drops `returned: false` fields,
+  so the field is there.*
+- [x] **Resume toast for a lapsed org.** `getPostLoginFlags`
+  (`Sinwy.Backend/modules/user/`) reports any inactive org the user owns as
+  `OnboardingStep.Plan` (`findUnpaidOwnedOrganization` filters on status
+  only), so a lapsed owner sees "Finish setting up your organization". Either
+  exclude orgs with `onboarding_completed_at` from that query (the banner
+  already covers them inside the dashboard), or add a renew step whose prompt
+  links to the plan page with `?intent=renew`. Recommend excluding them; the
+  toast exists for unfinished setup.
+  *Excluded (`isNull(onboardingCompletedAt)`), covered in `flags.test.ts`.*
+- [x] **Invalid nesting in onboarding's pending state.** `OnboardingPending`
+  (`organizations/routes/$id.onboarding.tsx`) passes a `Skeleton` (a `div`)
+  as `PageShell`'s `description`, which renders inside a `<p>`. React reports
+  "`<div>` cannot be a descendant of `<p>`" on every load of the page (a
+  hydration error under SSR). Render the description slot as a `div`, or pass
+  a skeleton that renders a `span`.
+  *The description slot is a `div`.*
+- [x] Manual check: revoke a seeded org → log in as the owner and as staff →
+  both land on the dashboard with the banner and get no resume toast. Pay from
+  the banner → success page shows no funnel steps → dashboard. A first-time
+  org still sees the funnel steps and the toast. The console shows no nesting
+  warning on onboarding.
+  *Seeded org revoked/activated with `dev:simulate-polar-webhook`, checkout
+  lookup mocked. Also checked the success page with the org already active
+  (status poll held): no steps. The nesting warning still reproduces with the
+  fix stashed.*
+
+### Phase 10 — Docs · not started
+
+- [ ] `user-flow-map.md` §8: plan-change and re-checkout arrows, and login for a lapsed org (Phase 9)
 
 ### Backend cross-cutting asks
 
