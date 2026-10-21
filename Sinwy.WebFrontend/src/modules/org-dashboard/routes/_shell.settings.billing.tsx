@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CreditCardIcon } from "lucide-react";
+import { z } from "zod";
 import { ORG_SECTIONS } from "#/modules/org-dashboard/lib/sections";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
@@ -10,6 +11,9 @@ export const Route = createFileRoute(
 )({
 	beforeLoad: requirePermission(ORG_SECTIONS.billing.permission),
 	staticData: { crumb: "Billing" },
+	validateSearch: z.object({
+		change: z.literal("plan").optional().catch(undefined),
+	}),
 	component: BillingPage,
 });
 

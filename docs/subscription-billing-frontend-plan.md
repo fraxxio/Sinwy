@@ -460,6 +460,89 @@ endpoints and can start once `plan` exists in `@sinwy/shared`
    arrows; roadmap "plans entitle nothing else yet" line is the backend's to
    update.
 
+## Work log
+
+Tick an item when it is merged into the branch with `bun run verify` green;
+put the commit hash next to the phase.
+
+### Phase 1 — Shared helpers · done (`7f3bc21`)
+
+- [x] `shared/lib/plans.ts`: `PLAN_NAMES`, `getPlanName` (moved out of `PlanCards.tsx`), `minimumPlanFor`
+- [x] `PlanCards.tsx` and `$id.plan.tsx` read names from `shared/lib/plans.ts`
+- [x] `shared/lib/money.ts`: `formatMinorUnits`
+- [x] `shared/lib/auth/read-only.ts`: `isAllowedWhileInactive`, `canActWith`
+- [x] `shared/lib/poll-until.ts`: `pollUntil` replaces `checkout/lib/poll-until-active.ts`; `success.tsx` uses it
+- [x] Tests: `plans.test.ts` (incl. `PLAN_SLUGS` order), `money.test.ts` (USD + JPY), `read-only.test.ts`, `poll-until.test.ts`
+
+### Phase 2 — Context · done (`7f3bc21`)
+
+- [x] `auth-client.ts`: `plan` additional field, with a comment pointing at the backend file
+- [x] `_shell.tsx` `beforeLoad` puts `entitlements` (`toEntitlements`) in the route context
+- [x] `shared/lib/auth/entitlements.ts`: `useEntitlements` + `toEntitlements`, tested in `entitlements.test.ts`
+- [x] `usePermissions` gains `canAct` and `isActive`; the `canAct` combination is tested through `canActWith`
+- [x] `OrganizationSummary.plan` mapped in `OrganizationSwitcher`
+- [x] Switcher "Inactive" badge (Open question 4)
+
+### Phase 3 — Inactive banner · done (`479ce09`)
+
+- [x] `AppShell` `banner` slot (sticky, `role="status"`)
+- [x] `org-dashboard/components/InactiveOrganizationBanner.tsx`: owner CTA vs ask-an-owner line
+- [x] Wired in `OrganizationShell` when `!entitlements.isActive`
+- [x] `handleOrganizationInactive(res, router)` helper for the `409` backstop (`shared/lib/auth/organization-inactive.ts`), matching on the new `API_ERROR_CODES.ORGANIZATION_INACTIVE` (`isOrganizationInactive` in `read-only.ts`, tested), since a bare `409` also means "locked" / "canceled" on plan change
+- [x] Manual check: revoked via `dev:simulate-polar-webhook`, banner on every shell page for owner and staff; gone after re-activation
+
+### Phase 4 — `<PlanGate>` · done
+
+- [x] `shared/components/PlanGate.tsx` with `fallback` and `mode="hide"`
+- [x] `shared/components/UpgradePrompt.tsx` with three branches: owner (Upgrade plan → `?change=plan`), non-owner, inactive org; feature display names in `FEATURE_NAMES` (`shared/lib/plans.ts`)
+- [x] Billing route accepts `?change=plan` (`validateSearch`) so the link typechecks; opening the dialog from it is Phase 6
+- [x] Eyeballed on a temporary gate (Enterprise → children, Starter owner → Upgrade plan, Starter staff → ask an owner, revoked → active-plan copy), gate removed
+
+### Phase 5 — Billing page: read · not started
+
+- [ ] Lift `SettingsSection` from `account-dashboard` to `shared/components/`
+- [ ] `org-dashboard/lib/billing-queries.ts` (`billingKeys`, `subscriptionQuery`)
+- [ ] `org-dashboard/lib/subscription-status.ts`: `describeSubscription` + tests covering all five table rows
+- [ ] `CurrentPlanSection` (Polar price, status badge, renews/ends on, `billing === null` fallback)
+- [ ] `InactivePlanSection` → Choose a plan
+- [ ] "Manage billing on Polar" button (`authClient.customer.portal()`)
+
+### Phase 6 — Billing page: change plan · not started
+
+- [ ] Settle Open questions 1 and 2 (dialog vs sub-route, downgrade copy)
+- [ ] `ChangePlanDialog`: plan rows, feature deltas, confirm step with the proration copy kept in a constant
+- [ ] Mutation → write DTO into the cache, `router.invalidate()`, `pollUntil` on `plan === target`
+- [ ] Error branches: `409`, `400`, anything else (stay on the page)
+- [ ] `?change=plan` deep link opens the dialog
+
+### Phase 7 — Invoices · not started
+
+- [ ] `invoicesQuery` + `validateSearch` `page` param, limit 20
+- [ ] `InvoicesSection`: table, pagination, Download / Generate label
+- [ ] `org-dashboard/lib/download-invoice.ts`: popup-safe handoff, `200`/`202`/`409`/other outcomes + tests
+- [ ] Empty/footer copy for invoices from earlier subscriptions (Open question 5)
+
+### Phase 8 — Funnel touch-ups · not started
+
+- [ ] `checkout/routes/success.tsx` → dashboard when `onboardingCompletedAt` is set (always goes to onboarding today)
+- [ ] `$id.plan.tsx` `?intent=renew`: reactivation hero copy, hide `FunnelProgress`
+
+### Phase 9 — Docs · not started
+
+- [ ] `user-flow-map.md` §8: plan-change and re-checkout arrows
+
+### Backend cross-cutting asks
+
+- [x] 1. Invoice download returns `{ url }` (`InvoiceDownloadDto`)
+- [ ] 2. `portal({ returnUrl })`: `auth.ts` still calls `portal()` with no return URL
+- [x] 3. `toPlanSlug` exported from `@sinwy/shared`
+- [x] 4. `PLAN_UPGRADE_REQUIRED` in `@sinwy/shared`: it shipped as `API_ERROR_CODES.PLAN_UPGRADE_REQUIRED`, not `API_CODES`
+- [x] 5. `OrganizationSummary.plan`
+
+Contract drift to account for in Phase 7: `InvoiceDto` exposes
+`invoiceGenerated`, not `downloadable`, so the Download / Generate label
+reads that field.
+
 ## Things to watch so this holds up as the app grows
 
 - **Two stores, two jobs.** Route context = entitlement (what the app gates
