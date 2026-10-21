@@ -491,7 +491,7 @@ put the commit hash next to the phase.
 - [x] `handleOrganizationInactive(res, router)` helper for the `409` backstop (`shared/lib/auth/organization-inactive.ts`), matching on the new `API_ERROR_CODES.ORGANIZATION_INACTIVE` (`isOrganizationInactive` in `read-only.ts`, tested), since a bare `409` also means "locked" / "canceled" on plan change
 - [x] Manual check: revoked via `dev:simulate-polar-webhook`, banner on every shell page for owner and staff; gone after re-activation
 
-### Phase 4 — `<PlanGate>` · done
+### Phase 4 — `<PlanGate>` · done (`6604c46`)
 
 - [x] `shared/components/PlanGate.tsx` with `fallback` and `mode="hide"`
 - [x] `shared/components/UpgradePrompt.tsx` with three branches: owner (Upgrade plan → `?change=plan`), non-owner, inactive org; feature display names in `FEATURE_NAMES` (`shared/lib/plans.ts`)
