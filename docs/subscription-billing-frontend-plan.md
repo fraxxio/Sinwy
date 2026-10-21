@@ -314,18 +314,19 @@ Status wording is one pure function so the badge and the sentence agree:
 `currentPeriodEnd` is labelled "Renews on" only when `cancelAtPeriodEnd` is
 false, matching the backend's reason for not naming it `renewalDate`.
 
-### 9. Invoice download: JSON `{ url }`, gesture-safe handoff
+### 9. Invoice download: JSON `{ url }`, saved from the current tab
 
 The backend plan offered `302` or `{ url }`. Choose **`{ url }`**: a plain
 `<a href>` to a `302` endpoint cannot handle the `202` "generating" and `409`
 "needs billing details" responses — it would open a tab showing raw JSON.
 
-Flow on click: `downloadInvoice(orgId, orderId)` → `api<{ url }>()`:
+Flow on click: `downloadInvoice(request)` → `api<{ url } | null>()`:
 
-- success → `window.open(url, "_blank", "noopener")`. To stay inside the
-  user gesture, open the window **before** awaiting and set its `location`
-  after; on failure close it. Wrap this in one helper so the popup dance
-  lives in exactly one place.
+- success → `window.location.assign(url)` in the current tab. Polar signs the
+  URL with `Content-Disposition: attachment` (it is part of the signature, so
+  it can't be overridden), so the browser saves the PDF and the page stays.
+  The new-tab handoff planned here was dropped after the sandbox showed it
+  leaves a blank tab behind.
 - `202` → toast "Generating your invoice, try again in a few seconds"; the row
   shows a spinner for that click only.
 - `409` → toast with the backend message + "Add billing details on Polar"
@@ -519,12 +520,14 @@ put the commit hash next to the phase.
 - [x] `?change=plan` is the dialog's open state (`replace` navigation both ways), so the `UpgradePrompt` deep link opens it
 - [x] Manual check (seeded org): button and deep link open the dialog, closing clears the param, downgrade copy and lost features render, switch shows Polar's error in place (seeded subscriptions aren't in Polar). A successful switch still needs a sandbox-checkout org
 
-### Phase 7 — Invoices · not started
+### Phase 7 — Invoices · done (`97f959b`)
 
-- [ ] `invoicesQuery` + `validateSearch` `page` param, limit 20
-- [ ] `InvoicesSection`: table, pagination, Download / Generate label
-- [ ] `org-dashboard/lib/download-invoice.ts`: popup-safe handoff, `200`/`202`/`409`/other outcomes + tests
-- [ ] Footer copy for invoices from earlier subscriptions ("on Polar") + TODO to list them here (Open question 5)
+- [x] `invoicesQuery` (`keepPreviousData` between pages) + `validateSearch` `page` param (omitted for page 1, pushed so back works), limit 20
+- [x] `InvoicesSection`: rows in the `SessionsSection` list style rather than a table (number, status badge unless paid, date, billing reason, amount), Previous / Next, "Go to the first page" past the end; Download / Generate label from `invoiceGenerated`, flipping to Download after a `202`
+- [x] `org-dashboard/lib/download-invoice.ts`: `toInvoiceDownload` + `downloadInvoice` (same-tab save, URL never returned), `200`/`202`/`409`/other covered in `download-invoice.test.ts`
+- [x] `409` toast carries "Add billing details on Polar" → portal (`openPolarPortal`, shared with `ManageBillingSection`)
+- [x] Open question 5 needs no copy: the backend lists orders by `referenceId`, so invoices of earlier subscriptions are already in the list
+- [x] Manual check (sandbox orders): generated invoice downloads a PDF without leaving the page; ungenerated → "Generating your invoice" toast → retry downloads. `409` toast + portal action and multi-page pagination checked against mocked responses (no sandbox org has a missing billing address or more than 20 orders)
 
 ### Phase 8 — Funnel touch-ups · not started
 
@@ -641,6 +644,8 @@ reads that field.
    so in the section's empty/footer copy if that is the chosen filter.
    **Decided: copy only.** Say in the section's footer that invoices from
    earlier subscriptions are on Polar, with a TODO to list them here later.
+   **Superseded:** the backend filters by `referenceId`, not the
+   subscription, so earlier invoices are listed and no copy is needed.
 
 ## Definition of done
 
