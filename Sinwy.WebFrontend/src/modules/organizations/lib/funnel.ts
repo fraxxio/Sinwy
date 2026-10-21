@@ -9,3 +9,21 @@ export const FUNNEL_STEPS = {
 	[FunnelStep.Plan]: { label: "Plan", to: "/organizations/$id/plan" },
 	[FunnelStep.Pay]: { label: "Pay", to: "/checkout/success" },
 } as const satisfies Record<FunnelStep, { label: string; to: string }>;
+
+/** Where an active organization goes next: onboarding until it is complete, then the dashboard. */
+export function activeOrganizationDestination(organization: {
+	id: string;
+	slug: string;
+	onboardingCompletedAt?: Date | null;
+}) {
+	if (!organization.onboardingCompletedAt)
+		return {
+			to: "/organizations/$id/onboarding",
+			params: { id: organization.id },
+		} as const;
+
+	return {
+		to: "/$organizationSlug",
+		params: { organizationSlug: organization.slug },
+	} as const;
+}

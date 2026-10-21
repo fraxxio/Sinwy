@@ -32,6 +32,7 @@ export function InactiveOrganizationBanner({
 						<Link
 							to="/organizations/$id/plan"
 							params={{ id: organizationId }}
+							search={{ intent: "renew" }}
 						/>
 					}
 				>

@@ -5,8 +5,10 @@ import {
 } from "@sinwy/shared";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
+import { z } from "zod";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
 import { PlanCards } from "#/modules/organizations/components/PlanCards";
+import { activeOrganizationDestination } from "#/modules/organizations/lib/funnel";
 import {
 	clearPreselectedPlan,
 	readPreselectedPlan,
@@ -32,6 +34,10 @@ import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/organizations/$id/plan")({
 	ssr: false,
+	// `renew` only swaps the copy for an organization that had a plan before
+	validateSearch: z.object({
+		intent: z.literal("renew").optional().catch(undefined),
+	}),
 	beforeLoad: async ({ location, params, context, preload }) => {
 		const ctx = await requireAuth({ location });
 		const { data: organization, error } =
@@ -48,18 +54,28 @@ export const Route = createFileRoute("/organizations/$id/plan")({
 			`/organizations/${params.id}/status`,
 		);
 		if (res.isSuccess && res.data.status === "active")
-			throw redirect({
-				to: "/organizations/$id/onboarding",
-				params: { id: params.id },
-			});
-		return { ...ctx, statusError: res.isSuccess ? null : res.message };
+			throw redirect(activeOrganizationDestination(organization));
+		return {
+			...ctx,
+			organizationName: organization.name,
+			statusError: res.isSuccess ? null : res.message,
+		};
 	},
 	component: PlanPage,
 	pendingComponent: PlanPagePending,
 	pendingMs: 0,
 });
 
-function PageShell({ children }: { children: React.ReactNode }) {
+function PageShell({
+	organizationName,
+	children,
+}: {
+	organizationName?: string;
+	children: React.ReactNode;
+}) {
+	const renew =
+		Route.useSearch({ select: (search) => search.intent }) === "renew";
+
 	return (
 		<main className="page-wrap relative isolate py-14">
 			<div
@@ -67,20 +83,40 @@ function PageShell({ children }: { children: React.ReactNode }) {
 				className="pointer-events-none absolute inset-x-0 top-50 -z-10 mx-auto h-96 w-full max-w-3xl rounded-full bg-primary/20 blur-3xl"
 			/>
 			<div className="mx-auto w-full max-w-5xl">
-				<FunnelProgress
-					current={FunnelStep.Plan}
-					className="mb-8 justify-center"
-				/>
+				{!renew && (
+					<FunnelProgress
+						current={FunnelStep.Plan}
+						className="mb-8 justify-center"
+					/>
+				)}
 
 				<div className="mx-auto mb-8 max-w-2xl space-y-3 text-center">
-					<h1 className="font-heading text-4xl font-bold tracking-tight sm:text-5xl">
-						Plans that work best for your{" "}
-						<span className="text-primary">Business</span>
-					</h1>
-					<p className="text-muted-foreground">
-						Your organization activates as soon as payment completes. Explore
-						which option is right for you.
-					</p>
+					{renew ? (
+						<>
+							{organizationName ? (
+								<h1 className="font-heading text-4xl font-bold tracking-tight sm:text-5xl">
+									Pick a plan to reactivate{" "}
+									<span className="text-primary">{organizationName}</span>
+								</h1>
+							) : (
+								<Skeleton className="mx-auto h-10 max-w-lg rounded-md sm:h-12" />
+							)}
+							<p className="text-muted-foreground">
+								Your data is kept. Changes resume as soon as payment completes.
+							</p>
+						</>
+					) : (
+						<>
+							<h1 className="font-heading text-4xl font-bold tracking-tight sm:text-5xl">
+								Plans that work best for your{" "}
+								<span className="text-primary">Business</span>
+							</h1>
+							<p className="text-muted-foreground">
+								Your organization activates as soon as payment completes.
+								Explore which option is right for you.
+							</p>
+						</>
+					)}
 				</div>
 
 				{children}
@@ -164,7 +200,7 @@ function PlanPagePending() {
 
 function PlanPage() {
 	const { id } = Route.useParams();
-	const { statusError } = Route.useRouteContext();
+	const { organizationName, statusError } = Route.useRouteContext();
 	const router = useRouter();
 	const [serverError, setServerError] = useState<string | null>(null);
 	const [pendingSlug, setPendingSlug] = useState<string | null>(null);
@@ -207,7 +243,7 @@ function PlanPage() {
 	};
 
 	return (
-		<PageShell>
+		<PageShell organizationName={organizationName}>
 			{preselectedPlan ? (
 				<div className="mx-auto max-w-md space-y-4 text-center">
 					<p className="text-muted-foreground">

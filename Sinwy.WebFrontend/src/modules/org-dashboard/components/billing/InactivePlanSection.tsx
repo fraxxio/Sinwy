@@ -21,6 +21,7 @@ export function InactivePlanSection({
 						<Link
 							to="/organizations/$id/plan"
 							params={{ id: organizationId }}
+							search={{ intent: "renew" }}
 						/>
 					}
 				>
