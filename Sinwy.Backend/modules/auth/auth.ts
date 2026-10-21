@@ -39,6 +39,14 @@ const validName = (name: unknown) => {
 	return result.data.name;
 };
 
+// The plugin forwards the rest of the body to Polar (metadata spread over
+// referenceId, raw product ids, trials, discounts, redirect URLs)
+const checkoutBodySchema = z.strictObject({
+	slug: z.enum(PLAN_SLUGS),
+	referenceId: z.string().min(1),
+	redirect: z.boolean().optional(),
+});
+
 export const auth = betterAuth({
 	baseURL: appConfig.BETTER_AUTH_URL,
 	logger: {
@@ -155,10 +163,15 @@ export const auth = betterAuth({
 		// is guarded here; the org-scoped subscription read is ours instead
 		// (GET /api/organizations/:organizationId/subscription).
 		before: createAuthMiddleware(async (ctx) => {
-			if (ctx.path === "/checkout" && ctx.body?.referenceId) {
+			if (ctx.path === "/checkout") {
+				const body = checkoutBodySchema.safeParse(ctx.body);
+				if (!body.success)
+					throw new APIError("BAD_REQUEST", {
+						message: "Invalid checkout request",
+					});
 				const session = await getSessionFromCtx(ctx);
 				if (!session) throw new APIError("UNAUTHORIZED");
-				await ensureCheckoutAllowed(session.user.id, ctx.body.referenceId);
+				await ensureCheckoutAllowed(session.user.id, body.data.referenceId);
 			}
 			if (
 				ctx.path === "/customer/subscriptions/list" &&
@@ -234,10 +247,11 @@ export const auth = betterAuth({
 				webhooks({
 					secret: appConfig.POLAR_WEBHOOK_SECRET,
 					// `updated` fires on every change (plan change, cancel, renewal);
-					// all events converge on the same projection
-					onSubscriptionUpdated: applySubscriptionEvent,
-					onSubscriptionActive: applySubscriptionEvent,
-					onSubscriptionRevoked: applySubscriptionEvent,
+					// all events converge on the same projection. Wrapped because
+					// billing imports auth: a bare reference is read mid-cycle.
+					onSubscriptionUpdated: (event) => applySubscriptionEvent(event),
+					onSubscriptionActive: (event) => applySubscriptionEvent(event),
+					onSubscriptionRevoked: (event) => applySubscriptionEvent(event),
 				}),
 			],
 		}),

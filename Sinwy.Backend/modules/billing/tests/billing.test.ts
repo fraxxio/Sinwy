@@ -493,3 +493,74 @@ test("plugin subscription list by referenceId → 403, it has no membership chec
 	expect(res.status).toBe(403);
 	expect(listSubscriptions).not.toHaveBeenCalled();
 });
+
+const checkout = (cookie: string, body: Record<string, unknown>) =>
+	request("/api/auth/checkout", cookie, { method: "POST", body });
+
+test("plugin checkout: plan slug and own org → Polar checkout bound to that org", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	const create = stub(polarClient.checkouts, "create").mockResolvedValue({
+		url: "https://polar.test/checkout",
+	} as never);
+
+	const res = await checkout(cookie, {
+		slug: "starter",
+		referenceId: organizationId,
+	});
+
+	expect(res.status).toBe(200);
+	expect(create).toHaveBeenCalledTimes(1);
+	expect(create.mock.calls[0]?.[0]).toMatchObject({
+		products: [productIdFor("starter")],
+		metadata: { referenceId: organizationId },
+		allowTrial: undefined,
+		discountId: undefined,
+	});
+});
+
+test.each([
+	["metadata overriding the org", { metadata: { referenceId: "org_victim" } }],
+	["raw product ids", { products: ["prod_other"] }],
+	[
+		"a custom trial",
+		{ allowTrial: true, trialInterval: "year", trialIntervalCount: 1000 },
+	],
+	["a discount", { discountId: "disc_1" }],
+	["custom field data", { customFieldData: { seats: 99 } }],
+	["a foreign success url", { successUrl: "https://evil.test" }],
+	["a foreign return url", { returnUrl: "https://evil.test" }],
+	["an embed origin", { embedOrigin: "https://evil.test" }],
+])("plugin checkout with %s → 400, Polar not called", async (_, extra) => {
+	const { organizationId, cookie } = await seedOrg();
+	const create = stub(polarClient.checkouts, "create").mockRejectedValue(
+		new Error("unexpected Polar call"),
+	);
+
+	const res = await checkout(cookie, {
+		slug: "starter",
+		referenceId: organizationId,
+		...extra,
+	});
+
+	expect(res.status).toBe(400);
+	expect(((await res.json()) as { message: string }).message).toBe(
+		"Invalid checkout request",
+	);
+	expect(create).not.toHaveBeenCalled();
+});
+
+test.each([
+	["no referenceId", () => ({ slug: "starter" })],
+	["no slug", (referenceId: string) => ({ referenceId })],
+	["an unknown slug", (referenceId: string) => ({ slug: "free", referenceId })],
+])("plugin checkout with %s → 400, Polar not called", async (_, body) => {
+	const { organizationId, cookie } = await seedOrg();
+	const create = stub(polarClient.checkouts, "create").mockRejectedValue(
+		new Error("unexpected Polar call"),
+	);
+
+	const res = await checkout(cookie, body(organizationId));
+
+	expect(res.status).toBe(400);
+	expect(create).not.toHaveBeenCalled();
+});
