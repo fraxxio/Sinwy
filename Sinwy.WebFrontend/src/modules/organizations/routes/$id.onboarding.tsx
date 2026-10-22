@@ -83,7 +83,7 @@ function PageShell({
 			<div className="mx-auto w-full max-w-2xl space-y-6">
 				<div className="space-y-1.5">
 					<h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-					<p className="text-sm text-muted-foreground">{description}</p>
+					<div className="text-sm text-muted-foreground">{description}</div>
 				</div>
 				{children}
 			</div>

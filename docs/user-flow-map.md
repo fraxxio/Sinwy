@@ -38,8 +38,11 @@ Enter credentials (email+password | Google)
 ## 4. Post-login routing
 
 ```text
-├─ has last active organization → Organization Mode (org dashboard)
-└─ no active organization → Customer Mode
+├─ has an organization (last active, else most recent) → Organization Mode
+│   ├─ active → org dashboard
+│   ├─ lapsed (inactive, onboarding completed) → read-only org dashboard [8]
+│   └─ inactive, setup never finished → Plan selection [5]
+└─ no organization → Customer Mode
     └─ "create your business" CTA → Organization Creation flow [5]
 ```
 
@@ -69,6 +72,7 @@ Trigger (empty dashboard | sidebar | onboarding CTA | settings)
 
 ```text
 Success page: "Activating your organization…" (poll org status ~2s)
+│   funnel steps shown only while setup was never finished (not on a renewal)
 │
 ├─ status → active (webhook arrived)
 │   ├─ onboarding not completed → Organization Onboarding [7]
@@ -91,8 +95,18 @@ Later steps (page template, plugins) land here as the page builder arrives.
 ## 8. Subscription lifecycle (webhook-driven, anytime)
 
 ```text
-├─ subscription active → org status = active
-└─ subscription revoked / expired / cancelled → org status = inactive
-    → data kept, management gated, public pages unpublished
-    → owner can re-checkout → back to [5. Plan selection]
+├─ subscription active / trialing / past due → org status = active
+│   └─ owner changes plan (Settings → Billing, or "Upgrade plan" on a gated feature)
+│       → POST /organizations/:id/subscription/plan
+│       → Polar switches the plan now, prorated difference on the next invoice
+│       → plan + features updated in place, org stays active
+├─ canceled at period end (Polar portal) → still active, "Cancels on {date}"
+│   → plan change disabled until renewed in the portal
+└─ subscription revoked / expired / canceled → org status = inactive (lapsed once onboarded)
+    → data kept, writes paused, public pages unpublished
+    → banner on every org dashboard page
+    │   ├─ owner → "Choose a plan" → Plan selection (renew copy, no funnel steps)
+    │   │   → Polar checkout → [6. Activation] → Organization Dashboard, banner gone
+    │   └─ staff → "Ask an owner to renew"
+    → login → read-only org dashboard [4], no "finish setup" resume prompt
 ```

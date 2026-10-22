@@ -1,3 +1,4 @@
+import type { PlanSlug } from "../plan/Plan";
 import type { OrganizationStatus } from "./Organization";
 
 export type OrganizationSummary = {
@@ -5,4 +6,5 @@ export type OrganizationSummary = {
 	name: string;
 	slug: string;
 	status: OrganizationStatus;
+	plan: PlanSlug | null;
 };

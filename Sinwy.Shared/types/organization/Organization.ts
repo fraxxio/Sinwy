@@ -1,11 +1,12 @@
+import type { PlanSlug } from "../plan/Plan";
+
 export const ORGANIZATION_STATUSES = ["active", "inactive"] as const;
 
 export type OrganizationStatus = (typeof ORGANIZATION_STATUSES)[number];
 
+/** Lenient like `toPlanSlug`: an unknown status fails closed to "inactive" instead of breaking every page. */
 export function toOrganizationStatus(value: string): OrganizationStatus {
-	const status = ORGANIZATION_STATUSES.find((s) => s === value);
-	if (!status) throw new Error(`Unknown organization status: ${value}`);
-	return status;
+	return ORGANIZATION_STATUSES.find((s) => s === value) ?? "inactive";
 }
 
 // Single source of truth for industries
@@ -54,5 +55,6 @@ export type OrganizationDto = {
 	name: string;
 	slug: string;
 	status: OrganizationStatus;
+	plan: PlanSlug | null;
 	industry: OrganizationIndustry;
 };

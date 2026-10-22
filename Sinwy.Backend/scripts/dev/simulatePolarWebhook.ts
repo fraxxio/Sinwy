@@ -1,12 +1,16 @@
 import { parseArgs } from "node:util";
+import { productIdFor } from "@backend/infrastructure/polar";
 import appConfig from "@config";
+import { PLAN_SLUGS, type PlanSlug, toPlanSlug } from "@sinwy/shared";
 import { Webhook } from "standardwebhooks";
 import { assertLocalDev } from "../assertLocalDev";
 import subscriptionActive from "./fixtures/polar/subscription.active.json";
 import subscriptionRevoked from "./fixtures/polar/subscription.revoked.json";
+import subscriptionUpdated from "./fixtures/polar/subscription.updated.json";
 
 export const polarFixtures = {
 	"subscription.active": subscriptionActive,
+	"subscription.updated": subscriptionUpdated,
 	"subscription.revoked": subscriptionRevoked,
 };
 export type PolarEventType = keyof typeof polarFixtures;
@@ -18,15 +22,22 @@ export type PolarDeliveryOptions = {
 	type: PolarEventType;
 	organizationId: string;
 	subscriptionId?: string;
+	plan?: PlanSlug;
 	timestamp?: Date;
 	webhookId?: string;
 };
 
-/** A recorded sandbox event with only the ids, `referenceId` and event time replaced, signed like Polar signs it. */
+/**
+ * A recorded sandbox event with only the ids, `referenceId`, product and
+ * times replaced, signed like Polar signs it. The product is this
+ * environment's one for `plan`. `timestamp` is both the event time and the
+ * subscription's `modified_at`, which orders the projection.
+ */
 export const buildPolarDelivery = ({
 	type,
 	organizationId,
 	subscriptionId = crypto.randomUUID(),
+	plan = "enterprise",
 	timestamp = new Date(),
 	webhookId = `msg_${crypto.randomUUID()}`,
 }: PolarDeliveryOptions) => {
@@ -37,6 +48,9 @@ export const buildPolarDelivery = ({
 		data: {
 			...payload.data,
 			id: subscriptionId,
+			product_id: productIdFor(plan),
+			product: { ...payload.data.product, id: productIdFor(plan) },
+			modified_at: timestamp.toISOString(),
 			metadata: { ...payload.data.metadata, referenceId: organizationId },
 		},
 	});
@@ -83,6 +97,7 @@ if (import.meta.main) {
 			type: { type: "string" },
 			org: { type: "string" },
 			"subscription-id": { type: "string" },
+			plan: { type: "string" },
 			timestamp: { type: "string" },
 			"webhook-id": { type: "string" },
 			url: { type: "string", default: `http://localhost:${appConfig.PORT}` },
@@ -91,13 +106,15 @@ if (import.meta.main) {
 
 	const type = values.type ?? "";
 	const timestamp = values.timestamp ? new Date(values.timestamp) : undefined;
+	const plan = values.plan ? toPlanSlug(values.plan) : undefined;
 	if (
 		!isEventType(type) ||
 		!values.org ||
+		plan === null ||
 		(timestamp && Number.isNaN(timestamp.getTime()))
 	) {
 		console.error(
-			`Usage: bun run dev:simulate-polar-webhook --type <${Object.keys(polarFixtures).join("|")}> --org <organizationId> [--subscription-id <id>] [--timestamp <iso>] [--webhook-id <id>] [--url <backend url>]`,
+			`Usage: bun run dev:simulate-polar-webhook --type <${Object.keys(polarFixtures).join("|")}> --org <organizationId> [--subscription-id <id>] [--plan <${PLAN_SLUGS.join("|")}>] [--timestamp <iso>] [--webhook-id <id>] [--url <backend url>]`,
 		);
 		process.exit(1);
 	}
@@ -108,6 +125,7 @@ if (import.meta.main) {
 		...(values["subscription-id"] && {
 			subscriptionId: values["subscription-id"],
 		}),
+		...(plan && { plan }),
 		...(timestamp && { timestamp }),
 		...(values["webhook-id"] && { webhookId: values["webhook-id"] }),
 	});

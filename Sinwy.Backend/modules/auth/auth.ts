@@ -1,4 +1,10 @@
 import { emailClient } from "@backend/infrastructure/email";
+import { polarClient, productIdFor } from "@backend/infrastructure/polar";
+import {
+	applySubscriptionEvent,
+	ensureCheckoutAllowed,
+	revokeOrganizationSubscription,
+} from "@billingModule";
 import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
@@ -8,7 +14,6 @@ import {
 	ac,
 	orgAccessRoles,
 	PLAN_SLUGS,
-	type PlanSlug,
 	profileSchema,
 	RESEND_COOLDOWN_SECONDS,
 } from "@sinwy/shared";
@@ -21,23 +26,14 @@ import {
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
-import { ensureCheckoutAllowed } from "./checkoutGuard";
 import { cleanupDeletedUser } from "./deletedUserCleanup";
 import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
-import { polarClient } from "./polarClient";
-import { projectSubscriptionStatus } from "./subscriptionStatus";
+import { refuseOwnerRole } from "./singleOwner";
 
 const authLogger = createLogger("auth");
-
-// keyed by PlanSlug so adding/renaming a plan in @sinwy/shared fails here at compile time
-const planProducts = {
-	starter: appConfig.POLAR_PRODUCT_STARTER,
-	professional: appConfig.POLAR_PRODUCT_PROFESSIONAL,
-	enterprise: appConfig.POLAR_PRODUCT_ENTERPRISE,
-} satisfies Record<PlanSlug, string>;
 
 // better-auth only type-checks name; apply the shared length/character rule
 const validName = (name: unknown) => {
@@ -47,6 +43,14 @@ const validName = (name: unknown) => {
 	}
 	return result.data.name;
 };
+
+// The plugin forwards the rest of the body to Polar (metadata spread over
+// referenceId, raw product ids, trials, discounts, redirect URLs)
+const checkoutBodySchema = z.strictObject({
+	slug: z.enum(PLAN_SLUGS),
+	referenceId: z.string().min(1),
+	redirect: z.boolean().optional(),
+});
 
 export const auth = betterAuth({
 	baseURL: appConfig.BETTER_AUTH_URL,
@@ -160,14 +164,27 @@ export const auth = betterAuth({
 		},
 	},
 	hooks: {
-		// The polar checkout endpoint forwards referenceId into metadata with no
-		// ownership check — enforce membership (and no double-purchase) here.
+		// The polar plugin trusts referenceId with no membership check. Checkout
+		// is guarded here; the org-scoped subscription read is ours instead
+		// (GET /api/organizations/:organizationId/subscription).
 		before: createAuthMiddleware(async (ctx) => {
-			if (ctx.path === "/checkout" && ctx.body?.referenceId) {
+			if (ctx.path === "/checkout") {
+				const body = checkoutBodySchema.safeParse(ctx.body);
+				if (!body.success)
+					throw new APIError("BAD_REQUEST", {
+						message: "Invalid checkout request",
+					});
 				const session = await getSessionFromCtx(ctx);
 				if (!session) throw new APIError("UNAUTHORIZED");
-				await ensureCheckoutAllowed(session.user.id, ctx.body.referenceId);
+				await ensureCheckoutAllowed(session.user.id, body.data.referenceId);
 			}
+			if (
+				ctx.path === "/customer/subscriptions/list" &&
+				ctx.query?.["referenceId"]
+			)
+				throw new APIError("FORBIDDEN", {
+					message: "Read organization subscriptions through the organization",
+				});
 		}),
 	},
 	socialProviders: {
@@ -182,12 +199,30 @@ export const auth = betterAuth({
 			roles: orgAccessRoles,
 			// creation goes through POST /api/organizations only
 			allowUserToCreateOrganization: false,
+			// the plugin already keeps the only owner from leaving, being removed
+			// or demoted; these keep a second owner from ever appearing
+			organizationHooks: {
+				beforeCreateInvitation: async ({ invitation }) =>
+					refuseOwnerRole(invitation.role),
+				beforeAcceptInvitation: async ({ invitation }) =>
+					refuseOwnerRole(invitation.role),
+				beforeUpdateMemberRole: async ({ member, newRole }) =>
+					refuseOwnerRole(member.role, newRole),
+				// the plugin's own delete knows nothing of billing
+				beforeDeleteOrganization: ({ organization }) =>
+					revokeOrganizationSubscription(organization.id),
+			},
 			schema: {
 				organization: {
 					additionalFields: {
 						status: {
 							type: "string",
 							defaultValue: "inactive",
+							input: false,
+						},
+						plan: {
+							type: "string",
+							required: false,
 							input: false,
 						},
 						industry: {
@@ -210,7 +245,7 @@ export const auth = betterAuth({
 			use: [
 				checkout({
 					products: PLAN_SLUGS.map((slug) => ({
-						productId: planProducts[slug],
+						productId: productIdFor(slug),
 						slug,
 					})),
 					successUrl: new URL(
@@ -219,11 +254,22 @@ export const auth = betterAuth({
 					).toString(),
 					authenticatedUsersOnly: true,
 				}),
-				portal(),
+				// the portal spans all of a user's organizations, so return to the
+				// post-login router rather than one organization's billing page
+				portal({
+					returnUrl: new URL(
+						"/auth/postlogin",
+						appConfig.WEB_APP_URL,
+					).toString(),
+				}),
 				webhooks({
 					secret: appConfig.POLAR_WEBHOOK_SECRET,
-					onSubscriptionActive: projectSubscriptionStatus,
-					onSubscriptionRevoked: projectSubscriptionStatus,
+					// `updated` fires on every change (plan change, cancel, renewal);
+					// all events converge on the same projection. Wrapped because
+					// billing imports auth: a bare reference is read mid-cycle.
+					onSubscriptionUpdated: (event) => applySubscriptionEvent(event),
+					onSubscriptionActive: (event) => applySubscriptionEvent(event),
+					onSubscriptionRevoked: (event) => applySubscriptionEvent(event),
 				}),
 			],
 		}),

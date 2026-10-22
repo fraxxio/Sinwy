@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { polarClient } from "@backend/infrastructure/polar";
 import { createUserWithSession } from "@backend/test/helpers";
 import db from "@db";
 import { user } from "@db/schema/userSchema";
 import { APIError } from "better-auth/api";
 import { eq } from "drizzle-orm";
 import { auth } from "../auth";
-import { polarClient } from "../polarClient";
 
 let updateSpy: ReturnType<typeof spyOn>;
 

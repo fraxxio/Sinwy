@@ -57,6 +57,27 @@
       "when": 1792432646772,
       "tag": "0007_little_sabra",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792602101976,
+      "tag": "0008_powerful_toad_men",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792685986429,
+      "tag": "0009_special_the_captain",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792688268449,
+      "tag": "0010_cool_firelord",
+      "breakpoints": true
     }
   ]
 }

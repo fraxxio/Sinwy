@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { auth, polarClient, registerAuthRoutes } from "@authModule";
+import { auth, registerAuthRoutes } from "@authModule";
+import { polarClient } from "@backend/infrastructure/polar";
 import createApp from "@backend/lib/app";
 import db from "@db";
 import { user } from "@db/schema/userSchema";

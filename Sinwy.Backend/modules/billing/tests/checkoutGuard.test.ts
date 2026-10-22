@@ -1,7 +1,10 @@
-import { beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { polarClient, productIdFor } from "@backend/infrastructure/polar";
+import { polarPages } from "@backend/test/helpers";
 import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
+import { getSubscriptionState } from "@organizationsModule";
 import { ensureCheckoutAllowed } from "../checkoutGuard";
 
 const orgId = "org_guard_1";
@@ -47,7 +50,19 @@ const seed = async (status: "active" | "inactive") => {
 	);
 };
 
-beforeEach(() => seed("inactive"));
+// an inactive org asks Polar for a missed activation; Polar has none unless a test says so
+let listSpy: ReturnType<typeof spyOn>;
+
+beforeAll(() => {
+	listSpy = spyOn(polarClient.subscriptions, "list");
+});
+
+afterAll(() => listSpy.mockRestore());
+
+beforeEach(async () => {
+	listSpy.mockResolvedValue(polarPages());
+	await seed("inactive");
+});
 
 test("owner of an inactive org → checkout proceeds", async () => {
 	await expect(ensureCheckoutAllowed(ownerId, orgId)).resolves.toBeUndefined();
@@ -71,4 +86,28 @@ test("owner of an already-active org → rejected", async () => {
 	await expect(ensureCheckoutAllowed(ownerId, orgId)).rejects.toThrow(
 		"Organization is already active",
 	);
+});
+
+test("owner of an inactive org Polar already bills → rejected and activated", async () => {
+	listSpy.mockResolvedValue(
+		polarPages([
+			{
+				id: "sub_missed_webhook",
+				status: "active",
+				productId: productIdFor("starter"),
+				metadata: { referenceId: orgId },
+				createdAt: new Date("2026-09-22T10:00:00Z"),
+				modifiedAt: null,
+			},
+		]),
+	);
+
+	await expect(ensureCheckoutAllowed(ownerId, orgId)).rejects.toThrow(
+		"Organization is already active",
+	);
+	expect(await getSubscriptionState(orgId)).toEqual({
+		status: "active",
+		plan: "starter",
+		subscriptionId: "sub_missed_webhook",
+	});
 });

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { polarClient } from "@authModule";
+import { polarClient } from "@backend/infrastructure/polar";
 import {
 	createUserWithSession,
 	insertOrganization,
 	joinOrganization,
+	polarPages,
 } from "@backend/test/helpers";
 import db from "@db";
 import {
@@ -19,8 +20,6 @@ import {
 	getAccountDeletionPreview,
 } from "../service";
 
-const noSubscriptions = { result: { items: [], pagination: {} } } as never;
-
 let listSpy: ReturnType<typeof spyOn>;
 let revokeSpy: ReturnType<typeof spyOn>;
 
@@ -28,7 +27,7 @@ beforeEach(async () => {
 	await db.delete(organization);
 	await db.delete(user);
 	listSpy = spyOn(polarClient.subscriptions, "list").mockResolvedValue(
-		noSubscriptions,
+		polarPages(),
 	);
 	revokeSpy = spyOn(polarClient.subscriptions, "revoke").mockResolvedValue(
 		{} as never,
@@ -92,22 +91,6 @@ test("combined role string still counts as owner", async () => {
 	expect(preview.soleOwnedOrganizations.map((org) => org.id)).toEqual([orgId]);
 });
 
-test("org with a second owner is not previewed and survives", async () => {
-	const { userId } = await createUserWithSession();
-	const { userId: coOwnerId } = await createUserWithSession();
-	const orgId = await insertOrganization("Shared Co");
-	await joinOrganization(orgId, userId, "owner");
-	await joinOrganization(orgId, coOwnerId, "owner");
-
-	const preview = await getAccountDeletionPreview(userId);
-	expect(preview.soleOwnedOrganizations).toEqual([]);
-
-	await deleteSoleOwnedOrganizations(userId);
-
-	expect(await orgExists(orgId)).toBe(true);
-	expect(await memberCount(orgId)).toBe(2);
-});
-
 test("org where the user is only admin is not previewed and survives", async () => {
 	const { userId } = await createUserWithSession();
 	const { userId: ownerId } = await createUserWithSession();
@@ -124,22 +107,29 @@ test("org where the user is only admin is not previewed and survives", async () 
 	expect(await memberCount(orgId)).toBe(2);
 });
 
-test("active subscription is revoked before the org is deleted", async () => {
+test("every entitled subscription, across pages and past_due included, is revoked before the org is deleted", async () => {
 	const { userId } = await createUserWithSession();
 	const orgId = await insertOrganization("Paying Co");
 	await joinOrganization(orgId, userId, "owner");
-	listSpy.mockResolvedValue({
-		result: { items: [{ id: "sub_1" }], pagination: {} },
-	} as never);
+	listSpy.mockResolvedValue(
+		polarPages(
+			[
+				{ id: "sub_1", status: "active" },
+				{ id: "sub_old", status: "canceled" },
+			],
+			[{ id: "sub_2", status: "past_due" }],
+		),
+	);
 
 	await deleteSoleOwnedOrganizations(userId);
 
 	expect(listSpy).toHaveBeenCalledWith({
 		metadata: { referenceId: orgId },
-		active: true,
-		limit: 1,
+		limit: 100,
 	});
+	expect(revokeSpy).toHaveBeenCalledTimes(2);
 	expect(revokeSpy).toHaveBeenCalledWith({ id: "sub_1" });
+	expect(revokeSpy).toHaveBeenCalledWith({ id: "sub_2" });
 	expect(await orgExists(orgId)).toBe(false);
 });
 
@@ -147,9 +137,7 @@ test("Polar revoke failure throws and deletes nothing", async () => {
 	const { userId } = await createUserWithSession();
 	const orgId = await insertOrganization("Stuck Co");
 	await joinOrganization(orgId, userId, "owner");
-	listSpy.mockResolvedValue({
-		result: { items: [{ id: "sub_1" }], pagination: {} },
-	} as never);
+	listSpy.mockResolvedValue(polarPages([{ id: "sub_1", status: "active" }]));
 	revokeSpy.mockRejectedValue(new Error("polar down"));
 
 	await expect(deleteSoleOwnedOrganizations(userId)).rejects.toBeInstanceOf(

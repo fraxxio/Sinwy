@@ -5,16 +5,15 @@ import {
 	organization,
 	organizationProfile,
 } from "@db/schema/organizationSchema";
-import type { OrganizationStatus } from "@sinwy/shared";
+import type { PlanSlug } from "@sinwy/shared";
 import {
 	and,
+	asc,
 	eq,
 	exists,
 	inArray,
 	isNull,
 	lt,
-	ne,
-	notExists,
 	or,
 	sql,
 } from "drizzle-orm";
@@ -27,33 +26,96 @@ export const isSlugTaken = async (slug: string) => {
 	return row !== undefined;
 };
 
-/** Applies the status only if `changedAt` is newer than the last applied change. */
-export const setStatus = async (
-	organizationId: string,
-	status: OrganizationStatus,
-	changedAt: Date,
-): Promise<"applied" | "outdated" | "unknown"> => {
-	const updated = await db
-		.update(organization)
-		.set({ status, subscriptionStatusAt: changedAt })
-		.where(
-			and(
-				eq(organization.id, organizationId),
-				or(
-					isNull(organization.subscriptionStatusAt),
-					lt(organization.subscriptionStatusAt, changedAt),
-				),
-			),
-		)
-		.returning({ id: organization.id });
-	if (updated.length > 0) return "applied";
-
+export const findSubscriptionState = async (organizationId: string) => {
 	const [row] = await db
-		.select({ id: organization.id })
+		.select({
+			status: organization.status,
+			plan: organization.plan,
+			subscriptionId: organization.subscriptionId,
+		})
 		.from(organization)
 		.where(eq(organization.id, organizationId));
-	return row ? "outdated" : "unknown";
+	return row ?? null;
 };
+
+// One subscription backs an organization at a time; while bound, no other
+// subscription may change it (stale revocations, a second purchase). Polar
+// may also redeliver or reorder state, so only newer state applies.
+const changeableBy = (
+	organizationId: string,
+	subscriptionId: string,
+	observedAt: Date,
+) =>
+	and(
+		eq(organization.id, organizationId),
+		or(
+			isNull(organization.subscriptionId),
+			eq(organization.subscriptionId, subscriptionId),
+		),
+		or(
+			isNull(organization.subscriptionStatusAt),
+			lt(organization.subscriptionStatusAt, observedAt),
+		),
+	);
+
+export type SubscriptionWrite =
+	| { result: "applied" }
+	| { result: "unknown-organization" }
+	| { result: "outdated" }
+	| { result: "bound-elsewhere"; boundSubscriptionId: string };
+
+const writeSubscription = (
+	organizationId: string,
+	subscriptionId: string,
+	observedAt: Date,
+	values: Pick<
+		typeof organization.$inferInsert,
+		"status" | "plan" | "subscriptionId"
+	>,
+) =>
+	db.transaction(async (tx): Promise<SubscriptionWrite> => {
+		// locked first, so a refusal is explained by the state that caused it
+		const [row] = await tx
+			.select({ subscriptionId: organization.subscriptionId })
+			.from(organization)
+			.where(eq(organization.id, organizationId))
+			.for("update");
+		if (!row) return { result: "unknown-organization" };
+
+		const updated = await tx
+			.update(organization)
+			.set({ ...values, subscriptionStatusAt: observedAt })
+			.where(changeableBy(organizationId, subscriptionId, observedAt))
+			.returning({ id: organization.id });
+		if (updated.length > 0) return { result: "applied" };
+
+		return row.subscriptionId !== null && row.subscriptionId !== subscriptionId
+			? { result: "bound-elsewhere", boundSubscriptionId: row.subscriptionId }
+			: { result: "outdated" };
+	});
+
+export const bindSubscription = (
+	organizationId: string,
+	subscriptionId: string,
+	plan: PlanSlug | null,
+	observedAt: Date,
+) =>
+	writeSubscription(organizationId, subscriptionId, observedAt, {
+		status: "active",
+		plan,
+		subscriptionId,
+	});
+
+export const releaseSubscription = (
+	organizationId: string,
+	subscriptionId: string,
+	observedAt: Date,
+) =>
+	writeSubscription(organizationId, subscriptionId, observedAt, {
+		status: "inactive",
+		plan: null,
+		subscriptionId: null,
+	});
 
 export const findOnboardingCompletedAt = async (organizationId: string) => {
 	const [row] = await db
@@ -104,7 +166,7 @@ export const markOnboardingCompleted = async (organizationId: string) => {
 	return row?.completedAt ?? null;
 };
 
-/** Organizations where this user is an owner and no other member is. */
+/** Organizations this user owns; each has exactly one owner. */
 export const findSoleOwnedOrganizations = (userId: string) =>
 	db
 		.select({
@@ -114,31 +176,17 @@ export const findSoleOwnedOrganizations = (userId: string) =>
 		})
 		.from(organization)
 		.where(
-			and(
-				exists(
-					db
-						.select({ id: member.id })
-						.from(member)
-						.where(
-							and(
-								eq(member.organizationId, organization.id),
-								eq(member.userId, userId),
-								memberHasRole("owner"),
-							),
+			exists(
+				db
+					.select({ id: member.id })
+					.from(member)
+					.where(
+						and(
+							eq(member.organizationId, organization.id),
+							eq(member.userId, userId),
+							memberHasRole("owner"),
 						),
-				),
-				notExists(
-					db
-						.select({ id: member.id })
-						.from(member)
-						.where(
-							and(
-								eq(member.organizationId, organization.id),
-								ne(member.userId, userId),
-								memberHasRole("owner"),
-							),
-						),
-				),
+					),
 			),
 		)
 		.orderBy(organization.name);
@@ -146,3 +194,46 @@ export const findSoleOwnedOrganizations = (userId: string) =>
 /** FK cascades remove members, invitations and the profile. */
 export const deleteOrganizations = (ids: string[]) =>
 	db.delete(organization).where(inArray(organization.id, ids));
+
+/**
+ * Oldest organization the user owns that billing has not activated yet. A
+ * lapsed one (onboarding finished) is left to the dashboard's inactive banner.
+ * Single index hit on member_userId_idx, then a primary-key join, this runs
+ * on every app load, so it must stay a bounded lookup.
+ */
+export const findUnpaidOwnedOrganization = async (userId: string) => {
+	const [row] = await db
+		.select({ organizationId: organization.id })
+		.from(member)
+		.innerJoin(organization, eq(member.organizationId, organization.id))
+		.where(
+			and(
+				eq(member.userId, userId),
+				memberHasRole("owner"),
+				eq(organization.status, "inactive"),
+				isNull(organization.onboardingCompletedAt),
+			),
+		)
+		.orderBy(asc(organization.createdAt))
+		.limit(1);
+	return row?.organizationId ?? null;
+};
+
+/** Oldest paid organization the user owns that never finished its setup wizard. */
+export const findUnfinishedOnboardingOrganization = async (userId: string) => {
+	const [row] = await db
+		.select({ organizationId: organization.id })
+		.from(member)
+		.innerJoin(organization, eq(member.organizationId, organization.id))
+		.where(
+			and(
+				eq(member.userId, userId),
+				memberHasRole("owner"),
+				eq(organization.status, "active"),
+				isNull(organization.onboardingCompletedAt),
+			),
+		)
+		.orderBy(asc(organization.createdAt))
+		.limit(1);
+	return row?.organizationId ?? null;
+};

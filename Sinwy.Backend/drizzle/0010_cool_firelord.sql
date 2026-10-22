@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "member_one_owner_uidx" ON "member" USING btree ("organization_id") WHERE 'owner' = ANY(string_to_array("member"."role", ','));

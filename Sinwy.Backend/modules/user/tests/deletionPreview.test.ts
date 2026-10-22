@@ -45,19 +45,15 @@ test("no session → 401", async () => {
 	expect(res.status).toBe(401);
 });
 
-test("lists only organizations the user solely owns", async () => {
+test("lists only organizations the user owns", async () => {
 	const { userId, cookie } = await createUserWithSession();
-	const { userId: coOwnerId } = await createUserWithSession();
+	const { userId: otherOwnerId } = await createUserWithSession();
 
 	const solo = await insertOrganization("Solo Co");
 	await joinOrganization(solo, userId, "owner");
 
-	const shared = await insertOrganization("Shared Co");
-	await joinOrganization(shared, userId, "owner");
-	await joinOrganization(shared, coOwnerId, "owner");
-
 	const managed = await insertOrganization("Managed Co");
-	await joinOrganization(managed, coOwnerId, "owner");
+	await joinOrganization(managed, otherOwnerId, "owner");
 	await joinOrganization(managed, userId, "admin");
 
 	expect(await getPreview(cookie)).toEqual({

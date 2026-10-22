@@ -1,21 +1,22 @@
 # simulate-polar-webhook
 
 ```bash
-bun run dev:simulate-polar-webhook --type <subscription.active|subscription.revoked> --org <organizationId> \
-  [--subscription-id <id>] [--timestamp <iso>] [--webhook-id <id>] [--url <backend url>]
+bun run dev:simulate-polar-webhook --type <subscription.active|subscription.updated|subscription.revoked> --org <organizationId> \
+  [--subscription-id <id>] [--plan <starter|professional|enterprise>] [--timestamp <iso>] [--webhook-id <id>] [--url <backend url>]
 ```
 
-This sends a signed Polar webhook to `POST /api/auth/polar/webhooks`, the endpoint Polar calls. The payload is a fixture recorded from a real sandbox delivery (`Sinwy.Backend/scripts/dev/fixtures/polar/`). Only the ids, `metadata.referenceId` (the org id) and the event `timestamp` are replaced, and the request is signed with `POLAR_WEBHOOK_SECRET`.
+This sends a signed Polar webhook to `POST /api/auth/polar/webhooks`, the endpoint Polar calls. The payload is a fixture recorded from a real sandbox delivery (`Sinwy.Backend/scripts/dev/fixtures/polar/`). Only the ids, `metadata.referenceId` (the org id), the product (this `.env`'s product for `--plan`, default `enterprise`) and the event `timestamp` are replaced (`--timestamp` also sets the subscription's `modified_at`), and the request is signed with `POLAR_WEBHOOK_SECRET`.
 
 It prints JSON with `subscriptionId`, `timestamp`, `webhookId`, `status` and `response`, and exits 1 unless the status is 200.
 
 ## The app's handling
 
-- Only `subscription.active` (org becomes `active`) and `subscription.revoked` (org becomes `inactive`) change state.
-- An event applies only if its `timestamp` is newer than `organization.subscription_status_at`. Older events are logged as ignored.
+- `subscription.active`, `subscription.revoked` and `subscription.updated` all project the payload's subscription onto the org. Status `active`, `trialing` or `past_due` makes the org `active`, with `plan` mapped from the product and `subscription_id` bound. Any other status makes it `inactive` and clears both.
+- The recorded `subscription.updated` is a cancellation (status `canceled`), so it makes the org `inactive` like a revoke.
+- An event applies only if its subscription's `modified_at` (the `--timestamp`) is newer than `organization.subscription_status_at`. While an org is bound to a subscription, events for any other subscription are ignored, so revoke with the same `--subscription-id`.
 - The endpoint answers 200 even for events it ignores or for an unknown org. **A 200 doesn't mean the status changed.** Check the result:
   ```bash
-  psql service=sinwy_ro -c "SELECT status, subscription_status_at FROM organization WHERE id = '<id>' LIMIT 1"
+  psql service=sinwy_ro -c "SELECT status, plan, subscription_id, subscription_status_at FROM organization WHERE id = '<id>' LIMIT 1"
   ```
 
 ## Recipes
@@ -23,6 +24,7 @@ It prints JSON with `subscriptionId`, `timestamp`, `webhookId`, `status` and `re
 | Case | Command |
 | --- | --- |
 | Pay for an org | `--type subscription.active --org <id>` |
+| Pay for a specific plan | `--type subscription.active --org <id> --plan starter` |
 | Revoke the same subscription | `--type subscription.revoked --org <id> --subscription-id <id from the earlier output>` |
 | Redelivery | repeat with the printed `--subscription-id`, `--timestamp` and `--webhook-id` |
 | Late or out-of-order event | `--timestamp` earlier than the last applied event |

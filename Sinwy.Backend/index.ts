@@ -1,5 +1,6 @@
 import { registerAuthRoutes } from "@authModule";
 import createApp from "@backend/lib/app";
+import { registerBillingRoutes } from "@billingModule";
 import appConfig from "@config";
 import { registerFileRoutes } from "@filesModule";
 import { registerOrganizationRoutes } from "@organizationsModule";
@@ -9,6 +10,7 @@ const app = createApp();
 
 registerAuthRoutes(app);
 registerOrganizationRoutes(app);
+registerBillingRoutes(app);
 registerUserRoutes(app);
 registerFileRoutes(app);
 

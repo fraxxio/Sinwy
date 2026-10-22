@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { polarClient } from "@authModule";
+import { polarClient } from "@backend/infrastructure/polar";
 import sdkPackage from "@polar-sh/sdk/package.json";
 import { capturePolarFixture } from "../capturePolarFixture";
 import committed from "../fixtures/polar/subscription.active.json";

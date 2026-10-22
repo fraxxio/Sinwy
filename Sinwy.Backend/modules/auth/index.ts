@@ -1,12 +1,13 @@
 export { auth } from "./auth";
 export { requireAuth, sessionFrom } from "./middleware";
-export { polarClient } from "./polarClient";
+export { requireFeature } from "./requireFeature";
 export {
 	type Membership,
 	membershipFrom,
 	ORGANIZATION_PARAM,
+	organizationPath,
 	requireMember,
 	requirePermission,
+	resolveMembership,
 } from "./requirePermission";
 export { registerAuthRoutes } from "./routes";
-export { projectSubscriptionStatus } from "./subscriptionStatus";

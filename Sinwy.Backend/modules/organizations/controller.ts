@@ -5,19 +5,22 @@ import {
 	createOrganizationBody,
 	organizationProfileBody,
 } from "@backend/modules/organizations/utils";
+import { API_ERROR_CODES } from "@sinwy/shared";
 import {
 	completeOrganizationOnboarding,
 	createOrganization,
-	getCheckoutOrganization,
 	getOrganizationOnboarding,
-	getOrganizationStatus,
 	saveOrganizationProfile,
 } from "./service";
 
 const respondWriteError = (error: "not-found" | "inactive") => {
 	switch (error) {
 		case "inactive":
-			return fail("This organization doesn't have an active plan yet", 409);
+			return fail(
+				"This organization doesn't have an active plan yet",
+				409,
+				API_ERROR_CODES.ORGANIZATION_INACTIVE,
+			);
 		case "not-found":
 			return fail("Not found", 404);
 	}
@@ -37,21 +40,6 @@ export const createOrganizationHandler: Handler = async (c) => {
 		body.data.industry,
 	);
 	return ok(org, 201, "Organization created");
-};
-
-export const getOrganizationStatusHandler: Handler = async (c) => {
-	const status = await getOrganizationStatus(membershipFrom(c));
-	return ok({ status });
-};
-
-export const getCheckoutOrganizationHandler: Handler = async (c) => {
-	const { user } = sessionFrom(c);
-
-	const { checkoutId } = c.req.params as { checkoutId: string };
-	const result = await getCheckoutOrganization(user.id, checkoutId);
-	if (!result) return fail("Not found", 404);
-
-	return ok(result);
 };
 
 export const getOrganizationOnboardingHandler: Handler = async (c) => {

@@ -26,12 +26,12 @@ In the simulated path, the org is `inactive` on the plan page. Run the webhook, 
 | --- | --- | --- |
 | User | `"user"` (quote it) | `id`, `email`, `email_verified` |
 | Session | `session` | `user_id`, `active_organization_id`, `expires_at` |
-| Org | `organization` | `id`, `slug`, `status`, `subscription_status_at`, `onboarding_completed_at` |
+| Org | `organization` | `id`, `slug`, `status`, `plan`, `subscription_id`, `subscription_status_at`, `onboarding_completed_at` |
 | Org profile | `organization_profile` | `organization_id`, `city`, `country`, `email` |
 | Membership | `member` | `organization_id`, `user_id`, `role` (`owner`, `staff`) |
 
 ```bash
-psql service=sinwy_ro -c "SELECT id, slug, status, subscription_status_at, onboarding_completed_at FROM organization WHERE id = '<id>' LIMIT 1"
+psql service=sinwy_ro -c "SELECT id, slug, status, plan, subscription_id, subscription_status_at, onboarding_completed_at FROM organization WHERE id = '<id>' LIMIT 1"
 ```
 
 Polar state (customers, subscriptions) lives in the Polar sandbox, not the DB. Check it through the Polar API or dashboard when it matters.

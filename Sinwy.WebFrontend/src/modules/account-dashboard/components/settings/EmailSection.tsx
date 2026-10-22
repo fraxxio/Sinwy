@@ -1,8 +1,8 @@
 import { revalidateLogic } from "@tanstack/react-form";
 import { useState } from "react";
 import { z } from "zod";
-import { SettingsSection } from "#/modules/account-dashboard/components/settings/SettingsSection";
 import type { SessionUser } from "#/modules/account-dashboard/lib/account-queries";
+import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Badge } from "#/shared/components/ui/badge";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";

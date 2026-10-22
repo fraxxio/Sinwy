@@ -10,13 +10,18 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { pollUntilActive } from "#/modules/checkout/lib/poll-until-active";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
+import {
+	activeOrganizationDestination,
+	hasCompletedSetup,
+} from "#/modules/organizations/lib/funnel";
 import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { Button } from "#/shared/components/ui/button";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { api } from "#/shared/lib/api";
+import { authClient } from "#/shared/lib/auth/auth-client";
 import { protectedRoute } from "#/shared/lib/auth/protected-route";
+import { pollUntil } from "#/shared/lib/poll-until";
 import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/checkout/success")({
@@ -37,11 +42,19 @@ enum Phase {
 	TimedOut = "timed-out",
 }
 
-function PageShell({ children }: { children: React.ReactNode }) {
+function PageShell({
+	showSteps = false,
+	children,
+}: {
+	showSteps?: boolean;
+	children: React.ReactNode;
+}) {
 	return (
 		<main className="page-wrap py-14">
 			<div className="mx-auto w-full max-w-sm">
-				<FunnelProgress current={FunnelStep.Pay} className="mb-8" />
+				{showSteps && (
+					<FunnelProgress current={FunnelStep.Pay} className="mb-8" />
+				)}
 				{children}
 			</div>
 		</main>
@@ -90,6 +103,8 @@ function Activation({
 	const [phase, setPhase] = useState<Phase>(
 		checkoutId ? Phase.Resolving : Phase.MissingCheckout,
 	);
+	// unknown until the checkout resolves, so a renewal never flashes setup steps
+	const [firstTimeSetup, setFirstTimeSetup] = useState(false);
 
 	useEffect(() => {
 		if (!checkoutId) return;
@@ -110,15 +125,23 @@ function Activation({
 				return;
 			}
 			const orgId = res.data.organizationId;
+			// checked on setup, not status: the webhook may have activated it already
+			const { data: organization } =
+				await authClient.organization.getFullOrganization({
+					query: { organizationId: orgId, membersLimit: 1 },
+				});
+			if (cancelled) return;
+			setFirstTimeSetup(!!organization && !hasCompletedSetup(organization));
 			setPhase(Phase.Activating);
 
-			const active = await pollUntilActive(
+			const active = await pollUntil(
 				async () => {
 					const status = await api<{ status: OrganizationStatus }>(
 						`/organizations/${orgId}/status`,
 					);
 					return status.isSuccess ? status.data.status : null;
 				},
+				(status) => status === "active",
 				{ isCancelled: () => cancelled },
 			);
 			if (cancelled) return;
@@ -127,10 +150,12 @@ function Activation({
 				return;
 			}
 			await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
-			void navigate({
-				to: "/organizations/$id/onboarding",
-				params: { id: orgId },
-			});
+			// onboarding is the safe fallback: it also serves a completed profile
+			void navigate(
+				organization
+					? activeOrganizationDestination(organization)
+					: { to: "/organizations/$id/onboarding", params: { id: orgId } },
+			);
 		})();
 
 		return () => {
@@ -141,7 +166,7 @@ function Activation({
 	const activating = phase === Phase.Resolving || phase === Phase.Activating;
 
 	return (
-		<PageShell>
+		<PageShell showSteps={firstTimeSetup}>
 			<div className="space-y-3 text-center">
 				{activating ? (
 					<ActivationProgress phase={phase} />

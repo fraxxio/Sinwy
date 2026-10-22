@@ -3,3 +3,7 @@
 export const PLAN_SLUGS = ["starter", "professional", "enterprise"] as const;
 
 export type PlanSlug = (typeof PLAN_SLUGS)[number];
+
+/** Lenient on purpose: an unknown stored plan must degrade to "no features", not fail every request. */
+export const toPlanSlug = (value: string | null): PlanSlug | null =>
+	PLAN_SLUGS.find((slug) => slug === value) ?? null;

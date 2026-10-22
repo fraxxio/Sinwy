@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { polarClient, registerAuthRoutes } from "@authModule";
+import { registerAuthRoutes } from "@authModule";
+import { polarClient } from "@backend/infrastructure/polar";
 import createApp from "@backend/lib/app";
+import { registerBillingRoutes } from "@billingModule";
 import db from "@db";
 import { account } from "@db/schema/authSchema";
 import {
@@ -24,6 +26,7 @@ beforeAll(() => {
 	const app = createApp();
 	registerAuthRoutes(app);
 	registerOrganizationRoutes(app);
+	registerBillingRoutes(app);
 	server = app.listen(0);
 	base = server.url;
 

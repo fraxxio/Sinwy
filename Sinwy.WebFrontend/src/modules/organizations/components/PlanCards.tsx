@@ -11,16 +11,15 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/shared/components/ui/card";
+import { PLAN_NAMES, PLAN_PRICES } from "#/shared/lib/plans";
 import { cn } from "#/shared/lib/utils";
 
-export const plans = [
+const plans = [
 	{
 		slug: "starter",
-		name: "Starter",
+		name: PLAN_NAMES.starter,
 		description:
 			"Everything a small business needs to get online and reach new customers",
-		price: 12,
-		yearlyPrice: 99,
 		buttonText: "Get started",
 		buttonVariant: "outline" as const,
 		features: [
@@ -37,11 +36,9 @@ export const plans = [
 	},
 	{
 		slug: "professional",
-		name: "Business",
+		name: PLAN_NAMES.professional,
 		description:
 			"Best for growing businesses that want more customization and reach",
-		price: 48,
-		yearlyPrice: 399,
 		buttonText: "Get started",
 		buttonVariant: "default" as const,
 		popular: true,
@@ -59,11 +56,9 @@ export const plans = [
 	},
 	{
 		slug: "enterprise",
-		name: "Enterprise",
+		name: PLAN_NAMES.enterprise,
 		description:
 			"For established businesses with multiple locations and larger teams",
-		price: 96,
-		yearlyPrice: 899,
 		buttonText: "Get started",
 		buttonVariant: "outline" as const,
 		features: [
@@ -79,10 +74,6 @@ export const plans = [
 		],
 	},
 ] satisfies readonly ({ slug: PlanSlug } & Record<string, unknown>)[];
-
-export function getPlanName(slug: PlanSlug) {
-	return plans.find((plan) => plan.slug === slug)?.name ?? slug;
-}
 
 const PRICE_PLACES = [1000, 100, 10, 1];
 // 9 sits at the top of the strip so rolling to a higher digit moves the
@@ -214,7 +205,9 @@ export function PlanCards({
 									$
 									<RollingPrice
 										value={
-											billing === "monthly" ? plan.price : plan.yearlyPrice
+											PLAN_PRICES[plan.slug][
+												billing === "monthly" ? "month" : "year"
+											]
 										}
 									/>
 								</span>{" "}

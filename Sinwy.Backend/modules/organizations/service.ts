@@ -1,9 +1,9 @@
-import { auth, type Membership, polarClient } from "@authModule";
+import { auth, type Membership } from "@authModule";
 import {
 	type OrganizationProfileInput,
 	uniqueSlug,
 } from "@backend/modules/organizations/utils";
-import { createLogger } from "@logger";
+import { revokeOrganizationSubscription } from "@billingModule";
 import {
 	type AccountDeletionPreviewDto,
 	EMPTY_ORGANIZATION_PROFILE,
@@ -12,22 +12,24 @@ import {
 	type OrganizationOnboardingDto,
 	type OrganizationProfileDto,
 	type OrganizationStatus,
+	type PlanSlug,
 	toOrganizationStatus,
+	toPlanSlug,
 } from "@sinwy/shared";
-import { APIError } from "better-auth/api";
-import { reconcileInactiveStatus } from "./reconcileStatus";
 import {
+	bindSubscription,
 	deleteOrganizations,
 	findOnboardingCompletedAt,
 	findProfile,
 	findSoleOwnedOrganizations,
+	findSubscriptionState,
+	findUnfinishedOnboardingOrganization,
+	findUnpaidOwnedOrganization,
 	isSlugTaken,
 	markOnboardingCompleted,
-	setStatus,
+	releaseSubscription,
 	upsertProfile,
 } from "./repository";
-
-const organizationsLogger = createLogger("organizations");
 
 export const createOrganization = async (
 	userId: string,
@@ -47,38 +49,48 @@ export const createOrganization = async (
 		slug: org.slug,
 		// DB column is a plain string; only the webhook projection writes it, with these two values
 		status: org.status as OrganizationStatus,
+		plan: toPlanSlug(org.plan ?? null),
 		industry: org.industry as OrganizationIndustry,
 	};
 };
 
-export const getOrganizationStatus = (
-	membership: Membership,
-): Promise<OrganizationStatus> =>
-	membership.status === "active"
-		? Promise.resolve("active")
-		: reconcileInactiveStatus(membership.organizationId);
+export type SubscriptionState = {
+	status: OrganizationStatus;
+	plan: PlanSlug | null;
+	subscriptionId: string | null;
+};
 
-/** Billing projection entry point: Polar subscription state → organization. */
-export const setOrganizationStatus = (
+/** null for an unknown organization. */
+export const getSubscriptionState = async (
 	organizationId: string,
-	status: OrganizationStatus,
-	changedAt: Date,
-) => setStatus(organizationId, status, changedAt);
-
-export const getCheckoutOrganization = async (
-	userId: string,
-	checkoutId: string,
-) => {
-	// null → unknown checkout, someone else's checkout, or no org reference
-	const checkout = await polarClient.checkouts
-		.get({ id: checkoutId })
-		.catch(() => null);
-	if (!checkout || checkout.externalCustomerId !== userId) return null;
-	const referenceId = checkout.metadata["referenceId"];
-	return typeof referenceId === "string"
-		? { organizationId: referenceId }
+): Promise<SubscriptionState | null> => {
+	const row = await findSubscriptionState(organizationId);
+	return row
+		? {
+				status: toOrganizationStatus(row.status),
+				plan: toPlanSlug(row.plan),
+				subscriptionId: row.subscriptionId,
+			}
 		: null;
 };
+
+/**
+ * Billing projection writes. Both refuse a subscription other than the one
+ * currently backing the organization, state observed no later than the
+ * applied one, and an unknown organization, and report which it was.
+ */
+export const activateSubscription = (
+	organizationId: string,
+	subscriptionId: string,
+	plan: PlanSlug | null,
+	observedAt: Date,
+) => bindSubscription(organizationId, subscriptionId, plan, observedAt);
+
+export const deactivateSubscription = (
+	organizationId: string,
+	subscriptionId: string,
+	observedAt: Date,
+) => releaseSubscription(organizationId, subscriptionId, observedAt);
 
 type WriteResult<T> =
 	| { ok: true; data: T }
@@ -158,32 +170,10 @@ export const getAccountDeletionPreview = async (
 	};
 };
 
-/** Idempotent: no active subscription → no-op. Throws so a paying subscription is never orphaned. */
-const revokeOrganizationSubscription = async (organizationId: string) => {
-	try {
-		const subscriptions = await polarClient.subscriptions.list({
-			metadata: { referenceId: organizationId },
-			active: true,
-			limit: 1,
-		});
-		const subscription = subscriptions.result.items[0];
-		if (!subscription) return;
-		await polarClient.subscriptions.revoke({ id: subscription.id });
-		organizationsLogger.info("Revoked subscription before deletion", {
-			organizationId,
-			subscriptionId: subscription.id,
-		});
-	} catch (error) {
-		organizationsLogger.error("Polar subscription revoke failed", {
-			organizationId,
-			error: error instanceof Error ? error.message : String(error),
-		});
-		throw new APIError("INTERNAL_SERVER_ERROR", {
-			message:
-				"Could not cancel an organization subscription. Try again later.",
-		});
-	}
-};
+/** Post-login prompts: the oldest owned org that still has to pay, then one that has to finish onboarding. */
+export const getUnpaidOwnedOrganizationId = findUnpaidOwnedOrganization;
+export const getUnfinishedOnboardingOrganizationId =
+	findUnfinishedOnboardingOrganization;
 
 /**
  * Revokes each sole-owned organization's active Polar subscription, then

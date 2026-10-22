@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { polarClient } from "@authModule";
+import { polarClient } from "@backend/infrastructure/polar";
 import type { WebhookEventType } from "@polar-sh/sdk/models/components/webhookeventtype";
 import sdkPackage from "@polar-sh/sdk/package.json";
 import { assertLocalDev } from "../assertLocalDev";

@@ -67,7 +67,7 @@ test("requireMember: outsider → 404", async () => {
 	expect(nextCalls).toBe(0);
 });
 
-test("requireMember: any role passes and the membership carries the org status", async () => {
+test("requireMember: any role passes and the membership carries the org status and plan", async () => {
 	const { organizationId, cookie } = await seedMember("staff");
 	const { ctx, res } = await runMember({ params: { organizationId }, cookie });
 	expect(res.status).toBe(200);
@@ -76,6 +76,7 @@ test("requireMember: any role passes and the membership carries the org status",
 		organizationId,
 		roles: ["staff"],
 		status: "inactive",
+		plan: null,
 	});
 });
 
@@ -197,6 +198,7 @@ test("membershipFrom returns the resolved membership", async () => {
 		organizationId,
 		roles: ["owner"],
 		status: "inactive",
+		plan: null,
 	});
 });
 
