@@ -13,7 +13,8 @@ import { z } from "zod";
 import { knownValue, toPolarFailure } from "./polar";
 
 export const invoiceListQuery = z.object({
-	page: z.coerce.number().int().min(1).default(1),
+	// bounded: Polar refuses huge pages with a 422
+	page: z.coerce.number().int().min(1).max(10_000).default(1),
 	limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
@@ -77,7 +78,8 @@ type InvoiceDownload =
 	| { status: "ready"; url: string }
 	| { status: "generating" }
 	| { status: "not-found" }
-	| { status: "unavailable"; message: string }
+	| { status: "needs-details"; message: string }
+	| { status: "not-paid" }
 	| { status: "failed"; error: PolarFailure };
 
 // 404 unknown id, 422 not even a valid id
@@ -106,12 +108,10 @@ const downloadInvoice = async (
 	try {
 		await polarClient.orders.generateInvoice({ id: order.id });
 	} catch (error) {
-		// e.g. no billing address yet: the customer portal is where it's added
-		if (
-			error instanceof MissingInvoiceBillingDetails ||
-			error instanceof NotPaidOrder
-		)
-			return { status: "unavailable", message: error.detail };
+		// no billing name or address yet: the customer portal is where it's added
+		if (error instanceof MissingInvoiceBillingDetails)
+			return { status: "needs-details", message: error.detail };
+		if (error instanceof NotPaidOrder) return { status: "not-paid" };
 		throw error;
 	}
 	return { status: "generating" };

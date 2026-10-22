@@ -75,8 +75,9 @@ export const projectSubscription = async (
 		current.subscriptionId === null ||
 		current.subscriptionId === subscription.id
 	)
-		billingLogger.info(
-			"Ignored subscription state older than the applied one",
+		// routine: redeliveries, and every billing page load re-projects
+		billingLogger.debug(
+			"Ignored subscription state not newer than the applied one",
 			{
 				...context,
 				observedAt: observedAt.toISOString(),
@@ -102,27 +103,42 @@ export const applySubscriptionEvent = async (event: { data: Subscription }) => {
 };
 
 /**
+ * Subscriptions of the organization that still grant access, across pages.
+ * Polar's `active` filter leaves out past_due, hence the filter here.
+ */
+export const listEntitledSubscriptions = async (organizationId: string) => {
+	const entitled: Subscription[] = [];
+	const pages = await polarClient.subscriptions.list({
+		metadata: { referenceId: organizationId },
+		limit: 100,
+	});
+	for await (const page of pages)
+		entitled.push(
+			...page.result.items.filter((subscription) =>
+				ENTITLED_STATUSES.includes(subscription.status),
+			),
+		);
+	return entitled;
+};
+
+/**
  * Backstop for a webhook that never landed: an inactive organization asks
- * Polar for an active subscription and activates on positive evidence only.
+ * Polar for an entitled subscription and activates on positive evidence only.
  * Never deactivates, since a failed lookup must not lock out a paying org.
  * Returns whether the organization is now active.
  */
 export const reconcileInactiveOrganization = async (organizationId: string) => {
-	const subscriptions = await polarClient.subscriptions
-		.list({
-			metadata: { referenceId: organizationId },
-			active: true,
-			limit: 1,
-		})
-		.catch((error: unknown) => {
+	const subscriptions = await listEntitledSubscriptions(organizationId).catch(
+		(error: unknown) => {
 			billingLogger.warn("Polar subscription lookup failed", {
 				organizationId,
 				...describePolarError(error),
 			});
-			return null;
-		});
+			return [];
+		},
+	);
 
-	const subscription = subscriptions?.result.items[0];
+	const [subscription] = subscriptions;
 	if (!subscription) return false;
 
 	const activated = (await projectSubscription(subscription)) === "active";

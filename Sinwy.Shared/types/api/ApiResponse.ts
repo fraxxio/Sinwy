@@ -6,4 +6,5 @@ export type ApiResponse<T = unknown> =
 export const API_ERROR_CODES = {
 	PLAN_UPGRADE_REQUIRED: 4021,
 	ORGANIZATION_INACTIVE: 4091,
+	ORDER_NOT_PAID: 4092,
 } as const;

@@ -23,6 +23,8 @@ import {
 	findProfile,
 	findSoleOwnedOrganizations,
 	findSubscriptionState,
+	findUnfinishedOnboardingOrganization,
+	findUnpaidOwnedOrganization,
 	isSlugTaken,
 	markOnboardingCompleted,
 	releaseSubscription,
@@ -167,6 +169,11 @@ export const getAccountDeletionPreview = async (
 		})),
 	};
 };
+
+/** Post-login prompts: the oldest owned org that still has to pay, then one that has to finish onboarding. */
+export const getUnpaidOwnedOrganizationId = findUnpaidOwnedOrganization;
+export const getUnfinishedOnboardingOrganizationId =
+	findUnfinishedOnboardingOrganization;
 
 /**
  * Revokes each sole-owned organization's active Polar subscription, then

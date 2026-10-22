@@ -3,6 +3,7 @@ import {
 	describePolarError,
 	type PolarFailure,
 	polarClient,
+	polarFailureOf,
 	productIdFor,
 } from "@backend/infrastructure/polar";
 import { createLogger } from "@logger";
@@ -25,6 +26,7 @@ import {
 import { APIError } from "better-auth/api";
 import { knownValue, toPolarFailure } from "./polar";
 import {
+	listEntitledSubscriptions,
 	projectSubscription,
 	reconcileInactiveOrganization,
 } from "./projection";
@@ -117,10 +119,13 @@ export const getOrganizationSubscription = async (
 	if (membership.status !== "active")
 		await reconcileInactiveOrganization(organizationId);
 
-	const state = await requireSubscriptionState(organizationId);
+	let state = await requireSubscriptionState(organizationId);
 	const subscription = state.subscriptionId
 		? await fetchSubscription(state.subscriptionId)
 		: null;
+	// heals a missed webhook, e.g. a revocation, which reconcile never applies
+	if (subscription && (await projectSubscription(subscription)))
+		state = await requireSubscriptionState(organizationId);
 	return toSubscriptionDto(state, subscription);
 };
 
@@ -144,27 +149,33 @@ export const changeOrganizationPlan = async (
 	if (!state.subscriptionId) return { ok: false, error: "inactive" };
 	if (state.plan === plan) return { ok: false, error: "same-plan" };
 
+	const productId = productIdFor(plan);
 	let subscription: Subscription;
 	try {
 		subscription = await polarClient.subscriptions.update({
 			id: state.subscriptionId,
-			subscriptionUpdate: {
-				productId: productIdFor(plan),
-				prorationBehavior: "prorate",
-			},
+			subscriptionUpdate: { productId, prorationBehavior: "prorate" },
 		});
 	} catch (error) {
 		if (error instanceof AlreadyCanceledSubscription)
 			return { ok: false, error: "canceled" };
 		if (error instanceof SubscriptionLocked)
 			return { ok: false, error: "locked" };
-		return {
-			ok: false,
-			error: toPolarFailure(error, "Polar plan change failed", {
-				organizationId: membership.organizationId,
-				plan,
-			}),
-		};
+		// a double submit, or a retry after our projection failed, finds Polar
+		// already on the product
+		const current =
+			polarFailureOf(error) === "rejected"
+				? await fetchSubscription(state.subscriptionId)
+				: null;
+		if (current?.productId !== productId)
+			return {
+				ok: false,
+				error: toPolarFailure(error, "Polar plan change failed", {
+					organizationId: membership.organizationId,
+					plan,
+				}),
+			};
+		subscription = current;
 	}
 
 	// the subscription.updated webhook lands the same state; applying it now
@@ -174,30 +185,18 @@ export const changeOrganizationPlan = async (
 	return { ok: true, data: toSubscriptionDto(updated, subscription) };
 };
 
-const listActiveSubscriptionIds = async (organizationId: string) => {
-	const ids: string[] = [];
-	const pages = await polarClient.subscriptions.list({
-		metadata: { referenceId: organizationId },
-		active: true,
-		limit: 100,
-	});
-	for await (const page of pages)
-		ids.push(...page.result.items.map((subscription) => subscription.id));
-	return ids;
-};
-
 /**
- * Idempotent: no active subscription → no-op. Revokes every one, since a
- * raced second checkout can leave two. Throws so a paying subscription is
- * never orphaned.
+ * Idempotent: no entitled subscription → no-op. Revokes every one, since a
+ * raced second checkout can leave two, past_due included since Polar still
+ * retries its charge. Throws so a paying subscription is never orphaned.
  */
 export const revokeOrganizationSubscription = async (
 	organizationId: string,
 ) => {
 	try {
 		// collected first: revoking while paging would shift later pages
-		const subscriptionIds = await listActiveSubscriptionIds(organizationId);
-		for (const subscriptionId of subscriptionIds) {
+		const subscriptions = await listEntitledSubscriptions(organizationId);
+		for (const { id: subscriptionId } of subscriptions) {
 			await polarClient.subscriptions.revoke({ id: subscriptionId });
 			billingLogger.info("Revoked subscription before deletion", {
 				organizationId,

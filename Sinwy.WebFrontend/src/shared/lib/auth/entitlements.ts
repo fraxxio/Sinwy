@@ -13,13 +13,17 @@ export type Entitlements = {
 	plan: PlanSlug | null;
 };
 
+/** Only an active organization has a plan, as the database enforces. */
 export const toEntitlements = (organization: {
 	status: string;
 	plan?: string | null;
-}): Entitlements => ({
-	status: toOrganizationStatus(organization.status),
-	plan: toPlanSlug(organization.plan ?? null),
-});
+}): Entitlements => {
+	const status = toOrganizationStatus(organization.status);
+	return {
+		status,
+		plan: status === "active" ? toPlanSlug(organization.plan ?? null) : null,
+	};
+};
 
 const INACTIVE: Entitlements = { status: "inactive", plan: null };
 

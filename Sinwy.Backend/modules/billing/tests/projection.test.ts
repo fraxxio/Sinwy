@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { polarClient, productIdFor } from "@backend/infrastructure/polar";
-import { insertOrganization } from "@backend/test/helpers";
+import { insertOrganization, polarPages } from "@backend/test/helpers";
 import db from "@db";
 import { organization } from "@db/schema/organizationSchema";
 import {
@@ -172,9 +172,7 @@ afterEach(() => {
 });
 
 const polarActive = (items: Subscription[]) =>
-	spyOn(polarClient.subscriptions, "list").mockResolvedValue({
-		result: { items, pagination: {} },
-	} as never);
+	spyOn(polarClient.subscriptions, "list").mockResolvedValue(polarPages(items));
 
 test("reconcile: inactive org with an active Polar subscription → activated with its plan", async () => {
 	listSpy = polarActive([subscription()]);
@@ -182,10 +180,21 @@ test("reconcile: inactive org with an active Polar subscription → activated wi
 	expect(await reconcileInactiveOrganization(orgId)).toBe(true);
 	expect(listSpy).toHaveBeenCalledWith({
 		metadata: { referenceId: orgId },
-		active: true,
-		limit: 1,
+		limit: 100,
 	});
 	expect((await getSubscriptionState(orgId))?.plan).toBe("professional");
+});
+
+test("reconcile: a past_due subscription counts, ended ones are skipped", async () => {
+	listSpy = polarActive([
+		subscription({ id: "sub_ended", status: "canceled" }),
+		subscription({ status: "past_due" }),
+	]);
+
+	expect(await reconcileInactiveOrganization(orgId)).toBe(true);
+	expect((await getSubscriptionState(orgId))?.subscriptionId).toBe(
+		subscription().id,
+	);
 });
 
 test("reconcile: nothing in Polar or Polar down → stays inactive", async () => {
@@ -204,7 +213,7 @@ test("reconcile: a revocation applied while Polar is queried wins", async () => 
 			await applySubscriptionEvent({
 				data: subscription({ status: "canceled" }),
 			});
-			return { result: { items: [listed], pagination: {} } } as never;
+			return polarPages([listed]);
 		},
 	);
 

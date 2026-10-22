@@ -34,6 +34,7 @@
 		"db:generate": "cd Sinwy.Backend && bunx drizzle-kit generate",
 		"db:ui": "cd Sinwy.Backend && bunx drizzle-kit studio",
 		"db:agent:setup": "cd Sinwy.Backend && bun run scripts/setupAgentDb.ts",
+		"db:backfill-subscriptions": "bun run Sinwy.Backend/scripts/backfillSubscriptionBindings.ts",
 		"dev:login-as": "bun run Sinwy.Backend/scripts/dev/loginAs.ts",
 		"dev:last-email": "bun run Sinwy.Backend/scripts/dev/lastEmail.ts",
 		"dev:capture-polar-fixture": "bun run Sinwy.Backend/scripts/dev/capturePolarFixture.ts",

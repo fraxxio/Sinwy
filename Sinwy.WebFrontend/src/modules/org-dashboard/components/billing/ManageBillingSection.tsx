@@ -4,6 +4,7 @@ import { openPolarPortal } from "#/modules/org-dashboard/lib/billing-queries";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Button } from "#/shared/components/ui/button";
 import { toast } from "#/shared/components/ui/toast";
+import { usePageRestored } from "#/shared/hooks/use-page-restored";
 
 export function ManageBillingSection() {
 	const openPortal = useMutation({
@@ -15,6 +16,7 @@ export function ManageBillingSection() {
 				description: e.message,
 			}),
 	});
+	usePageRestored(openPortal.reset);
 
 	return (
 		<SettingsSection

@@ -69,9 +69,9 @@ rename on either side is a typecheck failure via `@sinwy/shared`.
 | `organization.status`, `organization.plan` (better-auth `additionalFields`) | Entitlement state, free with the shell load | banner, read-only rule, `<PlanGate>`, switcher |
 | `featuresFor` / `hasFeature` / `PLAN_FEATURES` / `Feature` (`@sinwy/shared`) | The gate itself | `<PlanGate>`, `minimumPlanFor()` |
 | `GET /organizations/:id/subscription` → `OrganizationSubscriptionDto` | Live billing details (`billing` may be `null` on Polar failure) | billing page only |
-| `POST /organizations/:id/subscription/plan` `{ plan }` → `202` + DTO | Plan change | change-plan dialog |
+| `POST /organizations/:id/subscription/plan` `{ plan }` → `200` + DTO | Plan change | change-plan dialog |
 | `GET /organizations/:id/invoices?page&limit` → `InvoiceListDto` | Invoice table | billing page |
-| `GET /organizations/:id/invoices/:orderId/download` | PDF handoff (`202` generating, `409` needs billing details) | invoice row |
+| `GET /organizations/:id/invoices/:orderId/download` | PDF handoff (`202` generating, `409` needs billing details, `409` + `ORDER_NOT_PAID` unpaid order) | invoice row |
 | `API_CODES.PLAN_UPGRADE_REQUIRED` (`402`) and the existing `409` "no active plan" | Distinguish "upgrade", "reactivate" and "forbidden" | mutation error handling |
 | `authClient.customer.portal()` | Polar portal (per **user**, all their orgs) | "Manage billing" |
 
@@ -238,7 +238,7 @@ Per the backend's Decision 6, an active org changes plan through
   (default: "Takes effect now. You'll be charged or credited the prorated
   difference on your next invoice."). Word it from a constant so the copy
   changes in one place when Open question 2 in the backend plan is settled.
-- `useMutation` → on `202`, apply the returned DTO to the subscription query
+- `useMutation` → on `200`, apply the returned DTO to the subscription query
   cache, `router.invalidate()`, then poll `/subscription` until
   `plan === target` (bounded, ~10 × 2 s) in case the projection came from the
   webhook only. Generalise `pollUntilActive` into `pollUntil(read, predicate)`
@@ -734,7 +734,7 @@ reads that field.
     complete) with the banner gone and the plan badge correct.
   - billing page: plan, price, "Renews on", Active badge; kill Polar creds →
     plan still shows, billing detail shows the unavailable note.
-  - change plan → `202`, dialog closes, badge updates within the poll window;
+  - change plan → `200`, dialog closes, badge updates within the poll window;
     `<PlanGate>` on a temporarily gated page flips without reload.
   - cancel in portal → "Cancels on" badge; revoke → banner returns.
   - invoices list paginates; download opens a PDF; ungenerated invoice shows

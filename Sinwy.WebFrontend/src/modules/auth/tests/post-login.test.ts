@@ -9,42 +9,49 @@ const setUp = (id: string) => ({
 
 const orgs = [setUp("a"), setUp("b"), setUp("c")];
 
-it("prefers the active organization", () => {
-	expect(postLoginDestination(orgs, "b")).toEqual({
+const owner = async () => true;
+const staff = async () => false;
+
+it("prefers the active organization", async () => {
+	expect(await postLoginDestination(orgs, "b", owner)).toEqual({
 		to: "/$organizationSlug",
 		params: { organizationSlug: "slug-b" },
 	});
 });
 
-it("falls back to the last organization when the active id is stale", () => {
-	expect(postLoginDestination(orgs, "deleted-org")).toEqual({
+it("falls back to the last organization when the active id is stale", async () => {
+	expect(await postLoginDestination(orgs, "deleted-org", owner)).toEqual({
 		to: "/$organizationSlug",
 		params: { organizationSlug: "slug-c" },
 	});
 });
 
-it("falls back to the last organization when none is active", () => {
-	expect(postLoginDestination(orgs, null)).toEqual({
+it("falls back to the last organization when none is active", async () => {
+	expect(await postLoginDestination(orgs, null, owner)).toEqual({
 		to: "/$organizationSlug",
 		params: { organizationSlug: "slug-c" },
 	});
 });
 
-it("sends an unpaid (inactive) organization back to the plan page", () => {
-	expect(
-		postLoginDestination(
-			[{ id: "a", slug: "slug-a", status: "inactive" }],
-			"a",
-		),
-	).toEqual({
+const unpaid = [{ id: "a", slug: "slug-a", status: "inactive" }];
+
+it("sends whoever can pay for an unpaid (inactive) organization back to the plan page", async () => {
+	expect(await postLoginDestination(unpaid, "a", owner)).toEqual({
 		to: "/organizations/$id/plan",
 		params: { id: "a" },
 	});
 });
 
-it("sends a lapsed organization to its read-only dashboard", () => {
+it("sends staff of an unpaid organization to its read-only dashboard", async () => {
+	expect(await postLoginDestination(unpaid, "a", staff)).toEqual({
+		to: "/$organizationSlug",
+		params: { organizationSlug: "slug-a" },
+	});
+});
+
+it("sends a lapsed organization to its read-only dashboard", async () => {
 	expect(
-		postLoginDestination(
+		await postLoginDestination(
 			[
 				{
 					id: "a",
@@ -54,6 +61,7 @@ it("sends a lapsed organization to its read-only dashboard", () => {
 				},
 			],
 			"a",
+			owner,
 		),
 	).toEqual({
 		to: "/$organizationSlug",
@@ -61,6 +69,8 @@ it("sends a lapsed organization to its read-only dashboard", () => {
 	});
 });
 
-it("sends users without organizations to Customer Mode", () => {
-	expect(postLoginDestination([], null)).toEqual({ to: "/account" });
+it("sends users without organizations to Customer Mode", async () => {
+	expect(await postLoginDestination([], null, owner)).toEqual({
+		to: "/account",
+	});
 });

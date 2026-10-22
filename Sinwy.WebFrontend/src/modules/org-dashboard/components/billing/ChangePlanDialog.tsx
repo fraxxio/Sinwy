@@ -87,8 +87,10 @@ export function ChangePlanDialog({
 			else void queryClient.invalidateQueries({ queryKey: subscriptionKey });
 			void router.invalidate();
 		},
-		// a refused change usually means Polar's state moved (canceled, revoked)
-		onError: () => queryClient.invalidateQueries({ queryKey: subscriptionKey }),
+		// a refused change usually means Polar's state moved (canceled, revoked);
+		// not awaited, so the error shows without waiting for the refetch
+		onError: () =>
+			void queryClient.invalidateQueries({ queryKey: subscriptionKey }),
 	});
 
 	const close = () => {
@@ -107,12 +109,21 @@ export function ChangePlanDialog({
 	// mid-switch never navigates back here
 	const submit = (plan: PlanSlug) =>
 		change.mutate(plan, {
-			onSuccess: () => {
-				toast.add({
-					type: "success",
-					title: `Switched to ${getPlanName(plan)}`,
-					timeout: 4_000,
-				});
+			onSuccess: (subscription) => {
+				toast.add(
+					subscription.plan === plan
+						? {
+								type: "success",
+								title: `Switched to ${getPlanName(plan)}`,
+								timeout: 4_000,
+							}
+						: {
+								type: "info",
+								title: `Switching to ${getPlanName(plan)}`,
+								description:
+									"Polar accepted the change. It shows here once it's confirmed.",
+							},
+				);
 				close();
 			},
 		});

@@ -1,6 +1,6 @@
 import type { OrganizationSubscriptionDto } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { ChangePlanDialog } from "#/modules/org-dashboard/components/billing/ChangePlanDialog";
 import { subscriptionQuery } from "#/modules/org-dashboard/lib/billing-queries";
 import {
@@ -12,6 +12,7 @@ import { Badge } from "#/shared/components/ui/badge";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
+import { toast } from "#/shared/components/ui/toast";
 import { getPlanName } from "#/shared/lib/plans";
 
 export function CurrentPlanSection({
@@ -46,6 +47,25 @@ export function CurrentPlanSection({
 		plan !== null &&
 		!data?.billing?.cancelAtPeriodEnd &&
 		data?.billing?.subscriptionStatus !== "canceled";
+	const cannotChangeReason = !data
+		? null
+		: plan === null
+			? "There's no current plan to change from."
+			: !canChangePlan
+				? "The subscription is canceled or set to cancel. Resume it from the Polar portal first."
+				: null;
+
+	// a deep link (e.g. from an upgrade prompt) asked for the dialog it can't open
+	useEffect(() => {
+		if (!changePlanOpen || !cannotChangeReason) return;
+		toast.add({
+			id: "change-plan-unavailable",
+			type: "info",
+			title: "The plan can't be changed right now",
+			description: cannotChangeReason,
+		});
+		onChangePlanOpenChange(false);
+	}, [changePlanOpen, cannotChangeReason, onChangePlanOpenChange]);
 
 	return (
 		<SettingsSection

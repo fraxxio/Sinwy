@@ -2,6 +2,7 @@ import type {
 	OrganizationSubscriptionDto,
 	SubscriptionBillingDto,
 } from "@sinwy/shared";
+import { formatDay } from "#/shared/lib/date";
 import { formatMinorUnits } from "#/shared/lib/money";
 
 export type SubscriptionDescription = {
@@ -10,11 +11,6 @@ export type SubscriptionDescription = {
 	/** null only when the organization is active but Polar's details are unavailable. */
 	detail: string | null;
 };
-
-const formatDate = (iso: string, locale?: string) =>
-	new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
-		new Date(iso),
-	);
 
 /** Badge and sentence for the billing page, kept together so they never disagree. */
 export function describeSubscription(
@@ -31,7 +27,7 @@ export function describeSubscription(
 	const { billing } = subscription;
 	if (!billing) return { label: "Active", variant: "default", detail: null };
 
-	const date = (iso: string) => formatDate(iso, locale);
+	const date = (iso: string) => formatDay(iso, locale);
 
 	switch (billing.subscriptionStatus) {
 		case "past_due":

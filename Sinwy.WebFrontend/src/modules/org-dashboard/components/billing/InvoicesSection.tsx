@@ -22,6 +22,7 @@ import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { toast } from "#/shared/components/ui/toast";
+import { formatDay } from "#/shared/lib/date";
 import { formatMinorUnits } from "#/shared/lib/money";
 
 const STATUS_LABELS: Record<InvoiceStatus, string | null> = {
@@ -39,8 +40,6 @@ const REASON_LABELS: Record<InvoiceBillingReason, string> = {
 	subscription_cycle: "Renewal",
 	subscription_update: "Plan change",
 };
-
-const day = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
 export function InvoicesSection({
 	organizationId,
@@ -208,7 +207,7 @@ function InvoiceRow({
 					{status && <Badge variant="outline">{status}</Badge>}
 				</div>
 				<span className="text-muted-foreground text-xs">
-					{day.format(new Date(invoice.createdAt))}
+					{formatDay(invoice.createdAt)}
 					{invoice.billingReason &&
 						` · ${REASON_LABELS[invoice.billingReason]}`}
 				</span>

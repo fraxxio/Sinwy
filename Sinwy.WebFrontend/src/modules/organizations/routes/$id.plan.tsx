@@ -4,7 +4,7 @@ import {
 	type PlanSlug,
 } from "@sinwy/shared";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { z } from "zod";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
 import { PlanCards } from "#/modules/organizations/components/PlanCards";
@@ -22,6 +22,7 @@ import {
 } from "#/shared/components/ui/card";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
+import { usePageRestored } from "#/shared/hooks/use-page-restored";
 import { api } from "#/shared/lib/api";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import {
@@ -207,6 +208,8 @@ function PlanPage() {
 	const [preselectedPlan, setPreselectedPlan] = useState<PlanSlug | null>(() =>
 		readPreselectedPlan(),
 	);
+	// Back from Polar's checkout would otherwise keep "Redirecting…"
+	usePageRestored(useCallback(() => setPendingSlug(null), []));
 
 	if (statusError)
 		return (

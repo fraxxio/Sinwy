@@ -28,7 +28,7 @@ const polarSubscriptions = (byOrganization: Record<string, string>) => {
 	listSpy.mockImplementation(
 		(params: { metadata: { referenceId: string } }) => {
 			const id = byOrganization[params.metadata.referenceId];
-			return Promise.resolve(polarPages(id ? [{ id }] : []));
+			return Promise.resolve(polarPages(id ? [{ id, status: "active" }] : []));
 		},
 	);
 };

@@ -159,7 +159,7 @@ afterEach(() => {
 
 const polarSubscription = (id: string) => {
 	listSpy = spyOn(polarClient.subscriptions, "list").mockResolvedValue(
-		polarPages([{ id }]),
+		polarPages([{ id, status: "active" }]),
 	);
 	revokeSpy = spyOn(polarClient.subscriptions, "revoke").mockResolvedValue(
 		{} as never,

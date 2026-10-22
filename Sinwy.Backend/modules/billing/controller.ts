@@ -98,8 +98,14 @@ export const downloadInvoiceHandler: Handler = async (c) => {
 			return ok({ url: result.url });
 		case "generating":
 			return ok(null, 202, "The invoice is being generated; try again shortly");
-		case "unavailable":
+		case "needs-details":
 			return fail(result.message, 409);
+		case "not-paid":
+			return fail(
+				"This order isn't paid yet, so it has no invoice",
+				409,
+				API_ERROR_CODES.ORDER_NOT_PAID,
+			);
 		case "not-found":
 			return fail("Not found", 404);
 		case "failed":

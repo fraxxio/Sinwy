@@ -14,6 +14,8 @@ export const Route = createFileRoute(
 	"/$organizationSlug/_shell/settings/billing",
 )({
 	beforeLoad: requirePermission(ORG_SECTIONS.billing.permission),
+	// a fresh page per organization: no previous org's invoices or dialog state
+	remountDeps: ({ params }) => params.organizationSlug,
 	staticData: { crumb: "Billing" },
 	validateSearch: z.object({
 		change: z.literal("plan").optional().catch(undefined),

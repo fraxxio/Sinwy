@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { polarClient } from "@backend/infrastructure/polar";
+import { polarPages } from "@backend/test/helpers";
 import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
@@ -52,9 +53,9 @@ const seed = async (status: "active" | "inactive") => {
 let listSpy: ReturnType<typeof spyOn>;
 
 beforeAll(() => {
-	listSpy = spyOn(polarClient.subscriptions, "list").mockResolvedValue({
-		result: { items: [], pagination: {} },
-	} as never);
+	listSpy = spyOn(polarClient.subscriptions, "list").mockResolvedValue(
+		polarPages(),
+	);
 });
 
 afterAll(() => listSpy.mockRestore());

@@ -4,7 +4,11 @@ import {
 	keyFromFileUrl,
 	storageClient,
 } from "@backend/infrastructure/storage";
-import { getAccountDeletionPreview as getSoleOwnedOrganizationsPreview } from "@organizationsModule";
+import {
+	getAccountDeletionPreview as getSoleOwnedOrganizationsPreview,
+	getUnfinishedOnboardingOrganizationId,
+	getUnpaidOwnedOrganizationId,
+} from "@organizationsModule";
 import {
 	type AccountDeletionPreviewDto,
 	type AvatarDto,
@@ -13,10 +17,6 @@ import {
 	type SetPasswordInput,
 } from "@sinwy/shared";
 import { avatarExtension, validateAvatar } from "./avatar";
-import {
-	findUnfinishedOnboardingOrganization,
-	findUnpaidOwnedOrganization,
-} from "./repository";
 
 type SessionUser = (typeof auth.$Infer.Session)["user"];
 
@@ -30,7 +30,7 @@ export const getPostLoginFlags = async (
 	userId: string,
 ): Promise<PostLoginFlags> => {
 	// billing comes first, an unpaid organization can do nothing else
-	const unpaid = await findUnpaidOwnedOrganization(userId);
+	const unpaid = await getUnpaidOwnedOrganizationId(userId);
 	if (unpaid)
 		return {
 			unfinishedOnboarding: {
@@ -39,7 +39,7 @@ export const getPostLoginFlags = async (
 			},
 		};
 
-	const unfinished = await findUnfinishedOnboardingOrganization(userId);
+	const unfinished = await getUnfinishedOnboardingOrganizationId(userId);
 	return {
 		unfinishedOnboarding: unfinished
 			? { step: OnboardingStep.Profile, organizationId: unfinished }

@@ -14,6 +14,8 @@ it("treats a missing or unknown plan as no plan", () => {
 	expect(toEntitlements({ status: "active", plan: "legacy" }).plan).toBeNull();
 });
 
-it("rejects an unknown status", () => {
-	expect(() => toEntitlements({ status: "paused" })).toThrow();
+it("treats an unknown status as inactive, without its plan", () => {
+	expect(toEntitlements({ status: "suspended", plan: "professional" })).toEqual(
+		{ status: "inactive", plan: null },
+	);
 });

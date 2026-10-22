@@ -152,11 +152,11 @@ projectSubscription(sub: Subscription /* payload.data */)
   subscriptionId = status === "active" ? sub.id : null
 ```
 
-Register it for `onSubscriptionActive`, `onSubscriptionRevoked`,
-`onSubscriptionUpdated` (fires on product change — the upgrade/downgrade path),
-and keep `onSubscriptionCanceled` / `onSubscriptionUncanceled` going through the
-same function (cancel-at-period-end keeps `status: "active"` until Polar revokes,
-so nothing changes and that is correct).
+Register it for `onSubscriptionActive`, `onSubscriptionRevoked` and
+`onSubscriptionUpdated` (fires on product change — the upgrade/downgrade path).
+`onSubscriptionCanceled` / `onSubscriptionUncanceled` are not registered: Polar
+sends `subscription.updated` alongside both, and cancel-at-period-end keeps
+`status: "active"` until Polar revokes, so they would change nothing.
 
 Why: every handler applying the same idempotent state function means duplicate
 delivery, overlapping events (Polar emits `subscription.updated` alongside the
@@ -228,12 +228,10 @@ POST /api/organizations/:organizationId/subscription/plan   { plan: PlanSlug }
 - `requireAuth`, `requirePermission("billing:manage")`.
 - Org inactive → `409` "no active subscription; start checkout instead".
 - Same plan as current → `400`.
-- Call Polar, return `202` with the current projection; the
-  `subscription.updated` webhook writes the new plan. The frontend polls
-  `/subscription` (same pattern as the checkout success page). Alternatively
-  apply the projection immediately from the returned `Subscription` object —
-  the projector is idempotent so both may run. Recommended: do both; it removes
-  the polling wait on the happy path and the webhook backstops it.
+- Call Polar, apply the projection immediately from the returned
+  `Subscription` and return `200` with it; the `subscription.updated` webhook
+  backstops it (the projector is idempotent, so both may run). The frontend
+  polls `/subscription` only when the response doesn't carry the new plan yet.
 - `prorationBehavior`: `"prorate"` (immediate, prorated invoice) is the
   simplest first behaviour. Whether downgrades should instead wait for period
   end is a product decision — see Open questions.
@@ -391,9 +389,9 @@ subscription for an organization they're no longer in.
 | Method | Path | Guard | Returns |
 | --- | --- | --- | --- |
 | GET | `/api/organizations/:organizationId/subscription` | member | `OrganizationSubscriptionDto` |
-| POST | `/api/organizations/:organizationId/subscription/plan` | `billing:manage` | `202` + `OrganizationSubscriptionDto` |
+| POST | `/api/organizations/:organizationId/subscription/plan` | `billing:manage` | `200` + `OrganizationSubscriptionDto` |
 | GET | `/api/organizations/:organizationId/invoices` | `billing:manage` | `{ items: InvoiceDto[]; page; limit; total }` |
-| GET | `/api/organizations/:organizationId/invoices/:orderId/download` | `billing:manage` | `302` → presigned PDF, `202` generating, `404` not this org's |
+| GET | `/api/organizations/:organizationId/invoices/:orderId/download` | `billing:manage` | `{ url }` presigned PDF, `202` generating, `409` needs billing details or unpaid, `404` not this org's |
 
 Shared types added: `Feature`, `FEATURES`, `PLAN_FEATURES`, `featuresFor`,
 `hasFeature`, `OrganizationSubscriptionDto`, `InvoiceDto`,
@@ -417,7 +415,8 @@ Each step leaves `bun run verify` green.
 4. **Projection** — `modules/billing/projection.ts` +
    `applySubscriptionProjection` in organizations; rewrite
    `subscriptionStatus.test.ts` into `projection.test.ts` with full payloads
-   (status, productId, id). Wire `onSubscriptionUpdated/Canceled/Uncanceled`.
+   (status, productId, id). Wire `onSubscriptionUpdated` (Canceled/Uncanceled
+   are covered by it, see Decision 4).
    Move and adapt `reconcileStatus`.
 5. **`requireFeature`** — in auth, tests mirroring `requirePermission.test.ts`
    (no plan → 402, plan without feature → 402, with feature → next, non-member → 404).

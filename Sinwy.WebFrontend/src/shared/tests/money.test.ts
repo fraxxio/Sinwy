@@ -13,3 +13,8 @@ it("does not scale zero-decimal currencies", () => {
 it("formats zero", () => {
 	expect(formatMinorUnits(0, "EUR", "en-US")).toBe("€0.00");
 });
+
+it("falls back to a dash for a currency Intl can't format", () => {
+	expect(formatMinorUnits(4800, "", "en-US")).toBe("—");
+	expect(formatMinorUnits(4800, "dollars", "en-US")).toBe("—");
+});

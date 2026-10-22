@@ -107,17 +107,24 @@ test("org where the user is only admin is not previewed and survives", async () 
 	expect(await memberCount(orgId)).toBe(2);
 });
 
-test("every active subscription, across pages, is revoked before the org is deleted", async () => {
+test("every entitled subscription, across pages and past_due included, is revoked before the org is deleted", async () => {
 	const { userId } = await createUserWithSession();
 	const orgId = await insertOrganization("Paying Co");
 	await joinOrganization(orgId, userId, "owner");
-	listSpy.mockResolvedValue(polarPages([{ id: "sub_1" }], [{ id: "sub_2" }]));
+	listSpy.mockResolvedValue(
+		polarPages(
+			[
+				{ id: "sub_1", status: "active" },
+				{ id: "sub_old", status: "canceled" },
+			],
+			[{ id: "sub_2", status: "past_due" }],
+		),
+	);
 
 	await deleteSoleOwnedOrganizations(userId);
 
 	expect(listSpy).toHaveBeenCalledWith({
 		metadata: { referenceId: orgId },
-		active: true,
 		limit: 100,
 	});
 	expect(revokeSpy).toHaveBeenCalledTimes(2);
@@ -130,7 +137,7 @@ test("Polar revoke failure throws and deletes nothing", async () => {
 	const { userId } = await createUserWithSession();
 	const orgId = await insertOrganization("Stuck Co");
 	await joinOrganization(orgId, userId, "owner");
-	listSpy.mockResolvedValue(polarPages([{ id: "sub_1" }]));
+	listSpy.mockResolvedValue(polarPages([{ id: "sub_1", status: "active" }]));
 	revokeSpy.mockRejectedValue(new Error("polar down"));
 
 	await expect(deleteSoleOwnedOrganizations(userId)).rejects.toBeInstanceOf(

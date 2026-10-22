@@ -9,6 +9,7 @@ import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import {
 	buildPolarDelivery,
+	type PolarDeliveryOptions,
 	type PolarEventType,
 	polarFixtures,
 	sendPolarDelivery,
@@ -38,17 +39,19 @@ beforeEach(async () => {
 	});
 });
 
-const storedStatus = async () => {
+const storedStatus = async () => (await storedState())?.status;
+
+const storedState = async () => {
 	const [row] = await db
-		.select({ status: organization.status })
+		.select({ status: organization.status, plan: organization.plan })
 		.from(organization)
 		.where(eq(organization.id, orgId));
-	return row?.status;
+	return row;
 };
 
 const send = (
 	type: PolarEventType,
-	options: { timestamp?: Date; organizationId?: string } = {},
+	options: Partial<Omit<PolarDeliveryOptions, "type">> = {},
 ) =>
 	sendPolarDelivery(
 		base,
@@ -72,9 +75,25 @@ for (const type of Object.keys(polarFixtures) as PolarEventType[]) {
 	});
 }
 
-test("subscription.active through the endpoint → org active", async () => {
-	expect(await send("subscription.active")).toMatchObject({ status: 200 });
-	expect(await storedStatus()).toBe("active");
+test("subscription.active through the endpoint → org active on the requested plan", async () => {
+	expect(await send("subscription.active", { plan: "starter" })).toMatchObject({
+		status: 200,
+	});
+	expect(await storedState()).toEqual({ status: "active", plan: "starter" });
+});
+
+test("subscription.updated through the endpoint applies to the bound subscription", async () => {
+	const subscriptionId = crypto.randomUUID();
+	await send("subscription.active", {
+		subscriptionId,
+		timestamp: new Date(Date.now() - 60_000),
+	});
+
+	// the recorded update is a cancellation
+	expect(await send("subscription.updated", { subscriptionId })).toMatchObject({
+		status: 200,
+	});
+	expect(await storedState()).toEqual({ status: "inactive", plan: null });
 });
 
 test("tampered body → 400, status unchanged", async () => {
