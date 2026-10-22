@@ -7,7 +7,6 @@ import { createLogger } from "@logger";
 import {
 	activateSubscription,
 	deactivateSubscription,
-	getSubscriptionState,
 } from "@organizationsModule";
 import type { Subscription } from "@polar-sh/sdk/models/components/subscription";
 import type { OrganizationStatus } from "@sinwy/shared";
@@ -49,7 +48,7 @@ export const projectSubscription = async (
 	}
 
 	const entitled = ENTITLED_STATUSES.includes(subscription.status);
-	const applied = entitled
+	const write = entitled
 		? await activateSubscription(
 				organizationId,
 				subscription.id,
@@ -63,38 +62,39 @@ export const projectSubscription = async (
 		subscriptionId: subscription.id,
 		subscriptionStatus: subscription.status,
 	};
-	if (applied) {
-		billingLogger.info("Organization projected from subscription", context);
-		return entitled ? "active" : "inactive";
-	}
-
-	const current = await getSubscriptionState(organizationId);
-	if (!current)
-		billingLogger.warn("Subscription references an unknown org", context);
-	else if (
-		current.subscriptionId === null ||
-		current.subscriptionId === subscription.id
-	)
-		// routine: redeliveries, and every billing page load re-projects
-		billingLogger.debug(
-			"Ignored subscription state not newer than the applied one",
-			{
+	switch (write.result) {
+		case "applied":
+			billingLogger.info("Organization projected from subscription", context);
+			return entitled ? "active" : "inactive";
+		case "unknown-organization":
+			billingLogger.warn("Subscription references an unknown org", context);
+			return null;
+		case "outdated":
+			// routine: redeliveries, and every billing page load re-projects
+			billingLogger.debug(
+				"Ignored subscription state not newer than the applied one",
+				{ ...context, observedAt: observedAt.toISOString() },
+			);
+			return null;
+		case "bound-elsewhere": {
+			const bound = {
 				...context,
-				observedAt: observedAt.toISOString(),
-			},
-		);
-	else if (entitled)
-		// two checkouts raced (e.g. two tabs): the org keeps the first one
-		billingLogger.error(
-			"Second active subscription for an organization; refund it in Polar",
-			{ ...context, boundSubscriptionId: current.subscriptionId },
-		);
-	else
-		billingLogger.warn("Ignored a subscription the org no longer uses", {
-			...context,
-			boundSubscriptionId: current.subscriptionId,
-		});
-	return null;
+				boundSubscriptionId: write.boundSubscriptionId,
+			};
+			if (entitled)
+				// two checkouts raced (e.g. two tabs): the org keeps the first one
+				billingLogger.error(
+					"Second active subscription for an organization; refund it in Polar",
+					bound,
+				);
+			else
+				billingLogger.warn(
+					"Ignored a subscription the org no longer uses",
+					bound,
+				);
+			return null;
+		}
+	}
 };
 
 /** Webhook entry point. Late retries and reordered events lose to the newer state. */

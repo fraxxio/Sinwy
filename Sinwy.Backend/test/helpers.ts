@@ -89,7 +89,7 @@ export const insertOrganization = async (name: string) => {
 /** The state the webhook projection leaves behind for a paying organization. */
 export const activateOrganization = (
 	organizationId: string,
-	plan: PlanSlug = "starter",
+	plan: PlanSlug | null = "starter",
 	subscriptionId = `sub_${organizationId}`,
 ) =>
 	db

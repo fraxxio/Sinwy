@@ -29,6 +29,7 @@ import { MissingInvoiceBillingDetails } from "@polar-sh/sdk/models/errors/missin
 import { NotPaidOrder } from "@polar-sh/sdk/models/errors/notpaidorder";
 import { ResourceNotFound } from "@polar-sh/sdk/models/errors/resourcenotfound";
 import { SDKError } from "@polar-sh/sdk/models/errors/sdkerror";
+import { SubscriptionLocked } from "@polar-sh/sdk/models/errors/subscriptionlocked";
 import {
 	API_ERROR_CODES,
 	type ApiResponse,
@@ -52,10 +53,14 @@ beforeAll(() => {
 
 afterAll(() => server.stop(true));
 
-// Every Polar reach is stubbed per test; unstubbed calls would hit the network.
+// Polar methods a test reaches must be stubbed; an unstubbed one calls the
+// real sandbox. A stub without a value rejects, so a regression fails here.
 const spies: ReturnType<typeof spyOn>[] = [];
 const stub = <T extends object>(target: T, method: keyof T & string) => {
 	const spy = spyOn(target, method as never) as ReturnType<typeof spyOn>;
+	spy.mockImplementation(() =>
+		Promise.reject(new Error("unexpected Polar call")),
+	);
 	spies.push(spy);
 	return spy;
 };
@@ -185,6 +190,50 @@ test("GET status: already-active org and non-members never reach for Polar", asy
 	expect(listSubscriptions).not.toHaveBeenCalled();
 });
 
+test("billing responses are never cached, refusals included", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	const outsider = await createUserWithSession();
+
+	for (const [path, as] of [
+		["status", cookie],
+		["subscription", cookie],
+		["invoices", outsider.cookie],
+	] as const) {
+		const res = await request(
+			`/api/organizations/${organizationId}/${path}`,
+			as,
+		);
+		expect(res.headers.get("cache-control")).toBe("no-store");
+	}
+});
+
+test("non-members → 404 and staff → 403 on every organization billing route", async () => {
+	const { organizationId } = await seedOrg();
+	await activateOrganization(organizationId);
+	const outsider = await createUserWithSession();
+	const staff = await createUserWithSession();
+	await joinOrganization(organizationId, staff.userId, "staff");
+	stub(polarClient.subscriptions, "get");
+
+	const routes = [
+		["GET", "subscription"],
+		["POST", "subscription/plan"],
+		["GET", "invoices"],
+		["GET", "invoices/order_1/download"],
+	] as const;
+	for (const [method, path] of routes) {
+		const url = `/api/organizations/${organizationId}/${path}`;
+		const body = method === "POST" ? { plan: "enterprise" } : undefined;
+		expect((await request(url, outsider.cookie, { method, body })).status).toBe(
+			404,
+		);
+		if (path !== "subscription")
+			expect((await request(url, staff.cookie, { method, body })).status).toBe(
+				403,
+			);
+	}
+});
+
 // GET /subscription
 
 test("GET subscription: inactive org → no plan, no features, no billing", async () => {
@@ -234,7 +283,7 @@ test("GET subscription: active org → plan features and live billing details", 
 test("GET subscription: Polar down → projection still served, billing null", async () => {
 	const { organizationId, cookie } = await seedOrg();
 	await activateOrganization(organizationId, "enterprise");
-	stub(polarClient.subscriptions, "get").mockRejectedValue(
+	const get = stub(polarClient.subscriptions, "get").mockRejectedValue(
 		new Error("polar down"),
 	);
 
@@ -242,6 +291,7 @@ test("GET subscription: Polar down → projection still served, billing null", a
 		`/api/organizations/${organizationId}/subscription`,
 		cookie,
 	);
+	expect(get).toHaveBeenCalledWith({ id: `sub_${organizationId}` });
 	expect(res.status).toBe(200);
 	const dto = await unwrap<OrganizationSubscriptionDto>(res);
 	expect(dto.plan).toBe("enterprise");
@@ -319,6 +369,20 @@ test("GET subscription: Polar state older than the applied one changes nothing",
 	expect((await getSubscriptionState(organizationId))?.status).toBe("active");
 });
 
+test("GET subscription: organization deleted mid-request → 404", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	// the inactive org's reconcile runs after membership resolved
+	listSubscriptions.mockImplementation(async () => {
+		await db.delete(organization).where(eq(organization.id, organizationId));
+		return polarPages();
+	});
+
+	expect(
+		(await request(`/api/organizations/${organizationId}/subscription`, cookie))
+			.status,
+	).toBe(404);
+});
+
 // POST /subscription/plan
 
 const changePlan = (organizationId: string, cookie: string, body: unknown) =>
@@ -362,8 +426,17 @@ test("POST plan: invalid body → 400, inactive org → 409, same plan → 400",
 test("POST plan: switches the product with next-invoice proration and applies it at once", async () => {
 	const { organizationId, cookie } = await seedOrg();
 	await activateOrganization(organizationId, "starter");
+	// the webhook that activated the starter plan
+	await db
+		.update(organization)
+		.set({ subscriptionStatusAt: new Date("2026-09-22T10:00:00Z") })
+		.where(eq(organization.id, organizationId));
 	const update = stub(polarClient.subscriptions, "update").mockResolvedValue(
-		subscription(organizationId, { productId: productIdFor("enterprise") }),
+		subscription(organizationId, {
+			productId: productIdFor("enterprise"),
+			amount: 9900,
+			modifiedAt: new Date("2026-09-30T10:00:00Z"),
+		}),
 	);
 
 	const res = await changePlan(organizationId, cookie, { plan: "enterprise" });
@@ -379,6 +452,11 @@ test("POST plan: switches the product with next-invoice proration and applies it
 	const dto = await unwrap<OrganizationSubscriptionDto>(res);
 	expect(dto.plan).toBe("enterprise");
 	expect(dto.features).toContain("multi-location");
+	expect(dto.billing).toMatchObject({
+		subscriptionStatus: "active",
+		amount: 9900,
+		interval: "month",
+	});
 	expect((await getSubscriptionState(organizationId))?.plan).toBe("enterprise");
 });
 
@@ -470,6 +548,22 @@ test("POST plan: canceled subscription → 409, plan unchanged", async () => {
 	});
 	expect(canceled.status).toBe(409);
 	expect(((await canceled.json()) as ApiResponse).code).toBe(409);
+	expect((await getSubscriptionState(organizationId))?.plan).toBe("starter");
+});
+
+test("POST plan: subscription locked by another update → 409, plan unchanged", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	await activateOrganization(organizationId, "starter");
+	stub(polarClient.subscriptions, "update").mockRejectedValue(
+		new SubscriptionLocked(
+			{ error: "SubscriptionLocked", detail: "locked" },
+			httpMeta(409),
+		),
+	);
+
+	expect(
+		(await changePlan(organizationId, cookie, { plan: "enterprise" })).status,
+	).toBe(409);
 	expect((await getSubscriptionState(organizationId))?.plan).toBe("starter");
 });
 
@@ -569,6 +663,38 @@ test("GET invoices: Polar down → 502", async () => {
 	).toBe(502);
 });
 
+test("GET invoices: no query → first page of 20", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	const list = stub(polarClient.orders, "list").mockResolvedValue({
+		result: { items: [], pagination: { totalCount: 0, maxPage: 0 } },
+	} as never);
+
+	await request(`/api/organizations/${organizationId}/invoices`, cookie);
+	expect(list).toHaveBeenCalledWith(
+		expect.objectContaining({ page: 1, limit: 20 }),
+	);
+});
+
+test.each([
+	"page=0",
+	"limit=0",
+	"page=two",
+	"page=1.5",
+])("GET invoices: %s → 400, Polar not asked", async (query) => {
+	const { organizationId, cookie } = await seedOrg();
+	const list = stub(polarClient.orders, "list");
+
+	expect(
+		(
+			await request(
+				`/api/organizations/${organizationId}/invoices?${query}`,
+				cookie,
+			)
+		).status,
+	).toBe(400);
+	expect(list).not.toHaveBeenCalled();
+});
+
 test("GET invoices: limit over the cap → 400", async () => {
 	const { organizationId, cookie } = await seedOrg();
 	expect(
@@ -617,6 +743,17 @@ test("download: another organization's order → 404, never its invoice", async 
 	expect((await download(organizationId, cookie)).status).toBe(404);
 	expect(invoice).not.toHaveBeenCalled();
 	expect(generate).not.toHaveBeenCalled();
+});
+
+test("download: order without a referenceId → 404, never its invoice", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	stub(polarClient.orders, "get").mockResolvedValue(
+		order(organizationId, { metadata: {} }),
+	);
+	const invoice = stub(polarClient.orders, "invoice");
+
+	expect((await download(organizationId, cookie)).status).toBe(404);
+	expect(invoice).not.toHaveBeenCalled();
 });
 
 test("download: unknown order → 404", async () => {
@@ -720,6 +857,24 @@ test("plugin subscription list by referenceId → 403, it has no membership chec
 
 	expect(res.status).toBe(403);
 	expect(listSubscriptions).not.toHaveBeenCalled();
+});
+
+test("plugin subscription list without referenceId still lists the caller's own", async () => {
+	const { cookie } = await seedOrg();
+	const createSession = stub(
+		polarClient.customerSessions,
+		"create",
+	).mockResolvedValue({ token: "cst_1" } as never);
+	const portalList = stub(
+		polarClient.customerPortal.subscriptions,
+		"list",
+	).mockResolvedValue({ result: { items: [] } } as never);
+
+	const res = await request("/api/auth/customer/subscriptions/list", cookie);
+
+	expect(res.status).toBe(200);
+	expect(createSession).toHaveBeenCalledTimes(1);
+	expect(portalList).toHaveBeenCalledTimes(1);
 });
 
 const checkout = (cookie: string, body: Record<string, unknown>) =>

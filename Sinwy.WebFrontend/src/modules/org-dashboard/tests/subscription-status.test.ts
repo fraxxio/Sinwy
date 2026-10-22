@@ -5,7 +5,6 @@ import type {
 } from "@sinwy/shared";
 import { describeSubscription, formatPrice } from "../lib/subscription-status";
 
-// noon UTC so the formatted day is the same in every test-runner timezone
 const billing: SubscriptionBillingDto = {
 	subscriptionStatus: "active",
 	amount: 4800,
@@ -44,6 +43,40 @@ describe("describeSubscription", () => {
 				label: "Payment failed",
 				variant: "destructive",
 				detail: "Update your payment method on Polar to keep your plan.",
+			});
+	});
+
+	it("tells a pending first payment from one that expired", () => {
+		expect(
+			describeIn(subscription({ subscriptionStatus: "incomplete" })),
+		).toEqual({
+			label: "Payment pending",
+			variant: "secondary",
+			detail: "Polar is still confirming the payment.",
+		});
+		expect(
+			describeIn(subscription({ subscriptionStatus: "incomplete_expired" })),
+		).toEqual({
+			label: "Payment failed",
+			variant: "destructive",
+			detail: "The first payment was never completed.",
+		});
+	});
+
+	it("reports an ended subscription as canceled, never as cancelling", () => {
+		for (const cancelAtPeriodEnd of [false, true])
+			expect(
+				describeIn(
+					subscription({
+						subscriptionStatus: "canceled",
+						cancelAtPeriodEnd,
+						endsAt: "2026-10-01T12:00:00Z",
+					}),
+				),
+			).toEqual({
+				label: "Canceled",
+				variant: "destructive",
+				detail: "The subscription has ended.",
 			});
 	});
 

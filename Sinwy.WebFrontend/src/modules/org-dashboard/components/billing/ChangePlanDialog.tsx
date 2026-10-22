@@ -16,7 +16,7 @@ import {
 	describePlanChange,
 	PRORATION_COPY,
 } from "#/modules/org-dashboard/lib/plan-change";
-import { plans } from "#/modules/organizations/components/PlanCards";
+import { formatPrice } from "#/modules/org-dashboard/lib/subscription-status";
 import { Badge } from "#/shared/components/ui/badge";
 import { Button } from "#/shared/components/ui/button";
 import {
@@ -31,7 +31,7 @@ import {
 import { FieldError } from "#/shared/components/ui/field";
 import { toast } from "#/shared/components/ui/toast";
 import { handleOrganizationInactive } from "#/shared/lib/auth/organization-inactive";
-import { FEATURE_NAMES, getPlanName } from "#/shared/lib/plans";
+import { FEATURE_NAMES, getPlanName, PLAN_PRICES } from "#/shared/lib/plans";
 import { pollUntil } from "#/shared/lib/poll-until";
 import { cn } from "#/shared/lib/utils";
 
@@ -41,14 +41,14 @@ const featureNames = (features: readonly Feature[]) =>
 export function ChangePlanDialog({
 	organizationId,
 	current,
-	interval,
+	billing,
 	open,
 	onOpenChange,
 }: {
 	organizationId: string;
 	current: PlanSlug;
 	/** From Polar; null when billing details are unavailable. */
-	interval: SubscriptionBillingDto["interval"] | null;
+	billing: Pick<SubscriptionBillingDto, "interval" | "intervalCount"> | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
@@ -128,7 +128,12 @@ export function ChangePlanDialog({
 			},
 		});
 
-	const yearly = interval === "year";
+	// the catalogue only lists monthly and yearly prices
+	const period =
+		billing?.intervalCount === 1 &&
+		(billing.interval === "month" || billing.interval === "year")
+			? billing.interval
+			: null;
 	const selected = target && describePlanChange(current, target);
 
 	return (
@@ -137,7 +142,8 @@ export function ChangePlanDialog({
 				<DialogHeader>
 					<DialogTitle>Change plan</DialogTitle>
 					<DialogDescription>
-						You're on {getPlanName(current)}. Prices are before tax.
+						You're on {getPlanName(current)}.
+						{period && " Prices are before tax."}
 					</DialogDescription>
 				</DialogHeader>
 
@@ -145,7 +151,6 @@ export function ChangePlanDialog({
 					<legend className="sr-only">Plan</legend>
 					{PLAN_SLUGS.map((slug) => {
 						const isCurrent = slug === current;
-						const entry = plans.find((p) => p.slug === slug);
 						const { gained, lost } = describePlanChange(current, slug);
 						return (
 							<label
@@ -175,10 +180,14 @@ export function ChangePlanDialog({
 												<Badge variant="secondary">Current plan</Badge>
 											)}
 										</span>
-										{entry && (
+										{period && (
 											<span className="text-muted-foreground">
-												${yearly ? entry.yearlyPrice : entry.price} /{" "}
-												{yearly ? "year" : "month"}
+												{formatPrice({
+													amount: PLAN_PRICES[slug][period] * 100,
+													currency: "USD",
+													interval: period,
+													intervalCount: 1,
+												})}
 											</span>
 										)}
 									</div>

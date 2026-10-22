@@ -4,6 +4,7 @@ import { insertOrganization, polarPages } from "@backend/test/helpers";
 import db from "@db";
 import { organization } from "@db/schema/organizationSchema";
 import {
+	activateSubscription,
 	getSubscriptionState,
 	type SubscriptionState,
 } from "@organizationsModule";
@@ -69,8 +70,23 @@ test("product change on the same subscription → new plan", async () => {
 });
 
 test("canceled at period end keeps the org active until Polar ends it", async () => {
-	await project({ cancelAtPeriodEnd: true });
-	expect((await getSubscriptionState(orgId))?.status).toBe("active");
+	await project();
+	expect(await project({ cancelAtPeriodEnd: true })).toBe("active");
+	expect(await project({ status: "canceled", cancelAtPeriodEnd: true })).toBe(
+		"inactive",
+	);
+});
+
+test("statuses that grant no access → inactive, one Polar adds later included", async () => {
+	for (const status of [
+		"incomplete",
+		"incomplete_expired",
+		"unpaid",
+		"paused",
+	] as Subscription["status"][]) {
+		await project();
+		expect(await project({ status })).toBe("inactive");
+	}
 });
 
 test("revoked subscription → inactive, plan and binding cleared", async () => {
@@ -105,6 +121,20 @@ test("second active subscription does not take over the bound one", async () => 
 		plan: "professional",
 		subscriptionId: "sub_first",
 	});
+});
+
+test("a refused write says why, from the state it was refused against", async () => {
+	await project({ id: "sub_first" });
+
+	expect(
+		await activateSubscription(orgId, "sub_second", "starter", later()),
+	).toEqual({ result: "bound-elsewhere", boundSubscriptionId: "sub_first" });
+	expect(
+		await activateSubscription(orgId, "sub_first", "starter", new Date(0)),
+	).toEqual({ result: "outdated" });
+	expect(
+		await activateSubscription("org_missing", "sub_first", "starter", later()),
+	).toEqual({ result: "unknown-organization" });
 });
 
 test("unknown product → active with no plan, never a throw", async () => {

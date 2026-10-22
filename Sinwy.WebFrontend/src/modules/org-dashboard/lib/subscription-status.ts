@@ -38,15 +38,27 @@ export function describeSubscription(
 				detail: "Update your payment method on Polar to keep your plan.",
 			};
 		case "incomplete":
-		case "incomplete_expired":
 			return {
 				label: "Payment pending",
 				variant: "secondary",
 				detail: "Polar is still confirming the payment.",
 			};
+		case "incomplete_expired":
+			return {
+				label: "Payment failed",
+				variant: "destructive",
+				detail: "The first payment was never completed.",
+			};
+		// Polar sets canceled once access ends, cancel at period end included
+		case "canceled":
+			return {
+				label: "Canceled",
+				variant: "destructive",
+				detail: "The subscription has ended.",
+			};
 	}
 
-	if (billing.cancelAtPeriodEnd || billing.subscriptionStatus === "canceled")
+	if (billing.cancelAtPeriodEnd)
 		return {
 			label: `Cancels on ${date(billing.endsAt ?? billing.currentPeriodEnd)}`,
 			variant: "outline",

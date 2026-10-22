@@ -18,3 +18,7 @@ it("falls back to a dash for a currency Intl can't format", () => {
 	expect(formatMinorUnits(4800, "", "en-US")).toBe("—");
 	expect(formatMinorUnits(4800, "dollars", "en-US")).toBe("—");
 });
+
+it("scales three-decimal currencies by 1000", () => {
+	expect(formatMinorUnits(12345, "KWD", "en-US")).toBe("KWD\u00a012.345");
+});

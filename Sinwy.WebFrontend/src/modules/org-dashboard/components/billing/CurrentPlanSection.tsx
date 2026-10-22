@@ -98,7 +98,7 @@ export function CurrentPlanSection({
 				<ChangePlanDialog
 					organizationId={organizationId}
 					current={plan}
-					interval={data?.billing?.interval ?? null}
+					billing={data?.billing ?? null}
 					open={changePlanOpen && canChangePlan}
 					onOpenChange={onChangePlanOpenChange}
 				/>

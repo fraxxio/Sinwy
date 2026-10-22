@@ -58,44 +58,64 @@ const changeableBy = (
 		),
 	);
 
-/** False when nothing matched: unknown organization, bound to another subscription or outdated. */
-export const bindSubscription = async (
+export type SubscriptionWrite =
+	| { result: "applied" }
+	| { result: "unknown-organization" }
+	| { result: "outdated" }
+	| { result: "bound-elsewhere"; boundSubscriptionId: string };
+
+const writeSubscription = (
+	organizationId: string,
+	subscriptionId: string,
+	observedAt: Date,
+	values: Pick<
+		typeof organization.$inferInsert,
+		"status" | "plan" | "subscriptionId"
+	>,
+) =>
+	db.transaction(async (tx): Promise<SubscriptionWrite> => {
+		// locked first, so a refusal is explained by the state that caused it
+		const [row] = await tx
+			.select({ subscriptionId: organization.subscriptionId })
+			.from(organization)
+			.where(eq(organization.id, organizationId))
+			.for("update");
+		if (!row) return { result: "unknown-organization" };
+
+		const updated = await tx
+			.update(organization)
+			.set({ ...values, subscriptionStatusAt: observedAt })
+			.where(changeableBy(organizationId, subscriptionId, observedAt))
+			.returning({ id: organization.id });
+		if (updated.length > 0) return { result: "applied" };
+
+		return row.subscriptionId !== null && row.subscriptionId !== subscriptionId
+			? { result: "bound-elsewhere", boundSubscriptionId: row.subscriptionId }
+			: { result: "outdated" };
+	});
+
+export const bindSubscription = (
 	organizationId: string,
 	subscriptionId: string,
 	plan: PlanSlug | null,
 	observedAt: Date,
-) => {
-	const updated = await db
-		.update(organization)
-		.set({
-			status: "active",
-			plan,
-			subscriptionId,
-			subscriptionStatusAt: observedAt,
-		})
-		.where(changeableBy(organizationId, subscriptionId, observedAt))
-		.returning({ id: organization.id });
-	return updated.length > 0;
-};
+) =>
+	writeSubscription(organizationId, subscriptionId, observedAt, {
+		status: "active",
+		plan,
+		subscriptionId,
+	});
 
-/** False when nothing matched: unknown organization, bound to another subscription or outdated. */
-export const releaseSubscription = async (
+export const releaseSubscription = (
 	organizationId: string,
 	subscriptionId: string,
 	observedAt: Date,
-) => {
-	const updated = await db
-		.update(organization)
-		.set({
-			status: "inactive",
-			plan: null,
-			subscriptionId: null,
-			subscriptionStatusAt: observedAt,
-		})
-		.where(changeableBy(organizationId, subscriptionId, observedAt))
-		.returning({ id: organization.id });
-	return updated.length > 0;
-};
+) =>
+	writeSubscription(organizationId, subscriptionId, observedAt, {
+		status: "inactive",
+		plan: null,
+		subscriptionId: null,
+	});
 
 export const findOnboardingCompletedAt = async (organizationId: string) => {
 	const [row] = await db

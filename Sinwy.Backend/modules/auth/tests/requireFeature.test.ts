@@ -58,6 +58,13 @@ test("plan without the feature → 402", async () => {
 	expect(nextCalls).toBe(0);
 });
 
+test("active org whose plan is unknown → 402", async () => {
+	const { organizationId, params, cookie } = await seedMember();
+	await activateOrganization(organizationId, null);
+	expect((await run("page-builder", { params, cookie })).status).toBe(402);
+	expect(nextCalls).toBe(0);
+});
+
 test("plan with the feature → next", async () => {
 	const { organizationId, params, cookie } = await seedMember();
 	await activateOrganization(organizationId, "professional");

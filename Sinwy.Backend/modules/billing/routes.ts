@@ -4,7 +4,7 @@ import {
 	requireMember,
 	requirePermission,
 } from "@authModule";
-import type { IApp } from "@backend/lib/app/types";
+import type { IApp, Middleware } from "@backend/lib/app/types";
 import {
 	changePlanHandler,
 	downloadInvoiceHandler,
@@ -14,19 +14,31 @@ import {
 	listInvoicesHandler,
 } from "./controller";
 
+// billing details and presigned invoice URLs must never sit in a cache
+const noStore: Middleware = async (_ctx, next) => {
+	const res = await next();
+	res.headers.set("Cache-Control", "no-store");
+	return res;
+};
+
 export const registerBillingRoutes = (app: IApp) => {
-	const billingManager = [requireAuth, requirePermission("billing:manage")];
+	const member = [noStore, requireAuth, requireMember];
+	const billingManager = [
+		noStore,
+		requireAuth,
+		requirePermission("billing:manage"),
+	];
 
 	app.route(organizationPath("status"), getOrganizationStatusHandler, {
-		routeMiddlewares: [requireAuth, requireMember],
+		routeMiddlewares: member,
 	});
 	app.route(
 		"/api/organizations/checkout/:checkoutId",
 		getCheckoutOrganizationHandler,
-		{ routeMiddlewares: [requireAuth] },
+		{ routeMiddlewares: [noStore, requireAuth] },
 	);
 	app.route(organizationPath("subscription"), getSubscriptionHandler, {
-		routeMiddlewares: [requireAuth, requireMember],
+		routeMiddlewares: member,
 	});
 	app.route(organizationPath("subscription/plan"), changePlanHandler, {
 		method: "POST",

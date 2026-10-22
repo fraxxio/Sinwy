@@ -13,6 +13,13 @@ export const PLAN_NAMES: Record<PlanSlug, string> = {
 
 export const getPlanName = (slug: PlanSlug) => PLAN_NAMES[slug];
 
+/** Catalogue list prices in whole US dollars, before tax. */
+export const PLAN_PRICES: Record<PlanSlug, Record<"month" | "year", number>> = {
+	starter: { month: 12, year: 99 },
+	professional: { month: 48, year: 399 },
+	enterprise: { month: 96, year: 899 },
+};
+
 export const FEATURE_NAMES: Record<Feature, string> = {
 	"page-builder": "Page builder",
 	"custom-domain": "Custom domain",

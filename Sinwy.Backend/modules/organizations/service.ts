@@ -75,9 +75,9 @@ export const getSubscriptionState = async (
 };
 
 /**
- * Billing projection writes. Both refuse (→ false) a subscription other than
- * the one currently backing the organization, state observed no later than
- * the applied one, and an unknown organization.
+ * Billing projection writes. Both refuse a subscription other than the one
+ * currently backing the organization, state observed no later than the
+ * applied one, and an unknown organization, and report which it was.
  */
 export const activateSubscription = (
 	organizationId: string,

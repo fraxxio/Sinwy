@@ -55,3 +55,25 @@ it("cancellation resolves null without calling read", async () => {
 	expect(result).toBeNull();
 	expect(calls).toBe(0);
 });
+
+it("stops reading once cancelled mid-poll", async () => {
+	let calls = 0;
+	let cancelled = false;
+	const result = await pollUntil(
+		() => {
+			calls++;
+			return Promise.resolve("inactive");
+		},
+		isActive,
+		{
+			sleep: () => {
+				// e.g. the page unmounts while waiting between reads
+				if (calls === 2) cancelled = true;
+				return Promise.resolve();
+			},
+			isCancelled: () => cancelled,
+		},
+	);
+	expect(result).toBeNull();
+	expect(calls).toBe(2);
+});

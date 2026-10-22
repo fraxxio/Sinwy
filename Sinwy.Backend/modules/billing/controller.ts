@@ -35,8 +35,10 @@ export const getCheckoutOrganizationHandler: Handler = async (c) => {
 	return ok(result);
 };
 
-export const getSubscriptionHandler: Handler = async (c) =>
-	ok(await getOrganizationSubscription(membershipFrom(c)));
+export const getSubscriptionHandler: Handler = async (c) => {
+	const subscription = await getOrganizationSubscription(membershipFrom(c));
+	return subscription ? ok(subscription) : fail("Not found", 404);
+};
 
 export const changePlanHandler: Handler = async (c) => {
 	const body = changePlanBody.safeParse(await c.req.json().catch(() => null));
@@ -49,6 +51,8 @@ export const changePlanHandler: Handler = async (c) => {
 	if (result.ok) return ok(result.data, 200, "Plan changed");
 
 	switch (result.error) {
+		case "not-found":
+			return fail("Not found", 404);
 		case "inactive":
 			return fail(
 				"This organization has no active subscription; start a checkout instead",

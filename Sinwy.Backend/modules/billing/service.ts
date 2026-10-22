@@ -105,35 +105,37 @@ const fetchSubscription = (subscriptionId: string) =>
 			return null;
 		});
 
-const requireSubscriptionState = async (organizationId: string) => {
-	const state = await getSubscriptionState(organizationId);
-	// the membership was just resolved, so the org exists unless deleted mid-request
-	if (!state) throw new Error(`Organization ${organizationId} vanished`);
-	return state;
-};
-
+/** null when the organization was deleted after its membership resolved. */
 export const getOrganizationSubscription = async (
 	membership: Membership,
-): Promise<OrganizationSubscriptionDto> => {
+): Promise<OrganizationSubscriptionDto | null> => {
 	const { organizationId } = membership;
 	if (membership.status !== "active")
 		await reconcileInactiveOrganization(organizationId);
 
-	let state = await requireSubscriptionState(organizationId);
+	const state = await getSubscriptionState(organizationId);
+	if (!state) return null;
 	const subscription = state.subscriptionId
 		? await fetchSubscription(state.subscriptionId)
 		: null;
 	// heals a missed webhook, e.g. a revocation, which reconcile never applies
-	if (subscription && (await projectSubscription(subscription)))
-		state = await requireSubscriptionState(organizationId);
-	return toSubscriptionDto(state, subscription);
+	if (!subscription || !(await projectSubscription(subscription)))
+		return toSubscriptionDto(state, subscription);
+	const projected = await getSubscriptionState(organizationId);
+	return projected && toSubscriptionDto(projected, subscription);
 };
 
 type ChangePlanResult =
 	| { ok: true; data: OrganizationSubscriptionDto }
 	| {
 			ok: false;
-			error: "inactive" | "same-plan" | "canceled" | "locked" | PolarFailure;
+			error:
+				| "not-found"
+				| "inactive"
+				| "same-plan"
+				| "canceled"
+				| "locked"
+				| PolarFailure;
 	  };
 
 /**
@@ -145,7 +147,8 @@ export const changeOrganizationPlan = async (
 	membership: Membership,
 	plan: PlanSlug,
 ): Promise<ChangePlanResult> => {
-	const state = await requireSubscriptionState(membership.organizationId);
+	const state = await getSubscriptionState(membership.organizationId);
+	if (!state) return { ok: false, error: "not-found" };
 	if (!state.subscriptionId) return { ok: false, error: "inactive" };
 	if (state.plan === plan) return { ok: false, error: "same-plan" };
 
@@ -181,7 +184,8 @@ export const changeOrganizationPlan = async (
 	// the subscription.updated webhook lands the same state; applying it now
 	// saves the caller from polling
 	await projectSubscription(subscription);
-	const updated = await requireSubscriptionState(membership.organizationId);
+	const updated = await getSubscriptionState(membership.organizationId);
+	if (!updated) return { ok: false, error: "not-found" };
 	return { ok: true, data: toSubscriptionDto(updated, subscription) };
 };
 
