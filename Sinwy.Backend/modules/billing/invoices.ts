@@ -1,10 +1,16 @@
-import { polarClient } from "@backend/infrastructure/polar";
+import { type PolarFailure, polarClient } from "@backend/infrastructure/polar";
 import type { Order } from "@polar-sh/sdk/models/components/order";
 import { MissingInvoiceBillingDetails } from "@polar-sh/sdk/models/errors/missinginvoicebillingdetails";
 import { NotPaidOrder } from "@polar-sh/sdk/models/errors/notpaidorder";
 import { PolarError } from "@polar-sh/sdk/models/errors/polarerror";
-import type { InvoiceDto, InvoiceListDto } from "@sinwy/shared";
+import {
+	INVOICE_BILLING_REASONS,
+	INVOICE_STATUSES,
+	type InvoiceDto,
+	type InvoiceListDto,
+} from "@sinwy/shared";
 import { z } from "zod";
+import { knownValue, toPolarFailure } from "./polar";
 
 export const invoiceListQuery = z.object({
 	page: z.coerce.number().int().min(1).default(1),
@@ -24,48 +30,62 @@ const toInvoiceDto = (order: Order): InvoiceDto => ({
 	id: order.id,
 	number: order.invoiceNumber,
 	createdAt: order.createdAt.toISOString(),
-	status: order.status as InvoiceDto["status"],
+	status: knownValue(INVOICE_STATUSES, order.status, "order.status"),
 	totalAmount: order.totalAmount,
 	currency: order.currency,
-	billingReason: order.billingReason as InvoiceDto["billingReason"],
+	billingReason: knownValue(
+		INVOICE_BILLING_REASONS,
+		order.billingReason,
+		"order.billingReason",
+	),
 	invoiceGenerated: order.isInvoiceGenerated,
 });
 
 export const listOrganizationInvoices = async (
 	organizationId: string,
 	{ page, limit }: InvoiceListQuery,
-): Promise<InvoiceListDto> => {
-	const { result } = await polarClient.orders.list({
-		metadata: { referenceId: organizationId },
-		sorting: ["-created_at"],
-		page,
-		limit,
-	});
-	return {
-		items: result.items.map(toInvoiceDto),
-		page,
-		limit,
-		total: result.pagination.totalCount,
-	};
+): Promise<
+	{ ok: true; data: InvoiceListDto } | { ok: false; error: PolarFailure }
+> => {
+	try {
+		const { result } = await polarClient.orders.list({
+			metadata: { referenceId: organizationId },
+			sorting: ["-created_at"],
+			page,
+			limit,
+		});
+		return {
+			ok: true,
+			data: {
+				items: result.items.map(toInvoiceDto),
+				page,
+				limit,
+				total: result.pagination.totalCount,
+			},
+		};
+	} catch (error) {
+		return {
+			ok: false,
+			error: toPolarFailure(error, "Polar invoice list failed", {
+				organizationId,
+			}),
+		};
+	}
 };
 
 type InvoiceDownload =
 	| { status: "ready"; url: string }
 	| { status: "generating" }
 	| { status: "not-found" }
-	| { status: "unavailable"; message: string };
+	| { status: "unavailable"; message: string }
+	| { status: "failed"; error: PolarFailure };
 
 // 404 unknown id, 422 not even a valid id
 const isMissingOrder = (error: unknown) =>
 	error instanceof PolarError &&
 	(error.statusCode === 404 || error.statusCode === 422);
 
-/**
- * The order id comes from the client, so an order of another organization
- * is reported exactly like a missing one. Invoices are generated on first
- * request; the caller retries once Polar has rendered it.
- */
-export const getInvoiceDownload = async (
+const downloadInvoice = async (
 	organizationId: string,
 	orderId: string,
 ): Promise<InvoiceDownload> => {
@@ -95,4 +115,26 @@ export const getInvoiceDownload = async (
 		throw error;
 	}
 	return { status: "generating" };
+};
+
+/**
+ * The order id comes from the client, so an order of another organization
+ * is reported exactly like a missing one. Invoices are generated on first
+ * request; the caller retries once Polar has rendered it.
+ */
+export const getInvoiceDownload = async (
+	organizationId: string,
+	orderId: string,
+): Promise<InvoiceDownload> => {
+	try {
+		return await downloadInvoice(organizationId, orderId);
+	} catch (error) {
+		return {
+			status: "failed",
+			error: toPolarFailure(error, "Polar invoice download failed", {
+				organizationId,
+				orderId,
+			}),
+		};
+	}
 };

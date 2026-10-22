@@ -130,3 +130,22 @@ export const fakeCtx = (
 		get: (key) => store[key],
 	};
 };
+
+/** What a Polar `list` resolves to: the first page, async-iterable over all pages. */
+export const polarPages = <T>(...pages: T[][]) => {
+	const toPage = (items: T[]) => ({
+		result: {
+			items,
+			pagination: {
+				totalCount: pages.flat().length,
+				maxPage: pages.length,
+			},
+		},
+	});
+	return {
+		...toPage(pages[0] ?? []),
+		async *[Symbol.asyncIterator]() {
+			for await (const items of pages) yield toPage(items);
+		},
+	} as never;
+};

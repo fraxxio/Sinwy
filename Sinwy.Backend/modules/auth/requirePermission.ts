@@ -43,11 +43,17 @@ export const resolveMembership = async (
 			organizationId,
 			role: found.role,
 		});
+	const plan = toPlanSlug(found.plan);
+	if (found.plan !== null && !plan)
+		permissionLogger.warn("Organization has an unknown stored plan", {
+			organizationId,
+			plan: found.plan,
+		});
 	return {
 		organizationId,
 		roles,
 		status: toOrganizationStatus(found.status),
-		plan: toPlanSlug(found.plan),
+		plan,
 	};
 };
 

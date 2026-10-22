@@ -366,6 +366,26 @@ checkout guard lives) or require membership there via `resolveMembership`.
 Blocking is simpler; our `/subscription` endpoint is the supported read. Add a
 test that it is denied.
 
+### 10. One owner per organization, and the owner pays
+
+The Polar customer is a user, not an organization. An organization has exactly
+one owner, its creator, and ownership never moves. Only the owner has
+`billing:manage`, so the subscription is always on the owner's Polar customer.
+Nobody else can change the plan on the owner's card, and nobody can control a
+subscription for an organization they're no longer in.
+
+- Better Auth already keeps the only owner from leaving, being removed or being
+  demoted. `organizationHooks` refuse everything that would add an owner or
+  change the owner's role: inviting as owner, accepting an owner invitation and
+  role updates. A partial unique index (`member_one_owner_uidx`) is the
+  backstop.
+- The plugin's `/organization/delete` revokes the organization's subscriptions
+  first, like account deletion does.
+- Deleting a user deletes the orgs they own, then always deletes their Polar
+  customer.
+- Suspension, retention after owner deletion and ownership transfer:
+  [#56](https://github.com/fraxxio/Sinwy/issues/56).
+
 ## API summary
 
 | Method | Path | Guard | Returns |

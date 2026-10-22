@@ -1,5 +1,10 @@
 import type { Membership } from "@authModule";
-import { polarClient, productIdFor } from "@backend/infrastructure/polar";
+import {
+	describePolarError,
+	type PolarFailure,
+	polarClient,
+	productIdFor,
+} from "@backend/infrastructure/polar";
 import { createLogger } from "@logger";
 import {
 	getSubscriptionState,
@@ -9,13 +14,16 @@ import type { Subscription } from "@polar-sh/sdk/models/components/subscription"
 import { AlreadyCanceledSubscription } from "@polar-sh/sdk/models/errors/alreadycanceledsubscription";
 import { SubscriptionLocked } from "@polar-sh/sdk/models/errors/subscriptionlocked";
 import {
+	BILLING_INTERVALS,
 	featuresFor,
 	type OrganizationStatus,
 	type OrganizationSubscriptionDto,
 	type PlanSlug,
+	SUBSCRIPTION_BILLING_STATUSES,
 	type SubscriptionBillingDto,
 } from "@sinwy/shared";
 import { APIError } from "better-auth/api";
+import { knownValue, toPolarFailure } from "./polar";
 import {
 	projectSubscription,
 	reconcileInactiveOrganization,
@@ -46,17 +54,32 @@ export const getCheckoutOrganization = async (
 		: null;
 };
 
-const toBillingDto = (subscription: Subscription): SubscriptionBillingDto => ({
-	subscriptionStatus:
-		subscription.status as SubscriptionBillingDto["subscriptionStatus"],
-	amount: subscription.amount,
-	currency: subscription.currency,
-	interval:
-		subscription.recurringInterval as SubscriptionBillingDto["interval"],
-	currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
-	cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
-	endsAt: subscription.endsAt?.toISOString() ?? null,
-});
+/** null when Polar sent a status or interval this version can't describe. */
+const toBillingDto = (
+	subscription: Subscription,
+): SubscriptionBillingDto | null => {
+	const subscriptionStatus = knownValue(
+		SUBSCRIPTION_BILLING_STATUSES,
+		subscription.status,
+		"subscription.status",
+	);
+	const interval = knownValue(
+		BILLING_INTERVALS,
+		subscription.recurringInterval,
+		"subscription.recurringInterval",
+	);
+	if (!subscriptionStatus || !interval) return null;
+	return {
+		subscriptionStatus,
+		amount: subscription.amount,
+		currency: subscription.currency,
+		interval,
+		intervalCount: subscription.recurringIntervalCount,
+		currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
+		cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+		endsAt: subscription.endsAt?.toISOString() ?? null,
+	};
+};
 
 const toSubscriptionDto = (
 	state: SubscriptionState,
@@ -75,7 +98,7 @@ const fetchSubscription = (subscriptionId: string) =>
 		.catch((error: unknown) => {
 			billingLogger.warn("Polar subscription read failed", {
 				subscriptionId,
-				error: error instanceof Error ? error.message : String(error),
+				...describePolarError(error),
 			});
 			return null;
 		});
@@ -103,7 +126,10 @@ export const getOrganizationSubscription = async (
 
 type ChangePlanResult =
 	| { ok: true; data: OrganizationSubscriptionDto }
-	| { ok: false; error: "inactive" | "same-plan" | "canceled" | "locked" };
+	| {
+			ok: false;
+			error: "inactive" | "same-plan" | "canceled" | "locked" | PolarFailure;
+	  };
 
 /**
  * Paid → paid plan change on the existing subscription. A checkout would
@@ -118,7 +144,6 @@ export const changeOrganizationPlan = async (
 	if (!state.subscriptionId) return { ok: false, error: "inactive" };
 	if (state.plan === plan) return { ok: false, error: "same-plan" };
 
-	const requestedAt = new Date();
 	let subscription: Subscription;
 	try {
 		subscription = await polarClient.subscriptions.update({
@@ -133,37 +158,56 @@ export const changeOrganizationPlan = async (
 			return { ok: false, error: "canceled" };
 		if (error instanceof SubscriptionLocked)
 			return { ok: false, error: "locked" };
-		throw error;
+		return {
+			ok: false,
+			error: toPolarFailure(error, "Polar plan change failed", {
+				organizationId: membership.organizationId,
+				plan,
+			}),
+		};
 	}
 
 	// the subscription.updated webhook lands the same state; applying it now
 	// saves the caller from polling
-	await projectSubscription(subscription, requestedAt);
+	await projectSubscription(subscription);
 	const updated = await requireSubscriptionState(membership.organizationId);
 	return { ok: true, data: toSubscriptionDto(updated, subscription) };
 };
 
-/** Idempotent: no active subscription → no-op. Throws so a paying subscription is never orphaned. */
+const listActiveSubscriptionIds = async (organizationId: string) => {
+	const ids: string[] = [];
+	const pages = await polarClient.subscriptions.list({
+		metadata: { referenceId: organizationId },
+		active: true,
+		limit: 100,
+	});
+	for await (const page of pages)
+		ids.push(...page.result.items.map((subscription) => subscription.id));
+	return ids;
+};
+
+/**
+ * Idempotent: no active subscription → no-op. Revokes every one, since a
+ * raced second checkout can leave two. Throws so a paying subscription is
+ * never orphaned.
+ */
 export const revokeOrganizationSubscription = async (
 	organizationId: string,
 ) => {
 	try {
-		const subscriptions = await polarClient.subscriptions.list({
-			metadata: { referenceId: organizationId },
-			active: true,
-			limit: 1,
-		});
-		const subscription = subscriptions.result.items[0];
-		if (!subscription) return;
-		await polarClient.subscriptions.revoke({ id: subscription.id });
-		billingLogger.info("Revoked subscription before deletion", {
-			organizationId,
-			subscriptionId: subscription.id,
-		});
+		// collected first: revoking while paging would shift later pages
+		const subscriptionIds = await listActiveSubscriptionIds(organizationId);
+		for (const subscriptionId of subscriptionIds) {
+			await polarClient.subscriptions.revoke({ id: subscriptionId });
+			billingLogger.info("Revoked subscription before deletion", {
+				organizationId,
+				subscriptionId,
+			});
+		}
 	} catch (error) {
 		billingLogger.error("Polar subscription revoke failed", {
 			organizationId,
-			error: error instanceof Error ? error.message : String(error),
+			...describePolarError(error),
 		});
 		throw new APIError("INTERNAL_SERVER_ERROR", {
 			message:

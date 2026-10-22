@@ -6,6 +6,7 @@ import {
 	createUserWithSession,
 	insertOrganization,
 	joinOrganization,
+	polarPages,
 } from "@backend/test/helpers";
 import appConfig from "@config";
 import db from "@db";
@@ -22,24 +23,14 @@ let listSpy: ReturnType<typeof spyOn>;
 let revokeSpy: ReturnType<typeof spyOn>;
 let deleteCustomerSpy: ReturnType<typeof spyOn>;
 
-const page = (items: { id: string }[]) =>
-	({ result: { items, pagination: {} } }) as never;
-
-/** Active subscriptions as Polar would answer: by organization (revoke lookup) or by customer. */
-const polarSubscriptions = (subs: {
-	byOrganization?: Record<string, string>;
-	byCustomer?: Record<string, string>;
-}) => {
-	listSpy.mockImplementation((params: Record<string, unknown>) => {
-		const referenceId = (params["metadata"] as { referenceId?: string })
-			?.referenceId;
-		if (referenceId) {
-			const id = subs.byOrganization?.[referenceId];
-			return Promise.resolve(page(id ? [{ id }] : []));
-		}
-		const id = subs.byCustomer?.[params["externalCustomerId"] as string];
-		return Promise.resolve(page(id ? [{ id }] : []));
-	});
+/** Active subscription per organization, as Polar answers the revoke lookup. */
+const polarSubscriptions = (byOrganization: Record<string, string>) => {
+	listSpy.mockImplementation(
+		(params: { metadata: { referenceId: string } }) => {
+			const id = byOrganization[params.metadata.referenceId];
+			return Promise.resolve(polarPages(id ? [{ id }] : []));
+		},
+	);
 };
 
 beforeAll(() => {
@@ -116,7 +107,7 @@ test("sole-owned paid org: subscription revoked, org and user gone, avatar and c
 		.where(eq(user.id, userId));
 	const orgId = await insertOrganization("Solo Co");
 	await joinOrganization(orgId, userId, "owner");
-	polarSubscriptions({ byOrganization: { [orgId]: "sub_solo" } });
+	polarSubscriptions({ [orgId]: "sub_solo" });
 
 	const res = await clickDeleteLink(cookie, await issueDeleteToken(userId));
 
@@ -129,16 +120,13 @@ test("sole-owned paid org: subscription revoked, org and user gone, avatar and c
 	expect(deleteCustomerSpy).toHaveBeenCalledWith({ externalId: userId });
 });
 
-test("co-owned paid org: org and its subscription survive, Polar customer is kept", async () => {
+test("admin of someone else's paid org: org and its subscription survive, Polar customer deleted", async () => {
 	const { userId, cookie } = await createUserWithSession();
-	const { userId: coOwnerId } = await createUserWithSession();
-	const orgId = await insertOrganization("Shared Co");
-	await joinOrganization(orgId, userId, "owner");
-	await joinOrganization(orgId, coOwnerId, "owner");
-	polarSubscriptions({
-		byOrganization: { [orgId]: "sub_shared" },
-		byCustomer: { [userId]: "sub_shared" },
-	});
+	const { userId: ownerId } = await createUserWithSession();
+	const orgId = await insertOrganization("Employer Co");
+	await joinOrganization(orgId, ownerId, "owner");
+	await joinOrganization(orgId, userId, "admin");
+	polarSubscriptions({ [orgId]: "sub_employer" });
 
 	const res = await clickDeleteLink(cookie, await issueDeleteToken(userId));
 
@@ -146,19 +134,14 @@ test("co-owned paid org: org and its subscription survive, Polar customer is kep
 	expect(await userExists(userId)).toBe(false);
 	expect(await orgExists(orgId)).toBe(true);
 	expect(revokeSpy).not.toHaveBeenCalled();
-	expect(listSpy).toHaveBeenCalledWith({
-		externalCustomerId: userId,
-		active: true,
-		limit: 1,
-	});
-	expect(deleteCustomerSpy).not.toHaveBeenCalled();
+	expect(deleteCustomerSpy).toHaveBeenCalledWith({ externalId: userId });
 });
 
 test("Polar revoke failure: redirects to the goodbye error page and deletes nothing", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	const orgId = await insertOrganization("Stuck Co");
 	await joinOrganization(orgId, userId, "owner");
-	polarSubscriptions({ byOrganization: { [orgId]: "sub_stuck" } });
+	polarSubscriptions({ [orgId]: "sub_stuck" });
 	revokeSpy.mockRejectedValue(new Error("polar down"));
 
 	const res = await clickDeleteLink(cookie, await issueDeleteToken(userId));

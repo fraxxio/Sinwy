@@ -1,31 +1,15 @@
-import { polarClient } from "@backend/infrastructure/polar";
+import { describePolarError, polarClient } from "@backend/infrastructure/polar";
 import { keyFromFileUrl, storageClient } from "@backend/infrastructure/storage";
 import { createLogger } from "@logger";
 
 const authLogger = createLogger("auth");
 
 /**
- * Polar deletes a customer together with every subscription it pays for.
- * A subscription for an organization that survived the delete cascade
- * (another owner remains) must keep billing, so the customer stays too.
+ * A user only ever pays for organizations they own, and those were revoked
+ * and deleted before the user, so the Polar customer has nothing left to bill.
  */
-const deletePolarCustomer = async (userId: string) => {
-	const active = await polarClient.subscriptions.list({
-		externalCustomerId: userId,
-		active: true,
-		limit: 1,
-	});
-	if (active.result.items.length > 0) {
-		authLogger.info(
-			"Kept Polar customer of deleted user: active subscription",
-			{
-				userId,
-			},
-		);
-		return;
-	}
-	await polarClient.customers.deleteExternal({ externalId: userId });
-};
+const deletePolarCustomer = (userId: string) =>
+	polarClient.customers.deleteExternal({ externalId: userId });
 
 /** Best-effort cleanup after the user row is gone; failures are logged, never surfaced. */
 export const cleanupDeletedUser = async (user: {
@@ -46,7 +30,7 @@ export const cleanupDeletedUser = async (user: {
 	} catch (error) {
 		authLogger.warn("Failed to delete Polar customer of deleted user", {
 			userId: user.id,
-			error,
+			...describePolarError(error),
 		});
 	}
 };

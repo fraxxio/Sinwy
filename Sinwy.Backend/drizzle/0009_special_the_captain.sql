@@ -1,0 +1,3 @@
+ALTER TABLE "organization" ADD CONSTRAINT "organization_status_check" CHECK ("status" IN ('active', 'inactive'));--> statement-breakpoint
+ALTER TABLE "organization" ADD CONSTRAINT "organization_plan_check" CHECK ("plan" IN ('starter', 'professional', 'enterprise'));--> statement-breakpoint
+ALTER TABLE "organization" ADD CONSTRAINT "organization_plan_only_when_active_check" CHECK ("organization"."plan" IS NULL OR "organization"."status" = 'active');

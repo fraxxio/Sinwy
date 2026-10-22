@@ -6,18 +6,7 @@ import {
 	organizationProfile,
 } from "@db/schema/organizationSchema";
 import type { PlanSlug } from "@sinwy/shared";
-import {
-	and,
-	eq,
-	exists,
-	inArray,
-	isNull,
-	lt,
-	ne,
-	notExists,
-	or,
-	sql,
-} from "drizzle-orm";
+import { and, eq, exists, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 export const isSlugTaken = async (slug: string) => {
 	const [row] = await db
@@ -147,7 +136,7 @@ export const markOnboardingCompleted = async (organizationId: string) => {
 	return row?.completedAt ?? null;
 };
 
-/** Organizations where this user is an owner and no other member is. */
+/** Organizations this user owns; each has exactly one owner. */
 export const findSoleOwnedOrganizations = (userId: string) =>
 	db
 		.select({
@@ -157,31 +146,17 @@ export const findSoleOwnedOrganizations = (userId: string) =>
 		})
 		.from(organization)
 		.where(
-			and(
-				exists(
-					db
-						.select({ id: member.id })
-						.from(member)
-						.where(
-							and(
-								eq(member.organizationId, organization.id),
-								eq(member.userId, userId),
-								memberHasRole("owner"),
-							),
+			exists(
+				db
+					.select({ id: member.id })
+					.from(member)
+					.where(
+						and(
+							eq(member.organizationId, organization.id),
+							eq(member.userId, userId),
+							memberHasRole("owner"),
 						),
-				),
-				notExists(
-					db
-						.select({ id: member.id })
-						.from(member)
-						.where(
-							and(
-								eq(member.organizationId, organization.id),
-								ne(member.userId, userId),
-								memberHasRole("owner"),
-							),
-						),
-				),
+					),
 			),
 		)
 		.orderBy(organization.name);

@@ -6,7 +6,7 @@ import {
 } from "@sinwy/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
 	billingKeys,
 	changePlan,
@@ -56,6 +56,13 @@ export function ChangePlanDialog({
 	const router = useRouter();
 	const [target, setTarget] = useState<PlanSlug | null>(null);
 	const subscriptionKey = billingKeys.subscription(organizationId);
+	const mounted = useRef(true);
+	useEffect(() => {
+		mounted.current = true;
+		return () => {
+			mounted.current = false;
+		};
+	}, []);
 
 	const change = useMutation({
 		mutationFn: async (plan: PlanSlug) => {
@@ -70,7 +77,7 @@ export function ChangePlanDialog({
 				(await pollUntil(
 					() => fetchSubscription(organizationId),
 					(subscription) => subscription.plan === plan,
-					{ attempts: 10 },
+					{ attempts: 10, isCancelled: () => !mounted.current },
 				)) ?? res.data
 			);
 		},
@@ -79,24 +86,36 @@ export function ChangePlanDialog({
 				queryClient.setQueryData(subscriptionKey, subscription);
 			else void queryClient.invalidateQueries({ queryKey: subscriptionKey });
 			void router.invalidate();
-			toast.add({
-				type: "success",
-				title: `Switched to ${getPlanName(plan)}`,
-				timeout: 4_000,
-			});
-			onOpenChange(false);
 		},
 		// a refused change usually means Polar's state moved (canceled, revoked)
 		onError: () => queryClient.invalidateQueries({ queryKey: subscriptionKey }),
 	});
 
-	const handleOpenChange = (next: boolean) => {
-		if (change.isPending) return;
-		onOpenChange(next);
-		if (next) return;
+	const close = () => {
+		onOpenChange(false);
 		setTarget(null);
 		change.reset();
 	};
+
+	const handleOpenChange = (next: boolean) => {
+		if (change.isPending) return;
+		if (next) onOpenChange(true);
+		else close();
+	};
+
+	// mutate's own callbacks skip an unmounted dialog, so leaving the page
+	// mid-switch never navigates back here
+	const submit = (plan: PlanSlug) =>
+		change.mutate(plan, {
+			onSuccess: () => {
+				toast.add({
+					type: "success",
+					title: `Switched to ${getPlanName(plan)}`,
+					timeout: 4_000,
+				});
+				close();
+			},
+		});
 
 	const yearly = interval === "year";
 	const selected = target && describePlanChange(current, target);
@@ -192,7 +211,7 @@ export function ChangePlanDialog({
 					<Button
 						type="button"
 						disabled={!target || change.isPending}
-						onClick={() => target && change.mutate(target)}
+						onClick={() => target && submit(target)}
 					>
 						{change.isPending
 							? "Switching…"

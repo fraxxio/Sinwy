@@ -23,8 +23,10 @@ import { getSubscriptionState } from "@organizationsModule";
 import type { Order } from "@polar-sh/sdk/models/components/order";
 import type { Subscription } from "@polar-sh/sdk/models/components/subscription";
 import { AlreadyCanceledSubscription } from "@polar-sh/sdk/models/errors/alreadycanceledsubscription";
+import { RequestTimeoutError } from "@polar-sh/sdk/models/errors/httpclienterrors";
 import { MissingInvoiceBillingDetails } from "@polar-sh/sdk/models/errors/missinginvoicebillingdetails";
 import { ResourceNotFound } from "@polar-sh/sdk/models/errors/resourcenotfound";
+import { SDKError } from "@polar-sh/sdk/models/errors/sdkerror";
 import {
 	API_ERROR_CODES,
 	type ApiResponse,
@@ -32,6 +34,7 @@ import {
 	type OrganizationSubscriptionDto,
 } from "@sinwy/shared";
 import type { Server } from "bun";
+import { eq } from "drizzle-orm";
 import { registerBillingRoutes } from "../routes";
 
 let server: Server<never>;
@@ -108,17 +111,23 @@ const subscription = (
 		amount: 4900,
 		currency: "eur",
 		recurringInterval: "month",
+		recurringIntervalCount: 1,
+		createdAt: new Date("2026-09-22T10:00:00Z"),
+		modifiedAt: new Date("2026-09-22T10:00:00Z"),
 		currentPeriodEnd: new Date("2026-10-22T10:00:00Z"),
 		cancelAtPeriodEnd: false,
 		endsAt: null,
 		...overrides,
 	}) as Subscription;
 
-const httpMeta = (status: number) => ({
+const httpMeta = (status: number, body = "") => ({
 	response: new Response(null, { status }),
 	request: new Request("https://polar.test"),
-	body: "",
+	body,
 });
+
+const polarServerError = () =>
+	new SDKError("API error occurred", httpMeta(500, "customer@example.com"));
 
 // GET /status
 
@@ -212,6 +221,7 @@ test("GET subscription: active org → plan features and live billing details", 
 			amount: 4900,
 			currency: "eur",
 			interval: "month",
+			intervalCount: 1,
 			currentPeriodEnd: "2026-10-22T10:00:00.000Z",
 			cancelAtPeriodEnd: true,
 			endsAt: null,
@@ -233,6 +243,33 @@ test("GET subscription: Polar down → projection still served, billing null", a
 	expect(res.status).toBe(200);
 	const dto = await unwrap<OrganizationSubscriptionDto>(res);
 	expect(dto.plan).toBe("enterprise");
+	expect(dto.billing).toBeNull();
+});
+
+test("GET subscription: multi-month interval keeps its count", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	await activateOrganization(organizationId, "professional");
+	stub(polarClient.subscriptions, "get").mockResolvedValue(
+		subscription(organizationId, { recurringIntervalCount: 3 }),
+	);
+
+	const dto = await unwrap<OrganizationSubscriptionDto>(
+		await request(`/api/organizations/${organizationId}/subscription`, cookie),
+	);
+	expect(dto.billing).toMatchObject({ interval: "month", intervalCount: 3 });
+});
+
+test("GET subscription: a Polar status we don't know → billing null, projection served", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	await activateOrganization(organizationId, "professional");
+	stub(polarClient.subscriptions, "get").mockResolvedValue(
+		subscription(organizationId, { status: "paused" as never }),
+	);
+
+	const dto = await unwrap<OrganizationSubscriptionDto>(
+		await request(`/api/organizations/${organizationId}/subscription`, cookie),
+	);
+	expect(dto.plan).toBe("professional");
 	expect(dto.billing).toBeNull();
 });
 
@@ -297,6 +334,56 @@ test("POST plan: switches the product with next-invoice proration and applies it
 	expect(dto.plan).toBe("enterprise");
 	expect(dto.features).toContain("multi-location");
 	expect((await getSubscriptionState(organizationId))?.plan).toBe("enterprise");
+});
+
+test("POST plan: applies Polar's state even when Polar's clock is ahead of ours", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	await activateOrganization(organizationId, "starter");
+	const polarNow = new Date(Date.now() + 3_600_000);
+	await db
+		.update(organization)
+		.set({ subscriptionStatusAt: polarNow })
+		.where(eq(organization.id, organizationId));
+	stub(polarClient.subscriptions, "update").mockResolvedValue(
+		subscription(organizationId, {
+			productId: productIdFor("enterprise"),
+			modifiedAt: new Date(polarNow.getTime() + 1000),
+		}),
+	);
+
+	const dto = await unwrap<OrganizationSubscriptionDto>(
+		await changePlan(organizationId, cookie, { plan: "enterprise" }),
+	);
+	expect(dto.plan).toBe("enterprise");
+	expect((await getSubscriptionState(organizationId))?.plan).toBe("enterprise");
+});
+
+test("POST plan: unexpected Polar errors → 422 refused or 502 unavailable, plan unchanged", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	await activateOrganization(organizationId, "starter");
+	const update = stub(polarClient.subscriptions, "update");
+
+	for (const [error, status] of [
+		[
+			new ResourceNotFound(
+				{ error: "ResourceNotFound", detail: "Not found" },
+				httpMeta(404),
+			),
+			422,
+		],
+		[polarServerError(), 502],
+		[new RequestTimeoutError("timed out"), 502],
+	] as const) {
+		update.mockRejectedValue(error);
+		const res = await changePlan(organizationId, cookie, {
+			plan: "enterprise",
+		});
+		expect(res.status).toBe(status);
+		expect(((await res.json()) as ApiResponse).message).not.toContain(
+			"customer@example.com",
+		);
+	}
+	expect((await getSubscriptionState(organizationId))?.plan).toBe("starter");
 });
 
 test("POST plan: canceled subscription → 409, plan unchanged", async () => {
@@ -381,6 +468,36 @@ test("GET invoices: lists the organization's orders as invoice DTOs only", async
 		limit: 10,
 		total: 21,
 	});
+});
+
+test("GET invoices: Polar statuses and reasons we don't know → null", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	stub(polarClient.orders, "list").mockResolvedValue({
+		result: {
+			items: [
+				order(organizationId, {
+					status: "disputed" as never,
+					billingReason: "subscription_pause" as never,
+				}),
+			],
+			pagination: { totalCount: 1, maxPage: 1 },
+		},
+	} as never);
+
+	const dto = await unwrap<InvoiceListDto>(
+		await request(`/api/organizations/${organizationId}/invoices`, cookie),
+	);
+	expect(dto.items[0]).toMatchObject({ status: null, billingReason: null });
+});
+
+test("GET invoices: Polar down → 502", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	stub(polarClient.orders, "list").mockRejectedValue(polarServerError());
+
+	expect(
+		(await request(`/api/organizations/${organizationId}/invoices`, cookie))
+			.status,
+	).toBe(502);
 });
 
 test("GET invoices: limit over the cap → 400", async () => {
@@ -477,6 +594,14 @@ test("download: missing billing details → 409 with Polar's reason", async () =
 	expect(((await res.json()) as ApiResponse).message).toBe(
 		"Billing name and address are required",
 	);
+});
+
+test("download: Polar down → 502", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	stub(polarClient.orders, "get").mockResolvedValue(order(organizationId));
+	stub(polarClient.orders, "invoice").mockRejectedValue(polarServerError());
+
+	expect((await download(organizationId, cookie)).status).toBe(502);
 });
 
 // Polar plugin hardening

@@ -1,26 +1,33 @@
-export type InvoiceStatus =
-	| "draft"
-	| "pending"
-	| "paid"
-	| "refunded"
-	| "partially_refunded"
-	| "void";
+export const INVOICE_STATUSES = [
+	"draft",
+	"pending",
+	"paid",
+	"refunded",
+	"partially_refunded",
+	"void",
+] as const;
 
-export type InvoiceBillingReason =
-	| "purchase"
-	| "subscription_create"
-	| "subscription_cycle"
-	| "subscription_update";
+export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
+
+export const INVOICE_BILLING_REASONS = [
+	"purchase",
+	"subscription_create",
+	"subscription_cycle",
+	"subscription_update",
+] as const;
+
+export type InvoiceBillingReason = (typeof INVOICE_BILLING_REASONS)[number];
 
 export type InvoiceDto = {
 	id: string;
 	number: string;
 	createdAt: string;
-	status: InvoiceStatus;
+	/** null when Polar sent a status this version doesn't know. */
+	status: InvoiceStatus | null;
 	/** Integer minor units. */
 	totalAmount: number;
 	currency: string;
-	billingReason: InvoiceBillingReason;
+	billingReason: InvoiceBillingReason | null;
 	/** False until someone first downloads it; the download endpoint generates it. */
 	invoiceGenerated: boolean;
 };

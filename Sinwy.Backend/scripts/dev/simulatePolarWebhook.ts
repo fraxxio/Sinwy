@@ -22,7 +22,11 @@ export type PolarDeliveryOptions = {
 	webhookId?: string;
 };
 
-/** A recorded sandbox event with only the ids, `referenceId` and event time replaced, signed like Polar signs it. */
+/**
+ * A recorded sandbox event with only the ids, `referenceId` and times
+ * replaced, signed like Polar signs it. `timestamp` is both the event time
+ * and the subscription's `modified_at`, which orders the projection.
+ */
 export const buildPolarDelivery = ({
 	type,
 	organizationId,
@@ -37,6 +41,7 @@ export const buildPolarDelivery = ({
 		data: {
 			...payload.data,
 			id: subscriptionId,
+			modified_at: timestamp.toISOString(),
 			metadata: { ...payload.data.metadata, referenceId: organizationId },
 		},
 	});

@@ -1,4 +1,8 @@
-import { planFor, polarClient } from "@backend/infrastructure/polar";
+import {
+	describePolarError,
+	planFor,
+	polarClient,
+} from "@backend/infrastructure/polar";
 import { createLogger } from "@logger";
 import {
 	activateSubscription,
@@ -27,14 +31,15 @@ const planOf = (subscription: Subscription) => {
  * Projects a Polar subscription onto its organization (`status`, `plan`,
  * `subscription_id`). State is derived from the subscription object only,
  * so re-delivery and overlapping events converge on the same result.
- * `observedAt` is when Polar had this state; anything not newer than the
+ * State is ordered by Polar's own modification time, whichever path
+ * (webhook, reconcile, plan change) delivers it; anything not newer than the
  * applied state is ignored. Returns the status written, or null when the
  * organization was left as is.
  */
 export const projectSubscription = async (
 	subscription: Subscription,
-	observedAt: Date,
 ): Promise<OrganizationStatus | null> => {
+	const observedAt = subscription.modifiedAt ?? subscription.createdAt;
 	const organizationId = subscription.metadata["referenceId"];
 	if (typeof organizationId !== "string") {
 		billingLogger.warn("Subscription carries no referenceId", {
@@ -91,12 +96,9 @@ export const projectSubscription = async (
 	return null;
 };
 
-/** Webhook entry point. Late retries and reordered events lose to the newer state by `timestamp`. */
-export const applySubscriptionEvent = async (event: {
-	data: Subscription;
-	timestamp: Date;
-}) => {
-	await projectSubscription(event.data, event.timestamp);
+/** Webhook entry point. Late retries and reordered events lose to the newer state. */
+export const applySubscriptionEvent = async (event: { data: Subscription }) => {
+	await projectSubscription(event.data);
 };
 
 /**
@@ -106,8 +108,6 @@ export const applySubscriptionEvent = async (event: {
  * Returns whether the organization is now active.
  */
 export const reconcileInactiveOrganization = async (organizationId: string) => {
-	// a revocation that lands while Polar is being asked must still win
-	const queriedAt = new Date();
 	const subscriptions = await polarClient.subscriptions
 		.list({
 			metadata: { referenceId: organizationId },
@@ -117,7 +117,7 @@ export const reconcileInactiveOrganization = async (organizationId: string) => {
 		.catch((error: unknown) => {
 			billingLogger.warn("Polar subscription lookup failed", {
 				organizationId,
-				error: error instanceof Error ? error.message : String(error),
+				...describePolarError(error),
 			});
 			return null;
 		});
@@ -125,8 +125,7 @@ export const reconcileInactiveOrganization = async (organizationId: string) => {
 	const subscription = subscriptions?.result.items[0];
 	if (!subscription) return false;
 
-	const activated =
-		(await projectSubscription(subscription, queriedAt)) === "active";
+	const activated = (await projectSubscription(subscription)) === "active";
 	if (activated)
 		billingLogger.info("Activated from Polar after a missed webhook", {
 			organizationId,

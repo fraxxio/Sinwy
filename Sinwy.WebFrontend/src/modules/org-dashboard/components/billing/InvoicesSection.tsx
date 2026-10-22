@@ -198,7 +198,7 @@ function InvoiceRow({
 		},
 	});
 
-	const status = STATUS_LABELS[invoice.status];
+	const status = invoice.status ? STATUS_LABELS[invoice.status] : "Unknown";
 
 	return (
 		<li className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
@@ -208,8 +208,9 @@ function InvoiceRow({
 					{status && <Badge variant="outline">{status}</Badge>}
 				</div>
 				<span className="text-muted-foreground text-xs">
-					{day.format(new Date(invoice.createdAt))} ·{" "}
-					{REASON_LABELS[invoice.billingReason]}
+					{day.format(new Date(invoice.createdAt))}
+					{invoice.billingReason &&
+						` · ${REASON_LABELS[invoice.billingReason]}`}
 				</span>
 			</div>
 			<div className="flex items-center gap-3">

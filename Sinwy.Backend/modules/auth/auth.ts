@@ -1,6 +1,10 @@
 import { emailClient } from "@backend/infrastructure/email";
 import { polarClient, productIdFor } from "@backend/infrastructure/polar";
-import { applySubscriptionEvent, ensureCheckoutAllowed } from "@billingModule";
+import {
+	applySubscriptionEvent,
+	ensureCheckoutAllowed,
+	revokeOrganizationSubscription,
+} from "@billingModule";
 import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
@@ -27,6 +31,7 @@ import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEm
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
+import { refuseOwnerRole } from "./singleOwner";
 
 const authLogger = createLogger("auth");
 
@@ -194,6 +199,19 @@ export const auth = betterAuth({
 			roles: orgAccessRoles,
 			// creation goes through POST /api/organizations only
 			allowUserToCreateOrganization: false,
+			// the plugin already keeps the only owner from leaving, being removed
+			// or demoted; these keep a second owner from ever appearing
+			organizationHooks: {
+				beforeCreateInvitation: async ({ invitation }) =>
+					refuseOwnerRole(invitation.role),
+				beforeAcceptInvitation: async ({ invitation }) =>
+					refuseOwnerRole(invitation.role),
+				beforeUpdateMemberRole: async ({ member, newRole }) =>
+					refuseOwnerRole(member.role, newRole),
+				// the plugin's own delete knows nothing of billing
+				beforeDeleteOrganization: ({ organization }) =>
+					revokeOrganizationSubscription(organization.id),
+			},
 			schema: {
 				organization: {
 					additionalFields: {

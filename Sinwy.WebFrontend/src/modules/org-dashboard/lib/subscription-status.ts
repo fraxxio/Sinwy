@@ -71,9 +71,17 @@ export function describeSubscription(
 	};
 }
 
-/** "$48.00 / month" */
+/** "$48.00 / month", "$120.00 / 3 months" */
 export const formatPrice = (
-	billing: Pick<SubscriptionBillingDto, "amount" | "currency" | "interval">,
+	billing: Pick<
+		SubscriptionBillingDto,
+		"amount" | "currency" | "interval" | "intervalCount"
+	>,
 	locale?: string,
-) =>
-	`${formatMinorUnits(billing.amount, billing.currency, locale)} / ${billing.interval}`;
+) => {
+	const period =
+		billing.intervalCount > 1
+			? `${billing.intervalCount} ${billing.interval}s`
+			: billing.interval;
+	return `${formatMinorUnits(billing.amount, billing.currency, locale)} / ${period}`;
+};

@@ -1,6 +1,8 @@
 import { user } from "@db/schema/userSchema";
-import { relations } from "drizzle-orm";
+import { ORGANIZATION_STATUSES, PLAN_SLUGS } from "@sinwy/shared";
+import { relations, sql } from "drizzle-orm";
 import {
+	check,
 	index,
 	pgTable,
 	text,
@@ -8,6 +10,10 @@ import {
 	unique,
 	uniqueIndex,
 } from "drizzle-orm/pg-core";
+
+// built from the shared lists, so renaming a value needs a data migration
+const oneOf = (column: string, values: readonly string[]) =>
+	sql.raw(`"${column}" IN (${values.map((value) => `'${value}'`).join(", ")})`);
 
 export const organization = pgTable(
 	"organization",
@@ -27,7 +33,15 @@ export const organization = pgTable(
 		createdAt: timestamp("created_at").notNull(),
 		metadata: text("metadata"),
 	},
-	(table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
+	(table) => [
+		uniqueIndex("organization_slug_uidx").on(table.slug),
+		check("organization_status_check", oneOf("status", ORGANIZATION_STATUSES)),
+		check("organization_plan_check", oneOf("plan", PLAN_SLUGS)),
+		check(
+			"organization_plan_only_when_active_check",
+			sql`${table.plan} IS NULL OR ${table.status} = 'active'`,
+		),
+	],
 );
 
 export const organizationProfile = pgTable("organization_profile", {
@@ -61,6 +75,10 @@ export const member = pgTable(
 		index("member_organizationId_idx").on(table.organizationId),
 		index("member_userId_idx").on(table.userId),
 		unique("member_org_user_uq").on(table.organizationId, table.userId),
+		// one owner per organization; the column can hold several roles
+		uniqueIndex("member_one_owner_uidx")
+			.on(table.organizationId)
+			.where(sql`'owner' = ANY(string_to_array(${table.role}, ','))`),
 	],
 );
 

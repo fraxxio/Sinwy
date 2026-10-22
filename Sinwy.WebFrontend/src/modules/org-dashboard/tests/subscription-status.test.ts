@@ -11,6 +11,7 @@ const billing: SubscriptionBillingDto = {
 	amount: 4800,
 	currency: "USD",
 	interval: "month",
+	intervalCount: 1,
 	currentPeriodEnd: "2026-11-21T12:00:00Z",
 	cancelAtPeriodEnd: false,
 	endsAt: null,
@@ -97,6 +98,12 @@ describe("describeSubscription", () => {
 it("formats the price with its interval", () => {
 	expect(formatPrice(billing, "en-US")).toBe("$48.00 / month");
 	expect(
-		formatPrice({ amount: 4800, currency: "JPY", interval: "year" }, "en-US"),
+		formatPrice(
+			{ amount: 4800, currency: "JPY", interval: "year", intervalCount: 1 },
+			"en-US",
+		),
 	).toBe("¥4,800 / year");
+	expect(formatPrice({ ...billing, intervalCount: 3 }, "en-US")).toBe(
+		"$48.00 / 3 months",
+	);
 });

@@ -1,4 +1,5 @@
 import { membershipFrom, sessionFrom } from "@authModule";
+import type { PolarFailure } from "@backend/infrastructure/polar";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler } from "@backend/lib/app/types";
 import { API_ERROR_CODES, changePlanBody } from "@sinwy/shared";
@@ -13,6 +14,11 @@ import {
 	getOrganizationStatus,
 	getOrganizationSubscription,
 } from "./service";
+
+const failPolar = (failure: PolarFailure) =>
+	failure === "rejected"
+		? fail("The billing provider refused this request", 422)
+		: fail("The billing provider is unavailable; try again later", 502);
 
 export const getOrganizationStatusHandler: Handler = async (c) => {
 	const status = await getOrganizationStatus(membershipFrom(c));
@@ -61,6 +67,9 @@ export const changePlanHandler: Handler = async (c) => {
 				"The subscription is being updated; try again in a moment",
 				409,
 			);
+		case "rejected":
+		case "unavailable":
+			return failPolar(result.error);
 	}
 };
 
@@ -70,12 +79,11 @@ export const listInvoicesHandler: Handler = async (c) => {
 	);
 	if (!query.success) return fail("Invalid query", 400);
 
-	return ok(
-		await listOrganizationInvoices(
-			membershipFrom(c).organizationId,
-			query.data,
-		),
+	const result = await listOrganizationInvoices(
+		membershipFrom(c).organizationId,
+		query.data,
 	);
+	return result.ok ? ok(result.data) : failPolar(result.error);
 };
 
 export const downloadInvoiceHandler: Handler = async (c) => {
@@ -94,5 +102,7 @@ export const downloadInvoiceHandler: Handler = async (c) => {
 			return fail(result.message, 409);
 		case "not-found":
 			return fail("Not found", 404);
+		case "failed":
+			return failPolar(result.error);
 	}
 };
