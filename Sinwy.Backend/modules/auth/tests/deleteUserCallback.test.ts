@@ -7,6 +7,7 @@ import {
 	insertOrganization,
 	joinOrganization,
 	polarPages,
+	stubPolarCore,
 } from "@backend/test/helpers";
 import appConfig from "@config";
 import db from "@db";
@@ -22,13 +23,14 @@ let base: URL;
 let listSpy: ReturnType<typeof spyOn>;
 let revokeSpy: ReturnType<typeof spyOn>;
 let deleteCustomerSpy: ReturnType<typeof spyOn>;
+let polarCoreSpy: ReturnType<typeof stubPolarCore>;
 
 /** Active subscription per organization, as Polar answers the revoke lookup. */
 const polarSubscriptions = (byOrganization: Record<string, string>) => {
 	listSpy.mockImplementation(
 		(params: { metadata: { referenceId: string } }) => {
 			const id = byOrganization[params.metadata.referenceId];
-			return Promise.resolve(polarPages(id ? [{ id, status: "active" }] : []));
+			return polarPages(id ? [{ id, status: "active" }] : [])();
 		},
 	);
 };
@@ -38,15 +40,18 @@ beforeAll(() => {
 	registerAuthRoutes(app);
 	server = app.listen(0);
 	base = server.url;
-	listSpy = spyOn(polarClient.subscriptions, "list");
+	listSpy = spyOn(polarClient.subscriptions, "iterList");
 	revokeSpy = spyOn(polarClient.subscriptions, "revoke");
 	deleteCustomerSpy = spyOn(polarClient.customers, "deleteExternal");
+	// the polar plugin deletes the customer too, through its own client
+	polarCoreSpy = stubPolarCore();
 });
 
 afterAll(() => {
 	listSpy.mockRestore();
 	revokeSpy.mockRestore();
 	deleteCustomerSpy.mockRestore();
+	polarCoreSpy.mockRestore();
 	server.stop(true);
 });
 
@@ -113,11 +118,11 @@ test("sole-owned paid org: subscription revoked, org and user gone, avatar and c
 
 	expect(res.status).toBe(302);
 	expect(res.headers.get("location")).toBe("/auth/goodbye");
-	expect(revokeSpy).toHaveBeenCalledWith({ id: "sub_solo" });
+	expect(revokeSpy).toHaveBeenCalledWith("sub_solo");
 	expect(await orgExists(orgId)).toBe(false);
 	expect(await userExists(userId)).toBe(false);
 	expect((await storageClient.serve(avatarKey)).status).toBe(404);
-	expect(deleteCustomerSpy).toHaveBeenCalledWith({ externalId: userId });
+	expect(deleteCustomerSpy).toHaveBeenCalledWith(userId);
 });
 
 test("admin of someone else's paid org: org and its subscription survive, Polar customer deleted", async () => {
@@ -134,7 +139,7 @@ test("admin of someone else's paid org: org and its subscription survive, Polar 
 	expect(await userExists(userId)).toBe(false);
 	expect(await orgExists(orgId)).toBe(true);
 	expect(revokeSpy).not.toHaveBeenCalled();
-	expect(deleteCustomerSpy).toHaveBeenCalledWith({ externalId: userId });
+	expect(deleteCustomerSpy).toHaveBeenCalledWith(userId);
 });
 
 test("Polar revoke failure: redirects to the goodbye error page and deletes nothing", async () => {

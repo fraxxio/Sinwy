@@ -10,6 +10,7 @@ import {
 	completeOrganizationOnboarding,
 	createOrganization,
 	getOrganizationOnboarding,
+	listOrganizations,
 	saveOrganizationProfile,
 } from "./service";
 
@@ -40,6 +41,11 @@ export const createOrganizationHandler: Handler = async (c) => {
 		body.data.industry,
 	);
 	return ok(org, 201, "Organization created");
+};
+
+export const listOrganizationsHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+	return ok(await listOrganizations(user.id));
 };
 
 export const getOrganizationOnboardingHandler: Handler = async (c) => {

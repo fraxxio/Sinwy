@@ -1,7 +1,7 @@
 # simulate-polar-webhook
 
 ```bash
-bun run dev:simulate-polar-webhook --type <subscription.active|subscription.updated|subscription.revoked> --org <organizationId> \
+bun run dev:simulate-polar-webhook --type <subscription.active|subscription.updated|subscription.revoked|subscription.paused> --org <organizationId> \
   [--subscription-id <id>] [--plan <starter|professional|enterprise>] [--timestamp <iso>] [--webhook-id <id>] [--url <backend url>]
 ```
 
@@ -13,6 +13,7 @@ It prints JSON with `subscriptionId`, `timestamp`, `webhookId`, `status` and `re
 
 - `subscription.active`, `subscription.revoked` and `subscription.updated` all project the payload's subscription onto the org. Status `active`, `trialing` or `past_due` makes the org `active`, with `plan` mapped from the product and `subscription_id` bound. Any other status makes it `inactive` and clears both.
 - The recorded `subscription.updated` is a cancellation (status `canceled`), so it makes the org `inactive` like a revoke.
+- `subscription.paused` has no handler: Polar sends a `subscription.updated` with it, and that one projects. The fixture is derived from a really paused sandbox subscription, not a captured delivery (its `source` says so).
 - An event applies only if its subscription's `modified_at` (the `--timestamp`) is newer than `organization.subscription_status_at`. While an org is bound to a subscription, events for any other subscription are ignored, so revoke with the same `--subscription-id`.
 - The endpoint answers 200 even for events it ignores or for an unknown org. **A 200 doesn't mean the status changed.** Check the result:
   ```bash
@@ -35,6 +36,6 @@ This replaces the payment and Polar's delivery, not Polar itself. It doesn't che
 
 - the plan page's checkout button (it creates the Polar checkout), the checkout page, Polar's redirect to `/checkout/success`, or the customer portal
 - which events the sandbox endpoint is subscribed to, or whether its secret matches `.env`
-- payload changes since the fixture was recorded (the fixture files record the capture date, SDK version and API version)
+- payload changes since the fixture was recorded (the fixture files record the capture date and the API version, which sets the payload shape)
 
 If billing behaviour changed, the remaining real check is a sandbox checkout with webhooks delivered through `bun run start:localproxy` (ngrok). It needs the user: the sandbox webhook endpoint must point at the ngrok URL and be enabled. Compare the DB state it leaves with the simulated run. To refresh a fixture from the newest real delivery, run `bun run dev:capture-polar-fixture --type <event>`.

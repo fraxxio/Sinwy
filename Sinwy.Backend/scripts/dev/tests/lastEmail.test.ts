@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { auth, registerAuthRoutes } from "@authModule";
-import { polarClient } from "@backend/infrastructure/polar";
 import createApp from "@backend/lib/app";
+import { stubPolarCore } from "@backend/test/helpers";
 import db from "@db";
 import { user } from "@db/schema/userSchema";
 import type { Server } from "bun";
@@ -10,13 +10,11 @@ import { lastEmails } from "../lastEmail";
 
 let server: Server<never>;
 let base: URL;
-let updateSpy: ReturnType<typeof spyOn>;
+let polarSpy: ReturnType<typeof stubPolarCore>;
 
 beforeAll(() => {
 	// verifying the email updates the user, which the polar plugin syncs to Polar
-	updateSpy = spyOn(polarClient.customers, "updateExternal").mockResolvedValue(
-		{} as never,
-	);
+	polarSpy = stubPolarCore();
 	const app = createApp();
 	registerAuthRoutes(app);
 	server = app.listen(0);
@@ -24,7 +22,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-	updateSpy.mockRestore();
+	polarSpy.mockRestore();
 	server.stop(true);
 });
 

@@ -1,5 +1,5 @@
 import { emailClient } from "@backend/infrastructure/email";
-import { polarClient, productIdFor } from "@backend/infrastructure/polar";
+import { polarCore, productIdFor } from "@backend/infrastructure/polar";
 import {
 	applySubscriptionEvent,
 	ensureCheckoutAllowed,
@@ -26,6 +26,7 @@ import {
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
+import { refuseUnavailableOrganization } from "./activeOrganization";
 import { cleanupDeletedUser } from "./deletedUserCleanup";
 import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
@@ -48,7 +49,7 @@ const validName = (name: unknown) => {
 // referenceId, raw product ids, trials, discounts, redirect URLs)
 const checkoutBodySchema = z.strictObject({
 	slug: z.enum(PLAN_SLUGS),
-	referenceId: z.string().min(1),
+	reference_id: z.string().min(1),
 	redirect: z.boolean().optional(),
 });
 
@@ -176,11 +177,17 @@ export const auth = betterAuth({
 					});
 				const session = await getSessionFromCtx(ctx);
 				if (!session) throw new APIError("UNAUTHORIZED");
-				await ensureCheckoutAllowed(session.user.id, body.data.referenceId);
+				await ensureCheckoutAllowed(session.user.id, body.data.reference_id);
+			}
+			// the plugin has no beforeSetActive hook
+			if (ctx.path === "/organization/set-active") {
+				const session = await getSessionFromCtx(ctx);
+				if (session)
+					await refuseUnavailableOrganization(session.session, ctx.body);
 			}
 			if (
 				ctx.path === "/customer/subscriptions/list" &&
-				ctx.query?.["referenceId"]
+				ctx.query?.["reference_id"]
 			)
 				throw new APIError("FORBIDDEN", {
 					message: "Read organization subscriptions through the organization",
@@ -235,12 +242,17 @@ export const auth = betterAuth({
 							required: false,
 							input: false,
 						},
+						deletionScheduledAt: {
+							type: "date",
+							required: false,
+							input: false,
+						},
 					},
 				},
 			},
 		}),
 		polar({
-			client: polarClient,
+			client: polarCore,
 			createCustomerOnSignUp: true,
 			use: [
 				checkout({

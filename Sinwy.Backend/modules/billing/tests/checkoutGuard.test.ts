@@ -54,13 +54,13 @@ const seed = async (status: "active" | "inactive") => {
 let listSpy: ReturnType<typeof spyOn>;
 
 beforeAll(() => {
-	listSpy = spyOn(polarClient.subscriptions, "list");
+	listSpy = spyOn(polarClient.subscriptions, "iterList");
 });
 
 afterAll(() => listSpy.mockRestore());
 
 beforeEach(async () => {
-	listSpy.mockResolvedValue(polarPages());
+	listSpy.mockImplementation(polarPages());
 	await seed("inactive");
 });
 
@@ -89,15 +89,15 @@ test("owner of an already-active org → rejected", async () => {
 });
 
 test("owner of an inactive org Polar already bills → rejected and activated", async () => {
-	listSpy.mockResolvedValue(
+	listSpy.mockImplementation(
 		polarPages([
 			{
 				id: "sub_missed_webhook",
 				status: "active",
-				productId: productIdFor("starter"),
+				product_id: productIdFor("starter"),
 				metadata: { referenceId: orgId },
-				createdAt: new Date("2026-09-22T10:00:00Z"),
-				modifiedAt: null,
+				created_at: "2026-09-22T10:00:00Z",
+				modified_at: null,
 			},
 		]),
 	);

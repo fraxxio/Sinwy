@@ -31,6 +31,7 @@ import {
 import { FieldError } from "#/shared/components/ui/field";
 import { toast } from "#/shared/components/ui/toast";
 import { handleOrganizationInactive } from "#/shared/lib/auth/organization-inactive";
+import { invalidateOrganizations } from "#/shared/lib/organizations";
 import { FEATURE_NAMES, getPlanName, PLAN_PRICES } from "#/shared/lib/plans";
 import { pollUntil } from "#/shared/lib/poll-until";
 import { cn } from "#/shared/lib/utils";
@@ -68,7 +69,7 @@ export function ChangePlanDialog({
 		mutationFn: async (plan: PlanSlug) => {
 			const res = await changePlan(organizationId, { plan });
 			if (!res.isSuccess) {
-				handleOrganizationInactive(res, router);
+				handleOrganizationInactive(res, router, queryClient);
 				throw new Error(res.message);
 			}
 			if (res.data.plan === plan) return res.data;
@@ -85,6 +86,7 @@ export function ChangePlanDialog({
 			if (subscription.plan === plan)
 				queryClient.setQueryData(subscriptionKey, subscription);
 			else void queryClient.invalidateQueries({ queryKey: subscriptionKey });
+			void invalidateOrganizations(queryClient);
 			void router.invalidate();
 		},
 		// a refused change usually means Polar's state moved (canceled, revoked);

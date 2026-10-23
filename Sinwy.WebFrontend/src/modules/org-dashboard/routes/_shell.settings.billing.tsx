@@ -1,13 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { CurrentPlanSection } from "#/modules/org-dashboard/components/billing/CurrentPlanSection";
-import { InactivePlanSection } from "#/modules/org-dashboard/components/billing/InactivePlanSection";
 import { InvoicesSection } from "#/modules/org-dashboard/components/billing/InvoicesSection";
 import { ManageBillingSection } from "#/modules/org-dashboard/components/billing/ManageBillingSection";
 import { ORG_SECTIONS } from "#/modules/org-dashboard/lib/sections";
 import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
-import { useEntitlements } from "#/shared/lib/auth/entitlements";
 import { requirePermission } from "#/shared/lib/auth/protected-route";
 
 export const Route = createFileRoute(
@@ -26,7 +24,6 @@ export const Route = createFileRoute(
 
 function BillingPage() {
 	const { organization } = Route.useRouteContext();
-	const { isActive } = useEntitlements();
 	const { change, page = 1 } = Route.useSearch();
 	const navigate = Route.useNavigate();
 
@@ -51,15 +48,11 @@ function BillingPage() {
 				description="Your organization's plan, invoices and payment method."
 			/>
 			<ContentBox className="divide-y">
-				{isActive ? (
-					<CurrentPlanSection
-						organizationId={organization.id}
-						changePlanOpen={change === "plan"}
-						onChangePlanOpenChange={setChangePlanOpen}
-					/>
-				) : (
-					<InactivePlanSection organizationId={organization.id} />
-				)}
+				<CurrentPlanSection
+					organizationId={organization.id}
+					changePlanOpen={change === "plan"}
+					onChangePlanOpenChange={setChangePlanOpen}
+				/>
 				<InvoicesSection
 					organizationId={organization.id}
 					page={page}

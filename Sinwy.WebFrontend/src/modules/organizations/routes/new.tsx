@@ -15,6 +15,7 @@ import { Skeleton } from "#/shared/components/ui/skeleton";
 import { api } from "#/shared/lib/api";
 import { protectedRoute } from "#/shared/lib/auth/protected-route";
 import { useAppForm } from "#/shared/lib/form";
+import { invalidateOrganizations } from "#/shared/lib/organizations";
 import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/organizations/new")({
@@ -99,7 +100,10 @@ function NewOrganizationPage() {
 				setServerError(response.message);
 				return;
 			}
-			await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: postLoginFlagsKey }),
+				invalidateOrganizations(queryClient),
+			]);
 			await navigate({
 				to: "/organizations/$id/plan",
 				params: { id: response.data.id },

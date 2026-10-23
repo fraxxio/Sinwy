@@ -9,7 +9,7 @@ const authLogger = createLogger("auth");
  * and deleted before the user, so the Polar customer has nothing left to bill.
  */
 const deletePolarCustomer = (userId: string) =>
-	polarClient.customers.deleteExternal({ externalId: userId });
+	polarClient.customers.deleteExternal(userId);
 
 /** Best-effort cleanup after the user row is gone; failures are logged, never surfaced. */
 export const cleanupDeletedUser = async (user: {

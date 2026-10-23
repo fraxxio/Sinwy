@@ -11,16 +11,17 @@ import {
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
-import {
-	activeOrganizationDestination,
-	hasCompletedSetup,
-} from "#/modules/organizations/lib/funnel";
+import { activeOrganizationDestination } from "#/modules/organizations/lib/funnel";
 import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { Button } from "#/shared/components/ui/button";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { api } from "#/shared/lib/api";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import { protectedRoute } from "#/shared/lib/auth/protected-route";
+import {
+	hasCompletedSetup,
+	invalidateOrganizations,
+} from "#/shared/lib/organizations";
 import { pollUntil } from "#/shared/lib/poll-until";
 import { cn } from "#/shared/lib/utils";
 
@@ -149,7 +150,10 @@ function Activation({
 				setPhase(Phase.TimedOut);
 				return;
 			}
-			await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: postLoginFlagsKey }),
+				invalidateOrganizations(queryClient),
+			]);
 			// onboarding is the safe fallback: it also serves a completed profile
 			void navigate(
 				organization

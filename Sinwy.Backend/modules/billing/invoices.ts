@@ -1,8 +1,9 @@
-import { type PolarFailure, polarClient } from "@backend/infrastructure/polar";
-import type { Order } from "@polar-sh/sdk/models/components/order";
-import { MissingInvoiceBillingDetails } from "@polar-sh/sdk/models/errors/missinginvoicebillingdetails";
-import { NotPaidOrder } from "@polar-sh/sdk/models/errors/notpaidorder";
-import { PolarError } from "@polar-sh/sdk/models/errors/polarerror";
+import {
+	PolarApiErrors,
+	type PolarFailure,
+	type PolarModels,
+	polarClient,
+} from "@backend/infrastructure/polar";
 import {
 	INVOICE_BILLING_REASONS,
 	INVOICE_STATUSES,
@@ -20,6 +21,8 @@ export const invoiceListQuery = z.object({
 
 export type InvoiceListQuery = z.infer<typeof invoiceListQuery>;
 
+type Order = PolarModels.Order;
+
 // Every order of a subscription, renewals included, carries the checkout's
 // referenceId (verified in the Polar sandbox). Matching on it instead of the
 // stored subscription id keeps invoices of past subscriptions visible.
@@ -29,17 +32,17 @@ const belongsTo = (order: Order, organizationId: string) =>
 // Order embeds the customer (email, billing address); only this leaves the module
 const toInvoiceDto = (order: Order): InvoiceDto => ({
 	id: order.id,
-	number: order.invoiceNumber,
-	createdAt: order.createdAt.toISOString(),
+	number: order.invoice_number,
+	createdAt: order.created_at,
 	status: knownValue(INVOICE_STATUSES, order.status, "order.status"),
-	totalAmount: order.totalAmount,
+	totalAmount: order.total_amount,
 	currency: order.currency,
 	billingReason: knownValue(
 		INVOICE_BILLING_REASONS,
-		order.billingReason,
-		"order.billingReason",
+		order.billing_reason,
+		"order.billing_reason",
 	),
-	invoiceGenerated: order.isInvoiceGenerated,
+	invoiceGenerated: order.is_invoice_generated,
 });
 
 export const listOrganizationInvoices = async (
@@ -49,7 +52,7 @@ export const listOrganizationInvoices = async (
 	{ ok: true; data: InvoiceListDto } | { ok: false; error: PolarFailure }
 > => {
 	try {
-		const { result } = await polarClient.orders.list({
+		const result = await polarClient.orders.list({
 			metadata: { referenceId: organizationId },
 			sorting: ["-created_at"],
 			page,
@@ -61,7 +64,7 @@ export const listOrganizationInvoices = async (
 				items: result.items.map(toInvoiceDto),
 				page,
 				limit,
-				total: result.pagination.totalCount,
+				total: result.pagination.total_count,
 			},
 		};
 	} catch (error) {
@@ -84,15 +87,15 @@ type InvoiceDownload =
 
 // 404 unknown id, 422 not even a valid id
 const isMissingOrder = (error: unknown) =>
-	error instanceof PolarError &&
-	(error.statusCode === 404 || error.statusCode === 422);
+	error instanceof PolarApiErrors.ResourceNotFound ||
+	error instanceof PolarApiErrors.HTTPValidationError;
 
 const downloadInvoice = async (
 	organizationId: string,
 	orderId: string,
 ): Promise<InvoiceDownload> => {
 	const order = await polarClient.orders
-		.get({ id: orderId })
+		.get(orderId)
 		.catch((error: unknown) => {
 			if (isMissingOrder(error)) return null;
 			throw error;
@@ -100,18 +103,19 @@ const downloadInvoice = async (
 	if (!order || !belongsTo(order, organizationId))
 		return { status: "not-found" };
 
-	if (order.isInvoiceGenerated) {
-		const { url } = await polarClient.orders.invoice({ id: order.id });
+	if (order.is_invoice_generated) {
+		const { url } = await polarClient.orders.invoice(order.id);
 		return { status: "ready", url };
 	}
 
 	try {
-		await polarClient.orders.generateInvoice({ id: order.id });
+		await polarClient.orders.generateInvoice(order.id);
 	} catch (error) {
 		// no billing name or address yet: the customer portal is where it's added
-		if (error instanceof MissingInvoiceBillingDetails)
-			return { status: "needs-details", message: error.detail };
-		if (error instanceof NotPaidOrder) return { status: "not-paid" };
+		if (error instanceof PolarApiErrors.MissingInvoiceBillingDetails)
+			return { status: "needs-details", message: error.error.detail };
+		if (error instanceof PolarApiErrors.OrderNotEligibleForInvoice)
+			return { status: "not-paid" };
 		throw error;
 	}
 	return { status: "generating" };

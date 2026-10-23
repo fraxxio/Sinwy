@@ -1,5 +1,7 @@
+import { clearActiveOrganization } from "@authModule";
 import {
 	describePolarError,
+	type PolarModels,
 	planFor,
 	polarClient,
 } from "@backend/infrastructure/polar";
@@ -8,8 +10,9 @@ import {
 	activateSubscription,
 	deactivateSubscription,
 } from "@organizationsModule";
-import type { Subscription } from "@polar-sh/sdk/models/components/subscription";
 import type { OrganizationStatus } from "@sinwy/shared";
+
+type Subscription = PolarModels.Subscription;
 
 const billingLogger = createLogger("billing:projection");
 
@@ -17,11 +20,11 @@ const billingLogger = createLogger("billing:projection");
 const ENTITLED_STATUSES: readonly string[] = ["active", "trialing", "past_due"];
 
 const planOf = (subscription: Subscription) => {
-	const plan = planFor(subscription.productId);
+	const plan = planFor(subscription.product_id);
 	if (!plan)
 		billingLogger.error("Subscription product maps to no plan", {
 			subscriptionId: subscription.id,
-			productId: subscription.productId,
+			productId: subscription.product_id,
 		});
 	return plan;
 };
@@ -38,7 +41,9 @@ const planOf = (subscription: Subscription) => {
 export const projectSubscription = async (
 	subscription: Subscription,
 ): Promise<OrganizationStatus | null> => {
-	const observedAt = subscription.modifiedAt ?? subscription.createdAt;
+	const observedAt = new Date(
+		subscription.modified_at ?? subscription.created_at,
+	);
 	const organizationId = subscription.metadata["referenceId"];
 	if (typeof organizationId !== "string") {
 		billingLogger.warn("Subscription carries no referenceId", {
@@ -65,7 +70,9 @@ export const projectSubscription = async (
 	switch (write.result) {
 		case "applied":
 			billingLogger.info("Organization projected from subscription", context);
-			return entitled ? "active" : "inactive";
+			if (entitled) return "active";
+			await clearActiveOrganization(organizationId);
+			return "inactive";
 		case "unknown-organization":
 			billingLogger.warn("Subscription references an unknown org", context);
 			return null;
@@ -108,16 +115,13 @@ export const applySubscriptionEvent = async (event: { data: Subscription }) => {
  */
 export const listEntitledSubscriptions = async (organizationId: string) => {
 	const entitled: Subscription[] = [];
-	const pages = await polarClient.subscriptions.list({
+	const subscriptions = polarClient.subscriptions.iterList({
 		metadata: { referenceId: organizationId },
 		limit: 100,
 	});
-	for await (const page of pages)
-		entitled.push(
-			...page.result.items.filter((subscription) =>
-				ENTITLED_STATUSES.includes(subscription.status),
-			),
-		);
+	for await (const subscription of subscriptions)
+		if (ENTITLED_STATUSES.includes(subscription.status))
+			entitled.push(subscription);
 	return entitled;
 };
 

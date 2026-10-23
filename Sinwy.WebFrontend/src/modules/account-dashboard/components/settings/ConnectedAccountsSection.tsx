@@ -40,10 +40,8 @@ export function ConnectedAccountsSection() {
 	});
 
 	const unlink = useMutation({
-		mutationFn: async () => {
-			const { error } = await authClient.unlinkAccount({
-				providerId: "google",
-			});
+		mutationFn: async (accountId: string) => {
+			const { error } = await authClient.unlinkAccount({ accountId });
 			if (error) throw new Error(error.message ?? "Couldn't disconnect Google");
 		},
 		onMutate: () => setError(null),
@@ -84,7 +82,7 @@ export function ConnectedAccountsSection() {
 										variant="outline"
 										size="sm"
 										disabled={!canUnlink || unlink.isPending}
-										onClick={() => unlink.mutate()}
+										onClick={() => unlink.mutate(google.id)}
 									>
 										{unlink.isPending ? "Disconnecting…" : "Disconnect"}
 									</Button>

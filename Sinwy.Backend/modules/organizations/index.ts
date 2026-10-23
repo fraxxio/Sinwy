@@ -10,6 +10,8 @@ export {
 	getSubscriptionState,
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
+	isOrganizationPublic,
+	listOrganizations,
 	type SubscriptionState,
 	saveOrganizationProfile,
 } from "./service";

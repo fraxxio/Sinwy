@@ -158,7 +158,7 @@ afterEach(() => {
 });
 
 const polarSubscription = (id: string) => {
-	listSpy = spyOn(polarClient.subscriptions, "list").mockResolvedValue(
+	listSpy = spyOn(polarClient.subscriptions, "iterList").mockImplementation(
 		polarPages([{ id, status: "active" }]),
 	);
 	revokeSpy = spyOn(polarClient.subscriptions, "revoke").mockResolvedValue(
@@ -180,7 +180,7 @@ test("deleting the organization through Better Auth revokes its subscription fir
 	const res = await post("delete", ownerCookie, { organizationId: orgId });
 
 	expect(res.status).toBe(200);
-	expect(revokeSpy).toHaveBeenCalledWith({ id: "sub_solo" });
+	expect(revokeSpy).toHaveBeenCalledWith("sub_solo");
 	expect(await orgExists()).toBe(false);
 });
 

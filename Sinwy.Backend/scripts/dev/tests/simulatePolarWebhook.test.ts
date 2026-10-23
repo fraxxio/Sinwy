@@ -4,7 +4,7 @@ import createApp from "@backend/lib/app";
 import appConfig from "@config";
 import db from "@db";
 import { organization } from "@db/schema/organizationSchema";
-import { validateEvent } from "@polar-sh/sdk/webhooks";
+import { webhooks } from "@polar-sh/sdk/2026-10";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import {
@@ -59,10 +59,10 @@ const send = (
 	);
 
 for (const type of Object.keys(polarFixtures) as PolarEventType[]) {
-	test(`${type} fixture verifies and parses with the SDK`, () => {
+	test(`${type} delivery passes the SDK's signature check`, async () => {
 		const delivery = buildPolarDelivery({ type, organizationId: orgId });
 
-		const event = validateEvent(
+		const event = await webhooks.validateEvent(
 			delivery.body,
 			delivery.headers,
 			appConfig.POLAR_WEBHOOK_SECRET,
@@ -96,7 +96,20 @@ test("subscription.updated through the endpoint applies to the bound subscriptio
 	expect(await storedState()).toEqual({ status: "inactive", plan: null });
 });
 
-test("tampered body → 400, status unchanged", async () => {
+test("subscription.paused alone → 200, ignored: the subscription.updated Polar sends with it projects", async () => {
+	const subscriptionId = crypto.randomUUID();
+	await send("subscription.active", {
+		subscriptionId,
+		timestamp: new Date(Date.now() - 60_000),
+	});
+
+	expect(await send("subscription.paused", { subscriptionId })).toMatchObject({
+		status: 200,
+	});
+	expect(await storedStatus()).toBe("active");
+});
+
+test("tampered body → 403, status unchanged", async () => {
 	const delivery = buildPolarDelivery({
 		type: "subscription.active",
 		organizationId: orgId,
@@ -107,7 +120,7 @@ test("tampered body → 400, status unchanged", async () => {
 		body: delivery.body.replace(orgId, "org_other"),
 	});
 
-	expect(res.status).toBe(400);
+	expect(res.status).toBe(403);
 	expect(await storedStatus()).toBe("inactive");
 });
 

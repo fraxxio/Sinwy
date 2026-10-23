@@ -1,28 +1,31 @@
-import type { ApiResponse } from "@sinwy/shared";
+import { API_ERROR_CODES, type ApiResponse } from "@sinwy/shared";
+import type { QueryClient } from "@tanstack/react-query";
 import type { AnyRouter } from "@tanstack/react-router";
 import { toast } from "#/shared/components/ui/toast";
-import { isOrganizationInactive } from "#/shared/lib/auth/read-only";
+import { invalidateOrganizations } from "#/shared/lib/organizations";
 
 const TOAST_ID = "organization-inactive";
 
 /**
  * Backstop for org-shell mutations: the plan can be revoked mid-session, so a
  * write the UI still allowed is refused. Tells the user and re-runs the shell's
- * `beforeLoad` so the inactive banner and read-only mode kick in. Returns
- * whether it handled the response.
+ * `beforeLoad` on a fresh organization list, which takes them out of the
+ * organization. Returns whether it handled the response.
  */
 export function handleOrganizationInactive(
 	res: ApiResponse<unknown>,
 	router: Pick<AnyRouter, "invalidate">,
+	queryClient: QueryClient,
 ) {
-	if (!isOrganizationInactive(res)) return false;
+	if (res.isSuccess || res.code !== API_ERROR_CODES.ORGANIZATION_INACTIVE)
+		return false;
 	toast.add({
 		id: TOAST_ID,
 		type: "error",
 		title: "This organization has no active plan",
-		description: "Changes are paused until the plan is renewed.",
+		description: "It can't be opened until its plan is renewed.",
 		timeout: 6_000,
 	});
-	void router.invalidate();
+	void invalidateOrganizations(queryClient).then(() => router.invalidate());
 	return true;
 }

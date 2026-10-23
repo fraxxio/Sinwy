@@ -26,7 +26,7 @@ let revokeSpy: ReturnType<typeof spyOn>;
 beforeEach(async () => {
 	await db.delete(organization);
 	await db.delete(user);
-	listSpy = spyOn(polarClient.subscriptions, "list").mockResolvedValue(
+	listSpy = spyOn(polarClient.subscriptions, "iterList").mockImplementation(
 		polarPages(),
 	);
 	revokeSpy = spyOn(polarClient.subscriptions, "revoke").mockResolvedValue(
@@ -111,7 +111,7 @@ test("every entitled subscription, across pages and past_due included, is revoke
 	const { userId } = await createUserWithSession();
 	const orgId = await insertOrganization("Paying Co");
 	await joinOrganization(orgId, userId, "owner");
-	listSpy.mockResolvedValue(
+	listSpy.mockImplementation(
 		polarPages(
 			[
 				{ id: "sub_1", status: "active" },
@@ -128,8 +128,8 @@ test("every entitled subscription, across pages and past_due included, is revoke
 		limit: 100,
 	});
 	expect(revokeSpy).toHaveBeenCalledTimes(2);
-	expect(revokeSpy).toHaveBeenCalledWith({ id: "sub_1" });
-	expect(revokeSpy).toHaveBeenCalledWith({ id: "sub_2" });
+	expect(revokeSpy).toHaveBeenCalledWith("sub_1");
+	expect(revokeSpy).toHaveBeenCalledWith("sub_2");
 	expect(await orgExists(orgId)).toBe(false);
 });
 
@@ -137,7 +137,7 @@ test("Polar revoke failure throws and deletes nothing", async () => {
 	const { userId } = await createUserWithSession();
 	const orgId = await insertOrganization("Stuck Co");
 	await joinOrganization(orgId, userId, "owner");
-	listSpy.mockResolvedValue(polarPages([{ id: "sub_1", status: "active" }]));
+	listSpy.mockImplementation(polarPages([{ id: "sub_1", status: "active" }]));
 	revokeSpy.mockRejectedValue(new Error("polar down"));
 
 	await expect(deleteSoleOwnedOrganizations(userId)).rejects.toBeInstanceOf(

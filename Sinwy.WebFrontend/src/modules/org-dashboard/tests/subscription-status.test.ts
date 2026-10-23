@@ -37,6 +37,12 @@ describe("describeSubscription", () => {
 		});
 	});
 
+	it("reports a paused subscription as inactive, even before the org is", () => {
+		expect(
+			describeIn(subscription({ subscriptionStatus: "paused" })),
+		).toMatchObject({ label: "Inactive", variant: "destructive" });
+	});
+
 	it("reports a failed payment", () => {
 		for (const subscriptionStatus of ["past_due", "unpaid"] as const)
 			expect(describeIn(subscription({ subscriptionStatus }))).toEqual({

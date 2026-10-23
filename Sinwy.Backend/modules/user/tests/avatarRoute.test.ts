@@ -1,9 +1,8 @@
-import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
-import { polarClient } from "@backend/infrastructure/polar";
 import { keyFromFileUrl, storageClient } from "@backend/infrastructure/storage";
 import createApp from "@backend/lib/app";
-import { createUserWithSession } from "@backend/test/helpers";
+import { createUserWithSession, stubPolarCore } from "@backend/test/helpers";
 import db from "@db";
 import { user } from "@db/schema/userSchema";
 import { registerFileRoutes } from "@filesModule";
@@ -14,15 +13,13 @@ import { registerUserRoutes } from "../routes";
 
 let server: Server<never>;
 let base: URL;
-let updateSpy: ReturnType<typeof spyOn>;
+let polarSpy: ReturnType<typeof stubPolarCore>;
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
 
 beforeAll(() => {
 	// the polar plugin syncs every user update to the Polar customer; keep tests offline
-	updateSpy = spyOn(polarClient.customers, "updateExternal").mockResolvedValue(
-		{} as never,
-	);
+	polarSpy = stubPolarCore();
 	const app = createApp();
 	registerAuthRoutes(app);
 	registerUserRoutes(app);
@@ -32,7 +29,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-	updateSpy.mockRestore();
+	polarSpy.mockRestore();
 	server.stop(true);
 });
 

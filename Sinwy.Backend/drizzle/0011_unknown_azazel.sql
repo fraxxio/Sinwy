@@ -1,0 +1,1 @@
+ALTER TABLE "organization" ADD COLUMN "deletion_scheduled_at" timestamp;

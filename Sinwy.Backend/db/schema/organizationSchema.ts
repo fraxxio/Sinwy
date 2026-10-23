@@ -29,6 +29,7 @@ export const organization = pgTable(
 		subscriptionStatusAt: timestamp("subscription_status_at"),
 		industry: text("industry").notNull().default("other"),
 		onboardingCompletedAt: timestamp("onboarding_completed_at"),
+		deletionScheduledAt: timestamp("deletion_scheduled_at"),
 		logo: text("logo"),
 		createdAt: timestamp("created_at").notNull(),
 		metadata: text("metadata"),

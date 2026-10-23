@@ -4,12 +4,17 @@ import createApp from "@backend/lib/app";
 import {
 	activateOrganization,
 	createUserWithSession,
+	insertOrganization,
 	joinOrganization,
 } from "@backend/test/helpers";
 import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
-import { API_ERROR_CODES, type ApiResponse } from "@sinwy/shared";
+import {
+	API_ERROR_CODES,
+	type ApiResponse,
+	type OrganizationSummary,
+} from "@sinwy/shared";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import { registerOrganizationRoutes } from "../routes";
@@ -524,4 +529,65 @@ test("PUT profile & complete on an unpaid organization → 409", async () => {
 		await get(`/api/organizations/${id}/onboarding`, cookie),
 	);
 	expect(onboarding.completedAt).toBeNull();
+});
+
+test("GET /api/organizations: only the caller's organizations, with their role and state", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const other = await createUserWithSession();
+	const owned = await insertOrganization("Owned");
+	const joined = await insertOrganization("Joined");
+	const foreign = await insertOrganization("Foreign");
+	await joinOrganization(owned, userId, "owner");
+	await joinOrganization(joined, userId, "admin");
+	await joinOrganization(joined, other.userId, "owner");
+	await joinOrganization(foreign, other.userId, "owner");
+	await activateOrganization(joined, "professional");
+	await db
+		.update(organization)
+		.set({ createdAt: new Date("2026-02-01T00:00:00Z") })
+		.where(eq(organization.id, joined));
+	const scheduledAt = new Date();
+	const completedAt = new Date("2026-01-01T00:00:00Z");
+	await db
+		.update(organization)
+		.set({
+			createdAt: new Date("2026-01-15T00:00:00Z"),
+			deletionScheduledAt: scheduledAt,
+			onboardingCompletedAt: completedAt,
+		})
+		.where(eq(organization.id, owned));
+
+	const list = await unwrap<OrganizationSummary[]>(
+		await get("/api/organizations", cookie),
+	);
+
+	expect(list).toEqual([
+		{
+			id: owned,
+			name: "Owned",
+			slug: owned,
+			status: "inactive",
+			plan: null,
+			isOwner: true,
+			scheduledForDeletion: true,
+			onboardingCompletedAt: completedAt.toISOString(),
+		},
+		{
+			id: joined,
+			name: "Joined",
+			slug: joined,
+			status: "active",
+			plan: "professional",
+			isOwner: false,
+			scheduledForDeletion: false,
+			onboardingCompletedAt: null,
+		},
+	]);
+});
+
+test("GET /api/organizations: no organizations → empty list, no session → 401", async () => {
+	const { cookie } = await createUserWithSession();
+
+	expect(await unwrap(await get("/api/organizations", cookie))).toEqual([]);
+	expect((await get("/api/organizations")).status).toBe(401);
 });

@@ -1,5 +1,10 @@
 export { planFor, productIdFor } from "./planProducts";
-export { polarClient } from "./polarClient";
+export {
+	PolarApiErrors,
+	type PolarModels,
+	polarClient,
+	polarCore,
+} from "./polarClient";
 export {
 	describePolarError,
 	type PolarFailure,

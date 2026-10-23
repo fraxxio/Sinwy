@@ -198,12 +198,13 @@ function InvoiceRow({
 	});
 
 	const status = invoice.status ? STATUS_LABELS[invoice.status] : "Unknown";
+	const number = invoice.number ?? "Unnumbered";
 
 	return (
 		<li className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
 			<div className="grid gap-0.5 text-sm">
 				<div className="flex flex-wrap items-center gap-2">
-					<span className="font-medium">{invoice.number}</span>
+					<span className="font-medium">{number}</span>
 					{status && <Badge variant="outline">{status}</Badge>}
 				</div>
 				<span className="text-muted-foreground text-xs">
@@ -221,7 +222,7 @@ function InvoiceRow({
 					variant="ghost"
 					size="sm"
 					disabled={download.isPending}
-					aria-label={`${expectsFile ? "Download" : "Generate"} invoice ${invoice.number}`}
+					aria-label={`${expectsFile ? "Download" : "Generate"} invoice ${number}`}
 					onClick={() => download.mutate()}
 				>
 					{download.isPending && (

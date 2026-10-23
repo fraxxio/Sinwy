@@ -1,76 +1,109 @@
 import { expect, it } from "bun:test";
+import type { OrganizationSummary } from "@sinwy/shared";
 import { postLoginDestination } from "../lib/post-login";
 
-const setUp = (id: string) => ({
+const org = (
+	id: string,
+	overrides: Partial<OrganizationSummary> = {},
+): OrganizationSummary => ({
 	id,
+	name: id,
 	slug: `slug-${id}`,
 	status: "active",
+	plan: "starter",
+	isOwner: true,
+	scheduledForDeletion: false,
+	onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+	...overrides,
 });
 
-const orgs = [setUp("a"), setUp("b"), setUp("c")];
-
-const owner = async () => true;
-const staff = async () => false;
-
-it("prefers the active organization", async () => {
-	expect(await postLoginDestination(orgs, "b", owner)).toEqual({
-		to: "/$organizationSlug",
-		params: { organizationSlug: "slug-b" },
+const neverPaid = (id: string, overrides: Partial<OrganizationSummary> = {}) =>
+	org(id, {
+		status: "inactive",
+		plan: null,
+		onboardingCompletedAt: null,
+		...overrides,
 	});
+
+const lapsed = (id: string, overrides: Partial<OrganizationSummary> = {}) =>
+	org(id, { status: "inactive", plan: null, ...overrides });
+
+const dashboard = (id: string) => ({
+	to: "/$organizationSlug",
+	params: { organizationSlug: `slug-${id}` },
 });
 
-it("falls back to the last organization when the active id is stale", async () => {
-	expect(await postLoginDestination(orgs, "deleted-org", owner)).toEqual({
-		to: "/$organizationSlug",
-		params: { organizationSlug: "slug-c" },
-	});
+const planPage = (id: string) => ({
+	to: "/organizations/$id/plan",
+	params: { id },
 });
 
-it("falls back to the last organization when none is active", async () => {
-	expect(await postLoginDestination(orgs, null, owner)).toEqual({
-		to: "/$organizationSlug",
-		params: { organizationSlug: "slug-c" },
-	});
-});
+const account = { to: "/account" };
 
-const unpaid = [{ id: "a", slug: "slug-a", status: "inactive" }];
-
-it("sends whoever can pay for an unpaid (inactive) organization back to the plan page", async () => {
-	expect(await postLoginDestination(unpaid, "a", owner)).toEqual({
-		to: "/organizations/$id/plan",
-		params: { id: "a" },
-	});
-});
-
-it("sends staff of an unpaid organization to its read-only dashboard", async () => {
-	expect(await postLoginDestination(unpaid, "a", staff)).toEqual({
-		to: "/$organizationSlug",
-		params: { organizationSlug: "slug-a" },
-	});
-});
-
-it("sends a lapsed organization to its read-only dashboard", async () => {
-	expect(
-		await postLoginDestination(
-			[
-				{
-					id: "a",
-					slug: "slug-a",
-					status: "inactive",
-					onboardingCompletedAt: new Date("2026-01-01"),
-				},
-			],
-			"a",
-			owner,
-		),
-	).toEqual({
-		to: "/$organizationSlug",
-		params: { organizationSlug: "slug-a" },
-	});
-});
-
-it("sends users without organizations to Customer Mode", async () => {
-	expect(await postLoginDestination([], null, owner)).toEqual({
-		to: "/account",
-	});
+it.each([
+	[
+		"the session's active organization",
+		[org("a"), org("b")],
+		"a",
+		dashboard("a"),
+	],
+	[
+		"the newest open org when the session has none",
+		[org("a"), org("b")],
+		null,
+		dashboard("b"),
+	],
+	[
+		"the newest open org when the session's id is stale",
+		[org("a"), org("b")],
+		"gone",
+		dashboard("b"),
+	],
+	[
+		"another open org when the session's org lapsed",
+		[org("a"), lapsed("b")],
+		"b",
+		dashboard("a"),
+	],
+	[
+		"an open org over one scheduled for deletion",
+		[org("a"), org("b", { scheduledForDeletion: true })],
+		"b",
+		dashboard("a"),
+	],
+	[
+		"an open org over an owned never-paid one",
+		[org("a"), neverPaid("b")],
+		null,
+		dashboard("a"),
+	],
+	[
+		"the plan page for an owner with only a never-paid org",
+		[lapsed("a"), neverPaid("b")],
+		"a",
+		planPage("b"),
+	],
+	[
+		"the account for an owner with only lapsed orgs",
+		[lapsed("a")],
+		"a",
+		account,
+	],
+	[
+		"the account for staff with only inactive orgs",
+		[neverPaid("a", { isOwner: false }), lapsed("b", { isOwner: false })],
+		null,
+		account,
+	],
+	[
+		"the account for an owner whose never-paid org is scheduled for deletion",
+		[neverPaid("a", { scheduledForDeletion: true })],
+		null,
+		account,
+	],
+	["the account for a user with no organizations", [], null, account],
+] as const)("goes to %s", (_, organizations, activeOrgId, expected) => {
+	expect<unknown>(
+		postLoginDestination([...organizations], activeOrgId),
+	).toEqual(expected);
 });

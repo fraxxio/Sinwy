@@ -1,17 +1,22 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { polarClient, productIdFor } from "@backend/infrastructure/polar";
+import {
+	type PolarModels,
+	polarClient,
+	productIdFor,
+} from "@backend/infrastructure/polar";
 import { insertOrganization, polarPages } from "@backend/test/helpers";
 import db from "@db";
 import { organization } from "@db/schema/organizationSchema";
-import type { Subscription } from "@polar-sh/sdk/models/components/subscription";
 import { eq } from "drizzle-orm";
 import { backfillSubscriptionBindings } from "../backfillSubscriptionBindings";
+
+type Subscription = PolarModels.Subscription;
 
 let listSpy: ReturnType<typeof spyOn>;
 
 beforeEach(async () => {
 	await db.delete(organization);
-	listSpy = spyOn(polarClient.subscriptions, "list").mockResolvedValue(
+	listSpy = spyOn(polarClient.subscriptions, "iterList").mockImplementation(
 		polarPages(),
 	);
 });
@@ -27,10 +32,10 @@ const subscription = (
 	({
 		id: `sub_${organizationId}`,
 		status: "active",
-		productId: productIdFor("professional"),
+		product_id: productIdFor("professional"),
 		metadata: { referenceId: organizationId },
-		createdAt: new Date("2026-08-01T10:00:00Z"),
-		modifiedAt,
+		created_at: "2026-08-01T10:00:00Z",
+		modified_at: modifiedAt.toISOString(),
 		...overrides,
 	}) as Subscription;
 
@@ -59,7 +64,7 @@ const stored = async (id: string) => {
 
 test("apply: binds an active org to its entitled subscription on Polar's clock", async () => {
 	const id = await insertLegacyActiveOrganization("Legacy Co");
-	listSpy.mockResolvedValue(
+	listSpy.mockImplementation(
 		polarPages([
 			subscription(id, { status: "canceled" }),
 			subscription(id, { status: "past_due" }),
@@ -79,7 +84,7 @@ test("apply: binds an active org to its entitled subscription on Polar's clock",
 
 test("dry run: reports what it would bind and writes nothing", async () => {
 	const id = await insertLegacyActiveOrganization("Legacy Co");
-	listSpy.mockResolvedValue(polarPages([subscription(id)]));
+	listSpy.mockImplementation(polarPages([subscription(id)]));
 
 	const [entry] = await backfillSubscriptionBindings({ apply: false });
 

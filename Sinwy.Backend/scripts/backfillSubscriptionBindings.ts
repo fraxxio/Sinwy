@@ -34,15 +34,16 @@ export const backfillSubscriptionBindings = async ({
 			continue;
 		}
 
-		const plan = planFor(subscription.productId);
+		const plan = planFor(subscription.product_id);
 		if (apply)
 			await db
 				.update(organization)
 				.set({
 					plan,
 					subscriptionId: subscription.id,
-					subscriptionStatusAt:
-						subscription.modifiedAt ?? subscription.createdAt,
+					subscriptionStatusAt: new Date(
+						subscription.modified_at ?? subscription.created_at,
+					),
 				})
 				// a webhook may have bound it since the read
 				.where(and(eq(organization.id, org.id), isActiveAndUnbound));

@@ -11,6 +11,7 @@ export const SUBSCRIPTION_BILLING_STATUSES = [
 	"past_due",
 	"canceled",
 	"unpaid",
+	"paused",
 ] as const;
 
 export type SubscriptionBillingStatus =
