@@ -1,5 +1,5 @@
 import { emailClient } from "@backend/infrastructure/email";
-import { polarClient, productIdFor } from "@backend/infrastructure/polar";
+import { polarCore, productIdFor } from "@backend/infrastructure/polar";
 import {
 	applySubscriptionEvent,
 	ensureCheckoutAllowed,
@@ -48,7 +48,7 @@ const validName = (name: unknown) => {
 // referenceId, raw product ids, trials, discounts, redirect URLs)
 const checkoutBodySchema = z.strictObject({
 	slug: z.enum(PLAN_SLUGS),
-	referenceId: z.string().min(1),
+	reference_id: z.string().min(1),
 	redirect: z.boolean().optional(),
 });
 
@@ -176,11 +176,11 @@ export const auth = betterAuth({
 					});
 				const session = await getSessionFromCtx(ctx);
 				if (!session) throw new APIError("UNAUTHORIZED");
-				await ensureCheckoutAllowed(session.user.id, body.data.referenceId);
+				await ensureCheckoutAllowed(session.user.id, body.data.reference_id);
 			}
 			if (
 				ctx.path === "/customer/subscriptions/list" &&
-				ctx.query?.["referenceId"]
+				ctx.query?.["reference_id"]
 			)
 				throw new APIError("FORBIDDEN", {
 					message: "Read organization subscriptions through the organization",
@@ -240,7 +240,7 @@ export const auth = betterAuth({
 			},
 		}),
 		polar({
-			client: polarClient,
+			client: polarCore,
 			createCustomerOnSignUp: true,
 			use: [
 				checkout({

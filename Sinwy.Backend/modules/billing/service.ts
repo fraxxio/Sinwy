@@ -1,7 +1,9 @@
 import type { Membership } from "@authModule";
 import {
 	describePolarError,
+	PolarApiErrors,
 	type PolarFailure,
+	type PolarModels,
 	polarClient,
 	polarFailureOf,
 	productIdFor,
@@ -11,9 +13,6 @@ import {
 	getSubscriptionState,
 	type SubscriptionState,
 } from "@organizationsModule";
-import type { Subscription } from "@polar-sh/sdk/models/components/subscription";
-import { AlreadyCanceledSubscription } from "@polar-sh/sdk/models/errors/alreadycanceledsubscription";
-import { SubscriptionLocked } from "@polar-sh/sdk/models/errors/subscriptionlocked";
 import {
 	BILLING_INTERVALS,
 	featuresFor,
@@ -31,6 +30,8 @@ import {
 	reconcileInactiveOrganization,
 } from "./projection";
 
+type Subscription = PolarModels.Subscription;
+
 const billingLogger = createLogger("billing");
 
 export const getOrganizationStatus = async (
@@ -47,9 +48,9 @@ export const getCheckoutOrganization = async (
 ) => {
 	// null → unknown checkout, someone else's checkout, or no org reference
 	const checkout = await polarClient.checkouts
-		.get({ id: checkoutId })
+		.get(checkoutId)
 		.catch(() => null);
-	if (!checkout || checkout.externalCustomerId !== userId) return null;
+	if (!checkout || checkout.external_customer_id !== userId) return null;
 	const referenceId = checkout.metadata["referenceId"];
 	return typeof referenceId === "string"
 		? { organizationId: referenceId }
@@ -67,8 +68,8 @@ const toBillingDto = (
 	);
 	const interval = knownValue(
 		BILLING_INTERVALS,
-		subscription.recurringInterval,
-		"subscription.recurringInterval",
+		subscription.recurring_interval,
+		"subscription.recurring_interval",
 	);
 	if (!subscriptionStatus || !interval) return null;
 	return {
@@ -76,10 +77,10 @@ const toBillingDto = (
 		amount: subscription.amount,
 		currency: subscription.currency,
 		interval,
-		intervalCount: subscription.recurringIntervalCount,
-		currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
-		cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
-		endsAt: subscription.endsAt?.toISOString() ?? null,
+		intervalCount: subscription.recurring_interval_count,
+		currentPeriodEnd: subscription.current_period_end,
+		cancelAtPeriodEnd: subscription.cancel_at_period_end,
+		endsAt: subscription.ends_at,
 	};
 };
 
@@ -95,15 +96,13 @@ const toSubscriptionDto = (
 
 /** A Polar outage only costs the billing details, never the projection. */
 const fetchSubscription = (subscriptionId: string) =>
-	polarClient.subscriptions
-		.get({ id: subscriptionId })
-		.catch((error: unknown) => {
-			billingLogger.warn("Polar subscription read failed", {
-				subscriptionId,
-				...describePolarError(error),
-			});
-			return null;
+	polarClient.subscriptions.get(subscriptionId).catch((error: unknown) => {
+		billingLogger.warn("Polar subscription read failed", {
+			subscriptionId,
+			...describePolarError(error),
 		});
+		return null;
+	});
 
 /** null when the organization was deleted after its membership resolved. */
 export const getOrganizationSubscription = async (
@@ -155,14 +154,20 @@ export const changeOrganizationPlan = async (
 	const productId = productIdFor(plan);
 	let subscription: Subscription;
 	try {
-		subscription = await polarClient.subscriptions.update({
-			id: state.subscriptionId,
-			subscriptionUpdate: { productId, prorationBehavior: "prorate" },
-		});
+		subscription = await polarClient.subscriptions.update(
+			state.subscriptionId,
+			{ product_id: productId, proration_behavior: "prorate" },
+		);
 	} catch (error) {
-		if (error instanceof AlreadyCanceledSubscription)
+		if (
+			error instanceof PolarApiErrors.SubscriptionsUpdate403Error &&
+			error.error.error === "AlreadyCanceledSubscription"
+		)
 			return { ok: false, error: "canceled" };
-		if (error instanceof SubscriptionLocked)
+		if (
+			error instanceof PolarApiErrors.SubscriptionsUpdate409Error &&
+			error.error.error === "SubscriptionLocked"
+		)
 			return { ok: false, error: "locked" };
 		// a double submit, or a retry after our projection failed, finds Polar
 		// already on the product
@@ -170,7 +175,7 @@ export const changeOrganizationPlan = async (
 			polarFailureOf(error) === "rejected"
 				? await fetchSubscription(state.subscriptionId)
 				: null;
-		if (current?.productId !== productId)
+		if (current?.product_id !== productId)
 			return {
 				ok: false,
 				error: toPolarFailure(error, "Polar plan change failed", {
@@ -201,7 +206,7 @@ export const revokeOrganizationSubscription = async (
 		// collected first: revoking while paging would shift later pages
 		const subscriptions = await listEntitledSubscriptions(organizationId);
 		for (const { id: subscriptionId } of subscriptions) {
-			await polarClient.subscriptions.revoke({ id: subscriptionId });
+			await polarClient.subscriptions.revoke(subscriptionId);
 			billingLogger.info("Revoked subscription before deletion", {
 				organizationId,
 				subscriptionId,

@@ -1,8 +1,6 @@
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { polarClient } from "@backend/infrastructure/polar";
-import type { WebhookEventType } from "@polar-sh/sdk/models/components/webhookeventtype";
-import sdkPackage from "@polar-sh/sdk/package.json";
+import { type PolarModels, polarClient } from "@backend/infrastructure/polar";
 import { assertLocalDev } from "../assertLocalDev";
 
 const fixturesDir = join(import.meta.dir, "fixtures/polar");
@@ -24,13 +22,15 @@ const scrub = (value: unknown): unknown => {
 	);
 };
 
+type WebhookEventType = PolarModels.WebhookEventType;
+
 /** Newest real sandbox delivery of `type`, as Polar sent it. */
 export const capturePolarFixture = async (type: WebhookEventType) => {
-	const { result } = await polarClient.webhooks.listWebhookDeliveries({
-		eventType: type,
+	const { items } = await polarClient.webhooks.listWebhookDeliveries({
+		event_type: type,
 		limit: 1,
 	});
-	const event = result.items[0]?.webhookEvent;
+	const event = items[0]?.webhook_event;
 	if (!event?.payload) {
 		throw new Error(`No ${type} delivery with a payload in the sandbox`);
 	}
@@ -38,7 +38,7 @@ export const capturePolarFixture = async (type: WebhookEventType) => {
 	const payload = JSON.parse(event.payload) as { api_version?: string };
 	return {
 		capturedAt: new Date().toISOString().slice(0, 10),
-		sdkVersion: sdkPackage.version,
+		// the payload's shape follows the webhook endpoint's API version, not the SDK
 		apiVersion: payload.api_version,
 		eventId: event.id,
 		payload: scrub(payload),

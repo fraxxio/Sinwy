@@ -1,3 +1,5 @@
+import { spyOn } from "bun:test";
+import { polarCore } from "@backend/infrastructure/polar";
 import type { IReqContext } from "@backend/lib/app/types";
 import type { ReqContextValues } from "@backend/lib/sharedTypes";
 import appConfig from "@config";
@@ -131,21 +133,50 @@ export const fakeCtx = (
 	};
 };
 
-/** What a Polar `list` resolves to: the first page, async-iterable over all pages. */
-export const polarPages = <T>(...pages: T[][]) => {
-	const toPage = (items: T[]) => ({
-		result: {
-			items,
-			pagination: {
-				totalCount: pages.flat().length,
-				maxPage: pages.length,
-			},
-		},
+/** Stands in for a Polar `iterList`: each call yields every item of every page afresh. */
+export const polarPages =
+	<T>(...pages: T[][]) =>
+	(..._args: unknown[]): AsyncGenerator<never> =>
+		(async function* () {
+			for (const items of pages) yield* items as never[];
+		})();
+
+/**
+ * Answers the better-auth plugin's own Polar calls offline: it syncs the
+ * customer on sign-up, user update and user delete, and serves checkout and
+ * the customer portal, all through `polarCore`. `responses` is keyed by
+ * route, e.g. `"POST /v1/checkouts/"`.
+ */
+export const stubPolarCore = (responses: Record<string, unknown> = {}) =>
+	spyOn(polarCore, "sendRequest").mockImplementation(([url, init]) => {
+		const route = `${init.method} ${new URL(url).pathname}`;
+		return Promise.resolve(cannedPolarResponse(route, responses));
 	});
-	return {
-		...toPage(pages[0] ?? []),
-		async *[Symbol.asyncIterator]() {
-			for await (const items of pages) yield toPage(items);
-		},
-	} as never;
+
+const cannedPolarResponse = (
+	route: string,
+	responses: Record<string, unknown>,
+) => {
+	if (route in responses) return Response.json(responses[route]);
+	if (route.startsWith("DELETE ")) return new Response(null, { status: 204 });
+	// no existing customer for the email, so sign-up creates one
+	if (route === "GET /v1/customers/")
+		return Response.json({
+			items: [],
+			pagination: { total_count: 0, max_page: 1 },
+		});
+	return Response.json({});
 };
+
+/** The JSON bodies of the stubbed core requests to `route`, oldest first. */
+export const polarCoreRequests = (
+	spy: ReturnType<typeof stubPolarCore>,
+	route: string,
+) =>
+	spy.mock.calls
+		.filter(
+			([[url, init]]) => `${init.method} ${new URL(url).pathname}` === route,
+		)
+		.map(([[, init]]) =>
+			typeof init.body === "string" ? (JSON.parse(init.body) as unknown) : null,
+		);

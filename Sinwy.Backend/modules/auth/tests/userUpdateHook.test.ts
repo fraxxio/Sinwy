@@ -1,22 +1,19 @@
-import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { polarClient } from "@backend/infrastructure/polar";
-import { createUserWithSession } from "@backend/test/helpers";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { createUserWithSession, stubPolarCore } from "@backend/test/helpers";
 import db from "@db";
 import { user } from "@db/schema/userSchema";
 import { APIError } from "better-auth/api";
 import { eq } from "drizzle-orm";
 import { auth } from "../auth";
 
-let updateSpy: ReturnType<typeof spyOn>;
+let polarSpy: ReturnType<typeof stubPolarCore>;
 
 // the polar plugin syncs every user update to the Polar customer; keep tests offline
 beforeAll(() => {
-	updateSpy = spyOn(polarClient.customers, "updateExternal").mockResolvedValue(
-		{} as never,
-	);
+	polarSpy = stubPolarCore();
 });
 
-afterAll(() => updateSpy.mockRestore());
+afterAll(() => polarSpy.mockRestore());
 
 beforeEach(async () => {
 	await db.delete(user);

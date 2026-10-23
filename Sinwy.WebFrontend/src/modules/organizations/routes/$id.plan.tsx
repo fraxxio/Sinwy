@@ -232,7 +232,7 @@ function PlanPage() {
 	const choosePlan = async (slug: string) => {
 		setServerError(null);
 		setPendingSlug(slug);
-		const { error } = await authClient.checkout({ slug, referenceId: id });
+		const { error } = await authClient.checkout({ slug, reference_id: id });
 		if (error) {
 			setServerError(error.message ?? "Checkout failed");
 			setPendingSlug(null);

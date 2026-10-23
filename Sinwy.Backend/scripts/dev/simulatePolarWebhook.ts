@@ -5,6 +5,7 @@ import { PLAN_SLUGS, type PlanSlug, toPlanSlug } from "@sinwy/shared";
 import { Webhook } from "standardwebhooks";
 import { assertLocalDev } from "../assertLocalDev";
 import subscriptionActive from "./fixtures/polar/subscription.active.json";
+import subscriptionPaused from "./fixtures/polar/subscription.paused.json";
 import subscriptionRevoked from "./fixtures/polar/subscription.revoked.json";
 import subscriptionUpdated from "./fixtures/polar/subscription.updated.json";
 
@@ -12,6 +13,7 @@ export const polarFixtures = {
 	"subscription.active": subscriptionActive,
 	"subscription.updated": subscriptionUpdated,
 	"subscription.revoked": subscriptionRevoked,
+	"subscription.paused": subscriptionPaused,
 };
 export type PolarEventType = keyof typeof polarFixtures;
 

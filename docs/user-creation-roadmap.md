@@ -216,13 +216,13 @@ System calls Polar checkout:
 ```
 authClient.checkout({
   slug: "professional",
-  referenceId: organizationId
+  reference_id: organizationId
 })
 ```
 
 Key behavior:
 
-- `referenceId = organizationId`
+- `reference_id = organizationId`, stored by Polar as `metadata.referenceId`
 - Polar binds subscription to organization context
 
 User is redirected to payment provider.

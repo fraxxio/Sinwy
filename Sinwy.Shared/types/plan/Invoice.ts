@@ -20,7 +20,8 @@ export type InvoiceBillingReason = (typeof INVOICE_BILLING_REASONS)[number];
 
 export type InvoiceDto = {
 	id: string;
-	number: string;
+	/** null until Polar numbers the order. */
+	number: string | null;
 	createdAt: string;
 	/** null when Polar sent a status this version doesn't know. */
 	status: InvoiceStatus | null;

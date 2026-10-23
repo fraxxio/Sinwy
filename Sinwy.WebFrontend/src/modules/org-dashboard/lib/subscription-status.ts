@@ -17,14 +17,17 @@ export function describeSubscription(
 	subscription: OrganizationSubscriptionDto,
 	locale?: string,
 ): SubscriptionDescription {
-	if (subscription.status !== "active")
+	const { billing } = subscription;
+	if (
+		subscription.status !== "active" ||
+		billing?.subscriptionStatus === "paused"
+	)
 		return {
 			label: "Inactive",
 			variant: "destructive",
 			detail: "This organization has no active plan.",
 		};
 
-	const { billing } = subscription;
 	if (!billing) return { label: "Active", variant: "default", detail: null };
 
 	const date = (iso: string) => formatDay(iso, locale);

@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { polarClient, productIdFor } from "@backend/infrastructure/polar";
+import {
+	type PolarModels,
+	polarClient,
+	productIdFor,
+} from "@backend/infrastructure/polar";
 import { insertOrganization, polarPages } from "@backend/test/helpers";
 import db from "@db";
 import { organization } from "@db/schema/organizationSchema";
@@ -8,12 +12,13 @@ import {
 	getSubscriptionState,
 	type SubscriptionState,
 } from "@organizationsModule";
-import type { Subscription } from "@polar-sh/sdk/models/components/subscription";
 import {
 	applySubscriptionEvent,
 	projectSubscription,
 	reconcileInactiveOrganization,
 } from "../projection";
+
+type Subscription = PolarModels.Subscription;
 
 let orgId: string;
 
@@ -25,16 +30,17 @@ beforeEach(async () => {
 // Polar's modification time, strictly increasing, so each subscription
 // state built in a test is newer than the last
 let clock = Date.now();
-const later = () => new Date(++clock);
+const later = () => new Date(++clock).toISOString();
+const at = (ms: number) => new Date(ms).toISOString();
 
 const subscription = (overrides: Partial<Subscription> = {}) =>
 	({
 		id: "sub_1",
 		status: "active",
-		productId: productIdFor("professional"),
+		product_id: productIdFor("professional"),
 		metadata: { referenceId: orgId },
-		createdAt: new Date(0),
-		modifiedAt: later(),
+		created_at: at(0),
+		modified_at: later(),
 		...overrides,
 	}) as Subscription;
 
@@ -65,16 +71,16 @@ test("trialing and past_due still entitle", async () => {
 
 test("product change on the same subscription → new plan", async () => {
 	await project();
-	await project({ productId: productIdFor("enterprise") });
+	await project({ product_id: productIdFor("enterprise") });
 	expect((await getSubscriptionState(orgId))?.plan).toBe("enterprise");
 });
 
 test("canceled at period end keeps the org active until Polar ends it", async () => {
 	await project();
-	expect(await project({ cancelAtPeriodEnd: true })).toBe("active");
-	expect(await project({ status: "canceled", cancelAtPeriodEnd: true })).toBe(
-		"inactive",
-	);
+	expect(await project({ cancel_at_period_end: true })).toBe("active");
+	expect(
+		await project({ status: "canceled", cancel_at_period_end: true }),
+	).toBe("inactive");
 });
 
 test("statuses that grant no access → inactive, one Polar adds later included", async () => {
@@ -113,7 +119,7 @@ test("second active subscription does not take over the bound one", async () => 
 	expect(
 		await project({
 			id: "sub_second",
-			productId: productIdFor("enterprise"),
+			product_id: productIdFor("enterprise"),
 		}),
 	).toBeNull();
 	expect(await getSubscriptionState(orgId)).toEqual({
@@ -127,18 +133,28 @@ test("a refused write says why, from the state it was refused against", async ()
 	await project({ id: "sub_first" });
 
 	expect(
-		await activateSubscription(orgId, "sub_second", "starter", later()),
+		await activateSubscription(
+			orgId,
+			"sub_second",
+			"starter",
+			new Date(later()),
+		),
 	).toEqual({ result: "bound-elsewhere", boundSubscriptionId: "sub_first" });
 	expect(
 		await activateSubscription(orgId, "sub_first", "starter", new Date(0)),
 	).toEqual({ result: "outdated" });
 	expect(
-		await activateSubscription("org_missing", "sub_first", "starter", later()),
+		await activateSubscription(
+			"org_missing",
+			"sub_first",
+			"starter",
+			new Date(later()),
+		),
 	).toEqual({ result: "unknown-organization" });
 });
 
 test("unknown product → active with no plan, never a throw", async () => {
-	await project({ productId: "prod_elsewhere" });
+	await project({ product_id: "prod_elsewhere" });
 	expect(await getSubscriptionState(orgId)).toEqual({
 		status: "active",
 		plan: null,
@@ -164,17 +180,15 @@ test("state older than the applied one is ignored", async () => {
 	const activeAt = later();
 	await project({ status: "canceled" });
 
-	expect(await project({ modifiedAt: activeAt })).toBeNull();
+	expect(await project({ modified_at: activeAt })).toBeNull();
 	expect(await getSubscriptionState(orgId)).toEqual(inactive);
 });
 
 test("never-modified subscription is ordered by its creation time", async () => {
-	await project({ status: "canceled", modifiedAt: new Date(2000) });
+	await project({ status: "canceled", modified_at: at(2000) });
 
-	expect(
-		await project({ modifiedAt: null, createdAt: new Date(1000) }),
-	).toBeNull();
-	expect(await project({ modifiedAt: null, createdAt: later() })).toBe(
+	expect(await project({ modified_at: null, created_at: at(1000) })).toBeNull();
+	expect(await project({ modified_at: null, created_at: later() })).toBe(
 		"active",
 	);
 });
@@ -202,7 +216,9 @@ afterEach(() => {
 });
 
 const polarActive = (items: Subscription[]) =>
-	spyOn(polarClient.subscriptions, "list").mockResolvedValue(polarPages(items));
+	spyOn(polarClient.subscriptions, "iterList").mockImplementation(
+		polarPages(items),
+	);
 
 test("reconcile: inactive org with an active Polar subscription → activated with its plan", async () => {
 	listSpy = polarActive([subscription()]);
@@ -231,19 +247,22 @@ test("reconcile: nothing in Polar or Polar down → stays inactive", async () =>
 	listSpy = polarActive([]);
 	expect(await reconcileInactiveOrganization(orgId)).toBe(false);
 
-	listSpy.mockRejectedValue(new Error("polar down"));
+	listSpy.mockImplementation(async function* () {
+		const items: never[] = await Promise.reject(new Error("polar down"));
+		yield* items;
+	});
 	expect(await reconcileInactiveOrganization(orgId)).toBe(false);
 	expect(await getSubscriptionState(orgId)).toEqual(inactive);
 });
 
 test("reconcile: a revocation applied while Polar is queried wins", async () => {
 	const listed = subscription();
-	listSpy = spyOn(polarClient.subscriptions, "list").mockImplementation(
-		async () => {
+	listSpy = spyOn(polarClient.subscriptions, "iterList").mockImplementation(
+		async function* () {
 			await applySubscriptionEvent({
 				data: subscription({ status: "canceled" }),
 			});
-			return polarPages([listed]);
+			yield listed;
 		},
 	);
 
@@ -253,13 +272,15 @@ test("reconcile: a revocation applied while Polar is queried wins", async () => 
 
 test("reconcile and webhooks share Polar's clock: a later revocation applies even when ours runs ahead", async () => {
 	const polarNow = new Date("2020-01-01T00:00:00Z");
-	listSpy = polarActive([subscription({ modifiedAt: polarNow })]);
+	listSpy = polarActive([
+		subscription({ modified_at: polarNow.toISOString() }),
+	]);
 	expect(await reconcileInactiveOrganization(orgId)).toBe(true);
 
 	await applySubscriptionEvent({
 		data: subscription({
 			status: "canceled",
-			modifiedAt: new Date(polarNow.getTime() + 1000),
+			modified_at: at(polarNow.getTime() + 1000),
 		}),
 	});
 
