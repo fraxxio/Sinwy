@@ -197,7 +197,7 @@ export const deleteOrganizations = (ids: string[]) =>
 
 /**
  * Oldest organization the user owns that billing has not activated yet. A
- * lapsed one (onboarding finished) is left to the dashboard's inactive banner.
+ * lapsed one (onboarding finished) renews from Account → Organizations.
  * Single index hit on member_userId_idx, then a primary-key join, this runs
  * on every app load, so it must stay a bounded lookup.
  */
@@ -218,6 +218,24 @@ export const findUnpaidOwnedOrganization = async (userId: string) => {
 		.limit(1);
 	return row?.organizationId ?? null;
 };
+
+/** Every organization the user belongs to, oldest first, with their raw role column. */
+export const findMemberOrganizations = (userId: string) =>
+	db
+		.select({
+			id: organization.id,
+			name: organization.name,
+			slug: organization.slug,
+			status: organization.status,
+			plan: organization.plan,
+			role: member.role,
+			deletionScheduledAt: organization.deletionScheduledAt,
+			onboardingCompletedAt: organization.onboardingCompletedAt,
+		})
+		.from(member)
+		.innerJoin(organization, eq(member.organizationId, organization.id))
+		.where(eq(member.userId, userId))
+		.orderBy(asc(organization.createdAt), asc(organization.id));
 
 /** Oldest paid organization the user owns that never finished its setup wizard. */
 export const findUnfinishedOnboardingOrganization = async (userId: string) => {

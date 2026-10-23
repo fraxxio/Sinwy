@@ -12,13 +12,16 @@ import {
 	type OrganizationOnboardingDto,
 	type OrganizationProfileDto,
 	type OrganizationStatus,
+	type OrganizationSummary,
 	type PlanSlug,
+	parseMemberRoles,
 	toOrganizationStatus,
 	toPlanSlug,
 } from "@sinwy/shared";
 import {
 	bindSubscription,
 	deleteOrganizations,
+	findMemberOrganizations,
 	findOnboardingCompletedAt,
 	findProfile,
 	findSoleOwnedOrganizations,
@@ -52,6 +55,32 @@ export const createOrganization = async (
 		plan: toPlanSlug(org.plan ?? null),
 		industry: org.industry as OrganizationIndustry,
 	};
+};
+
+/**
+ * Active and not scheduled for deletion: the only state in which members may
+ * open the organization. Public pages, booking pages and custom-domain
+ * resolution must serve an organization only when this holds.
+ */
+export const isOrganizationPublic = (org: {
+	status: string;
+	deletionScheduledAt: Date | null;
+}) => org.status === "active" && org.deletionScheduledAt === null;
+
+export const listOrganizations = async (
+	userId: string,
+): Promise<OrganizationSummary[]> => {
+	const rows = await findMemberOrganizations(userId);
+	return rows.map((row) => ({
+		id: row.id,
+		name: row.name,
+		slug: row.slug,
+		status: toOrganizationStatus(row.status),
+		plan: toPlanSlug(row.plan),
+		isOwner: parseMemberRoles(row.role).includes("owner"),
+		scheduledForDeletion: row.deletionScheduledAt !== null,
+		onboardingCompletedAt: row.onboardingCompletedAt?.toISOString() ?? null,
+	}));
 };
 
 export type SubscriptionState = {

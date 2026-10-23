@@ -4,14 +4,21 @@ import {
 	polarClient,
 	productIdFor,
 } from "@backend/infrastructure/polar";
-import { insertOrganization, polarPages } from "@backend/test/helpers";
+import {
+	createUserWithSession,
+	insertOrganization,
+	polarPages,
+} from "@backend/test/helpers";
 import db from "@db";
+import { session } from "@db/schema/authSchema";
 import { organization } from "@db/schema/organizationSchema";
+import { user } from "@db/schema/userSchema";
 import {
 	activateSubscription,
 	getSubscriptionState,
 	type SubscriptionState,
 } from "@organizationsModule";
+import { eq } from "drizzle-orm";
 import {
 	applySubscriptionEvent,
 	projectSubscription,
@@ -99,6 +106,29 @@ test("revoked subscription → inactive, plan and binding cleared", async () => 
 	await project();
 	expect(await project({ status: "canceled" })).toBe("inactive");
 	expect(await getSubscriptionState(orgId)).toEqual(inactive);
+});
+
+test("deactivation takes the org out of sessions, leaving other orgs' sessions alone", async () => {
+	await db.delete(user);
+	const otherOrgId = await insertOrganization("Other Co");
+	const inOrg = await createUserWithSession({ activeOrganizationId: orgId });
+	const elsewhere = await createUserWithSession({
+		activeOrganizationId: otherOrgId,
+	});
+	const activeOrganizationOf = async (userId: string) => {
+		const [row] = await db
+			.select({ activeOrganizationId: session.activeOrganizationId })
+			.from(session)
+			.where(eq(session.userId, userId));
+		return row?.activeOrganizationId;
+	};
+
+	await project();
+	expect(await activeOrganizationOf(inOrg.userId)).toBe(orgId);
+
+	await project({ status: "canceled" });
+	expect(await activeOrganizationOf(inOrg.userId)).toBeNull();
+	expect(await activeOrganizationOf(elsewhere.userId)).toBe(otherOrgId);
 });
 
 test("stale revocation of an old subscription leaves the new one alone", async () => {

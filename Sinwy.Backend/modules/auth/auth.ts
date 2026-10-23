@@ -26,6 +26,7 @@ import {
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
+import { refuseUnavailableOrganization } from "./activeOrganization";
 import { cleanupDeletedUser } from "./deletedUserCleanup";
 import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
@@ -178,6 +179,12 @@ export const auth = betterAuth({
 				if (!session) throw new APIError("UNAUTHORIZED");
 				await ensureCheckoutAllowed(session.user.id, body.data.reference_id);
 			}
+			// the plugin has no beforeSetActive hook
+			if (ctx.path === "/organization/set-active") {
+				const session = await getSessionFromCtx(ctx);
+				if (session)
+					await refuseUnavailableOrganization(session.session, ctx.body);
+			}
 			if (
 				ctx.path === "/customer/subscriptions/list" &&
 				ctx.query?.["reference_id"]
@@ -231,6 +238,11 @@ export const auth = betterAuth({
 							required: false,
 						},
 						onboardingCompletedAt: {
+							type: "date",
+							required: false,
+							input: false,
+						},
+						deletionScheduledAt: {
 							type: "date",
 							required: false,
 							input: false,

@@ -38,7 +38,7 @@ This plan covers the rest.
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 0 | Polar SDK and plugin upgrade | – | done | `feat(backend, web): upgrade Polar SDK 1.x, plugin 2.x and better-auth 1.7` |
-| 1 | Inactive orgs are locked out | 0 | todo | |
+| 1 | Inactive orgs are locked out | 0 | done | `feat(backend, web): lock inactive organizations out of the dashboard` |
 | 2 | Suspend with Polar pause | 1 | todo | |
 | 3 | Owner deletion and 30-day retention | 2 | todo | |
 | 4 | Ownership transfer | 3 | todo | |
@@ -537,3 +537,88 @@ Template:
     'append')` during SSR. Pre-upgrade devtools-ui 0.7.0 has the same code.
   - The plan-change dialog shows USD catalog prices ($12, $48, $96) while
     Polar charges €9 and €18. Not caused by this phase.
+
+### Phase 1: Inactive orgs are locked out (2026-10-23, `feat(backend, web): lock inactive organizations out of the dashboard`)
+- Shipped:
+  - `organization.deletion_scheduled_at` (migration `0011`), a Better Auth
+    additional field `deletionScheduledAt` (`input: false`), mirrored in the
+    web auth client schema. Nothing sets it yet.
+  - `GET /api/organizations` → `OrganizationSummary[]` (oldest first), one
+    `member` ⋈ `organization` query on `member_userId_idx`.
+  - `hooks.before` on `/organization/set-active`
+    (`modules/auth/activeOrganization.ts`): resolves the org the way the
+    plugin does (null leaves, id beats slug, neither means the session's
+    current org) and refuses one that fails `isOrganizationPublic` with
+    `403` and `code: "ORGANIZATION_INACTIVE"` (`AUTH_ERROR_CODES` in shared).
+    Only members get that refusal; non-members still get the plugin's own,
+    so the status never leaks.
+  - `clearActiveOrganization(organizationId)` exported from the auth module;
+    the projection calls it after an applied inactive write.
+  - `isOrganizationPublic(org)` exported from the organizations module; the
+    rule is recorded in `docs/user-creation-roadmap.md` (Step 5).
+  - Web: `shared/lib/organizations.ts` holds the list query
+    (`organizationsQuery`, `invalidateOrganizations`), `isOrganizationOpen`,
+    `reactivationLink` (owner, not scheduled → plan page, `intent: "renew"`
+    when lapsed) and `closedOrganizationReason`. The switcher, the org shell
+    guard, post-login and Account → Organizations all use them. The list is
+    invalidated after org creation, checkout success, plan change and a 409
+    `ORGANIZATION_INACTIVE`.
+  - Org shell `beforeLoad`: checks the (cached) list first, then `setActive`;
+    a `ORGANIZATION_INACTIVE` refusal refetches the list and redirects the
+    same way (owner → plan page, others → `/account` with a toast).
+  - Removed: `InactiveOrganizationBanner`, `read-only.ts` and its test,
+    `canAct`/`isActive` in `usePermissions`, `InactivePlanSection` and the
+    inactive branches of the billing page and `UpgradePrompt`.
+  - E2E (seeded `org-with-staff` and `owner-with-org`, webhooks simulated):
+    revoke while the owner's dashboard tab is open → session's active org
+    cleared in the DB; the next in-app navigation is refused by `set-active`
+    and lands on the renew plan page; hard load of the dashboard URL → plan
+    page; post-login → `/account`; Account → Organizations shows "Renew
+    plan"; switcher entry links to the plan page. Staff: post-login →
+    `/account`; dashboard URL → `/account` with "This organization has no
+    active plan"; switcher entry disabled with that tooltip; list row says
+    to ask the owner. Renewal webhook → owner's post-login opens the
+    dashboard and sets the active org again. Never-paid owner: post-login,
+    dashboard URL and onboarding URL all → funnel plan page; "Get started"
+    still opens a Polar sandbox checkout (abandoned).
+- Differs from plan:
+  - The plan page and the onboarding page called `setActive` themselves,
+    which the new refusal broke for inactive orgs. Both now read the org
+    with `getFullOrganization` and never change the session's active org.
+  - `OrganizationSummary` also carries `onboardingCompletedAt` (ISO string):
+    the switcher needs it to tell lapsed (renew copy) from never-paid
+    (funnel). `hasCompletedSetup`/`isLapsed` moved to
+    `shared/lib/organizations.ts` so `shared/` can use them.
+  - One code, `ORGANIZATION_INACTIVE`, covers both inactive and scheduled
+    orgs; a scheduled org is inactive anyway from Phase 3 on.
+  - Post-login reads the new endpoint and uses `isOwner`, instead of
+    fetching each org's roles for `billing:manage`; it is now synchronous.
+  - `raiseAccessDenied` takes an optional title, so the shell's redirect to
+    `/account` reuses the parked-toast mechanism.
+- Notes for later phases:
+  - Only the dashboard is locked. Backend reads for members of an inactive
+    org (`GET …/onboarding`, `…/subscription`, `…/status`) still answer;
+    writes still answer 409. Phase 3 makes `requireMember` treat scheduled
+    orgs as not found.
+  - `clearActiveOrganization` runs after the projection's transaction, not
+    inside it. If it fails, the webhook errors and Polar's retry is
+    `outdated`, so the stale session row stays; the shell guard and the
+    `set-active` refusal still keep the user out. Phase 3 can clear sessions
+    inside its own transaction as planned.
+  - `session.active_organization_id` has no index (the auth schema is
+    generated by Better Auth's CLI), so the clear is a sequential scan. Fine
+    while deactivations are rare; add an index if the session table grows.
+  - `scheduledForDeletion` is a boolean. Phase 3 wants the deletion date in
+    the switcher and Account → Organizations: add `deletionScheduledAt` to
+    the DTO then. The list and switcher already disable scheduled orgs and
+    show "This organization is scheduled for deletion".
+  - Phase 2: a suspended org goes through `reactivationLink` like a lapsed
+    one; the plan page must show Resume for it, and Account → Organizations
+    needs the Resume action next to "Renew plan"/"Choose a plan"
+    (`OrganizationRow` in `account-dashboard/routes/_shell.organizations.tsx`).
+  - `AppShell`'s `banner` slot has no user now; kept for Phase 2/3 notices.
+  - The header's "Organization dashboard" goes through post-login, so a user
+    whose orgs are all closed lands on `/account`.
+  - E2E tooling: `playwright-cli` kept only one named browser session alive
+    at a time here, and `playwright-cli list` hung; reopen a session with
+    `open` + `state-load` when it reports "not open".

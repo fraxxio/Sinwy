@@ -1,3 +1,4 @@
+import { clearActiveOrganization } from "@authModule";
 import {
 	describePolarError,
 	type PolarModels,
@@ -69,7 +70,9 @@ export const projectSubscription = async (
 	switch (write.result) {
 		case "applied":
 			billingLogger.info("Organization projected from subscription", context);
-			return entitled ? "active" : "inactive";
+			if (entitled) return "active";
+			await clearActiveOrganization(organizationId);
+			return "inactive";
 		case "unknown-organization":
 			billingLogger.warn("Subscription references an unknown org", context);
 			return null;

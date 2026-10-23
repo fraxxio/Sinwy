@@ -254,7 +254,9 @@ System behavior — **organization status is a pure projection of Polar subscrip
 - subscription revoked/expired (renewal failure after Polar's dunning, or cancellation) → organization `inactive`
 - first payment fails → organization stays `inactive`; user can retry checkout without re-creating the organization
 
-`inactive` means: data kept, management features gated, public pages unpublished. No grace-period logic of our own — Polar's retry/dunning settings are the grace period.
+`inactive` means: data kept, the dashboard closed to every member (the owner can only reach the plan page), public pages unpublished. No grace-period logic of our own — Polar's retry/dunning settings are the grace period.
+
+Public pages, booking pages and custom-domain resolution must serve an organization only when `isOrganizationPublic(org)` (organizations module) holds: `status = active` and not scheduled for deletion. Never check `status` alone.
 
 The projection also carries `organization.plan` (entitlement) and `organization.subscription_id` (the Polar subscription backing the org). Every subscription webhook re-reads the subscription from Polar and projects it, so delivery order never matters; only the bound subscription may deactivate an org, so a late revocation of an old subscription can't lock out a re-subscribed one.
 

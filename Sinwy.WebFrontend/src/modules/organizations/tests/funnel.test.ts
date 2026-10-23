@@ -1,9 +1,6 @@
 import { expect, it } from "bun:test";
-import {
-	activeOrganizationDestination,
-	hasCompletedSetup,
-	isLapsed,
-} from "../lib/funnel";
+import { hasCompletedSetup, isLapsed } from "#/shared/lib/organizations";
+import { activeOrganizationDestination } from "../lib/funnel";
 
 const organization = { id: "org-1", slug: "acme" };
 const completedAt = new Date("2026-01-01");

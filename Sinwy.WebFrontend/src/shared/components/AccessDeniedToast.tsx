@@ -10,13 +10,10 @@ export default function AccessDeniedToast() {
 	const status = useRouterState({ select: (s) => s.status });
 
 	useEffect(() => {
-		if (status !== "idle" || !takeAccessDenied()) return;
-		toast.add({
-			id: TOAST_ID,
-			type: "error",
-			title: "You don't have access to that page",
-			timeout: 5_000,
-		});
+		if (status !== "idle") return;
+		const title = takeAccessDenied();
+		if (!title) return;
+		toast.add({ id: TOAST_ID, type: "error", title, timeout: 5_000 });
 	}, [status]);
 
 	return null;

@@ -41,8 +41,11 @@ export const Route = createFileRoute("/organizations/$id/plan")({
 	}),
 	beforeLoad: async ({ location, params, context, preload }) => {
 		const ctx = await requireAuth({ location });
+		// read, not set active: the backend refuses to open an inactive org
 		const { data: organization, error } =
-			await authClient.organization.setActive({ organizationId: params.id });
+			await authClient.organization.getFullOrganization({
+				query: { organizationId: params.id, membersLimit: 1 },
+			});
 		if (error || !organization) throw redirect({ to: "/" });
 		const member = await requireMember(context.queryClient, organization.id);
 		requirePermission("billing:manage")({

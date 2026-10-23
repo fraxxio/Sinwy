@@ -9,12 +9,16 @@ import {
 	completeOrganizationOnboardingHandler,
 	createOrganizationHandler,
 	getOrganizationOnboardingHandler,
+	listOrganizationsHandler,
 	saveOrganizationProfileHandler,
 } from "./controller";
 
 export const registerOrganizationRoutes = (app: IApp) => {
 	app.route("/api/organizations", createOrganizationHandler, {
 		method: "POST",
+		routeMiddlewares: [requireAuth],
+	});
+	app.route("/api/organizations", listOrganizationsHandler, {
 		routeMiddlewares: [requireAuth],
 	});
 	app.route(organizationPath("onboarding"), getOrganizationOnboardingHandler, {

@@ -39,8 +39,11 @@ export const Route = createFileRoute("/organizations/$id/onboarding")({
 	ssr: false,
 	beforeLoad: async ({ location, params, context, preload }) => {
 		const ctx = await requireAuth({ location });
+		// read, not set active, so an inactive org still reaches the redirect below
 		const { data: organization, error } =
-			await authClient.organization.setActive({ organizationId: params.id });
+			await authClient.organization.getFullOrganization({
+				query: { organizationId: params.id, membersLimit: 1 },
+			});
 		if (error || !organization) throw redirect({ to: "/" });
 		// fail closed: anything but a confirmed active org goes back to the funnel
 		if (organization.status !== "active")

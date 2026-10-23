@@ -32,6 +32,11 @@ export const authClient = createAuthClient({
 							input: false,
 							required: false,
 						},
+						deletionScheduledAt: {
+							type: "date",
+							input: false,
+							required: false,
+						},
 					},
 				},
 			},

@@ -38,11 +38,10 @@ Enter credentials (email+password | Google)
 ## 4. Post-login routing
 
 ```text
-├─ has an organization (last active, else most recent) → Organization Mode
-│   ├─ active → org dashboard
-│   ├─ lapsed (inactive, onboarding completed) → read-only org dashboard [8]
-│   └─ inactive, setup never finished → Plan selection [5]
-└─ no organization → Customer Mode
+├─ has an active organization (last active if still active, else newest) → org dashboard
+├─ none active, owns one whose setup never finished → Plan selection [5]
+└─ otherwise (lapsed or staff-only orgs, or no organization) → Customer Mode
+    ├─ Account → Organizations lists every org; owner renews from there [8]
     └─ "create your business" CTA → Organization Creation flow [5]
 ```
 
@@ -103,10 +102,11 @@ Later steps (page template, plugins) land here as the page builder arrives.
 ├─ canceled at period end (Polar portal) → still active, "Cancels on {date}"
 │   → plan change disabled until renewed in the portal
 └─ subscription revoked / expired / canceled → org status = inactive (lapsed once onboarded)
-    → data kept, writes paused, public pages unpublished
-    → banner on every org dashboard page
-    │   ├─ owner → "Choose a plan" → Plan selection (renew copy, no funnel steps)
-    │   │   → Polar checkout → [6. Activation] → Organization Dashboard, banner gone
-    │   └─ staff → "Ask an owner to renew"
-    → login → read-only org dashboard [4], no "finish setup" resume prompt
+    → data kept, public pages unpublished, removed from every session
+    → nobody opens its dashboard; an open tab is sent out on its next load or write
+    │   ├─ owner → plan page (switcher, Account → Organizations)
+    │   │   → Plan selection (renew copy, no funnel steps)
+    │   │   → Polar checkout → [6. Activation] → Organization Dashboard
+    │   └─ staff → disabled in the switcher ("no active plan"), sent to /account
+    → login → another active org, else Customer Mode [4], no "finish setup" prompt
 ```
