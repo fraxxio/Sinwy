@@ -1,0 +1,426 @@
+# Organization lifecycle log
+
+Finished phases of [org-lifecycle-plan.md](org-lifecycle-plan.md), each with its spec and log entry. Append-only.
+
+## Current state (before Phase 0)
+
+| Concern | Where | Notes |
+| --- | --- | --- |
+| Status projection | `Sinwy.Backend/modules/billing/projection.ts` | `active`/`inactive` from the Polar subscription. Non-entitled clears `subscription_id`. |
+| Projection writes | `Sinwy.Backend/modules/organizations/repository.ts` | `bindSubscription` / `releaseSubscription`, ordered by `subscription_status_at`, refuse `bound-elsewhere`. |
+| Revoke helper | `Sinwy.Backend/modules/billing/service.ts` `revokeOrganizationSubscription` | Revokes entitled subscriptions only (`active`, `trialing`, `past_due`). |
+| Owner account deletion | `Sinwy.Backend/modules/auth/auth.ts` `beforeDelete` → `deleteSoleOwnedOrganizations` | Revokes, then hard-deletes the orgs. `afterDelete` deletes the Polar customer. |
+| Checkout guard | `Sinwy.Backend/modules/billing/checkoutGuard.ts` | `billing:manage` (owner only) and "not already active". |
+| One owner | `Sinwy.Backend/modules/auth/singleOwner.ts`, `member_one_owner_uidx` | Ownership never moves today. |
+| Lapsed dashboard | `Sinwy.WebFrontend/src/modules/org-dashboard/components/InactiveOrganizationBanner.tsx`, `shared/lib/auth/read-only.ts`, `organization-inactive.ts` | Read-only mode for inactive orgs. |
+| Switcher | `Sinwy.WebFrontend/src/shared/components/shell/OrganizationSwitcher.tsx` | "Inactive" badge exists, link always enabled. Uses Better Auth's org list (no role). |
+| Post-login | `Sinwy.WebFrontend/src/modules/auth/lib/post-login.ts` | Session's active org, else newest; unpaid → plan page; lapsed → dashboard. |
+| Account → Organizations | `Sinwy.WebFrontend/src/modules/account-dashboard/routes/_shell.organizations.tsx` | Empty-state stub. |
+| Public pages, bookings, custom domains | – | Not built yet. Dashboard routes for them are placeholders. |
+| Scheduled jobs | – | None exist. |
+| Polar packages | `Sinwy.Backend/package.json` | `@polar-sh/sdk` 0.47.1 and `@polar-sh/better-auth` 1.8.4, neither supports pause. |
+
+## Phase 0: Polar SDK and plugin upgrade
+
+**Goal:** the SDK can pause and resume subscriptions; nothing else changes.
+
+Steps:
+- Upgrade `@polar-sh/sdk` to 1.x and `@polar-sh/better-auth` to 2.x (both
+  major bumps). Read their changelogs and fix every breaking change in
+  `infrastructure/polar/`, `modules/billing/`, `modules/auth/auth.ts` and the
+  dev scripts (`capturePolarFixture`, `simulatePolarWebhook`).
+- Confirm the new SDK exposes `pauseAtPeriodEnd`, `resumesAt`, `resume` on
+  subscription update, and `paused` in the subscription status enum.
+- Add `paused` to `SUBSCRIPTION_BILLING_STATUSES` in `@sinwy/shared`. Until
+  Phase 2 lands, `describeSubscription` shows it as inactive.
+- Capture a `subscription.paused` fixture with `dev:capture-polar-fixture`, and
+  re-capture the existing ones if the payload shape changed.
+
+Polar sends `subscription.updated` alongside `subscription.paused` and
+`subscription.resumed`, so the existing `onSubscriptionUpdated` handler picks
+both up. Don't register separate handlers unless the plugin stops doing that.
+
+Done when:
+- Existing billing tests pass unchanged in intent (fixtures may be refreshed).
+- Checkout, plan change, portal and webhook projection still work end to end in
+  the running app with the Polar sandbox.
+
+### Log (2026-10-23, `feat(backend, web): upgrade Polar SDK 1.x, plugin 2.x and better-auth 1.7`)
+- Shipped:
+  - `@polar-sh/sdk` 0.47.1 → 1.0.2 and `@polar-sh/better-auth` 1.8.4 → 2.1.0
+    (backend and web). The SDK is pinned to API version `2026-10` through its
+    import path. `infrastructure/polar` exports `polarClient` (ours),
+    `polarCore` (the plugin's), `PolarModels` and `PolarApiErrors`; take Polar
+    types and errors only from there.
+  - Confirmed in the SDK types and against the sandbox: `subscriptions.update`
+    takes `{ pause_at_period_end, resumes_at }` and `{ resume: true }`, and
+    `paused` is a subscription status.
+  - `paused` added to `SUBSCRIPTION_BILLING_STATUSES`; `describeSubscription`
+    shows it as Inactive.
+  - `subscription.paused` fixture, derived rather than captured: the sandbox
+    webhook endpoint has been disabled since 2026-10-19, so Polar recorded no
+    delivery for it. `fastpaint`'s sandbox subscription really paused at
+    period end; the fixture is the recorded `subscription.updated` envelope
+    with that subscription (`GET /v1/subscriptions/{id}`) as `data`, and same
+    keys as a real delivery. It was resumed with `{ resume: true }` afterwards
+    (active, new period from now). The simulator sends it; the app ignores it
+    on purpose (a test pins that), since `subscription.updated` carries the
+    state.
+  - E2E against the sandbox: sign-up creates the Polar customer, real checkout
+    and payment, activation through reconcile (no webhook reachable), billing
+    details, invoice download, plan change, portal. Webhook projection checked
+    with `dev:simulate-polar-webhook`. Real webhook delivery (ngrok) not run.
+- Differs from plan:
+  - Plugin 2.x needs `better-auth` ^1.7, so better-auth went 1.6.23 → 1.7.12,
+    and zod 4.4.3 → 4.6.7 (better-auth 1.7 needs ^4.5.4; two zod copies broke
+    types). The generated auth schema is unchanged (checked with
+    `auth generate` on both versions).
+  - Bun re-resolves every `latest` dependency whenever a workspace manifest
+    changes, so the TanStack packages moved within their majors (react-start
+    1.168 → 1.169, react-query 5.101 → 5.104, devtools 0.14 → 0.15).
+  - SDK 1.x field names are snake_case: `pause_at_period_end`, `resumes_at`.
+  - Existing fixtures weren't re-captured: the sandbox webhook endpoint still
+    sends API `2026-04`, and `Subscription`, `Order` and `Checkout` are
+    identical in `2026-04` and `2026-10`. Fixtures no longer record
+    `sdkVersion` (the SDK doesn't parse payloads any more, and doesn't export
+    its `package.json`).
+- Notes for later phases:
+  - SDK 1.x returns raw JSON: snake_case fields, ISO date strings (wrap in
+    `new Date()`), no runtime validation. Webhook payloads too:
+    `validateEvent` checks only the signature and the event type.
+  - Ids are positional: `subscriptions.update(id, body)`, `get(id)`,
+    `revoke(id)`, `customers.deleteExternal(externalId, { anonymize: true })`.
+    Paging: `subscriptions.iterList`; tests stub it with `polarPages(...)`.
+  - Errors: `PolarClientError` (4xx, parsed body on `.error`),
+    `PolarServerError`, `PolarNetworkError` (timeouts too).
+    `subscriptions.update` 403 and 409 are unions; tell them apart by
+    `error.error.error` (`AlreadyCanceledSubscription`, `InactiveSubscription`,
+    `PaymentNotReady`; `SubscriptionLocked`, `SubscriptionNotScheduledToCancel`).
+    A failed resume charge is `SubscriptionsUpdate402Error` (`PaymentFailed`,
+    `PaymentActionRequired`). Check which status Polar uses for
+    `PauseResumeNotAllowed` before mapping Phase 2's refusals.
+  - The plugin calls Polar through `polarCore`. Tests that sign up, update or
+    delete users, or hit plugin endpoints, must use `stubPolarCore()` from
+    `test/helpers`, or they reach the sandbox.
+  - Plugin 2.x checkout bodies and the subscription list query are snake_case
+    (`reference_id`); the auth before-hook guards them. A bad webhook signature
+    now answers 403, not 400.
+  - Plugin 2.x still deletes the Polar customer on user delete, as 1.8.4 did,
+    without `anonymize`, and `cleanupDeletedUser` deletes it too, so one of the
+    two gets a 404. Phase 3 must pick one when adding `anonymize: true`.
+  - Keep the plugin's `experimental_organizationSync` off; billing stays on
+    `referenceId` metadata.
+  - The web auth client drops the plugin's `getActions` from its type (plugin
+    2.1's client types don't fit better-auth 1.7), so `checkoutEmbed` is
+    untyped there.
+  - better-auth 1.7: `unlinkAccount({ accountId: account.id })`, and it now
+    requires a fresh session.
+  - The sandbox webhook endpoint (`75e9e523…`) is **disabled** since
+    2026-10-19: no real deliveries reach the app, and Polar records none.
+    Re-enable it, pointed at the ngrok URL, before Phase 2's real pause/resume
+    check, and capture real `subscription.paused`/`resumed` fixtures then. It
+    can move to API `2026-10` at the same time.
+  - Dev only: TanStack devtools logs `Cannot read properties of null (reading
+    'append')` during SSR. Pre-upgrade devtools-ui 0.7.0 has the same code.
+  - The plan-change dialog shows USD catalog prices ($12, $48, $96) while
+    Polar charges €9 and €18. Not caused by this phase.
+
+## Phase 1: Inactive orgs are locked out
+
+**Goal:** an inactive org can't be opened by anyone, and is never the session's
+active org or the post-login destination. Prepares the columns the later
+phases need.
+
+Backend:
+- Migration: add `organization.deletion_scheduled_at timestamp` (null). Expose
+  it to Better Auth as an additional field with `input: false`. Nothing sets it
+  until Phase 3.
+- `GET /api/organizations` (requireAuth): the caller's orgs as
+  `OrganizationSummary` DTOs with `id`, `name`, `slug`, `status`, `plan`,
+  `isOwner` and `scheduledForDeletion`. The switcher needs the role, which
+  Better Auth's org list doesn't return. One query: `member` join
+  `organization` on `member_userId_idx`.
+- `hooks.before` on `/organization/set-active` (the organization plugin has no
+  `beforeSetActive` hook): refuse an org that is inactive or scheduled for
+  deletion with `FORBIDDEN` and a code the frontend can tell apart. Look the
+  org up by id or slug, whichever the body carries. `null` (leave the org)
+  stays allowed.
+- When an org leaves `active` (in the projection's `applied` path for an
+  inactive write), clear `session.active_organization_id` for it. Export a
+  function from the auth module for this; organizations and billing must not
+  touch the session table directly.
+- `isOrganizationPublic(org)`: true when `status === "active"` and
+  `deletion_scheduled_at` is null. Export it from the organizations module.
+  Public pages, booking pages and custom-domain resolution must go through it
+  when they're built; record that rule in `docs/user-creation-roadmap.md`.
+- Keep the 409 `ORGANIZATION_INACTIVE` refusal on writes: the org can lapse
+  mid-session.
+
+Frontend:
+- Switcher reads the new endpoint (TanStack Query, invalidated after plan
+  changes, checkout success and deactivation). Inactive orgs keep the
+  "Inactive" badge:
+  - owner → link to `/organizations/$id/plan` (`intent: "renew"` for a lapsed
+    org; the funnel step for a never-paid one),
+  - everyone else → disabled item with a tooltip ("This organization has no
+    active plan"),
+  - scheduled for deletion → disabled for everyone.
+- `/$organizationSlug/_shell` `beforeLoad`: if the org is not active, redirect
+  (owner → plan page, others → `/account` with a toast). The `set-active`
+  refusal is the backstop.
+- Delete `InactiveOrganizationBanner` and the read-only mode that only existed
+  for the lapsed dashboard (`read-only.ts`, its use in `usePermissions`, and its
+  tests). `handleOrganizationInactive` keeps the toast and its
+  `router.invalidate()`, which now redirects out through the shell.
+- `postLoginDestination`: use the session's active org only if it is active,
+  otherwise the newest active org. With none, an owner with a never-paid org
+  goes to its plan page (the funnel must stay reachable); everyone else goes to
+  `/account`.
+- Account → Organizations: replace the stub with a list of all the user's orgs,
+  showing status and owner actions ("Choose a plan" now; "Resume" in Phase 2;
+  incoming transfer offers in Phase 4). Keep the empty state for users with no
+  orgs.
+
+Docs:
+- Update `docs/user-flow-map.md` §8 (no read-only dashboard; owner → plan page).
+- Add **Suspended**, **Scheduled for deletion** and **Ownership transfer** to
+  `CONTEXT.md`, and update **Organization Status**.
+
+Tests that matter:
+- `set-active` refuses inactive and scheduled orgs and still allows active ones
+  and `null`.
+- `postLoginDestination` table: active session org, inactive session org with
+  another active org, only inactive orgs as owner (never-paid vs lapsed), only
+  inactive orgs as staff.
+- Org list endpoint returns only the caller's orgs, with the right `isOwner`.
+- Deactivation clears the active org from sessions and leaves other sessions
+  alone.
+
+Done when:
+- No route renders the org shell for an inactive org, for any role.
+- An owner can still reach the plan page and renew from the switcher and from
+  Account → Organizations.
+- Lapsed and never-paid flows checked in the running app (`e2e-test`).
+
+### Log (2026-10-23, `feat(backend, web): lock inactive organizations out of the dashboard`)
+- Shipped:
+  - `organization.deletion_scheduled_at` (migration `0011`), a Better Auth
+    additional field `deletionScheduledAt` (`input: false`), mirrored in the
+    web auth client schema. Nothing sets it yet.
+  - `GET /api/organizations` → `OrganizationSummary[]` (oldest first), one
+    `member` ⋈ `organization` query on `member_userId_idx`.
+  - `hooks.before` on `/organization/set-active`
+    (`modules/auth/activeOrganization.ts`): resolves the org the way the
+    plugin does (null leaves, id beats slug, neither means the session's
+    current org) and refuses one that fails `isOrganizationPublic` with
+    `403` and `code: "ORGANIZATION_INACTIVE"` (`AUTH_ERROR_CODES` in shared).
+    Only members get that refusal; non-members still get the plugin's own,
+    so the status never leaks.
+  - `clearActiveOrganization(organizationId)` exported from the auth module;
+    the projection calls it after an applied inactive write.
+  - `isOrganizationPublic(org)` exported from the organizations module; the
+    rule is recorded in `docs/user-creation-roadmap.md` (Step 5).
+  - Web: `shared/lib/organizations.ts` holds the list query
+    (`organizationsQuery`, `invalidateOrganizations`), `isOrganizationOpen`,
+    `reactivationLink` (owner, not scheduled → plan page, `intent: "renew"`
+    when lapsed) and `closedOrganizationReason`. The switcher, the org shell
+    guard, post-login and Account → Organizations all use them. The list is
+    invalidated after org creation, checkout success, plan change and a 409
+    `ORGANIZATION_INACTIVE`.
+  - Org shell `beforeLoad`: checks the (cached) list first, then `setActive`;
+    a `ORGANIZATION_INACTIVE` refusal refetches the list and redirects the
+    same way (owner → plan page, others → `/account` with a toast).
+  - Removed: `InactiveOrganizationBanner`, `read-only.ts` and its test,
+    `canAct`/`isActive` in `usePermissions`, `InactivePlanSection` and the
+    inactive branches of the billing page and `UpgradePrompt`.
+  - E2E (seeded `org-with-staff` and `owner-with-org`, webhooks simulated):
+    revoke while the owner's dashboard tab is open → session's active org
+    cleared in the DB; the next in-app navigation is refused by `set-active`
+    and lands on the renew plan page; hard load of the dashboard URL → plan
+    page; post-login → `/account`; Account → Organizations shows "Renew
+    plan"; switcher entry links to the plan page. Staff: post-login →
+    `/account`; dashboard URL → `/account` with "This organization has no
+    active plan"; switcher entry disabled with that tooltip; list row says
+    to ask the owner. Renewal webhook → owner's post-login opens the
+    dashboard and sets the active org again. Never-paid owner: post-login,
+    dashboard URL and onboarding URL all → funnel plan page; "Get started"
+    still opens a Polar sandbox checkout (abandoned).
+- Differs from plan:
+  - The plan page and the onboarding page called `setActive` themselves,
+    which the new refusal broke for inactive orgs. Both now read the org
+    with `getFullOrganization` and never change the session's active org.
+  - `OrganizationSummary` also carries `onboardingCompletedAt` (ISO string):
+    the switcher needs it to tell lapsed (renew copy) from never-paid
+    (funnel). `hasCompletedSetup`/`isLapsed` moved to
+    `shared/lib/organizations.ts` so `shared/` can use them.
+  - One code, `ORGANIZATION_INACTIVE`, covers both inactive and scheduled
+    orgs; a scheduled org is inactive anyway from Phase 3 on.
+  - Post-login reads the new endpoint and uses `isOwner`, instead of
+    fetching each org's roles for `billing:manage`; it is now synchronous.
+  - `raiseAccessDenied` takes an optional title, so the shell's redirect to
+    `/account` reuses the parked-toast mechanism.
+- Notes for later phases:
+  - Only the dashboard is locked. Backend reads for members of an inactive
+    org (`GET …/onboarding`, `…/subscription`, `…/status`) still answer;
+    writes still answer 409. Phase 3 makes `requireMember` treat scheduled
+    orgs as not found.
+  - `clearActiveOrganization` runs after the projection's transaction, not
+    inside it. If it fails, the webhook errors and Polar's retry is
+    `outdated`, so the stale session row stays; the shell guard and the
+    `set-active` refusal still keep the user out. Phase 3 can clear sessions
+    inside its own transaction as planned.
+  - `session.active_organization_id` has no index (the auth schema is
+    generated by Better Auth's CLI), so the clear is a sequential scan. Fine
+    while deactivations are rare; add an index if the session table grows.
+  - `scheduledForDeletion` is a boolean. Phase 3 wants the deletion date in
+    the switcher and Account → Organizations: add `deletionScheduledAt` to
+    the DTO then. The list and switcher already disable scheduled orgs and
+    show "This organization is scheduled for deletion".
+  - Phase 2: a suspended org goes through `reactivationLink` like a lapsed
+    one; the plan page must show Resume for it, and Account → Organizations
+    needs the Resume action next to "Renew plan"/"Choose a plan"
+    (`OrganizationRow` in `account-dashboard/routes/_shell.organizations.tsx`).
+  - `AppShell`'s `banner` slot has no user now; kept for Phase 2/3 notices.
+  - The header's "Organization dashboard" goes through post-login, so a user
+    whose orgs are all closed lands on `/account`.
+  - E2E tooling: `playwright-cli` kept only one named browser session alive
+    at a time here, and `playwright-cli list` hung; reopen a session with
+    `open` + `state-load` when it reports "not open".
+
+## Phase 2: Suspend with Polar pause
+
+**Goal:** the owner can suspend an org at the end of its paid period, undo that
+before the period ends, and resume afterwards without a new checkout.
+
+Backend (billing module, all routes `billing:manage`):
+- `POST /api/organizations/:organizationId/subscription/suspend` →
+  `subscriptions.update({ pauseAtPeriodEnd: true })`. Refuse when inactive,
+  trialing, past due, or already pending pause/cancel, each with its own error
+  code. Apply the returned subscription right away, as `changeOrganizationPlan`
+  does.
+- `POST .../subscription/unsuspend` → `pauseAtPeriodEnd: false`, only while the
+  pause is still pending.
+- `POST .../subscription/resume` → `resume: true`, only while paused. Polar
+  charges immediately; apply the returned subscription. A failed charge leaves
+  the subscription `past_due`, which grants access under the existing dunning
+  rule; say so in the response so the UI can tell the owner to fix payment.
+- Projection: `paused` writes `status = inactive`, `plan = null` and **keeps
+  `subscription_id` bound**. Resume needs that link, and keeping it blocks a
+  second checkout. Only `canceled`/revoked releases the binding. Add a
+  repository write for this case; don't overload `releaseSubscription`.
+- `reconcileInactiveOrganization` must not activate from a paused
+  subscription.
+- Split the subscription listing: `listEntitledSubscriptions` (grants access)
+  and `listBillableSubscriptions` (could still charge: entitled plus `paused`).
+  The revoke helper uses the billable list; a paused subscription with
+  `resumes_at` would otherwise charge a deleted org later.
+- Checkout guard refuses while a paused subscription is bound ("resume
+  instead"). Plan change refuses while a pause is pending or in effect.
+- `SubscriptionBillingDto` gains `pauseAtPeriodEnd` and `resumesAt`.
+
+Frontend:
+- Billing page: a Suspend section with a confirmation dialog stating no refunds
+  and that the org goes offline on `{period end}`. While pending: "Suspends on
+  {date}" with an Undo button.
+- `describeSubscription`: "Suspends on {date}" and "Suspended" states.
+- Plan page: a suspended org shows Resume instead of plan cards; the
+  checkout-success style polling waits for `active`.
+- Account → Organizations: Resume action for suspended orgs.
+
+Tests that matter:
+- Projection: paused keeps the binding and goes inactive; a later `active` on
+  the same subscription reactivates; an older `active` arriving after `paused`
+  is ignored; `canceled` after `paused` releases.
+- Revoke helper revokes paused subscriptions.
+- Checkout refused for a paused org; plan change refused while pause pending.
+- Suspend/unsuspend/resume refusals for each invalid state.
+
+Done when:
+- Suspend → period end (simulate the webhook) → locked out → resume → active,
+  checked in the running app.
+
+### Log (2026-10-25, `feat(backend, web): suspend and resume organizations with Polar pause`)
+- Shipped:
+  - `POST /api/organizations/:id/subscription/{suspend,unsuspend,resume}`
+    (`billing:manage`). Each reads the bound subscription from Polar first
+    and projects it, so a missed webhook neither decides the refusal nor
+    lingers, then refuses with its own `API_ERROR_CODES` entry:
+    `ORGANIZATION_INACTIVE`, `ORGANIZATION_SUSPENDED`,
+    `ORGANIZATION_NOT_SUSPENDED`, `SUBSCRIPTION_TRIALING`,
+    `SUBSCRIPTION_PAST_DUE`, `SUSPENSION_PENDING`, `SUSPENSION_NOT_PENDING`,
+    `CANCELLATION_PENDING`, `RESUME_PAYMENT_FAILED` (402). When Polar refuses
+    anyway (a concurrent change), its re-read state explains the refusal.
+    The returned subscription is applied at once.
+  - Projection: `paused` → `pauseSubscription` (inactive, no plan,
+    `subscription_id` kept). "Suspended" is derived, not stored:
+    `isSuspended` = inactive and still bound, which only that write leaves
+    (no existing row broke it). `OrganizationSubscriptionDto` and
+    `OrganizationSummary` carry `suspended`; `SubscriptionBillingDto` carries
+    `pauseAtPeriodEnd` and `resumesAt`.
+  - `listBillableSubscriptions` (entitled + paused) backs the revoke helper;
+    reconcile still uses the entitled list, so a paused one never activates.
+  - Checkout guard refuses a suspended org ("resume it instead"). Plan change
+    refuses a suspended org and, after a Polar read, a pending pause.
+  - Post-login and the post-login flags don't treat a suspended org as
+    never-paid.
+  - Web: billing page Suspend section (confirmation dialog: offline on the
+    period end, no refund; while pending "Suspension scheduled" with Undo;
+    disabled with the reason during a trial, failed payment, pending cancel
+    or when billing is unavailable). `describeSubscription` shows
+    "Suspends on {date}" and "Suspended"; Change plan is disabled while a
+    pause is pending. The plan page loads `GET …/subscription` instead of
+    `…/status` and shows a Resume panel for a suspended org; the switcher,
+    Account → Organizations and the shell's redirect say "Suspended".
+  - `dev:simulate-polar-webhook --type subscription.paused` now sends the
+    `subscription.updated` Polar sends first, then the `subscription.paused`.
+  - E2E against the sandbox, fresh `owner-with-org`: real checkout (activated
+    by reconcile) → Suspend → Polar `pause_at_period_end` → Undo → Suspend →
+    period end moved to now + 2 min in Polar (`current_billing_period_end`),
+    which really paused it → period-end webhooks simulated with the real
+    subscription id → org inactive, still bound, out of every session → the
+    open dashboard tab's next navigation and a hard load both land on the
+    Resume page; switcher and Account → Organizations say "Suspended";
+    plugin checkout refused → Resume from Account → Organizations → Polar
+    `active`, new period → onboarding (setup unfinished) → dashboard opens,
+    active org set again.
+- Differs from plan:
+  - Account → Organizations' Resume links to the plan page rather than
+    resuming in place: the charge is explained once, next to its price.
+  - The plan's "failed charge leaves it past_due" can't be relied on
+    synchronously: Polar **charges asynchronously**. Both sandbox resumes
+    (this phase's and Phase 0's FastPaint one) answered `active` with a new
+    period and no order; the paid `subscription_cycle` order came exactly
+    15 minutes later (15:27:27 → 15:42:27). So resume answers 200 `active`
+    and a failed
+    charge arrives later as a `past_due` webhook, handled by the existing
+    dunning rule. The 402 handling (past_due → 200 with a warning, still
+    paused → `RESUME_PAYMENT_FAILED`) stays for the synchronous case, tested
+    against stubs only.
+  - Polar's pause refusals are 409s the SDK doesn't type:
+    `CannotPauseSubscription` (already pending, or cancel pending),
+    `NoScheduledPause` (unsuspend with none), `NotPausedSubscription`
+    (resume when not paused). They are not mapped by name; the re-read
+    explains them. `PauseResumeNotAllowed` exists only on the customer
+    portal endpoint.
+  - Setting `cancel_at_period_end: true` while a pause is pending replaces
+    the pause with a cancellation (checked in the sandbox). Default 3 can't
+    fully hold: Polar's portal always allows cancel at period end. Such an
+    org ends up lapsed, as the default already says. The portal settings
+    expose no pause toggle, so pause is off there.
+- Notes for later phases:
+  - Phase 3: `revokeOrganizationSubscription` already revokes paused
+    subscriptions. A suspended org is inactive but bound; scheduling it for
+    deletion must clear `subscription_id` (as planned), or `isSuspended`
+    would still report it.
+  - Phase 4: Polar's `allow_multiple_subscriptions` is **false** in the
+    sandbox org (`sinwydev`). Default 7 needs it on; ask before changing it.
+    Transfer offers must also refuse a pending pause (planned) and a
+    suspended org (inactive, so the "org active" check covers it).
+  - Suspend and resume need a real Polar subscription; a seeded or simulated
+    one answers 422. The e2e references say so now.
+  - The sandbox webhook endpoint is still disabled, so no real
+    `subscription.paused`/`resumed` delivery was captured; the derived
+    fixture stays. Capture real ones when the endpoint is re-enabled.
+  - Not checked in the browser: the staff view of a suspended org (the
+    disabled-entry path from Phase 1, with the new "suspended" reason), and
+    the past_due/402 resume paths.
