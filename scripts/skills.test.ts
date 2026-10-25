@@ -75,6 +75,30 @@ describe("checkSkills", () => {
 		expect(await checkSkills(root)).toEqual({ skills: ["alpha"], errors: [] });
 	});
 
+	test("passes a user-only skill", async () => {
+		await writeSkill(
+			"alpha",
+			"---\nname: alpha\ndescription: Does a thing.\ndisable-model-invocation: true\n---\n",
+		);
+		await linkSkills(root);
+
+		expect(await checkSkills(root)).toEqual({ skills: ["alpha"], errors: [] });
+	});
+
+	test("reports a non-boolean disable-model-invocation", async () => {
+		await writeSkill(
+			"alpha",
+			"---\nname: alpha\ndescription: Does a thing.\ndisable-model-invocation: yes please\n---\n",
+		);
+		await linkSkills(root);
+
+		const { errors } = await checkSkills(root);
+
+		expect(errors).toEqual([
+			".agents/skills/alpha: frontmatter disable-model-invocation: Invalid input: expected boolean, received string",
+		]);
+	});
+
 	test("reports each format problem of a broken skill", async () => {
 		await writeSkill(
 			"broken",
@@ -87,7 +111,7 @@ describe("checkSkills", () => {
 
 		expect(errors).toEqual([
 			'.agents/skills/broken: unexpected "notes.txt"; a skill holds only SKILL.md, scripts/, references/ and assets/',
-			".agents/skills/broken: frontmatter may only have name and description; move allowed-tools to the harness adapter",
+			".agents/skills/broken: frontmatter may only have name, description and disable-model-invocation; move allowed-tools to the harness adapter",
 			".agents/skills/broken: frontmatter name: use lowercase letters, digits and single hyphens",
 			".agents/skills/broken: frontmatter description: Too small: expected string to have >=1 characters",
 			'.agents/skills/broken: SKILL.md contains a ~/.claude path ("~/.claude"); skills must be harness-neutral',

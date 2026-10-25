@@ -15,21 +15,43 @@ Run everything from the repo root. The toolkit (`bun run dev:*`) replaces only t
    curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/   # web app
    psql service=sinwy_ro -c "SELECT 1"                               # database
    ```
-   Start only what is down: `bun run db:up`, then `bun run start:server` and `bun run start:web` as long-running background processes, each with its output sent to a log file you can read. The tools need `EMAIL_DRIVER=console` and `SEED_EMAIL_BASE` in `Sinwy.Backend/.env`. You can't read `.env`. If a tool says a value is missing, ask the user to set it.
+   Start only what is down: `bun run db:up`, then `bun run start:server` and `bun run start:web` as long-running background processes, each with its output sent to a log file you can read. Clear old browser artifacts so nothing stale gets read: `rm -f .playwright-cli/page-*.yml .playwright-cli/console-*.log`. The tools need `EMAIL_DRIVER=console` and `SEED_EMAIL_BASE` in `Sinwy.Backend/.env`. You can't read `.env`. If a tool says a value is missing, ask the user to set it.
 2. **Plan the test.** Write down the steps a user takes and what each step should change: the page, DB rows, an email, a Polar call. Mark each step as real or simulated (see [references/app-map.md](references/app-map.md)).
 3. **Seed.** Start from the nearest scenario. Click through only the steps you are testing ([references/seed-scenario.md](references/seed-scenario.md)).
 4. **Log in.** Use `dev:login-as --state` and load the file into the browser ([references/login-as.md](references/login-as.md)). If the test is about login itself, use the form.
-5. **Drive the browser** with `bunx playwright-cli` (see the `playwright-cli` skill).
-   - Read the output of every command; don't discard it. Refs are valid only for the latest snapshot, and picking an option or submitting re-renders the form. A click on a stale ref fails, and you only see that in its output. Take a new snapshot before reusing refs.
-   - Many routes redirect on the client after the page loads (`/auth/postlogin`, the funnel guards), so the first snapshot can show the old URL. Run `bunx playwright-cli --raw eval "location.href"` before asserting on a page.
+5. **Drive the browser** with `bunx playwright-cli` (see the `playwright-cli` skill). Keep page trees out of your context:
+   - Act by role locator, not by ref: `bunx playwright-cli click "getByRole('button', { name: 'Resume' })"`, `fill "getByLabel('Email')" "…"`. A wrong name fails at once with `does not match any elements`, so you never need a snapshot just to find a ref.
+   - Read the page with `bun .agents/skills/e2e-test/scripts/page.ts [selector]`: URL, open dialogs, alerts and toasts, and the visible text of `main` (or of the selector). Many routes redirect on the client after load (`/auth/postlogin`, the funnel guards), so check its URL before asserting on a page.
+   - Never run a bare `snapshot` (4–5k tokens each) and never open `.playwright-cli/page-*.yml` files. When you need roles or names, use `find "<text>"` or `snapshot "<selector>" --depth=3`.
+   - Read the output of every command. A failed action prints `### Error` but still exits 0.
    - Console: each command's page status shows `Console: N errors`. Don't print `console error` in full: the Vite dev server echoes one warning thousands of times, which can mean megabytes. Run `.agents/skills/e2e-test/scripts/console-errors.sh` for the distinct messages with counts. The `[vite… @vite/client` line is the echo; the other lines are the real errors.
 6. **Check side effects** against the source, not only the page:
    - DB: `psql service=sinwy_ro -c "<sql> LIMIT 5"`, selecting only the columns you need. The tables are in `Sinwy.Backend/db/schema/`.
    - Email: `bun run dev:last-email --to <email>`, then open the link from `links` in the browser ([references/last-email.md](references/last-email.md)).
    - Polar: `bun run dev:simulate-polar-webhook` stands in for the payment ([references/simulate-polar-webhook.md](references/simulate-polar-webhook.md)).
-   - Backend log: warnings and errors logged during the run.
+   - Logs: `.agents/skills/e2e-test/scripts/log-errors.sh <log> [from line]` prints the distinct warnings and errors with counts and the line to pass next time, so each check covers only new lines. Don't grep the logs raw.
 7. **Clean up.** Run `bunx playwright-cli close`. Stop only the processes you started. Leave seeded data in place, because every run creates fresh users.
 8. **Report** in the format below.
+
+## Waiting
+
+Wait with one blocking loop per condition, with a timeout, e.g. `until psql service=sinwy_ro -tAc "<sql>" | grep -q active; do sleep 10; done`. Don't add a monitor next to it or poll by hand.
+
+Don't wait for timings already listed below; trust them and say so in the report.
+
+## Known noise and quirks
+
+Checked before; don't investigate them again.
+
+- Web log and console: TanStack devtools logs `Cannot read properties of null (reading 'append')` during SSR, and Vite echoes console errors with a `[vite] (client) [console.error]` prefix. Both are dev-only; `log-errors.sh` and `console-errors.sh` hide them.
+- `playwright-cli` keeps one named session alive at a time, and `playwright-cli list` can hang. When it reports "not open", reopen with `open` and `state-load`.
+
+## Known Polar sandbox behaviour
+
+- Suspend, undo and resume need a real sandbox subscription; a seeded or simulated one answers 422.
+- A pause at period end only takes effect at the period end. To get there, set the subscription's `current_billing_period_end` to a couple of minutes from now through the Polar API, then simulate the period-end webhooks with the real subscription id.
+- Resume answers `active` with a new period at once; Polar charges asynchronously and the paid `subscription_cycle` order arrives 15 minutes later. A failed charge arrives later as a `past_due` webhook.
+- The sandbox webhook endpoint is disabled, so real deliveries don't reach the app; simulate them.
 
 ## Treat the toolkit as a stand-in
 
@@ -58,5 +80,7 @@ Scenario: <seed command and the ids and emails it printed>
 ### Findings
 - <app bugs, toolkit gaps (fixed or not), warnings in the console or backend log>
 ```
+
+When you run as a subagent, your final message is this report and nothing else; include the ids and emails needed to reproduce any failure.
 
 A pass that depended on a simulated part goes under **Checked**, and that part goes under **Simulated**. If the flow touches billing or email delivery, **Real checks still needed** can't be empty. Never call a flow done when it has only passed against the toolkit.
