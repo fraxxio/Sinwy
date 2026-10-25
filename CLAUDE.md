@@ -2,12 +2,16 @@
 
 All commands run from the repo root unless noted. The runtime and package manager is **Bun** — use `bun` (not `npm`/`npx`).
 
-- `bun run verify` — Biome check, type check of every workspace and all tests; the one command to run before calling work done.
-- `bun run check` / `bun run typecheck` / `bun run test` — the individual steps.
+- `bun run verify` — Biome check, skill check, type check of every workspace and all tests; the one command to run before calling work done. Run it once, after the last code change.
+- `bun run check` / `bun run typecheck` / `bun run test` — the individual steps. `bun run verify:full` runs them all with unfiltered output.
 
 Agent setup, environment variables and starting the stack: the AI Agents section of `README.md`.
 
 When running linters, type checks or tests, never truncate their output (`tail`, `head`, `grep`) before reading it. Report the exit code and the full diagnostics. Only say "clean" or "passing" when the command exited 0.
+
+`bun run verify` prints its own summary, which is the one exception: on a pass it prints Biome and type-check output in full, test totals, the distinct WARN/ERROR messages each test file logged, and any output not from the app logger; a failing step is printed in full. Read all of it. A logged error that doesn't fit the test that logged it, or new "other output", is a finding even when everything passes. The full log is in `.verify.log`.
+
+Read code in parts: find it with `grep -n`, then read only the line ranges you need. When a tool's output overflows to a file, grep that file; never read it in full.
 
 Use `psql` with the service entries created by `bun run db:agent:setup`. Never pass connection strings or passwords.
 
@@ -17,7 +21,7 @@ Use `psql` with the service entries created by `bun run db:agent:setup`. Never p
 
 Drive the browser with `bunx playwright-cli` (see the `playwright-cli` skill, which writes the command without `bunx`). Use the Chrome DevTools MCP only for performance traces, Lighthouse audits and memory debugging, if it's disabled ask user to enable it.
 
-New repo skills go in `.agents/skills/<name>/` (format rules: Skills > Format in `docs/ai-agent-tooling.md`), never directly in `.claude/skills/`. Run `bun run skills:link` after adding or removing one; `bun run skills:check` validates them.
+New repo skills go in `.agents/skills/<name>/`, never directly in `.claude/skills/`. A skill holds only `SKILL.md`, `scripts/`, `references/` and `assets/`; frontmatter has only `name` (lowercase-hyphenated, at most 64 characters), `description` (at most 1024) and optionally `disable-model-invocation: true` for skills only the user starts; no `~/.claude` paths or MCP tool ids in the text. Run `bun run skills:link` after adding or removing one; `bun run skills:check` validates them.
 
 ## Workspace Layout
 ```
