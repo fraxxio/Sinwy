@@ -9,11 +9,11 @@ This creates fresh users and an org through the backend's HTTP API, the way the 
 | Scenario | State |
 | --- | --- |
 | `user` | one verified user with no org (start here to test org creation in the browser) |
-| `owner-with-org` | verified owner, org `inactive`, no onboarding (the state right after `/organizations/new`) |
-| `subscribed-org` | as above, then a simulated `subscription.active` (org `active`), profile filled in and onboarding complete |
+| `owner-with-org` | verified owner with no plan, org `inactive` without a slot, no onboarding (the state right after `/organizations/new`) |
+| `subscribed-org` | as above, then a simulated Starter `subscription.active` for the owner, the org activated on its slot, profile filled in and onboarding complete |
 | `org-with-staff` | `subscribed-org` plus `--staff` verified staff members (default 1) |
 
-For an org that is paid but still has onboarding to do, seed `owner-with-org` and then run `dev:simulate-polar-webhook --type subscription.active --org <id>`.
+For an org that is active but still has onboarding to do, seed `owner-with-org`, run `dev:simulate-polar-webhook --type subscription.active --user <owner id>`, then `POST /api/account/organizations/<id>/activate` as the owner.
 
 The output is JSON:
 
@@ -27,7 +27,7 @@ The output is JSON:
 ```
 
 - Pass a user's email to `dev:login-as --email`, or type it with `password` into the login form.
-- Pass `subscriptionId` to `dev:simulate-polar-webhook --subscription-id` to revoke the same subscription.
+- Pass `subscriptionId` to `dev:simulate-polar-webhook --user <owner id> --subscription-id` to revoke the same subscription.
 
 Caveats:
 

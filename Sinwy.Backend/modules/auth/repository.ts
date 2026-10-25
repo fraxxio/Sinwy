@@ -1,20 +1,16 @@
 import db from "@db";
+import { organizationAccess } from "@db/organizationAccess";
 import { session } from "@db/schema/authSchema";
 import { member, organization } from "@db/schema/organizationSchema";
 import { and, eq } from "drizzle-orm";
 
-/** Raw role column plus the organization's state; null when the user is not a member. */
+/** Raw role column plus the organization's access; null when the user is not a member. */
 export const findMembership = async (
 	userId: string,
 	organizationId: string,
 ) => {
 	const [row] = await db
-		.select({
-			role: member.role,
-			status: organization.status,
-			plan: organization.plan,
-			deletionScheduledAt: organization.deletionScheduledAt,
-		})
+		.select({ role: member.role, ...organizationAccess })
 		.from(member)
 		.innerJoin(organization, eq(member.organizationId, organization.id))
 		.where(
@@ -29,10 +25,7 @@ export const findMemberOrganization = async (
 	ref: { id: string } | { slug: string },
 ) => {
 	const [row] = await db
-		.select({
-			status: organization.status,
-			deletionScheduledAt: organization.deletionScheduledAt,
-		})
+		.select(organizationAccess)
 		.from(member)
 		.innerJoin(organization, eq(member.organizationId, organization.id))
 		.where(

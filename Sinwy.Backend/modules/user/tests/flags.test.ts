@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
 import createApp from "@backend/lib/app";
+import { givePlan } from "@backend/test/helpers";
 import appConfig from "@config";
 import db from "@db";
 import { session } from "@db/schema/authSchema";
@@ -99,11 +100,14 @@ const createOrg = async (
 		id,
 		name: id,
 		slug: id,
-		status,
 		createdAt,
 		onboardingCompletedAt,
-		subscriptionId,
+		slotHeldAt: status === "active" ? createdAt : null,
 	});
+	// the plan is the user's own, so it covers every org they own
+	if (status === "active") await givePlan(userId, "starter");
+	else if (subscriptionId)
+		await givePlan(userId, null, { status: "paused", subscriptionId });
 	await db.insert(member).values({
 		id: `member_${id}`,
 		organizationId: id,
@@ -211,13 +215,12 @@ test("non-owner member of an active org mid-setup → not prompted", async () =>
 	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
 });
 
-test("active org alongside an unpaid one → still surfaces the unpaid one", async () => {
+test("active org mid-setup alongside a draft → the active one's setup; with a plan, nothing is left to pay", async () => {
 	const { userId, cookie } = await createUserWithSession();
-	await createOrg(userId, { status: "active" });
-	// paying comes before finishing setup, even though both are pending
-	const unpaid = await createOrg(userId, { status: "inactive" });
+	const active = await createOrg(userId, { status: "active" });
+	await createOrg(userId, { status: "inactive" });
 	expect(await getFlags(cookie)).toEqual({
-		unfinishedOnboarding: { step: "select-plan", organizationId: unpaid },
+		unfinishedOnboarding: { step: "business-profile", organizationId: active },
 	});
 });
 

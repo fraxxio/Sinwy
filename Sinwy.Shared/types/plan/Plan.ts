@@ -7,3 +7,10 @@ export type PlanSlug = (typeof PLAN_SLUGS)[number];
 /** Lenient on purpose: an unknown stored plan must degrade to "no features", not fail every request. */
 export const toPlanSlug = (value: string | null): PlanSlug | null =>
 	PLAN_SLUGS.find((slug) => slug === value) ?? null;
+
+/** Organizations an owner can keep active at once on each plan. */
+export const PLAN_ORGANIZATION_LIMITS: Record<PlanSlug, number> = {
+	starter: 1,
+	professional: 2,
+	enterprise: 5,
+};

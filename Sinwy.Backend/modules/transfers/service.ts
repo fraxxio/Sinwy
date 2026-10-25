@@ -1,22 +1,12 @@
 import { type Membership, resolveMembership } from "@authModule";
 import { emailClient } from "@backend/infrastructure/email";
-import type { PolarFailure } from "@backend/infrastructure/polar";
-import {
-	endReplacedSubscription,
-	findCheckoutUrl,
-	findTransferBlocker,
-	openTransferCheckout,
-	previewReplacedSubscription,
-	type TransferBlocker,
-} from "@billingModule";
 import appConfig from "@config";
 import { createLogger } from "@logger";
-import { getSubscriptionState } from "@organizationsModule";
+import { isSuspended, organizationStatusOf } from "@organizationsModule";
 import {
 	type IncomingTransferDto,
 	type OpenTransferStatus,
 	type OrganizationTransferDto,
-	type PlanSlug,
 	parseMemberRoles,
 	TRANSFER_OFFER_DAYS,
 	toPlanSlug,
@@ -39,8 +29,6 @@ import {
 	findTransfer,
 	findUserContacts,
 	insertTransfer,
-	markAccepted,
-	markTransferSettled,
 	moveOwnership,
 	type TransferRow,
 } from "./repository";
@@ -57,26 +45,24 @@ export type SupportTransferResult =
 			organization: { id: string; name: string };
 			from: { userId: string; email: string };
 			to: { userId: string; email: string };
-			subscriptionId: string | null;
-			outcome: unknown;
+			/** Whether the organization holds one of the new owner's slots; known once applied. */
+			slotHeld?: boolean;
 	  };
 
 /**
- * Support path for moving an organization to another member without a new
- * checkout: the roles swap, the old owner's subscription is revoked with its
- * unused time refunded, and the organization is left inactive for the new
- * owner to renew. Reads only, unless `apply`.
+ * Support path for moving an organization to another member: the roles swap
+ * and the organization takes one of the new owner's slots if they have one
+ * free, otherwise it stays inactive until they activate it. No money moves.
+ * Reads only, unless `apply`.
  */
 export const transferOwnershipBySupport = async ({
 	organizationId,
 	toUserId,
 	apply,
-	now = new Date(),
 }: {
 	organizationId: string;
 	toUserId: string;
 	apply: boolean;
-	now?: Date;
 }): Promise<SupportTransferResult> => {
 	const org = await findOrganizationForTransfer(organizationId);
 	if (!org) return { ok: false, error: "Unknown organization" };
@@ -101,33 +87,15 @@ export const transferOwnershipBySupport = async ({
 		organization: { id: org.id, name: org.name },
 		from: { userId: owner.userId, email: owner.email },
 		to: { userId: target.userId, email: target.email },
-		subscriptionId: org.subscriptionId,
 	};
-	if (!apply)
-		return {
-			ok: true,
-			applied: false,
-			...report,
-			outcome:
-				org.subscriptionId &&
-				(await previewReplacedSubscription(org.subscriptionId, now)),
-		};
+	if (!apply) return { ok: true, applied: false, ...report };
 
 	const swap = await moveOwnership(organizationId, owner.userId, toUserId);
 	if (swap.result !== "swapped")
 		return { ok: false, error: `Roles not swapped: ${swap.result}` };
 	// an in-app offer made by the previous owner no longer applies
 	await cancelOpenTransfer(organizationId);
-	return {
-		ok: true,
-		applied: true,
-		...report,
-		outcome:
-			org.subscriptionId &&
-			(await endReplacedSubscription(org.subscriptionId, now, {
-				release: true,
-			})),
-	};
+	return { ok: true, applied: true, ...report, slotHeld: swap.slotHeld };
 };
 
 /** Email failures never undo a transfer step; they are logged instead. */
@@ -162,9 +130,20 @@ export type OfferError =
 	| "self"
 	| "not-a-member"
 	| "transfer-pending"
-	| TransferBlocker;
+	| "not-found"
+	| "inactive"
+	| "suspended";
 
-/** The owner offers the organization to another member; it stays theirs until the recipient pays. */
+/** Only an active organization can be offered; a suspended one resumes first. */
+const findOfferBlocker = async (organizationId: string) => {
+	const org = await findOrganizationForTransfer(organizationId);
+	if (!org) return "not-found" as const;
+	if (isSuspended(org)) return "suspended" as const;
+	if (organizationStatusOf(org) !== "active") return "inactive" as const;
+	return null;
+};
+
+/** The owner offers the organization to another member; it stays theirs until the recipient accepts. */
 export const offerTransfer = async (
 	membership: Membership,
 	fromUserId: string,
@@ -178,7 +157,7 @@ export const offerTransfer = async (
 	const to = members.find((row) => row.userId === toUserId);
 	if (!to) return { ok: false, error: "not-a-member" };
 
-	const blocker = await findTransferBlocker(organizationId);
+	const blocker = await findOfferBlocker(organizationId);
 	if (blocker) return { ok: false, error: blocker };
 
 	// a lapsed offer must not hold the one open slot until the job runs
@@ -250,55 +229,49 @@ export const declineIncomingTransfer = async (
 	transferId: string,
 ) => (await declineTransfer(transferId, userId)).length > 0;
 
-export type AcceptError = "not-found" | "expired" | "inactive" | PolarFailure;
-
-const isOpenStatus = (status: string) =>
-	status === "pending" || status === "accepted";
+export type AcceptError = "not-found" | "expired" | "needs-plan";
 
 /**
- * The recipient accepts: returns the checkout that, once paid, completes the
- * transfer. Accepting again returns the same checkout while it can be paid.
+ * The recipient accepts: the organization becomes theirs at once, on one of
+ * their slots. Refused while they have no plan that grants access or no free
+ * slot; the offer stays open meanwhile.
  */
 export const acceptIncomingTransfer = async (
 	userId: string,
 	transferId: string,
 	now = new Date(),
-): Promise<Result<{ url: string }, AcceptError>> => {
+): Promise<Result<null, AcceptError>> => {
 	const transfer = await findTransfer(transferId);
 	if (
 		!transfer ||
 		transfer.toUserId !== userId ||
-		!isOpenStatus(transfer.status)
+		(transfer.status !== "pending" && transfer.status !== "accepted")
 	)
 		return { ok: false, error: "not-found" };
 	if (transfer.expiresAt <= now) return { ok: false, error: "expired" };
 	if (!(await resolveMembership(userId, transfer.organizationId)))
 		return { ok: false, error: "not-found" };
-	const state = await getSubscriptionState(transfer.organizationId);
-	if (state?.status !== "active" || !state.plan)
-		return { ok: false, error: "inactive" };
 
-	const checkout = await openTransferCheckout({
-		transferId,
-		organizationId: transfer.organizationId,
-		userId,
-		plan: state.plan,
-		previousCheckoutId: transfer.checkoutId,
-	});
-	if (!checkout.ok) return checkout;
-	if (
-		!checkout.created ||
-		(await markAccepted(transferId, transfer.checkoutId, checkout.checkoutId))
-	)
-		return { ok: true, data: { url: checkout.url } };
-
-	// a concurrent acceptance stored its checkout first; ours is never paid
-	const stored = await findTransfer(transferId);
-	const url =
-		stored && isOpenStatus(stored.status) && stored.checkoutId
-			? await findCheckoutUrl(stored.checkoutId)
-			: null;
-	return url ? { ok: true, data: { url } } : { ok: false, error: "not-found" };
+	const completion = await completeTransfer(transferId, now);
+	switch (completion.result) {
+		case "completed":
+			transferLogger.info("Organization transferred", {
+				transferId,
+				organizationId: transfer.organizationId,
+			});
+			await sendCompletionEmails(completion.transfer);
+			return { ok: true, data: null };
+		case "needs-plan":
+			return { ok: false, error: "needs-plan" };
+		case "refused":
+			transferLogger.warn("Transfer refused on completion", {
+				transferId,
+				reason: completion.reason,
+			});
+			return { ok: false, error: "not-found" };
+		case "not-open":
+			return { ok: false, error: "not-found" };
+	}
 };
 
 /** After a member leaves or is removed; a no-op while they are still a member. */
@@ -315,10 +288,6 @@ export const cancelTransfersToMember = async (
 			organizationId,
 		});
 };
-
-export const findTransferById = findTransfer;
-
-export const settleOrganizationTransfer = markTransferSettled;
 
 const sendCompletionEmails = async (transfer: TransferRow) => {
 	const [org, contacts] = await Promise.all([
@@ -349,22 +318,4 @@ const sendCompletionEmails = async (transfer: TransferRow) => {
 				}),
 			context,
 		);
-};
-
-/** Webhook side: commits the handover, then tells both users. */
-export const completeOrganizationTransfer = async (
-	transferId: string,
-	subscriptionId: string,
-	plan: PlanSlug | null,
-	observedAt: Date,
-) => {
-	const completion = await completeTransfer(
-		transferId,
-		subscriptionId,
-		plan,
-		observedAt,
-	);
-	if (completion.result === "completed")
-		await sendCompletionEmails(completion.transfer);
-	return completion;
 };

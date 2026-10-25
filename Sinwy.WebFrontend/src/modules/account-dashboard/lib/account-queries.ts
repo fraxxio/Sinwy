@@ -58,7 +58,7 @@ export const incomingTransfersQuery = queryOptions({
 });
 
 export const acceptTransfer = (transferId: string) =>
-	api<{ url: string }>(`/transfers/${transferId}/accept`, { method: "POST" });
+	api<null>(`/transfers/${transferId}/accept`, { method: "POST" });
 
 export const declineTransfer = (transferId: string) =>
 	api<null>(`/transfers/${transferId}/decline`, { method: "POST" });

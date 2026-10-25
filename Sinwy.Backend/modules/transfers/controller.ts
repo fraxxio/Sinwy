@@ -1,5 +1,4 @@
 import { membershipFrom, sessionFrom } from "@authModule";
-import type { PolarFailure } from "@backend/infrastructure/polar";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler } from "@backend/lib/app/types";
 import { API_ERROR_CODES, offerTransferBody } from "@sinwy/shared";
@@ -13,11 +12,6 @@ import {
 	type OfferError,
 	offerTransfer,
 } from "./service";
-
-const failPolar = (failure: PolarFailure) =>
-	failure === "rejected"
-		? fail("The billing provider refused this request", 422)
-		: fail("The billing provider is unavailable; try again later", 502);
 
 const failOffer = (error: OfferError) => {
 	switch (error) {
@@ -45,21 +39,6 @@ const failOffer = (error: OfferError) => {
 				409,
 				API_ERROR_CODES.ORGANIZATION_SUSPENDED,
 			);
-		case "pause-pending":
-			return fail(
-				"This organization is set to suspend at the end of the period; undo that first",
-				409,
-				API_ERROR_CODES.SUSPENSION_PENDING,
-			);
-		case "cancel-pending":
-			return fail(
-				"The subscription is set to cancel; resume it from the Polar portal first",
-				409,
-				API_ERROR_CODES.CANCELLATION_PENDING,
-			);
-		case "rejected":
-		case "unavailable":
-			return failPolar(error);
 	}
 };
 
@@ -69,15 +48,12 @@ const failAccept = (error: AcceptError) => {
 			return fail("This offer is no longer open", 404);
 		case "expired":
 			return fail("This offer has expired", 410);
-		case "inactive":
+		case "needs-plan":
 			return fail(
-				"This organization no longer has an active plan; ask the owner to renew it",
+				"You need a plan with a free organization slot to take over this organization",
 				409,
-				API_ERROR_CODES.ORGANIZATION_INACTIVE,
+				API_ERROR_CODES.RECIPIENT_NEEDS_PLAN,
 			);
-		case "rejected":
-		case "unavailable":
-			return failPolar(error);
 	}
 };
 
@@ -115,7 +91,9 @@ export const acceptTransferHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
 	const { transferId } = c.req.params as { transferId: string };
 	const result = await acceptIncomingTransfer(user.id, transferId);
-	return result.ok ? ok(result.data) : failAccept(result.error);
+	return result.ok
+		? ok(null, 200, "The organization is yours")
+		: failAccept(result.error);
 };
 
 export const declineTransferHandler: Handler = async (c) => {

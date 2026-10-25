@@ -7,8 +7,10 @@ import {
 } from "@backend/modules/organizations/utils";
 import { API_ERROR_CODES } from "@sinwy/shared";
 import {
+	activateOrganization,
 	completeOrganizationOnboarding,
 	createOrganization,
+	deactivateOrganization,
 	getOrganizationOnboarding,
 	listOrganizations,
 	saveOrganizationProfile,
@@ -72,4 +74,36 @@ export const completeOrganizationOnboardingHandler: Handler = async (c) => {
 	if (!result.ok) return respondWriteError(result.error);
 
 	return ok(result.data);
+};
+
+export const activateOrganizationHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+	const { organizationId } = c.req.params as { organizationId: string };
+	const result = await activateOrganization(user.id, organizationId);
+	if (result.ok) return ok(null, 200, "Organization activated");
+
+	switch (result.error) {
+		case "not-found":
+			return fail("Not found", 404);
+		case "no-plan":
+			return fail(
+				"You need an active plan to activate an organization",
+				409,
+				API_ERROR_CODES.PLAN_REQUIRED,
+			);
+		case "limit-reached":
+			return fail(
+				"Your plan has no free organization slot; deactivate one or upgrade",
+				409,
+				API_ERROR_CODES.ORGANIZATION_LIMIT_REACHED,
+			);
+	}
+};
+
+export const deactivateOrganizationHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+	const { organizationId } = c.req.params as { organizationId: string };
+	return (await deactivateOrganization(user.id, organizationId))
+		? ok(null, 200, "Organization deactivated")
+		: fail("Not found", 404);
 };

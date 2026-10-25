@@ -10,6 +10,7 @@ import { ContentBox } from "#/shared/components/ContentBox";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { formatDay } from "#/shared/lib/date";
+import { organizationsQuery } from "#/shared/lib/organizations";
 import { getPlanName } from "#/shared/lib/plans";
 
 /** Organizations offered to the caller; nothing renders while there are none. */
@@ -38,13 +39,15 @@ function IncomingTransferRow({ transfer }: { transfer: IncomingTransferDto }) {
 		mutationFn: async () => {
 			const res = await acceptTransfer(transfer.id);
 			if (!res.isSuccess) throw new Error(res.message);
-			return res.data.url;
 		},
-		onSuccess: (url) => window.location.assign(url),
-		onError: () =>
+		onSettled: () => {
 			void queryClient.invalidateQueries({
 				queryKey: accountKeys.incomingTransfers,
-			}),
+			});
+			void queryClient.invalidateQueries({
+				queryKey: organizationsQuery.queryKey,
+			});
+		},
 	});
 
 	const decline = useMutation({
@@ -83,11 +86,7 @@ function IncomingTransferRow({ transfer }: { transfer: IncomingTransferDto }) {
 						{decline.isPending ? "Declining…" : "Decline"}
 					</Button>
 					<Button size="sm" disabled={busy} onClick={() => accept.mutate()}>
-						{accept.isPending || accept.isSuccess
-							? "Opening checkout…"
-							: transfer.status === "accepted"
-								? "Continue to checkout"
-								: "Accept"}
+						{accept.isPending || accept.isSuccess ? "Accepting…" : "Accept"}
 					</Button>
 				</div>
 			</div>

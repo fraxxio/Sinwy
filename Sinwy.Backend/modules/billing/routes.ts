@@ -1,14 +1,8 @@
-import {
-	organizationPath,
-	requireAuth,
-	requireMember,
-	requirePermission,
-} from "@authModule";
+import { organizationPath, requireAuth, requireMember } from "@authModule";
 import type { IApp, Middleware } from "@backend/lib/app/types";
 import {
 	changePlanHandler,
 	downloadInvoiceHandler,
-	getCheckoutOrganizationHandler,
 	getOrganizationStatusHandler,
 	getSubscriptionHandler,
 	listInvoicesHandler,
@@ -25,44 +19,28 @@ const noStore: Middleware = async (_ctx, next) => {
 };
 
 export const registerBillingRoutes = (app: IApp) => {
-	const member = [noStore, requireAuth, requireMember];
-	const billingManager = [
-		noStore,
-		requireAuth,
-		requirePermission("billing:manage"),
-	];
+	const account = [noStore, requireAuth];
 
 	app.route(organizationPath("status"), getOrganizationStatusHandler, {
-		routeMiddlewares: member,
+		routeMiddlewares: [noStore, requireAuth, requireMember],
 	});
-	app.route(
-		"/api/organizations/checkout/:checkoutId",
-		getCheckoutOrganizationHandler,
-		{ routeMiddlewares: [noStore, requireAuth] },
-	);
-	app.route(organizationPath("subscription"), getSubscriptionHandler, {
-		routeMiddlewares: member,
-	});
-	app.route(organizationPath("subscription/plan"), changePlanHandler, {
-		method: "POST",
-		routeMiddlewares: billingManager,
+	app.route("/api/account/subscription", getSubscriptionHandler, {
+		routeMiddlewares: account,
 	});
 	for (const [path, handler] of [
-		["subscription/suspend", suspendHandler],
-		["subscription/unsuspend", unsuspendHandler],
-		["subscription/resume", resumeHandler],
+		["plan", changePlanHandler],
+		["suspend", suspendHandler],
+		["unsuspend", unsuspendHandler],
+		["resume", resumeHandler],
 	] as const)
-		app.route(organizationPath(path), handler, {
+		app.route(`/api/account/subscription/${path}`, handler, {
 			method: "POST",
-			routeMiddlewares: billingManager,
+			routeMiddlewares: account,
 		});
-	// invoices carry billing name and address, so billing managers only
-	app.route(organizationPath("invoices"), listInvoicesHandler, {
-		routeMiddlewares: billingManager,
+	app.route("/api/account/invoices", listInvoicesHandler, {
+		routeMiddlewares: account,
 	});
-	app.route(
-		organizationPath("invoices/:orderId/download"),
-		downloadInvoiceHandler,
-		{ routeMiddlewares: billingManager },
-	);
+	app.route("/api/account/invoices/:orderId/download", downloadInvoiceHandler, {
+		routeMiddlewares: account,
+	});
 };

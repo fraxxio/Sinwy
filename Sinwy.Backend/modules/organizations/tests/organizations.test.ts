@@ -4,6 +4,8 @@ import createApp from "@backend/lib/app";
 import {
 	activateOrganization,
 	createUserWithSession,
+	givePlan,
+	holdSlot,
 	insertOrganization,
 	joinOrganization,
 } from "@backend/test/helpers";
@@ -589,16 +591,14 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 	]);
 });
 
-test("GET /api/organizations: an inactive org still bound to its paused subscription is suspended", async () => {
+test("GET /api/organizations: an org holding a slot while its owner's plan is paused is suspended", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	const suspended = await insertOrganization("Suspended");
 	const lapsed = await insertOrganization("Lapsed");
 	await joinOrganization(suspended, userId, "owner");
 	await joinOrganization(lapsed, userId, "owner");
-	await db
-		.update(organization)
-		.set({ subscriptionId: "sub_paused" })
-		.where(eq(organization.id, suspended));
+	await givePlan(userId, null, { status: "paused" });
+	await holdSlot(suspended);
 
 	const list = await unwrap<OrganizationSummary[]>(
 		await get("/api/organizations", cookie),
@@ -610,6 +610,27 @@ test("GET /api/organizations: an inactive org still bound to its paused subscrip
 		{ id: suspended, status: "inactive", suspended: true },
 		{ id: lapsed, status: "inactive", suspended: false },
 	]);
+});
+
+test("an org holding a slot is inactive while its owner's plan is paused, lapsed or missing, and active again once it grants access", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const orgId = await insertOrganization("Slotted");
+	await joinOrganization(orgId, userId, "owner");
+	await holdSlot(orgId);
+	const state = async () => {
+		const [org] = await unwrap<OrganizationSummary[]>(
+			await get("/api/organizations", cookie),
+		);
+		return { status: org?.status, plan: org?.plan };
+	};
+
+	expect(await state()).toEqual({ status: "inactive", plan: null });
+	await givePlan(userId, null, { status: "paused" });
+	expect(await state()).toEqual({ status: "inactive", plan: null });
+	await givePlan(userId, null, { status: "canceled", subscriptionId: null });
+	expect(await state()).toEqual({ status: "inactive", plan: null });
+	await givePlan(userId, "professional");
+	expect(await state()).toEqual({ status: "active", plan: "professional" });
 });
 
 test("GET /api/organizations: no organizations → empty list, no session → 401", async () => {

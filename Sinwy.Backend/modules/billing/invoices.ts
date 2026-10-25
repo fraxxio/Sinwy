@@ -23,11 +23,10 @@ export type InvoiceListQuery = z.infer<typeof invoiceListQuery>;
 
 type Order = PolarModels.Order;
 
-// Every order of a subscription, renewals included, carries the checkout's
-// referenceId (verified in the Polar sandbox). Matching on it instead of the
-// stored subscription id keeps invoices of past subscriptions visible.
-const belongsTo = (order: Order, organizationId: string) =>
-	order.metadata["referenceId"] === organizationId;
+// by the customer, not the stored subscription id, so invoices of past
+// subscriptions stay visible
+const belongsTo = (order: Order, userId: string) =>
+	order.customer.external_id === userId;
 
 // Order embeds the customer (email, billing address); only this leaves the module
 const toInvoiceDto = (order: Order): InvoiceDto => ({
@@ -45,15 +44,15 @@ const toInvoiceDto = (order: Order): InvoiceDto => ({
 	invoiceGenerated: order.is_invoice_generated,
 });
 
-export const listOrganizationInvoices = async (
-	organizationId: string,
+export const listAccountInvoices = async (
+	userId: string,
 	{ page, limit }: InvoiceListQuery,
 ): Promise<
 	{ ok: true; data: InvoiceListDto } | { ok: false; error: PolarFailure }
 > => {
 	try {
 		const result = await polarClient.orders.list({
-			metadata: { referenceId: organizationId },
+			external_customer_id: userId,
 			sorting: ["-created_at"],
 			page,
 			limit,
@@ -70,9 +69,7 @@ export const listOrganizationInvoices = async (
 	} catch (error) {
 		return {
 			ok: false,
-			error: toPolarFailure(error, "Polar invoice list failed", {
-				organizationId,
-			}),
+			error: toPolarFailure(error, "Polar invoice list failed", { userId }),
 		};
 	}
 };
@@ -91,7 +88,7 @@ const isMissingOrder = (error: unknown) =>
 	error instanceof PolarApiErrors.HTTPValidationError;
 
 const downloadInvoice = async (
-	organizationId: string,
+	userId: string,
 	orderId: string,
 ): Promise<InvoiceDownload> => {
 	const order = await polarClient.orders
@@ -100,8 +97,7 @@ const downloadInvoice = async (
 			if (isMissingOrder(error)) return null;
 			throw error;
 		});
-	if (!order || !belongsTo(order, organizationId))
-		return { status: "not-found" };
+	if (!order || !belongsTo(order, userId)) return { status: "not-found" };
 
 	if (order.is_invoice_generated) {
 		const { url } = await polarClient.orders.invoice(order.id);
@@ -122,21 +118,20 @@ const downloadInvoice = async (
 };
 
 /**
- * The order id comes from the client, so an order of another organization
- * is reported exactly like a missing one. Invoices are generated on first
+ * The order id comes from the client, so another customer's order is reported exactly like a missing one. Invoices are generated on first
  * request; the caller retries once Polar has rendered it.
  */
 export const getInvoiceDownload = async (
-	organizationId: string,
+	userId: string,
 	orderId: string,
 ): Promise<InvoiceDownload> => {
 	try {
-		return await downloadInvoice(organizationId, orderId);
+		return await downloadInvoice(userId, orderId);
 	} catch (error) {
 		return {
 			status: "failed",
 			error: toPolarFailure(error, "Polar invoice download failed", {
-				organizationId,
+				userId,
 				orderId,
 			}),
 		};

@@ -17,6 +17,10 @@ export const SUBSCRIPTION_BILLING_STATUSES = [
 export type SubscriptionBillingStatus =
 	(typeof SUBSCRIPTION_BILLING_STATUSES)[number];
 
+/** Statuses that grant access; past_due too, since Polar's dunning retries are the grace period. */
+export const ENTITLED_SUBSCRIPTION_STATUSES: readonly SubscriptionBillingStatus[] =
+	["active", "trialing", "past_due"];
+
 export const BILLING_INTERVALS = ["day", "week", "month", "year"] as const;
 
 export type BillingInterval = (typeof BILLING_INTERVALS)[number];
@@ -45,6 +49,20 @@ export type OrganizationSubscriptionDto = {
 	suspended: boolean;
 	plan: PlanSlug | null;
 	features: readonly Feature[];
+	/** null when there is no subscription or Polar could not be reached. */
+	billing: SubscriptionBillingDto | null;
+};
+
+/** The user's own plan, which every organization they own runs on. */
+export type AccountSubscriptionDto = {
+	/** null without a plan that grants access. */
+	plan: PlanSlug | null;
+	/** Paused by its owner: it resumes without a new checkout. */
+	suspended: boolean;
+	/** Organizations the plan keeps active at once; 0 without a plan. */
+	organizationLimit: number;
+	/** Owned organizations holding a slot, not scheduled for deletion. */
+	activeOrganizations: number;
 	/** null when there is no subscription or Polar could not be reached. */
 	billing: SubscriptionBillingDto | null;
 };

@@ -3,7 +3,7 @@ import {
 	type OrganizationProfileInput,
 	uniqueSlug,
 } from "@backend/modules/organizations/utils";
-import { revokeOrganizationSubscription } from "@billingModule";
+import type { OrganizationAccess } from "@db/organizationAccess";
 import {
 	type AccountDeletionPreviewDto,
 	EMPTY_ORGANIZATION_PROFILE,
@@ -16,23 +16,24 @@ import {
 	type OrganizationSummary,
 	type PlanSlug,
 	parseMemberRoles,
-	toOrganizationStatus,
 	toPlanSlug,
 } from "@sinwy/shared";
 import {
-	bindSubscription,
+	countOwnedHeldSlots,
 	findDeletionScheduledAt,
 	findMemberOrganizations,
 	findOnboardingCompletedAt,
+	findOrganizationAccess,
+	findOwnedOrganizationIds,
 	findProfile,
 	findSoleOwnedOrganizations,
-	findSubscriptionState,
 	findUnfinishedOnboardingOrganization,
 	findUnpaidOwnedOrganization,
+	holdSlot,
 	isSlugTaken,
 	markOnboardingCompleted,
-	pauseSubscription,
-	releaseSubscription,
+	releaseSlot,
+	type SlotHold,
 	scheduleOrganizationsForDeletion,
 	upsertProfile,
 } from "./repository";
@@ -53,28 +54,37 @@ export const createOrganization = async (
 		id: org.id,
 		name: org.name,
 		slug: org.slug,
-		// DB column is a plain string; only the webhook projection writes it, with these two values
-		status: org.status as OrganizationStatus,
-		plan: toPlanSlug(org.plan ?? null),
+		// a new organization holds no slot yet
+		status: "inactive",
+		plan: null,
 		industry: org.industry as OrganizationIndustry,
 	};
 };
 
 /**
- * Active and not scheduled for deletion: the only state in which members may
+ * Active: it holds one of its owner's slots, the owner's plan grants access,
+ * and it isn't scheduled for deletion. The only state in which members may
  * open the organization. Public pages, booking pages and custom-domain
  * resolution must serve an organization only when this holds.
  */
-export const isOrganizationPublic = (org: {
-	status: string;
-	deletionScheduledAt: Date | null;
-}) => org.status === "active" && org.deletionScheduledAt === null;
+export const isOrganizationPublic = (access: OrganizationAccess) =>
+	access.slotHeldAt !== null &&
+	access.deletionScheduledAt === null &&
+	access.ownerPlan !== null;
 
-/** Inactive with its paused subscription still bound; see `pauseSubscription`. */
-export const isSuspended = (state: {
-	status: string;
-	subscriptionId: string | null;
-}) => state.status !== "active" && state.subscriptionId !== null;
+export const organizationStatusOf = (
+	access: OrganizationAccess,
+): OrganizationStatus => (isOrganizationPublic(access) ? "active" : "inactive");
+
+/** The owner's plan as far as the organization may use it: none while inactive. */
+export const organizationPlanOf = (access: OrganizationAccess) =>
+	isOrganizationPublic(access) ? toPlanSlug(access.ownerPlan) : null;
+
+/** Holds a slot, but its owner paused their plan; it resumes without a new checkout. */
+export const isSuspended = (access: OrganizationAccess) =>
+	access.slotHeldAt !== null &&
+	access.deletionScheduledAt === null &&
+	access.ownerSubscriptionStatus === "paused";
 
 export const RETENTION_MS = ORGANIZATION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
@@ -93,58 +103,59 @@ export const listOrganizations = async (
 		id: row.id,
 		name: row.name,
 		slug: row.slug,
-		status: toOrganizationStatus(row.status),
+		status: organizationStatusOf(row),
 		suspended: isSuspended(row),
-		plan: toPlanSlug(row.plan),
+		plan: organizationPlanOf(row),
 		isOwner: parseMemberRoles(row.role).includes("owner"),
 		deletesAt: deletesAtOf(row.deletionScheduledAt),
 		onboardingCompletedAt: row.onboardingCompletedAt?.toISOString() ?? null,
 	}));
 };
 
-export type SubscriptionState = {
+export type OrganizationState = {
 	status: OrganizationStatus;
-	plan: PlanSlug | null;
-	subscriptionId: string | null;
+	slotHeld: boolean;
+	/** The owner's plan while it grants access, active or not. */
+	ownerPlan: PlanSlug | null;
+	ownerUserId: string | null;
 };
 
 /** null for an unknown organization. */
-export const getSubscriptionState = async (
+export const getOrganizationState = async (
 	organizationId: string,
-): Promise<SubscriptionState | null> => {
-	const row = await findSubscriptionState(organizationId);
+): Promise<OrganizationState | null> => {
+	const row = await findOrganizationAccess(organizationId);
 	return row
 		? {
-				status: toOrganizationStatus(row.status),
-				plan: toPlanSlug(row.plan),
-				subscriptionId: row.subscriptionId,
+				status: organizationStatusOf(row),
+				slotHeld: row.slotHeldAt !== null,
+				ownerPlan: toPlanSlug(row.ownerPlan),
+				ownerUserId: row.ownerUserId,
 			}
 		: null;
 };
 
-/**
- * Billing projection writes. Each refuses a subscription other than the one
- * currently backing the organization, state observed no later than the
- * applied one, and an unknown organization, and report which it was.
- */
-export const activateSubscription = (
-	organizationId: string,
-	subscriptionId: string,
-	plan: PlanSlug | null,
-	observedAt: Date,
-) => bindSubscription(organizationId, subscriptionId, plan, observedAt);
+export const listOwnedOrganizationIds = async (userId: string) =>
+	(await findOwnedOrganizationIds(userId)).map((row) => row.id);
 
-export const suspendSubscription = (
-	organizationId: string,
-	subscriptionId: string,
-	observedAt: Date,
-) => pauseSubscription(organizationId, subscriptionId, observedAt);
+/** Owned organizations holding a slot, not scheduled for deletion. */
+export const countHeldSlots = countOwnedHeldSlots;
 
-export const deactivateSubscription = (
+export type SlotResult = Exclude<SlotHold, { result: "held" }>["result"];
+
+/** Owner only; refused without a plan that grants access, or at the plan's cap. */
+export const activateOrganization = async (
+	userId: string,
 	organizationId: string,
-	subscriptionId: string,
-	observedAt: Date,
-) => releaseSubscription(organizationId, subscriptionId, observedAt);
+): Promise<{ ok: true } | { ok: false; error: SlotResult }> => {
+	const hold = await holdSlot(userId, organizationId);
+	return hold.result === "held"
+		? { ok: true }
+		: { ok: false, error: hold.result };
+};
+
+/** Owner only; frees the slot for another organization. Never automatically refilled. */
+export const deactivateOrganization = releaseSlot;
 
 type WriteResult<T> =
 	| { ok: true; data: T }
@@ -219,7 +230,7 @@ export const getAccountDeletionPreview = async (
 		soleOwnedOrganizations: rows.map((row) => ({
 			id: row.id,
 			name: row.name,
-			status: toOrganizationStatus(row.status),
+			status: organizationStatusOf(row),
 		})),
 	};
 };
@@ -229,15 +240,10 @@ export const getUnpaidOwnedOrganizationId = findUnpaidOwnedOrganization;
 export const getUnfinishedOnboardingOrganizationId =
 	findUnfinishedOnboardingOrganization;
 
-/**
- * Revokes each owned organization's billable Polar subscriptions, then
- * schedules them all for deletion. A revoke failure throws before anything
- * is scheduled.
- */
+/** Takes every owned organization out of service for the retention period. */
 export const scheduleOwnedOrganizationsForDeletion = async (userId: string) => {
 	const orgs = await findSoleOwnedOrganizations(userId);
 	if (orgs.length === 0) return;
-	for (const org of orgs) await revokeOrganizationSubscription(org.id);
 	await scheduleOrganizationsForDeletion(
 		orgs.map((org) => org.id),
 		new Date(),

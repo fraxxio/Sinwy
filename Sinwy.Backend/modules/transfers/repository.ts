@@ -1,24 +1,19 @@
 import db from "@db";
 import { memberHasRole } from "@db/memberRole";
 import {
+	countHeldSlots,
+	lockPlan,
+	organizationAccess,
+	slotLimit,
+} from "@db/organizationAccess";
+import {
 	member,
 	organization,
 	organizationTransfer,
 } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
-import type { OpenTransferStatus, PlanSlug } from "@sinwy/shared";
-import {
-	and,
-	asc,
-	eq,
-	exists,
-	gt,
-	inArray,
-	isNull,
-	lte,
-	not,
-	sql,
-} from "drizzle-orm";
+import type { OpenTransferStatus } from "@sinwy/shared";
+import { and, asc, eq, exists, gt, inArray, lte, not, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -83,9 +78,7 @@ export const findOrganizationForTransfer = async (organizationId: string) => {
 		.select({
 			id: organization.id,
 			name: organization.name,
-			status: organization.status,
-			subscriptionId: organization.subscriptionId,
-			deletionScheduledAt: organization.deletionScheduledAt,
+			...organizationAccess,
 		})
 		.from(organization)
 		.where(eq(organization.id, organizationId));
@@ -104,12 +97,65 @@ export const findMembers = (organizationId: string) =>
 		.innerJoin(user, eq(member.userId, user.id))
 		.where(eq(member.organizationId, organizationId));
 
+/**
+ * Locks what a handover changes, in the order every slot write takes it: both
+ * owners' plan rows by id, then the organization. Says whether the recipient
+ * has a plan that grants access and a free slot for it.
+ */
+const lockForHandover = async (
+	tx: Tx,
+	organizationId: string,
+	fromUserId: string,
+	toUserId: string,
+) => {
+	let recipientPlan: string | null = null;
+	for (const userId of [fromUserId, toUserId].sort()) {
+		const plan = await lockPlan(tx, userId);
+		if (userId === toUserId) recipientPlan = plan;
+	}
+	const [org] = await tx
+		.select({ deletionScheduledAt: organization.deletionScheduledAt })
+		.from(organization)
+		.where(eq(organization.id, organizationId))
+		.for("update");
+	const recipientHasSlot =
+		recipientPlan !== null &&
+		(await countHeldSlots(tx, toUserId)) < slotLimit(recipientPlan);
+	return { org: org ?? null, recipientHasSlot };
+};
+
+/** The old owner's slot is freed; the organization holds one of the new owner's, or none. */
+const moveSlot = (tx: Tx, organizationId: string, toRecipient: boolean) =>
+	tx
+		.update(organization)
+		.set({ slotHeldAt: toRecipient ? new Date() : null })
+		.where(eq(organization.id, organizationId));
+
+export type SupportHandover =
+	| { result: "swapped"; slotHeld: boolean }
+	| { result: "owner-changed" }
+	| { result: "not-a-member" }
+	| { result: "not-found" };
+
+/** Support path: roles swap, and the organization keeps a slot only if the recipient has one free. */
 export const moveOwnership = (
 	organizationId: string,
 	fromUserId: string,
 	toUserId: string,
 ) =>
-	db.transaction((tx) => swapOwner(tx, organizationId, fromUserId, toUserId));
+	db.transaction(async (tx): Promise<SupportHandover> => {
+		const { org, recipientHasSlot } = await lockForHandover(
+			tx,
+			organizationId,
+			fromUserId,
+			toUserId,
+		);
+		if (!org) return { result: "not-found" };
+		const swap = await swapOwner(tx, organizationId, fromUserId, toUserId);
+		if (swap.result !== "swapped") return swap;
+		await moveSlot(tx, organizationId, recipientHasSlot);
+		return { result: "swapped", slotHeld: recipientHasSlot };
+	});
 
 export type TransferRow = typeof organizationTransfer.$inferSelect;
 
@@ -137,16 +183,6 @@ export const findTransfer = async (id: string) => {
 		.from(organizationTransfer)
 		.where(eq(organizationTransfer.id, id));
 	return row ?? null;
-};
-
-export const hasOpenTransfer = async (organizationId: string) => {
-	const [row] = await db
-		.select({ id: organizationTransfer.id })
-		.from(organizationTransfer)
-		.where(
-			and(eq(organizationTransfer.organizationId, organizationId), isOpen),
-		);
-	return row !== undefined;
 };
 
 export const findOpenTransfer = async (organizationId: string) => {
@@ -177,7 +213,7 @@ export const findIncomingTransfers = (userId: string, now: Date) =>
 			expiresAt: organizationTransfer.expiresAt,
 			organizationId: organization.id,
 			organizationName: organization.name,
-			plan: organization.plan,
+			plan: organizationAccess.ownerPlan,
 			fromName: fromUser.name,
 			fromEmail: fromUser.email,
 		})
@@ -258,125 +294,69 @@ export const expireTransfers = (now: Date, organizationId?: string) =>
 		),
 	);
 
-/**
- * Records the checkout opened on acceptance, unless another acceptance stored
- * one since `previousCheckoutId` was read; false then.
- */
-export const markAccepted = async (
-	id: string,
-	previousCheckoutId: string | null,
-	checkoutId: string,
-) => {
-	const updated = await db
-		.update(organizationTransfer)
-		.set({ status: "accepted", checkoutId, updatedAt: sql`now()` })
-		.where(
-			and(
-				eq(organizationTransfer.id, id),
-				isOpen,
-				previousCheckoutId === null
-					? isNull(organizationTransfer.checkoutId)
-					: eq(organizationTransfer.checkoutId, previousCheckoutId),
-			),
-		)
-		.returning({ id: organizationTransfer.id });
-	return updated.length > 0;
-};
-
 export type TransferCompletion =
-	| {
-			result: "completed";
-			transfer: TransferRow;
-			oldSubscriptionId: string | null;
-	  }
-	| { result: "not-accepted" }
+	| { result: "completed"; transfer: TransferRow }
+	| { result: "not-open" }
+	| { result: "needs-plan" }
 	| { result: "refused"; reason: string };
 
 /**
  * Hands the organization to the recipient in one transaction: roles swap and
- * the organization is rebound to the recipient's subscription. The only write
- * that replaces a bound subscription with another. A transfer whose recipient
- * left, whose owner changed, or whose organization is scheduled for deletion
- * is canceled instead.
+ * the organization moves from the old owner's slot to one of the recipient's.
+ * Refused, leaving the offer open, while the recipient has no plan that grants
+ * access or no free slot. A transfer whose recipient left or whose owner
+ * changed is canceled instead.
  */
-export const completeTransfer = (
-	transferId: string,
-	subscriptionId: string,
-	plan: PlanSlug | null,
-	observedAt: Date,
-) =>
+export const completeTransfer = (transferId: string, now: Date) =>
 	db.transaction(async (tx): Promise<TransferCompletion> => {
 		const [unlocked] = await tx
-			.select({ organizationId: organizationTransfer.organizationId })
+			.select()
 			.from(organizationTransfer)
 			.where(eq(organizationTransfer.id, transferId));
-		if (!unlocked) return { result: "not-accepted" };
+		if (!unlocked) return { result: "not-open" };
 
-		// organization first, the same order as every other subscription write
-		const [org] = await tx
-			.select({
-				subscriptionId: organization.subscriptionId,
-				deletionScheduledAt: organization.deletionScheduledAt,
-			})
-			.from(organization)
-			.where(eq(organization.id, unlocked.organizationId))
-			.for("update");
+		const { org, recipientHasSlot } = await lockForHandover(
+			tx,
+			unlocked.organizationId,
+			unlocked.fromUserId,
+			unlocked.toUserId,
+		);
 		const [transfer] = await tx
 			.select()
 			.from(organizationTransfer)
-			.where(eq(organizationTransfer.id, transferId))
+			.where(and(eq(organizationTransfer.id, transferId), isOpen))
 			.for("update");
-		if (!org || transfer?.status !== "accepted")
-			return { result: "not-accepted" };
+		if (
+			!org ||
+			org.deletionScheduledAt ||
+			!transfer ||
+			transfer.expiresAt <= now
+		)
+			return { result: "not-open" };
+		if (!recipientHasSlot) return { result: "needs-plan" };
 
-		const refuse = async (reason: string): Promise<TransferCompletion> => {
-			await tx
-				.update(organizationTransfer)
-				.set({ status: "canceled", updatedAt: sql`now()` })
-				.where(eq(organizationTransfer.id, transferId));
-			return { result: "refused", reason };
-		};
-		if (org.deletionScheduledAt) return refuse("scheduled-for-deletion");
 		const swap = await swapOwner(
 			tx,
 			transfer.organizationId,
 			transfer.fromUserId,
 			transfer.toUserId,
 		);
-		if (swap.result !== "swapped") return refuse(swap.result);
-
-		await tx
-			.update(organization)
-			.set({
-				status: "active",
-				plan,
-				subscriptionId,
-				subscriptionStatusAt: observedAt,
-			})
-			.where(eq(organization.id, transfer.organizationId));
+		if (swap.result !== "swapped") {
+			await tx
+				.update(organizationTransfer)
+				.set({ status: "canceled", updatedAt: sql`now()` })
+				.where(eq(organizationTransfer.id, transferId));
+			return { result: "refused", reason: swap.result };
+		}
+		await moveSlot(tx, transfer.organizationId, true);
 		const [completed] = await tx
 			.update(organizationTransfer)
-			.set({
-				status: "completed",
-				oldSubscriptionId: org.subscriptionId,
-				newSubscriptionId: subscriptionId,
-				updatedAt: sql`now()`,
-			})
+			.set({ status: "completed", updatedAt: sql`now()` })
 			.where(eq(organizationTransfer.id, transferId))
 			.returning();
 		if (!completed) throw new Error("Locked transfer row disappeared");
-		return {
-			result: "completed",
-			transfer: completed,
-			oldSubscriptionId: org.subscriptionId,
-		};
+		return { result: "completed", transfer: completed };
 	});
-
-export const markTransferSettled = (id: string) =>
-	db
-		.update(organizationTransfer)
-		.set({ settledAt: sql`now()`, updatedAt: sql`now()` })
-		.where(eq(organizationTransfer.id, id));
 
 export const findUserContacts = (userIds: string[]) =>
 	db

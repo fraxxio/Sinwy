@@ -793,3 +793,157 @@ pays out only to us, with no connected accounts for each business.
   providers' public docs and pricing pages (EUR, Ireland). Mollie's refund
   and chargeback fees and Adyen's minimum aren't published; the Adyen figure
   is from third-party reviews.
+
+## Phase 6: Account plan and organization slots
+
+**Goal:** the subscription belongs to the user, and an organization is active
+when its owner's plan grants access and it holds one of the owner's slots.
+Backend only; the web billing pages follow in Phase 7.
+
+**Files:** `Sinwy.Backend/db/schema/{organizationSchema,userSchema}.ts`,
+`modules/billing/{projection,checkoutGuard,service,controller,routes,invoices,transfer}.ts`,
+`modules/organizations/{service,repository,purge}.ts`,
+`modules/auth/{auth,requireFeature,requirePermission,activeOrganization}.ts`
+(`beforeDelete`, `resolveMembership`, set-active refusal),
+`modules/transfers/service.ts` (`completeOrganizationTransfer`,
+`transferOwnershipBySupport`), `Sinwy.Backend/scripts/transferOrganization.ts`,
+`scripts/backfillSubscriptionBindings.ts` (delete),
+`scripts/dev/{seedScenario,simulatePolarWebhook,capturePolarFixture}.ts`,
+`Sinwy.Shared/types/{plan,organization}/`, `.agents/skills/e2e-test/`.
+Tests: `modules/billing/tests/{projection,checkoutGuard,billing,planFeatures}.test.ts`,
+`modules/transfers/tests/transfer.test.ts`.
+
+Data:
+- Table `user_subscription` (billing module): `user_id` (PK, cascade),
+  `subscription_id` (unique), `plan`, `status`, `subscription_status_at`,
+  `trial_used_at`, timestamps. `plan` only while entitled, as on the org
+  today.
+- `organization.slot_held_at` (nullable): set while the org holds a slot.
+- Drop `organization.status`, `plan`, `subscription_id` and
+  `subscription_status_at` with their checks (D14: no data migration).
+- `PLAN_ORGANIZATION_LIMITS` in `@sinwy/shared` (Starter 1, Professional 2,
+  Enterprise 5).
+
+Projection:
+- Find the user by the subscription's `customer.external_id`; ignore
+  `referenceId`. Keep the ordering guard (`subscription_status_at`), the
+  entitled and billable lists, and the paused rule (inactive, binding kept).
+- A second billable subscription for a user who already has one (a race past
+  the checkout guard) is revoked and refunded in full with `refundInFull`.
+- Drop `projectTransferSubscription`, the transfer checkout, the stray and
+  old-subscription refunds, and `reconcileInactiveOrganization`'s org lookup;
+  reconcile now runs per user.
+
+Derived status:
+- One repository read returns an org's access: holds a slot, not scheduled,
+  owner's plan entitled, owner's plan slug. `isOrganizationPublic`,
+  `resolveMembership`, `requireFeature` (owner's plan), the set-active
+  refusal and `getOrganizationStatus` read it. `ORGANIZATION_INACTIVE`
+  stays the single code.
+
+Slots:
+- `POST /api/account/organizations/:organizationId/activate` and
+  `.../deactivate`, owner only. Activate locks the owner's
+  `user_subscription` row, counts held slots of non-scheduled owned orgs and
+  refuses at the cap (`ORGANIZATION_LIMIT_REACHED`) or without an entitled
+  plan.
+- Scheduling for deletion and Better Auth's `beforeDelete` clear the slot and
+  no longer touch Polar for that org.
+- Owner account deletion revokes the user's subscription (billable list),
+  then schedules every owned org (D13).
+
+Checkout:
+- The checkout carries no `reference_id`. The guard refuses when the user
+  already has a billable subscription (`PLAN_EXISTS`: change the plan
+  instead) and strips the trial when `trial_used_at` is set (D10). Check in
+  the Polar docs how a checkout disables a product's trial.
+
+Transfers (until Phase 10):
+- Completion is a role swap plus a slot move in one transaction: lock both
+  owners' `user_subscription` rows in id order, clear the old owner's slot,
+  give the recipient one. Accept refuses with `RECIPIENT_NEEDS_PLAN` when
+  the recipient has no entitled plan or no free slot. No money moves (D12).
+- The support script swaps roles; the org keeps a slot only if the recipient
+  has one free, otherwise it stays inactive. No refund.
+
+Tests that matter:
+- Two concurrent activations at the cap: exactly one wins.
+- Projection: by customer, out-of-order events, paused keeps the binding, a
+  second subscription for the same user is revoked and refunded.
+- An org with a slot is inactive while the owner's plan is paused, lapsed or
+  missing, and active again when it grants access.
+- Scheduling and hard delete free the slot; account deletion revokes once.
+- Transfer completion moves the slot and keeps exactly one owner.
+
+Done when:
+- With a real sandbox checkout (no org): the user's plan projects, an org
+  activates, a second org at the Starter cap is refused, deactivating the
+  first frees the slot, and the second then activates. Checked against the
+  running backend.
+
+**Verify:** start from `owner-with-org` with a second org created through the
+API. Pay a real Starter checkout through the plugin's `/checkout` with no
+`reference_id`; `/checkout/success`'s reconcile or a simulated
+`subscription.active` (extend `dev:simulate-polar-webhook` to take
+`--user`) projects it. Then the activate/deactivate calls above, checking
+`user_subscription` and `organization.slot_held_at` with `psql`, and a public
+page of each org via `isOrganizationPublic`. Simulate `subscription.paused`
+and `subscription.revoked` and check both orgs go inactive.
+
+### Log (2026-10-25, `feat(backend): move billing to one plan per user with organization slots`)
+- Shipped: table `user_subscription` (migrations 0013, 0014) and
+  `organization.slot_held_at`; the org's `status`, `plan`, `subscription_id`
+  and `subscription_status_at` are gone. The projection finds the user by
+  `customer.external_id`, keeps the ordering guard and the paused binding,
+  and revokes and fully refunds a second billable plan. Status is derived
+  from slot + owner's plan + not scheduled (`db/organizationAccess.ts`) in
+  `resolveMembership`, the set-active refusal, `listOrganizations` and the
+  org status endpoint, which reconciles the owner's plan per user.
+  `POST /api/account/organizations/:id/{activate,deactivate}` (owner only;
+  `PLAN_REQUIRED`, `ORGANIZATION_LIMIT_REACHED`). Checkout takes `{ slug }`
+  only, refuses `PLAN_EXISTS` and turns the trial off after the first plan.
+  Account deletion revokes once by customer, then schedules every owned org;
+  scheduling and Better Auth's delete free the slot without Polar. Transfer
+  accept completes at once with a role swap and slot move, or refuses
+  `RECIPIENT_NEEDS_PLAN`; the support script moves the slot only if the
+  recipient has one free, no refund. Transfer checkout, stray and old-plan
+  refunds and the backfill script deleted. `dev:simulate-polar-webhook
+  --user`, seed activates through the slot endpoint, e2e skill references
+  updated.
+- Differs from plan:
+  - The org billing endpoints moved instead of disappearing:
+    `/api/account/subscription` (GET, with `organizationLimit` and
+    `activeOrganizations`), `.../plan`, `.../suspend|unsuspend|resume` and
+    `/api/account/invoices` (+ download) act on the user's plan, so the
+    Phase 2 logic and its tests carried over. Phase 7's backend reads are
+    done; Phases 8 and 9 extend these. `GET /api/organizations/checkout/:id`
+    is removed, so `/checkout/success` is broken until Phase 7.
+  - Offers no longer refuse a pending pause or cancel (nothing is revoked
+    any more), and accept no longer refuses an inactive org; offers still
+    refuse inactive, suspended and scheduled orgs, from the database only.
+    Plan changes and suspend no longer refuse during a transfer.
+  - A second billable plan is revoked only after reading the bound one from
+    Polar: if that one ended without its webhook, it is projected first and
+    the new one takes over.
+  - A subscription for an unknown user is only logged: Polar's customer
+    delete already cancels it (API docs).
+  - An unknown product now leaves the user with no plan (orgs inactive),
+    where an org used to stay active without features; it is still logged
+    at ERROR.
+  - Post-login: "select plan" only when the user has no billable plan; an
+    org without a slot next to a plan raises nothing until the Phase 7
+    funnel.
+  - Web: accepting a transfer refreshes the lists instead of redirecting to
+    a checkout, so the account page keeps working until Phase 10.
+- Checked in the running app (sandbox, subagent run): real Starter checkout
+  through `/checkout` with `{ slug }` only (a `reference_id` → 400), projected
+  by the `GET /api/account/subscription` reconcile (webhook endpoint
+  disabled); org A activated, B refused at the Starter cap (40912), a
+  second checkout refused `PLAN_EXISTS`, A deactivated, B activated, a
+  non-owner got 404; set-active and the org list followed each slot change.
+  Simulated `subscription.paused` and `subscription.revoked` on the real id:
+  both orgs inactive, B keeps its slot (Default 8), activating while paused
+  → 40911. The sandbox subscription was revoked afterwards. Not checked:
+  real webhook deliveries, the trial path, Professional and Enterprise caps
+  (covered by tests), and the web billing pages (Phase 7). The race test
+  fails with `lockPlan`'s lock removed, so it tests the lock.

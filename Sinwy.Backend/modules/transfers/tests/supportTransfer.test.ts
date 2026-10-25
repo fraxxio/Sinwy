@@ -1,19 +1,18 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { type PolarModels, polarClient } from "@backend/infrastructure/polar";
+import { polarClient } from "@backend/infrastructure/polar";
 import {
 	activateOrganization,
 	createUserWithSession,
+	givePlan,
 	insertOrganization,
 	joinOrganization,
 } from "@backend/test/helpers";
 import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
-import { getSubscriptionState } from "@organizationsModule";
+import { getOrganizationState } from "@organizationsModule";
 import { asc, eq } from "drizzle-orm";
 import { moveOwnership } from "../repository";
 import { transferOwnershipBySupport } from "../service";
-
-type Subscription = PolarModels.Subscription;
 
 let orgId: string;
 let ownerId: string;
@@ -50,6 +49,7 @@ const roles = async () =>
 test("role swap: the old owner becomes admin, the target owner, one owner throughout", async () => {
 	expect(await moveOwnership(orgId, ownerId, staffId)).toEqual({
 		result: "swapped",
+		slotHeld: false,
 	});
 	expect(await roles()).toEqual({
 		[ownerId]: "admin",
@@ -86,53 +86,22 @@ test("two concurrent swaps to different members leave exactly one owner", async 
 	expect(owners).toHaveLength(1);
 });
 
-const period = {
-	current_period_start: "2026-10-01T00:00:00Z",
-	current_period_end: "2026-10-31T00:00:00Z",
+const slotHeld = async () => {
+	const [row] = await db
+		.select({ slotHeldAt: organization.slotHeldAt })
+		.from(organization)
+		.where(eq(organization.id, orgId));
+	return row?.slotHeldAt != null;
 };
 
-const stubPolar = () => {
-	const live: Partial<Subscription> = {
-		id: `sub_${orgId}`,
-		status: "active",
-		metadata: { referenceId: orgId },
-		created_at: "2026-10-01T00:00:00Z",
-		modified_at: "2026-10-01T00:00:00Z",
-		...period,
-	};
-	const get = spyOn(polarClient.subscriptions, "get").mockResolvedValue(
-		live as Subscription,
-	);
-	const revoke = spyOn(polarClient.subscriptions, "revoke").mockResolvedValue({
-		...live,
-		status: "canceled",
-		modified_at: "2026-10-16T00:00:01Z",
-	} as Subscription);
-	const orders = spyOn(polarClient.orders, "list").mockResolvedValue({
-		items: [
-			{ id: "order_1", paid: true, net_amount: 3000, refundable_amount: 3000 },
-		],
-		pagination: { total_count: 1, max_page: 1 },
-	} as never);
-	const refund = spyOn(polarClient.refunds, "create").mockResolvedValue(
-		{} as never,
-	);
-	spies.push(get, revoke, orders, refund);
-	return { revoke, refund };
-};
-
-const now = new Date("2026-10-16T00:00:00Z");
-
-test("support transfer dry run reports the planned refund and writes nothing", async () => {
+test("support transfer dry run reports both users and writes nothing", async () => {
 	await activateOrganization(orgId);
-	const { revoke, refund } = stubPolar();
 	const before = await roles();
 
 	const result = await transferOwnershipBySupport({
 		organizationId: orgId,
 		toUserId: staffId,
 		apply: false,
-		now,
 	});
 
 	expect(result).toMatchObject({
@@ -140,43 +109,47 @@ test("support transfer dry run reports the planned refund and writes nothing", a
 		applied: false,
 		from: { userId: ownerId },
 		to: { userId: staffId },
-		outcome: { billable: true, refund: { orderId: "order_1", amount: 1500 } },
 	});
 	expect(await roles()).toEqual(before);
-	expect(revoke).not.toHaveBeenCalled();
-	expect(refund).not.toHaveBeenCalled();
+	expect(await slotHeld()).toBe(true);
 });
 
-test("support transfer --apply swaps roles, revokes, refunds the unused half and leaves the org inactive", async () => {
+test("support transfer --apply to a member without a plan: roles swap, the org leaves the old owner's slot and goes inactive, Polar untouched", async () => {
 	await activateOrganization(orgId);
-	const { revoke, refund } = stubPolar();
+	const polarCalls = [
+		spyOn(polarClient.subscriptions, "revoke"),
+		spyOn(polarClient.refunds, "create"),
+	];
+	spies.push(...polarCalls);
 
 	const result = await transferOwnershipBySupport({
 		organizationId: orgId,
 		toUserId: staffId,
 		apply: true,
-		now,
 	});
 
-	expect(result).toMatchObject({
-		ok: true,
-		applied: true,
-		outcome: {
-			revoked: true,
-			refund: { result: "refunded", orderId: "order_1", amount: 1500 },
-		},
-	});
+	expect(result).toMatchObject({ ok: true, applied: true, slotHeld: false });
 	expect((await roles())[staffId]).toBe("owner");
 	expect((await roles())[ownerId]).toBe("admin");
-	expect(revoke).toHaveBeenCalledWith(`sub_${orgId}`);
-	expect(refund.mock.calls[0]?.[0]).toMatchObject({
-		order_id: "order_1",
-		amount: 1500,
+	expect(await slotHeld()).toBe(false);
+	expect((await getOrganizationState(orgId))?.status).toBe("inactive");
+	for (const call of polarCalls) expect(call).not.toHaveBeenCalled();
+});
+
+test("support transfer --apply to a member with a free slot: the org stays active on their plan", async () => {
+	await activateOrganization(orgId);
+	await givePlan(staffId, "professional");
+
+	const result = await transferOwnershipBySupport({
+		organizationId: orgId,
+		toUserId: staffId,
+		apply: true,
 	});
-	expect(await getSubscriptionState(orgId)).toEqual({
-		status: "inactive",
-		plan: null,
-		subscriptionId: null,
+
+	expect(result).toMatchObject({ ok: true, applied: true, slotHeld: true });
+	expect(await getOrganizationState(orgId)).toMatchObject({
+		status: "active",
+		ownerPlan: "professional",
 	});
 });
 

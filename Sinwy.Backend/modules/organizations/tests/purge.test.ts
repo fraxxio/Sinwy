@@ -1,11 +1,9 @@
-import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { polarClient } from "@backend/infrastructure/polar";
+import { beforeEach, expect, test } from "bun:test";
 import { fileUrl, storageClient } from "@backend/infrastructure/storage";
 import {
 	createUserWithSession,
 	insertOrganization,
 	joinOrganization,
-	polarPages,
 } from "@backend/test/helpers";
 import db from "@db";
 import { organization } from "@db/schema/organizationSchema";
@@ -17,23 +15,9 @@ const DAY = 24 * 60 * 60 * 1000;
 const now = new Date("2026-10-25T12:00:00Z");
 const ago = (ms: number) => new Date(now.getTime() - ms);
 
-let listSpy: ReturnType<typeof spyOn>;
-let revokeSpy: ReturnType<typeof spyOn>;
-
 beforeEach(async () => {
 	await db.delete(organization);
 	await db.delete(user);
-	listSpy = spyOn(polarClient.subscriptions, "iterList").mockImplementation(
-		polarPages(),
-	);
-	revokeSpy = spyOn(polarClient.subscriptions, "revoke").mockResolvedValue(
-		{} as never,
-	);
-});
-
-afterEach(() => {
-	listSpy.mockRestore();
-	revokeSpy.mockRestore();
 });
 
 /** An organization as `insertOrganization` makes it, created long before `now`. */
@@ -114,18 +98,11 @@ test("purges in batches until none are left", async () => {
 	);
 });
 
-test("an org left without an owner and never scheduled is revoked and scheduled, unless just created", async () => {
-	const orphan = await seedOrganization("Orphan", {
-		status: "active",
-		plan: "starter",
-		subscriptionId: "sub_orphan",
-	});
+test("an org left without an owner and never scheduled is scheduled with its slot freed, unless just created", async () => {
+	const orphan = await seedOrganization("Orphan", { slotHeldAt: ago(DAY) });
 	const justCreated = await seedOrganization("Just created", {
 		createdAt: ago(5 * 60 * 1000),
 	});
-	listSpy.mockImplementation(
-		polarPages([{ id: "sub_orphan", status: "active" }]),
-	);
 
 	expect(await purgeScheduledOrganizations(now)).toEqual({
 		unscheduled: 0,
@@ -133,32 +110,15 @@ test("an org left without an owner and never scheduled is revoked and scheduled,
 		purged: 0,
 	});
 
-	expect(revokeSpy).toHaveBeenCalledWith("sub_orphan");
 	const [row] = await db
 		.select({
-			status: organization.status,
-			subscriptionId: organization.subscriptionId,
+			slotHeldAt: organization.slotHeldAt,
 			deletionScheduledAt: organization.deletionScheduledAt,
 		})
 		.from(organization)
 		.where(eq(organization.id, orphan));
-	expect(row).toEqual({
-		status: "inactive",
-		subscriptionId: null,
-		deletionScheduledAt: now,
-	});
+	expect(row).toEqual({ slotHeldAt: null, deletionScheduledAt: now });
 	expect(await deletionScheduledAt(justCreated)).toBeNull();
-});
-
-test("an ownerless org whose subscription can't be revoked stays unscheduled for the next run", async () => {
-	const orphan = await seedOrganization("Orphan");
-	listSpy.mockImplementation(
-		polarPages([{ id: "sub_orphan", status: "active" }]),
-	);
-	revokeSpy.mockRejectedValue(new Error("polar down"));
-
-	expect((await purgeScheduledOrganizations(now)).scheduled).toBe(0);
-	expect(await deletionScheduledAt(orphan)).toBeNull();
 });
 
 test("a scheduled org that still has an owner is unscheduled, unless its deletion may still be in flight", async () => {

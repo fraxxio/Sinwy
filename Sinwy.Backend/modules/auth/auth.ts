@@ -3,7 +3,7 @@ import { polarCore, productIdFor } from "@backend/infrastructure/polar";
 import {
 	applySubscriptionEvent,
 	ensureCheckoutAllowed,
-	revokeOrganizationSubscription,
+	revokeAccountSubscriptions,
 } from "@billingModule";
 import appConfig from "@config";
 import db from "@db";
@@ -49,11 +49,11 @@ const validName = (name: unknown) => {
 	return result.data.name;
 };
 
-// The plugin forwards the rest of the body to Polar (metadata spread over
-// referenceId, raw product ids, trials, discounts, redirect URLs)
+// The plugin forwards the rest of the body to Polar (metadata, raw product
+// ids, trials, discounts, redirect URLs). The plan is the user's own, so no
+// reference_id either.
 const checkoutBodySchema = z.strictObject({
 	slug: z.enum(PLAN_SLUGS),
-	reference_id: z.string().min(1),
 	redirect: z.boolean().optional(),
 });
 
@@ -120,7 +120,7 @@ export const auth = betterAuth({
 			// only reached from the emailed link, so a failure must land on a page, not JSON
 			beforeDelete: async (user) => {
 				try {
-					await scheduleOwnedOrganizationsForDeletion(user.id);
+					await revokeAccountSubscriptions(user.id);
 				} catch (error) {
 					if (!(error instanceof APIError)) throw error;
 					throw new APIError("FOUND", undefined, {
@@ -130,6 +130,7 @@ export const auth = betterAuth({
 						).toString(),
 					});
 				}
+				await scheduleOwnedOrganizationsForDeletion(user.id);
 			},
 			afterDelete: async (user) => {
 				await cleanupDeletedUser(user);
@@ -169,9 +170,8 @@ export const auth = betterAuth({
 		},
 	},
 	hooks: {
-		// The polar plugin trusts referenceId with no membership check. Checkout
-		// is guarded here; the org-scoped subscription read is ours instead
-		// (GET /api/organizations/:organizationId/subscription).
+		// The polar plugin trusts referenceId with no membership check, so it is
+		// refused here; the subscription read is ours (GET /api/account/subscription).
 		before: createAuthMiddleware(async (ctx) => {
 			if (ctx.path === "/checkout") {
 				const body = checkoutBodySchema.safeParse(ctx.body);
@@ -181,7 +181,11 @@ export const auth = betterAuth({
 					});
 				const session = await getSessionFromCtx(ctx);
 				if (!session) throw new APIError("UNAUTHORIZED");
-				await ensureCheckoutAllowed(session.user.id, body.data.reference_id);
+				const { allowTrial } = await ensureCheckoutAllowed(session.user.id);
+				// one trial per user: the plugin passes allow_trial on to Polar
+				return allowTrial
+					? undefined
+					: { context: { body: { ...body.data, allow_trial: false } } };
 			}
 			// the plugin has no beforeSetActive hook
 			if (ctx.path === "/organization/set-active") {
@@ -194,8 +198,9 @@ export const auth = betterAuth({
 				ctx.query?.["reference_id"]
 			)
 				throw new APIError("FORBIDDEN", {
-					message: "Read organization subscriptions through the organization",
+					message: "Read your subscription through your account",
 				});
+			return undefined;
 		}),
 		// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
 		after: createAuthMiddleware(async (ctx) => {
@@ -236,23 +241,10 @@ export const auth = betterAuth({
 					refuseOwnerRole(member.role, newRole),
 				afterRemoveMember: ({ member }) =>
 					cancelTransfersToMember(member.organizationId, member.userId),
-				// the plugin's own delete knows nothing of billing
-				beforeDeleteOrganization: ({ organization }) =>
-					revokeOrganizationSubscription(organization.id),
 			},
 			schema: {
 				organization: {
 					additionalFields: {
-						status: {
-							type: "string",
-							defaultValue: "inactive",
-							input: false,
-						},
-						plan: {
-							type: "string",
-							required: false,
-							input: false,
-						},
 						industry: {
 							type: "string",
 							defaultValue: "other",
@@ -264,6 +256,11 @@ export const auth = betterAuth({
 							input: false,
 						},
 						deletionScheduledAt: {
+							type: "date",
+							required: false,
+							input: false,
+						},
+						slotHeldAt: {
 							type: "date",
 							required: false,
 							input: false,

@@ -9,4 +9,5 @@ export type AuthResponse = {
 /** `code` on Better Auth errors the frontend handles on its own. */
 export const AUTH_ERROR_CODES = {
 	ORGANIZATION_INACTIVE: "ORGANIZATION_INACTIVE",
+	PLAN_EXISTS: "PLAN_EXISTS",
 } as const;

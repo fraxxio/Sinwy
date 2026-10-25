@@ -3,7 +3,7 @@ import { registerAuthRoutes } from "@authModule";
 import createApp from "@backend/lib/app";
 import appConfig from "@config";
 import db from "@db";
-import { organization } from "@db/schema/organizationSchema";
+import { user, userSubscription } from "@db/schema/userSchema";
 import { webhooks } from "@polar-sh/sdk/2026-10";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
@@ -28,40 +28,42 @@ beforeAll(() => {
 
 afterAll(() => server.stop(true));
 
-const orgId = "org_simulate_1";
+const userId = "user_simulate_1";
 
 beforeEach(async () => {
-	await db.delete(organization);
-	await db.insert(organization).values({
-		id: orgId,
-		name: "Simulated Org",
-		slug: "simulated-org",
+	await db.delete(user);
+	await db.insert(user).values({
+		id: userId,
+		name: "Simulated User",
+		email: "simulated@test.dev",
 		createdAt: new Date(),
+		updatedAt: new Date(),
 	});
 });
 
-const storedStatus = async () => (await storedState())?.status;
-
+/** The user's projected plan; null until an event applied. */
 const storedState = async () => {
 	const [row] = await db
-		.select({ status: organization.status, plan: organization.plan })
-		.from(organization)
-		.where(eq(organization.id, orgId));
-	return row;
+		.select({
+			status: userSubscription.status,
+			plan: userSubscription.plan,
+			subscriptionId: userSubscription.subscriptionId,
+		})
+		.from(userSubscription)
+		.where(eq(userSubscription.userId, userId));
+	return row ?? null;
 };
+
+const storedPlan = async () => (await storedState())?.plan ?? null;
 
 const send = (
 	type: PolarEventType,
 	options: Partial<Omit<PolarDeliveryOptions, "type">> = {},
-) =>
-	sendPolarDelivery(
-		base,
-		buildPolarDelivery({ type, organizationId: orgId, ...options }),
-	);
+) => sendPolarDelivery(base, buildPolarDelivery({ type, userId, ...options }));
 
 for (const type of Object.keys(polarFixtures) as PolarEventType[]) {
 	test(`${type} delivery passes the SDK's signature check`, async () => {
-		const delivery = buildPolarDelivery({ type, organizationId: orgId });
+		const delivery = buildPolarDelivery({ type, userId });
 
 		const event = await webhooks.validateEvent(
 			delivery.body,
@@ -72,27 +74,30 @@ for (const type of Object.keys(polarFixtures) as PolarEventType[]) {
 		expect(event.type).toBe(type);
 		if (event.type !== type) return;
 		expect(event.data.id).toBe(delivery.subscriptionId);
-		expect(event.data.metadata["referenceId"]).toBe(orgId);
+		expect(event.data.customer.external_id).toBe(userId);
+		expect(event.data.metadata["referenceId"]).toBeUndefined();
 	});
 }
 
-test("--transfer-id lands in the subscription metadata next to referenceId", () => {
+test("--transfer-id is the only subscription metadata", () => {
 	const delivery = buildPolarDelivery({
 		type: "subscription.active",
-		organizationId: orgId,
+		userId,
 		transferId: "transfer_1",
 	});
-	expect(JSON.parse(delivery.body).data.metadata).toMatchObject({
-		referenceId: orgId,
+	expect(JSON.parse(delivery.body).data.metadata).toEqual({
 		transferId: "transfer_1",
 	});
 });
 
-test("subscription.active through the endpoint → org active on the requested plan", async () => {
+test("subscription.active through the endpoint → the user on the requested plan", async () => {
 	expect(await send("subscription.active", { plan: "starter" })).toMatchObject({
 		status: 200,
 	});
-	expect(await storedState()).toEqual({ status: "active", plan: "starter" });
+	expect(await storedState()).toMatchObject({
+		status: "active",
+		plan: "starter",
+	});
 });
 
 test("subscription.updated through the endpoint applies to the bound subscription", async () => {
@@ -106,7 +111,11 @@ test("subscription.updated through the endpoint applies to the bound subscriptio
 	expect(await send("subscription.updated", { subscriptionId })).toMatchObject({
 		status: 200,
 	});
-	expect(await storedState()).toEqual({ status: "inactive", plan: null });
+	expect(await storedState()).toEqual({
+		status: "canceled",
+		plan: null,
+		subscriptionId: null,
+	});
 });
 
 test("subscription.paused alone → 200, ignored: the subscription.updated Polar sends with it projects", async () => {
@@ -119,10 +128,10 @@ test("subscription.paused alone → 200, ignored: the subscription.updated Polar
 	expect(await send("subscription.paused", { subscriptionId })).toMatchObject({
 		status: 200,
 	});
-	expect(await storedStatus()).toBe("active");
+	expect(await storedPlan()).toBe("enterprise");
 });
 
-test("subscription.paused as Polar sends it, after a subscription.updated → org suspended, still bound", async () => {
+test("subscription.paused as Polar sends it, after a subscription.updated → plan paused, still bound", async () => {
 	const subscriptionId = crypto.randomUUID();
 	await send("subscription.active", {
 		subscriptionId,
@@ -131,7 +140,7 @@ test("subscription.paused as Polar sends it, after a subscription.updated → or
 
 	const deliveries = buildPolarDeliveries({
 		type: "subscription.paused",
-		organizationId: orgId,
+		userId,
 		subscriptionId,
 	});
 	expect(deliveries.map((delivery) => delivery.type)).toEqual([
@@ -141,57 +150,48 @@ test("subscription.paused as Polar sends it, after a subscription.updated → or
 	for (const delivery of deliveries)
 		expect((await sendPolarDelivery(base, delivery)).status).toBe(200);
 
-	const [row] = await db
-		.select({
-			status: organization.status,
-			subscriptionId: organization.subscriptionId,
-		})
-		.from(organization)
-		.where(eq(organization.id, orgId));
-	expect(row).toEqual({ status: "inactive", subscriptionId });
+	expect(await storedState()).toEqual({
+		status: "paused",
+		plan: null,
+		subscriptionId,
+	});
 });
 
-test("tampered body → 403, status unchanged", async () => {
-	const delivery = buildPolarDelivery({
-		type: "subscription.active",
-		organizationId: orgId,
-	});
+test("tampered body → 403, nothing projected", async () => {
+	const delivery = buildPolarDelivery({ type: "subscription.active", userId });
 
 	const res = await sendPolarDelivery(base, {
 		...delivery,
-		body: delivery.body.replace(orgId, "org_other"),
+		body: delivery.body.replace(userId, "user_other"),
 	});
 
 	expect(res.status).toBe(403);
-	expect(await storedStatus()).toBe("inactive");
+	expect(await storedState()).toBeNull();
 });
 
 test("redelivery of the same event → 200, same state", async () => {
-	const delivery = buildPolarDelivery({
-		type: "subscription.active",
-		organizationId: orgId,
-	});
+	const delivery = buildPolarDelivery({ type: "subscription.active", userId });
 
 	expect((await sendPolarDelivery(base, delivery)).status).toBe(200);
 	expect((await sendPolarDelivery(base, delivery)).status).toBe(200);
-	expect(await storedStatus()).toBe("active");
+	expect(await storedPlan()).toBe("enterprise");
 });
 
-test("subscription.revoked delivered before an older subscription.active → inactive", async () => {
+test("subscription.revoked delivered before an older subscription.active → no plan", async () => {
 	const activatedAt = new Date(Date.now() - 60_000);
 	const revokedAt = new Date();
 
 	await send("subscription.revoked", { timestamp: revokedAt });
 	await send("subscription.active", { timestamp: activatedAt });
 
-	expect(await storedStatus()).toBe("inactive");
+	expect(await storedPlan()).toBeNull();
 });
 
-test("unknown referenceId → 200, no org changes", async () => {
+test("unknown user → 200, nothing projected", async () => {
 	const res = await send("subscription.active", {
-		organizationId: "org_does_not_exist",
+		userId: "user_does_not_exist",
 	});
 
 	expect(res.status).toBe(200);
-	expect(await storedStatus()).toBe("inactive");
+	expect(await storedState()).toBeNull();
 });

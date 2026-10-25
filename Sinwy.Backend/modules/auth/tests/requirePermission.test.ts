@@ -1,6 +1,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import type { Middleware } from "@backend/lib/app/types";
 import {
+	activateOrganization,
 	createUserWithSession,
 	fakeCtx,
 	insertOrganization,
@@ -83,9 +84,10 @@ test("requireMember: any role passes and the membership carries the org status a
 
 test("requireMember: an org scheduled for deletion → 404 for every member", async () => {
 	const { organizationId, cookie } = await seedMember("owner");
+	await activateOrganization(organizationId);
 	await db
 		.update(organization)
-		.set({ status: "active", deletionScheduledAt: new Date() })
+		.set({ deletionScheduledAt: new Date() })
 		.where(eq(organization.id, organizationId));
 	const { res } = await runMember({ params: { organizationId }, cookie });
 	expect(res.status).toBe(404);

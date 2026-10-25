@@ -1,6 +1,5 @@
 import { keyFromFileUrl, storageClient } from "@backend/infrastructure/storage";
 import type { Job } from "@backend/lib/jobs";
-import { revokeOrganizationSubscription } from "@billingModule";
 import { createLogger } from "@logger";
 import {
 	deleteOrganizations,
@@ -34,21 +33,16 @@ const scheduleOwnerless = async (now: Date) => {
 	const orgs = await findOwnerlessUnscheduledOrganizations(
 		new Date(now.getTime() - IN_FLIGHT_MS),
 	);
-	let scheduled = 0;
-	for (const { id } of orgs) {
-		// already logged; the next run tries again
-		const revoked = await revokeOrganizationSubscription(id).then(
-			() => true,
-			() => false,
-		);
-		if (!revoked) continue;
-		await scheduleOrganizationsForDeletion([id], now);
+	if (orgs.length === 0) return 0;
+	await scheduleOrganizationsForDeletion(
+		orgs.map((org) => org.id),
+		now,
+	);
+	for (const { id } of orgs)
 		purgeLogger.warn("Scheduled the deletion of an org without an owner", {
 			organizationId: id,
 		});
-		scheduled++;
-	}
-	return scheduled;
+	return orgs.length;
 };
 
 const deleteLogo = async (org: { id: string; logo: string | null }) => {

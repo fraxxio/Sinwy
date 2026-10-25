@@ -4,21 +4,22 @@ export {
 } from "./purge";
 export { registerOrganizationRoutes } from "./routes";
 export {
-	activateSubscription,
 	completeOrganizationOnboarding,
+	countHeldSlots,
 	createOrganization,
-	deactivateSubscription,
 	getAccountDeletionPreview,
 	getOrganizationOnboarding,
-	getSubscriptionState,
+	getOrganizationState,
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
 	isOrganizationPublic,
 	isScheduledForDeletion,
 	isSuspended,
 	listOrganizations,
-	type SubscriptionState,
+	listOwnedOrganizationIds,
+	type OrganizationState,
+	organizationPlanOf,
+	organizationStatusOf,
 	saveOrganizationProfile,
 	scheduleOwnedOrganizationsForDeletion,
-	suspendSubscription,
 } from "./service";

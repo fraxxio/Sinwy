@@ -4,11 +4,12 @@ import type { IReqContext } from "@backend/lib/app/types";
 import type { ReqContextValues } from "@backend/lib/sharedTypes";
 import appConfig from "@config";
 import db from "@db";
+import { memberHasRole } from "@db/memberRole";
 import { account, session } from "@db/schema/authSchema";
 import { member, organization } from "@db/schema/organizationSchema";
-import { user } from "@db/schema/userSchema";
+import { user, userSubscription } from "@db/schema/userSchema";
 import type { PlanSlug } from "@sinwy/shared";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 // Mirrors better-call's signCookieValue: `${token}.${base64(HMAC-SHA256(token, secret))}`.
 // Forged instead of signing up through better-auth because createCustomerOnSignUp
@@ -88,16 +89,84 @@ export const insertOrganization = async (name: string) => {
 	return id;
 };
 
-/** The state the webhook projection leaves behind for a paying organization. */
-export const activateOrganization = (
+type PlanSeed = {
+	subscriptionId?: string | null;
+	status?: string;
+	subscriptionStatusAt?: Date;
+	trialUsedAt?: Date | null;
+};
+
+/**
+ * The row the webhook projection leaves for a user's subscription: `plan`
+ * only while it grants access. Older than any event a test sends, unless
+ * `subscriptionStatusAt` says otherwise.
+ */
+export const givePlan = async (
+	userId: string,
+	plan: PlanSlug | null = "starter",
+	{
+		subscriptionId = `sub_${userId}`,
+		status = plan ? "active" : "canceled",
+		subscriptionStatusAt = new Date("2000-01-01T00:00:00Z"),
+		trialUsedAt = new Date("2000-01-01T00:00:00Z"),
+	}: PlanSeed = {},
+) => {
+	const values = {
+		subscriptionId,
+		plan,
+		status,
+		subscriptionStatusAt,
+		trialUsedAt,
+	};
+	await db
+		.insert(userSubscription)
+		.values({ userId, ...values })
+		.onConflictDoUpdate({ target: userSubscription.userId, set: values });
+};
+
+export const holdSlot = (organizationId: string, heldAt = new Date()) =>
+	db
+		.update(organization)
+		.set({ slotHeldAt: heldAt })
+		.where(eq(organization.id, organizationId));
+
+const findOwnerId = async (organizationId: string) => {
+	const [owner] = await db
+		.select({ userId: member.userId })
+		.from(member)
+		.where(
+			and(eq(member.organizationId, organizationId), memberHasRole("owner")),
+		);
+	return owner?.userId ?? null;
+};
+
+/**
+ * An active organization: its owner on `plan`, and the organization holding
+ * one of their slots. An organization without an owner gets one.
+ */
+export const activateOrganization = async (
 	organizationId: string,
 	plan: PlanSlug | null = "starter",
 	subscriptionId = `sub_${organizationId}`,
-) =>
-	db
-		.update(organization)
-		.set({ status: "active", plan, subscriptionId })
-		.where(eq(organization.id, organizationId));
+) => {
+	let ownerId = await findOwnerId(organizationId);
+	if (!ownerId) {
+		ownerId = `user_owner_${++seq}`;
+		const now = new Date();
+		await db.insert(user).values({
+			id: ownerId,
+			name: "Owner",
+			email: `${ownerId}@test.dev`,
+			emailVerified: true,
+			createdAt: now,
+			updatedAt: now,
+		});
+		await joinOrganization(organizationId, ownerId, "owner");
+	}
+	await givePlan(ownerId, plan, { subscriptionId });
+	await holdSlot(organizationId);
+	return ownerId;
+};
 
 /** `role` is the raw column value, so tests can also seed legacy or combined roles. */
 export const joinOrganization = async (

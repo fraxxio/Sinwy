@@ -24,14 +24,12 @@ let listSpy: ReturnType<typeof spyOn>;
 let revokeSpy: ReturnType<typeof spyOn>;
 let polarCoreSpy: ReturnType<typeof stubPolarCore>;
 
-/** Active subscription per organization, as Polar answers the revoke lookup. */
-const polarSubscriptions = (byOrganization: Record<string, string>) => {
-	listSpy.mockImplementation(
-		(params: { metadata: { referenceId: string } }) => {
-			const id = byOrganization[params.metadata.referenceId];
-			return polarPages(id ? [{ id, status: "active" }] : [])();
-		},
-	);
+/** Active subscription per user, as Polar answers the revoke lookup by customer. */
+const polarSubscriptions = (byUser: Record<string, string>) => {
+	listSpy.mockImplementation((params: { external_customer_id: string }) => {
+		const id = byUser[params.external_customer_id];
+		return polarPages(id ? [{ id, status: "active" }] : [])();
+	});
 };
 
 beforeAll(() => {
@@ -106,7 +104,7 @@ const customerDeletes = () =>
 		)
 		.map(({ url }) => `${url.pathname}${url.search}`);
 
-test("sole-owned paid org: subscription revoked, org scheduled, user gone, avatar deleted, customer anonymized", async () => {
+test("owner with two orgs: their subscription revoked once, both orgs scheduled, user gone, avatar deleted, customer anonymized", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	const avatarKey = `avatars/${userId}/old.png`;
 	await storageClient.put(avatarKey, new Uint8Array([1]), "image/png");
@@ -117,15 +115,18 @@ test("sole-owned paid org: subscription revoked, org scheduled, user gone, avata
 		})
 		.where(eq(user.id, userId));
 	const orgId = await insertOrganization("Solo Co");
+	const otherOrgId = await insertOrganization("Second Co");
 	await joinOrganization(orgId, userId, "owner");
-	polarSubscriptions({ [orgId]: "sub_solo" });
+	await joinOrganization(otherOrgId, userId, "owner");
+	polarSubscriptions({ [userId]: "sub_solo" });
 
 	const res = await clickDeleteLink(cookie, await issueDeleteToken(userId));
 
 	expect(res.status).toBe(302);
 	expect(res.headers.get("location")).toBe("/auth/goodbye");
-	expect(revokeSpy).toHaveBeenCalledWith("sub_solo");
+	expect(revokeSpy.mock.calls).toEqual([["sub_solo"]]);
 	expect(await deletionScheduledAt(orgId)).toBeInstanceOf(Date);
+	expect(await deletionScheduledAt(otherOrgId)).toBeInstanceOf(Date);
 	expect(await userExists(userId)).toBe(false);
 	expect((await storageClient.serve(avatarKey)).status).toBe(404);
 	expect(customerDeletes()).toEqual([
@@ -139,7 +140,7 @@ test("admin of someone else's paid org: org and its subscription untouched, Pola
 	const orgId = await insertOrganization("Employer Co");
 	await joinOrganization(orgId, ownerId, "owner");
 	await joinOrganization(orgId, userId, "admin");
-	polarSubscriptions({ [orgId]: "sub_employer" });
+	polarSubscriptions({ [ownerId]: "sub_employer" });
 
 	const res = await clickDeleteLink(cookie, await issueDeleteToken(userId));
 
@@ -156,7 +157,7 @@ test("Polar revoke failure: redirects to the goodbye error page, schedules and d
 	const { userId, cookie } = await createUserWithSession();
 	const orgId = await insertOrganization("Stuck Co");
 	await joinOrganization(orgId, userId, "owner");
-	polarSubscriptions({ [orgId]: "sub_stuck" });
+	polarSubscriptions({ [userId]: "sub_stuck" });
 	revokeSpy.mockRejectedValue(new Error("polar down"));
 
 	const res = await clickDeleteLink(cookie, await issueDeleteToken(userId));

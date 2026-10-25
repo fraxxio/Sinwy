@@ -1,5 +1,12 @@
 import db from "@db";
 import { memberHasRole } from "@db/memberRole";
+import {
+	countHeldSlots,
+	lockPlan,
+	organizationAccess,
+	ownedBy,
+	slotLimit,
+} from "@db/organizationAccess";
 import { session } from "@db/schema/authSchema";
 import {
 	invitation,
@@ -8,7 +15,7 @@ import {
 	organizationProfile,
 	organizationTransfer,
 } from "@db/schema/organizationSchema";
-import type { PlanSlug } from "@sinwy/shared";
+import { userSubscription } from "@db/schema/userSchema";
 import {
 	and,
 	asc,
@@ -20,7 +27,6 @@ import {
 	lt,
 	lte,
 	not,
-	or,
 	sql,
 } from "drizzle-orm";
 
@@ -32,117 +38,84 @@ export const isSlugTaken = async (slug: string) => {
 	return row !== undefined;
 };
 
-export const findSubscriptionState = async (organizationId: string) => {
+export const findOrganizationAccess = async (organizationId: string) => {
 	const [row] = await db
 		.select({
-			status: organization.status,
-			plan: organization.plan,
-			subscriptionId: organization.subscriptionId,
+			...organizationAccess,
+			ownerUserId: sql<string | null>`(${db
+				.select({ userId: member.userId })
+				.from(member)
+				.where(
+					and(
+						eq(member.organizationId, organization.id),
+						memberHasRole("owner"),
+					),
+				)})`,
 		})
 		.from(organization)
 		.where(eq(organization.id, organizationId));
 	return row ?? null;
 };
 
-// One subscription backs an organization at a time; while bound, no other
-// subscription may change it (stale revocations, a second purchase). Polar
-// may also redeliver or reorder state, so only newer state applies.
-const changeableBy = (
-	organizationId: string,
-	subscriptionId: string,
-	observedAt: Date,
-) =>
-	and(
-		eq(organization.id, organizationId),
-		or(
-			isNull(organization.subscriptionId),
-			eq(organization.subscriptionId, subscriptionId),
-		),
-		or(
-			isNull(organization.subscriptionStatusAt),
-			lt(organization.subscriptionStatusAt, observedAt),
-		),
-	);
-
-export type SubscriptionWrite =
-	| { result: "applied" }
-	| { result: "unknown-organization" }
-	| { result: "outdated" }
-	| { result: "bound-elsewhere"; boundSubscriptionId: string }
-	| { result: "scheduled-for-deletion" };
-
-const writeSubscription = (
-	organizationId: string,
-	subscriptionId: string,
-	observedAt: Date,
-	values: Pick<
-		typeof organization.$inferInsert,
-		"status" | "plan" | "subscriptionId"
-	>,
-) =>
-	db.transaction(async (tx): Promise<SubscriptionWrite> => {
-		// locked first, so a refusal is explained by the state that caused it
-		const [row] = await tx
-			.select({
-				subscriptionId: organization.subscriptionId,
-				deletionScheduledAt: organization.deletionScheduledAt,
-			})
-			.from(organization)
-			.where(eq(organization.id, organizationId))
-			.for("update");
-		if (!row) return { result: "unknown-organization" };
-		if (row.deletionScheduledAt) return { result: "scheduled-for-deletion" };
-
-		const updated = await tx
-			.update(organization)
-			.set({ ...values, subscriptionStatusAt: observedAt })
-			.where(changeableBy(organizationId, subscriptionId, observedAt))
-			.returning({ id: organization.id });
-		if (updated.length > 0) return { result: "applied" };
-
-		return row.subscriptionId !== null && row.subscriptionId !== subscriptionId
-			? { result: "bound-elsewhere", boundSubscriptionId: row.subscriptionId }
-			: { result: "outdated" };
-	});
-
-export const bindSubscription = (
-	organizationId: string,
-	subscriptionId: string,
-	plan: PlanSlug | null,
-	observedAt: Date,
-) =>
-	writeSubscription(organizationId, subscriptionId, observedAt, {
-		status: "active",
-		plan,
-		subscriptionId,
-	});
+export type SlotHold =
+	| { result: "held" }
+	| { result: "not-found" }
+	| { result: "no-plan" }
+	| { result: "limit-reached"; limit: number };
 
 /**
- * Inactive but still bound: the paused subscription can resume, and while it
- * is bound no second checkout can take over. The only write that leaves an
- * organization inactive with a subscription.
+ * Gives an organization the owner owns one of their slots. The owner's plan
+ * row is locked first, so concurrent activations count one after another.
  */
-export const pauseSubscription = (
-	organizationId: string,
-	subscriptionId: string,
-	observedAt: Date,
-) =>
-	writeSubscription(organizationId, subscriptionId, observedAt, {
-		status: "inactive",
-		plan: null,
-		subscriptionId,
+export const holdSlot = (userId: string, organizationId: string) =>
+	db.transaction(async (tx): Promise<SlotHold> => {
+		const plan = await lockPlan(tx, userId);
+		const [org] = await tx
+			.select({ slotHeldAt: organization.slotHeldAt })
+			.from(organization)
+			.where(
+				and(
+					eq(organization.id, organizationId),
+					isNull(organization.deletionScheduledAt),
+					ownedBy(userId),
+				),
+			)
+			.for("update");
+		if (!org) return { result: "not-found" };
+		if (org.slotHeldAt) return { result: "held" };
+		if (!plan) return { result: "no-plan" };
+
+		const limit = slotLimit(plan);
+		if ((await countHeldSlots(tx, userId)) >= limit)
+			return { result: "limit-reached", limit };
+		await tx
+			.update(organization)
+			.set({ slotHeldAt: new Date() })
+			.where(eq(organization.id, organizationId));
+		return { result: "held" };
 	});
 
-export const releaseSubscription = (
-	organizationId: string,
-	subscriptionId: string,
-	observedAt: Date,
-) =>
-	writeSubscription(organizationId, subscriptionId, observedAt, {
-		status: "inactive",
-		plan: null,
-		subscriptionId: null,
-	});
+/** false when the user doesn't own the organization or it is scheduled for deletion. */
+export const releaseSlot = async (userId: string, organizationId: string) => {
+	const released = await db
+		.update(organization)
+		.set({ slotHeldAt: null })
+		.where(
+			and(
+				eq(organization.id, organizationId),
+				isNull(organization.deletionScheduledAt),
+				ownedBy(userId),
+			),
+		)
+		.returning({ id: organization.id });
+	return released.length > 0;
+};
+
+export const countOwnedHeldSlots = (userId: string) =>
+	countHeldSlots(db, userId);
+
+export const findOwnedOrganizationIds = (userId: string) =>
+	db.select({ id: organization.id }).from(organization).where(ownedBy(userId));
 
 export const findOnboardingCompletedAt = async (organizationId: string) => {
 	const [row] = await db
@@ -199,23 +172,10 @@ export const findSoleOwnedOrganizations = (userId: string) =>
 		.select({
 			id: organization.id,
 			name: organization.name,
-			status: organization.status,
+			...organizationAccess,
 		})
 		.from(organization)
-		.where(
-			exists(
-				db
-					.select({ id: member.id })
-					.from(member)
-					.where(
-						and(
-							eq(member.organizationId, organization.id),
-							eq(member.userId, userId),
-							memberHasRole("owner"),
-						),
-					),
-			),
-		)
+		.where(ownedBy(userId))
 		.orderBy(organization.name);
 
 const hasOwner = exists(
@@ -228,9 +188,8 @@ const hasOwner = exists(
 );
 
 /**
- * Takes the organizations out of service until they are purged: no plan, no
- * subscription, no pending invitation or open transfer, and no session keeps
- * them active.
+ * Takes the organizations out of service until they are purged: no slot, no
+ * pending invitation or open transfer, and no session keeps them active.
  */
 export const scheduleOrganizationsForDeletion = (
 	ids: string[],
@@ -241,9 +200,7 @@ export const scheduleOrganizationsForDeletion = (
 			.update(organization)
 			.set({
 				deletionScheduledAt: scheduledAt,
-				status: "inactive",
-				plan: null,
-				subscriptionId: null,
+				slotHeldAt: null,
 			})
 			.where(inArray(organization.id, ids));
 		await tx
@@ -327,9 +284,9 @@ export const deleteOrganizations = (ids: string[]) =>
 	db.delete(organization).where(inArray(organization.id, ids));
 
 /**
- * Oldest organization the user owns that billing has not activated yet. A
- * lapsed one (onboarding finished) renews from Account → Organizations, and a
- * suspended one (still bound) resumes from there.
+ * Oldest organization the user owns that never finished onboarding, while the
+ * user has no plan: a lapsed or suspended plan renews or resumes from the
+ * account instead.
  * Single index hit on member_userId_idx, then a primary-key join, this runs
  * on every app load, so it must stay a bounded lookup.
  */
@@ -342,9 +299,21 @@ export const findUnpaidOwnedOrganization = async (userId: string) => {
 			and(
 				eq(member.userId, userId),
 				memberHasRole("owner"),
-				eq(organization.status, "inactive"),
-				isNull(organization.subscriptionId),
+				isNull(organization.slotHeldAt),
 				isNull(organization.onboardingCompletedAt),
+				not(
+					exists(
+						db
+							.select({ userId: userSubscription.userId })
+							.from(userSubscription)
+							.where(
+								and(
+									eq(userSubscription.userId, userId),
+									isNotNull(userSubscription.subscriptionId),
+								),
+							),
+					),
+				),
 			),
 		)
 		.orderBy(asc(organization.createdAt))
@@ -359,11 +328,8 @@ export const findMemberOrganizations = (userId: string) =>
 			id: organization.id,
 			name: organization.name,
 			slug: organization.slug,
-			status: organization.status,
-			plan: organization.plan,
-			subscriptionId: organization.subscriptionId,
+			...organizationAccess,
 			role: member.role,
-			deletionScheduledAt: organization.deletionScheduledAt,
 			onboardingCompletedAt: organization.onboardingCompletedAt,
 		})
 		.from(member)
@@ -371,7 +337,7 @@ export const findMemberOrganizations = (userId: string) =>
 		.where(eq(member.userId, userId))
 		.orderBy(asc(organization.createdAt), asc(organization.id));
 
-/** Oldest paid organization the user owns that never finished its setup wizard. */
+/** Oldest active organization the user owns that never finished its setup wizard. */
 export const findUnfinishedOnboardingOrganization = async (userId: string) => {
 	const [row] = await db
 		.select({ organizationId: organization.id })
@@ -381,7 +347,9 @@ export const findUnfinishedOnboardingOrganization = async (userId: string) => {
 			and(
 				eq(member.userId, userId),
 				memberHasRole("owner"),
-				eq(organization.status, "active"),
+				isNotNull(organization.slotHeldAt),
+				isNull(organization.deletionScheduledAt),
+				isNotNull(organizationAccess.ownerPlan),
 				isNull(organization.onboardingCompletedAt),
 			),
 		)

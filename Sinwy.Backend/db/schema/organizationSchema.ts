@@ -1,9 +1,6 @@
+import { oneOf } from "@db/oneOf";
 import { user } from "@db/schema/userSchema";
-import {
-	ORGANIZATION_STATUSES,
-	ORGANIZATION_TRANSFER_STATUSES,
-	PLAN_SLUGS,
-} from "@sinwy/shared";
+import { ORGANIZATION_TRANSFER_STATUSES } from "@sinwy/shared";
 import { relations, sql } from "drizzle-orm";
 import {
 	check,
@@ -15,22 +12,14 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-// built from the shared lists, so renaming a value needs a data migration
-const oneOf = (column: string, values: readonly string[]) =>
-	sql.raw(`"${column}" IN (${values.map((value) => `'${value}'`).join(", ")})`);
-
 export const organization = pgTable(
 	"organization",
 	{
 		id: text("id").primaryKey(),
 		name: text("name").notNull(),
 		slug: text("slug").notNull().unique(),
-		status: text("status").notNull().default("inactive"),
-		// projection of the Polar subscription backing the org; null while inactive
-		plan: text("plan"),
-		subscriptionId: text("subscription_id").unique(),
-		// time of the Polar state behind the projection; older state must not overwrite it
-		subscriptionStatusAt: timestamp("subscription_status_at"),
+		// set while the org holds one of its owner's slots; active only if their plan grants access too
+		slotHeldAt: timestamp("slot_held_at"),
 		industry: text("industry").notNull().default("other"),
 		onboardingCompletedAt: timestamp("onboarding_completed_at"),
 		deletionScheduledAt: timestamp("deletion_scheduled_at"),
@@ -38,15 +27,7 @@ export const organization = pgTable(
 		createdAt: timestamp("created_at").notNull(),
 		metadata: text("metadata"),
 	},
-	(table) => [
-		uniqueIndex("organization_slug_uidx").on(table.slug),
-		check("organization_status_check", oneOf("status", ORGANIZATION_STATUSES)),
-		check("organization_plan_check", oneOf("plan", PLAN_SLUGS)),
-		check(
-			"organization_plan_only_when_active_check",
-			sql`${table.plan} IS NULL OR ${table.status} = 'active'`,
-		),
-	],
+	(table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
 );
 
 export const organizationProfile = pgTable("organization_profile", {

@@ -9,58 +9,47 @@ import {
 	productIdFor,
 } from "@backend/infrastructure/polar";
 import { createLogger } from "@logger";
+import { countHeldSlots, getOrganizationState } from "@organizationsModule";
 import {
-	getSubscriptionState,
-	isSuspended,
-	type SubscriptionState,
-} from "@organizationsModule";
-import {
+	type AccountSubscriptionDto,
 	BILLING_INTERVALS,
-	featuresFor,
 	type OrganizationStatus,
-	type OrganizationSubscriptionDto,
+	PLAN_ORGANIZATION_LIMITS,
 	type PlanSlug,
 	SUBSCRIPTION_BILLING_STATUSES,
 	type SubscriptionBillingDto,
+	toPlanSlug,
 } from "@sinwy/shared";
-import { hasOpenTransfer } from "@transfersModule";
 import { APIError } from "better-auth/api";
 import { knownValue, toPolarFailure } from "./polar";
 import {
 	isEntitled,
 	listBillableSubscriptions,
 	projectSubscription,
-	reconcileInactiveOrganization,
+	reconcileUserPlan,
 } from "./projection";
+import { findUserSubscription } from "./repository";
 
 type Subscription = PolarModels.Subscription;
 
 const billingLogger = createLogger("billing");
 
+/**
+ * An organization that holds a slot but whose owner's plan looks lapsed asks
+ * Polar first, in case a webhook never landed.
+ */
 export const getOrganizationStatus = async (
 	membership: Membership,
-): Promise<OrganizationStatus> =>
-	membership.status === "active" ||
-	(await reconcileInactiveOrganization(membership.organizationId))
-		? "active"
-		: "inactive";
-
-export const getCheckoutOrganization = async (
-	userId: string,
-	checkoutId: string,
-) => {
-	// null → unknown checkout, someone else's checkout, or no org reference
-	const checkout = await polarClient.checkouts
-		.get(checkoutId)
-		.catch(() => null);
-	if (!checkout || checkout.external_customer_id !== userId) return null;
-	const referenceId = checkout.metadata["referenceId"];
-	return typeof referenceId === "string"
-		? {
-				organizationId: referenceId,
-				transfer: typeof checkout.metadata["transferId"] === "string",
-			}
-		: null;
+): Promise<OrganizationStatus> => {
+	if (membership.status === "active") return "active";
+	const state = await getOrganizationState(membership.organizationId);
+	if (!state?.slotHeld || state.ownerPlan || !state.ownerUserId)
+		return state?.status ?? "inactive";
+	await reconcileUserPlan(state.ownerUserId);
+	return (
+		(await getOrganizationState(membership.organizationId))?.status ??
+		"inactive"
+	);
 };
 
 /** null when Polar sent a status or interval this version can't describe. */
@@ -92,14 +81,32 @@ const toBillingDto = (
 	};
 };
 
-const toSubscriptionDto = (
-	state: SubscriptionState,
+export type PlanState = {
+	plan: PlanSlug | null;
+	subscriptionId: string | null;
+	/** Paused, still bound: it resumes without a new checkout. */
+	suspended: boolean;
+};
+
+/** The user's stored plan; no row reads as no plan. */
+const getPlanState = async (userId: string): Promise<PlanState> => {
+	const row = await findUserSubscription(userId);
+	return {
+		plan: toPlanSlug(row?.plan ?? null),
+		subscriptionId: row?.subscriptionId ?? null,
+		suspended: row?.status === "paused" && row.subscriptionId !== null,
+	};
+};
+
+const toSubscriptionDto = async (
+	userId: string,
+	state: PlanState,
 	subscription: Subscription | null,
-): OrganizationSubscriptionDto => ({
-	status: state.status,
-	suspended: isSuspended(state),
+): Promise<AccountSubscriptionDto> => ({
 	plan: state.plan,
-	features: featuresFor(state.plan),
+	suspended: state.suspended,
+	organizationLimit: state.plan ? PLAN_ORGANIZATION_LIMITS[state.plan] : 0,
+	activeOrganizations: await countHeldSlots(userId),
 	billing: subscription && toBillingDto(subscription),
 });
 
@@ -113,39 +120,31 @@ const fetchSubscription = (subscriptionId: string) =>
 		return null;
 	});
 
-/** null when the organization was deleted after its membership resolved. */
-export const getOrganizationSubscription = async (
-	membership: Membership,
-): Promise<OrganizationSubscriptionDto | null> => {
-	const { organizationId } = membership;
-	if (membership.status !== "active")
-		await reconcileInactiveOrganization(organizationId);
-
-	const state = await getSubscriptionState(organizationId);
-	if (!state) return null;
+export const getAccountSubscription = async (
+	userId: string,
+): Promise<AccountSubscriptionDto> => {
+	await reconcileUserPlan(userId);
+	const state = await getPlanState(userId);
 	const subscription = state.subscriptionId
 		? await fetchSubscription(state.subscriptionId)
 		: null;
 	// heals a missed webhook, e.g. a revocation, which reconcile never applies
 	if (!subscription || !(await projectSubscription(subscription)))
-		return toSubscriptionDto(state, subscription);
-	const projected = await getSubscriptionState(organizationId);
-	return projected && toSubscriptionDto(projected, subscription);
+		return toSubscriptionDto(userId, state, subscription);
+	return toSubscriptionDto(userId, await getPlanState(userId), subscription);
 };
 
 type ChangePlanResult =
-	| { ok: true; data: OrganizationSubscriptionDto }
+	| { ok: true; data: AccountSubscriptionDto }
 	| {
 			ok: false;
 			error:
-				| "not-found"
 				| "inactive"
 				| "suspended"
 				| "pause-pending"
 				| "same-plan"
 				| "canceled"
 				| "locked"
-				| "transfer-pending"
 				| PolarFailure;
 	  };
 
@@ -154,7 +153,7 @@ type SubscriptionRead =
 	| { ok: false; error: PolarFailure };
 
 const readSubscription = async (
-	organizationId: string,
+	userId: string,
 	subscriptionId: string,
 ): Promise<SubscriptionRead> => {
 	try {
@@ -166,7 +165,7 @@ const readSubscription = async (
 		return {
 			ok: false,
 			error: toPolarFailure(error, "Polar subscription read failed", {
-				organizationId,
+				userId,
 				subscriptionId,
 			}),
 		};
@@ -182,24 +181,17 @@ const isLocked = (error: unknown) =>
  * start a second subscription instead. "prorate" switches the plan now and
  * settles the difference on the next regular invoice.
  */
-export const changeOrganizationPlan = async (
-	membership: Membership,
+export const changeAccountPlan = async (
+	userId: string,
 	plan: PlanSlug,
 ): Promise<ChangePlanResult> => {
-	const state = await getSubscriptionState(membership.organizationId);
-	if (!state) return { ok: false, error: "not-found" };
-	if (isSuspended(state)) return { ok: false, error: "suspended" };
+	const state = await getPlanState(userId);
+	if (state.suspended) return { ok: false, error: "suspended" };
 	if (!state.subscriptionId) return { ok: false, error: "inactive" };
 	if (state.plan === plan) return { ok: false, error: "same-plan" };
-	// the recipient checks out on the plan the offer was made on
-	if (await hasOpenTransfer(membership.organizationId))
-		return { ok: false, error: "transfer-pending" };
 
 	// Polar would switch the plan of a subscription about to pause
-	const current = await readSubscription(
-		membership.organizationId,
-		state.subscriptionId,
-	);
+	const current = await readSubscription(userId, state.subscriptionId);
 	if (!current.ok) return current;
 	if (current.subscription.pause_at_period_end)
 		return { ok: false, error: "pause-pending" };
@@ -228,7 +220,7 @@ export const changeOrganizationPlan = async (
 			return {
 				ok: false,
 				error: toPolarFailure(error, "Polar plan change failed", {
-					organizationId: membership.organizationId,
+					userId,
 					plan,
 				}),
 			};
@@ -238,13 +230,17 @@ export const changeOrganizationPlan = async (
 	// the subscription.updated webhook lands the same state; applying it now
 	// saves the caller from polling
 	await projectSubscription(subscription);
-	const updated = await getSubscriptionState(membership.organizationId);
-	if (!updated) return { ok: false, error: "not-found" };
-	return { ok: true, data: toSubscriptionDto(updated, subscription) };
+	return {
+		ok: true,
+		data: await toSubscriptionDto(
+			userId,
+			await getPlanState(userId),
+			subscription,
+		),
+	};
 };
 
 export type SubscriptionActionError =
-	| "not-found"
 	| "inactive"
 	| "suspended"
 	| "not-suspended"
@@ -255,11 +251,10 @@ export type SubscriptionActionError =
 	| "cancel-pending"
 	| "locked"
 	| "payment-failed"
-	| "transfer-pending"
 	| PolarFailure;
 
 type SubscriptionActionResult =
-	| { ok: true; data: OrganizationSubscriptionDto }
+	| { ok: true; data: AccountSubscriptionDto }
 	| { ok: false; error: SubscriptionActionError };
 
 type SubscriptionAction = {
@@ -267,8 +262,6 @@ type SubscriptionAction = {
 	body: PolarModels.SubscriptionUpdate;
 	/** Why Polar's current state rules the action out, or null when it doesn't. */
 	refuse: (subscription: Subscription) => SubscriptionActionError | null;
-	/** A pause would cut short the subscription the transfer is about to replace. */
-	refusedDuringTransfer?: boolean;
 };
 
 // ended, or a status no action applies to
@@ -282,7 +275,6 @@ const refuseUnlessLive = (subscription: Subscription) =>
 const SUSPEND: SubscriptionAction = {
 	name: "suspend",
 	body: { pause_at_period_end: true },
-	refusedDuringTransfer: true,
 	refuse: (subscription) => {
 		const unlive = refuseUnlessLive(subscription);
 		if (unlive) return unlive;
@@ -315,23 +307,19 @@ const RESUME: SubscriptionAction = {
 };
 
 /**
- * Runs a pause or resume update on the organization's bound subscription.
+ * Runs a pause or resume update on the user's bound subscription.
  * Polar's current state is projected first, so a missed webhook neither
  * decides the refusal nor lingers, and each refusal says why. When Polar
  * refuses anyway (a concurrent change), its new state explains the refusal.
  */
 const runSubscriptionAction = async (
-	membership: Membership,
+	userId: string,
 	action: SubscriptionAction,
 ): Promise<SubscriptionActionResult> => {
-	const { organizationId } = membership;
-	const state = await getSubscriptionState(organizationId);
-	if (!state) return { ok: false, error: "not-found" };
+	const state = await getPlanState(userId);
 	if (!state.subscriptionId) return { ok: false, error: "inactive" };
-	if (action.refusedDuringTransfer && (await hasOpenTransfer(organizationId)))
-		return { ok: false, error: "transfer-pending" };
 
-	const read = await readSubscription(organizationId, state.subscriptionId);
+	const read = await readSubscription(userId, state.subscriptionId);
 	if (!read.ok) return read;
 	await projectSubscription(read.subscription);
 	const refused = action.refuse(read.subscription);
@@ -364,7 +352,7 @@ const runSubscriptionAction = async (
 			return {
 				ok: false,
 				error: toPolarFailure(error, `Polar ${action.name} failed`, {
-					organizationId,
+					userId,
 				}),
 			};
 		}
@@ -372,27 +360,32 @@ const runSubscriptionAction = async (
 	}
 
 	await projectSubscription(subscription);
-	const updated = await getSubscriptionState(organizationId);
-	if (!updated) return { ok: false, error: "not-found" };
 	billingLogger.info(`Subscription ${action.name} applied`, {
-		organizationId,
+		userId,
 		subscriptionId: subscription.id,
 		subscriptionStatus: subscription.status,
 	});
-	return { ok: true, data: toSubscriptionDto(updated, subscription) };
+	return {
+		ok: true,
+		data: await toSubscriptionDto(
+			userId,
+			await getPlanState(userId),
+			subscription,
+		),
+	};
 };
 
-/** Pauses at the end of the paid period; the organization stays active until then. No refund. */
-export const suspendOrganization = (membership: Membership) =>
-	runSubscriptionAction(membership, SUSPEND);
+/** Pauses at the end of the paid period; the user's organizations stay active until then. No refund. */
+export const suspendAccountPlan = (userId: string) =>
+	runSubscriptionAction(userId, SUSPEND);
 
 /** Takes back a pause that hasn't taken effect yet. */
-export const unsuspendOrganization = (membership: Membership) =>
-	runSubscriptionAction(membership, UNSUSPEND);
+export const unsuspendAccountPlan = (userId: string) =>
+	runSubscriptionAction(userId, UNSUSPEND);
 
 /** Resumes a paused subscription: Polar starts a new period and charges for it now. */
-export const resumeOrganization = (membership: Membership) =>
-	runSubscriptionAction(membership, RESUME);
+export const resumeAccountPlan = (userId: string) =>
+	runSubscriptionAction(userId, RESUME);
 
 /**
  * Idempotent: no billable subscription → no-op. Revokes every one, since a
@@ -400,27 +393,24 @@ export const resumeOrganization = (membership: Membership) =>
  * retries its charge, paused since resuming would charge again. Throws so a
  * paying subscription is never orphaned.
  */
-export const revokeOrganizationSubscription = async (
-	organizationId: string,
-) => {
+export const revokeAccountSubscriptions = async (userId: string) => {
 	try {
 		// collected first: revoking while paging would shift later pages
-		const subscriptions = await listBillableSubscriptions(organizationId);
+		const subscriptions = await listBillableSubscriptions(userId);
 		for (const { id: subscriptionId } of subscriptions) {
 			await polarClient.subscriptions.revoke(subscriptionId);
-			billingLogger.info("Revoked subscription before deletion", {
-				organizationId,
+			billingLogger.info("Revoked subscription before account deletion", {
+				userId,
 				subscriptionId,
 			});
 		}
 	} catch (error) {
 		billingLogger.error("Polar subscription revoke failed", {
-			organizationId,
+			userId,
 			...describePolarError(error),
 		});
 		throw new APIError("INTERNAL_SERVER_ERROR", {
-			message:
-				"Could not cancel an organization subscription. Try again later.",
+			message: "Could not cancel your subscription. Try again later.",
 		});
 	}
 };

@@ -1,6 +1,7 @@
 import { fail } from "@backend/lib/app/respond";
 import type { IReqContext, Middleware } from "@backend/lib/app/types";
 import { createLogger } from "@logger";
+import { organizationPlanOf, organizationStatusOf } from "@organizationsModule";
 import {
 	hasPermission,
 	type OrganizationStatus,
@@ -8,8 +9,6 @@ import {
 	type Permission,
 	type PlanSlug,
 	parseMemberRoles,
-	toOrganizationStatus,
-	toPlanSlug,
 } from "@sinwy/shared";
 import { sessionFrom } from "./middleware";
 import { findMembership } from "./repository";
@@ -20,6 +19,7 @@ export type Membership = {
 	organizationId: string;
 	roles: OrgRole[];
 	status: OrganizationStatus;
+	/** The owner's plan while the organization is active, else null. */
 	plan: PlanSlug | null;
 };
 
@@ -46,18 +46,14 @@ export const resolveMembership = async (
 			organizationId,
 			role: found.role,
 		});
-	const plan = toPlanSlug(found.plan);
-	if (found.plan !== null && !plan)
-		permissionLogger.warn("Organization has an unknown stored plan", {
+	const status = organizationStatusOf(found);
+	const plan = organizationPlanOf(found);
+	if (status === "active" && !plan)
+		permissionLogger.warn("Organization owner has an unknown stored plan", {
 			organizationId,
-			plan: found.plan,
+			plan: found.ownerPlan,
 		});
-	return {
-		organizationId,
-		roles,
-		status: toOrganizationStatus(found.status),
-		plan,
-	};
+	return { organizationId, roles, status, plan };
 };
 
 /**

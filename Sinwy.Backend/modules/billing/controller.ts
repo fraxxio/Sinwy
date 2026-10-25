@@ -6,17 +6,16 @@ import { API_ERROR_CODES, changePlanBody } from "@sinwy/shared";
 import {
 	getInvoiceDownload,
 	invoiceListQuery,
-	listOrganizationInvoices,
+	listAccountInvoices,
 } from "./invoices";
 import {
-	changeOrganizationPlan,
-	getCheckoutOrganization,
+	changeAccountPlan,
+	getAccountSubscription,
 	getOrganizationStatus,
-	getOrganizationSubscription,
-	resumeOrganization,
+	resumeAccountPlan,
 	type SubscriptionActionError,
-	suspendOrganization,
-	unsuspendOrganization,
+	suspendAccountPlan,
+	unsuspendAccountPlan,
 } from "./service";
 
 const failPolar = (failure: PolarFailure) =>
@@ -26,30 +25,23 @@ const failPolar = (failure: PolarFailure) =>
 
 const failInactive = () =>
 	fail(
-		"This organization has no active subscription; start a checkout instead",
+		"You have no active plan; start a checkout instead",
 		409,
 		API_ERROR_CODES.ORGANIZATION_INACTIVE,
 	);
 
 const failSuspended = () =>
 	fail(
-		"This organization is suspended; resume it first",
+		"Your plan is suspended; resume it first",
 		409,
 		API_ERROR_CODES.ORGANIZATION_SUSPENDED,
 	);
 
 const failPausePending = () =>
 	fail(
-		"This organization is set to suspend at the end of the period; undo that first",
+		"Your plan is set to suspend at the end of the period; undo that first",
 		409,
 		API_ERROR_CODES.SUSPENSION_PENDING,
-	);
-
-const failTransferPending = () =>
-	fail(
-		"An ownership transfer is pending; cancel it first",
-		409,
-		API_ERROR_CODES.TRANSFER_PENDING,
 	);
 
 const failLocked = () =>
@@ -57,15 +49,13 @@ const failLocked = () =>
 
 const failSubscriptionAction = (error: SubscriptionActionError) => {
 	switch (error) {
-		case "not-found":
-			return fail("Not found", 404);
 		case "inactive":
 			return failInactive();
 		case "suspended":
 			return failSuspended();
 		case "not-suspended":
 			return fail(
-				"This organization isn't suspended",
+				"Your plan isn't suspended",
 				409,
 				API_ERROR_CODES.ORGANIZATION_NOT_SUSPENDED,
 			);
@@ -85,7 +75,7 @@ const failSubscriptionAction = (error: SubscriptionActionError) => {
 			return failPausePending();
 		case "pause-not-pending":
 			return fail(
-				"This organization isn't set to suspend",
+				"Your plan isn't set to suspend",
 				409,
 				API_ERROR_CODES.SUSPENSION_NOT_PENDING,
 			);
@@ -97,8 +87,6 @@ const failSubscriptionAction = (error: SubscriptionActionError) => {
 			);
 		case "locked":
 			return failLocked();
-		case "transfer-pending":
-			return failTransferPending();
 		case "payment-failed":
 			return fail(
 				"The payment for the new period failed; update your payment method on Polar and try again",
@@ -116,34 +104,20 @@ export const getOrganizationStatusHandler: Handler = async (c) => {
 	return ok({ status });
 };
 
-export const getCheckoutOrganizationHandler: Handler = async (c) => {
-	const { user } = sessionFrom(c);
-
-	const { checkoutId } = c.req.params as { checkoutId: string };
-	const result = await getCheckoutOrganization(user.id, checkoutId);
-	if (!result) return fail("Not found", 404);
-
-	return ok(result);
-};
-
-export const getSubscriptionHandler: Handler = async (c) => {
-	const subscription = await getOrganizationSubscription(membershipFrom(c));
-	return subscription ? ok(subscription) : fail("Not found", 404);
-};
+export const getSubscriptionHandler: Handler = async (c) =>
+	ok(await getAccountSubscription(sessionFrom(c).user.id));
 
 export const changePlanHandler: Handler = async (c) => {
 	const body = changePlanBody.safeParse(await c.req.json().catch(() => null));
 	if (!body.success) return fail("Invalid body", 400);
 
-	const result = await changeOrganizationPlan(
-		membershipFrom(c),
+	const result = await changeAccountPlan(
+		sessionFrom(c).user.id,
 		body.data.plan,
 	);
 	if (result.ok) return ok(result.data, 200, "Plan changed");
 
 	switch (result.error) {
-		case "not-found":
-			return fail("Not found", 404);
 		case "inactive":
 			return failInactive();
 		case "suspended":
@@ -151,7 +125,7 @@ export const changePlanHandler: Handler = async (c) => {
 		case "pause-pending":
 			return failPausePending();
 		case "same-plan":
-			return fail("The organization is already on this plan", 400);
+			return fail("You are already on this plan", 400);
 		case "canceled":
 			return fail(
 				"The subscription is canceled; renew it before changing plans",
@@ -159,8 +133,6 @@ export const changePlanHandler: Handler = async (c) => {
 			);
 		case "locked":
 			return failLocked();
-		case "transfer-pending":
-			return failTransferPending();
 		case "rejected":
 		case "unavailable":
 			return failPolar(result.error);
@@ -168,21 +140,21 @@ export const changePlanHandler: Handler = async (c) => {
 };
 
 export const suspendHandler: Handler = async (c) => {
-	const result = await suspendOrganization(membershipFrom(c));
+	const result = await suspendAccountPlan(sessionFrom(c).user.id);
 	return result.ok
 		? ok(result.data, 200, "Suspension scheduled")
 		: failSubscriptionAction(result.error);
 };
 
 export const unsuspendHandler: Handler = async (c) => {
-	const result = await unsuspendOrganization(membershipFrom(c));
+	const result = await unsuspendAccountPlan(sessionFrom(c).user.id);
 	return result.ok
 		? ok(result.data, 200, "Suspension canceled")
 		: failSubscriptionAction(result.error);
 };
 
 export const resumeHandler: Handler = async (c) => {
-	const result = await resumeOrganization(membershipFrom(c));
+	const result = await resumeAccountPlan(sessionFrom(c).user.id);
 	if (!result.ok) return failSubscriptionAction(result.error);
 	return result.data.billing?.subscriptionStatus === "past_due"
 		? ok(
@@ -199,19 +171,13 @@ export const listInvoicesHandler: Handler = async (c) => {
 	);
 	if (!query.success) return fail("Invalid query", 400);
 
-	const result = await listOrganizationInvoices(
-		membershipFrom(c).organizationId,
-		query.data,
-	);
+	const result = await listAccountInvoices(sessionFrom(c).user.id, query.data);
 	return result.ok ? ok(result.data) : failPolar(result.error);
 };
 
 export const downloadInvoiceHandler: Handler = async (c) => {
 	const { orderId } = c.req.params as { orderId: string };
-	const result = await getInvoiceDownload(
-		membershipFrom(c).organizationId,
-		orderId,
-	);
+	const result = await getInvoiceDownload(sessionFrom(c).user.id, orderId);
 
 	switch (result.status) {
 		case "ready":

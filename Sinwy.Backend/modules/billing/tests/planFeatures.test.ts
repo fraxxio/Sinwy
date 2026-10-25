@@ -4,6 +4,7 @@ import {
 	featuresFor,
 	hasFeature,
 	PLAN_FEATURES,
+	PLAN_ORGANIZATION_LIMITS,
 	PLAN_SLUGS,
 	toPlanSlug,
 } from "@sinwy/shared";
@@ -18,6 +19,14 @@ test("plan matrix is pinned", () => {
 			"analytics-advanced",
 			"multi-location",
 		],
+	});
+});
+
+test("organization caps are pinned: Starter 1, Professional 2, Enterprise 5", () => {
+	expect(PLAN_ORGANIZATION_LIMITS).toEqual({
+		starter: 1,
+		professional: 2,
+		enterprise: 5,
 	});
 });
 

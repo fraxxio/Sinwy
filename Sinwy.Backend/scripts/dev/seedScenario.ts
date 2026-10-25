@@ -108,19 +108,28 @@ const signUp = async (
 const statusPath = (organizationId: string) =>
 	`/api/organizations/${organizationId}/status`;
 
+/** A simulated Starter plan for the owner, then the organization takes its slot. */
 const activate = async (
 	baseUrl: string | URL,
+	userId: string,
 	organizationId: string,
 	cookie: string,
 ) => {
 	const delivery = buildPolarDelivery({
 		type: "subscription.active",
-		organizationId,
+		userId,
+		plan: "starter",
 	});
 	const { status, response } = await sendPolarDelivery(baseUrl, delivery);
 	if (status !== 200) {
 		throw new Error(`subscription.active webhook → ${status} ${response}`);
 	}
+	await callApp(
+		baseUrl,
+		"POST",
+		`/api/account/organizations/${organizationId}/activate`,
+		{ cookie },
+	);
 
 	// the endpoint answers 200 for events it ignores, so check the outcome
 	const org = await callApp<{ status: OrganizationStatus }>(
@@ -168,8 +177,8 @@ const completeOnboarding = async (
 
 /**
  * Creates fresh users and an organization through the backend's HTTP API.
- * The org becomes active through a simulated Polar webhook, never by writing
- * its status.
+ * The owner's plan comes from a simulated Polar webhook, never a database
+ * write, and the org takes one of its slots.
  */
 export const seedScenario = async ({
 	scenario,
@@ -215,7 +224,12 @@ export const seedScenario = async ({
 		return { scenario, password, organization: org, users };
 	}
 
-	const subscriptionId = await activate(baseUrl, org.id, owner.cookie);
+	const subscriptionId = await activate(
+		baseUrl,
+		owner.userId,
+		org.id,
+		owner.cookie,
+	);
 	await completeOnboarding(baseUrl, org.id, owner.cookie, owner.email);
 
 	if (scenario === "org-with-staff") {

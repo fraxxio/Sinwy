@@ -1,19 +1,11 @@
-import {
-	afterAll,
-	afterEach,
-	beforeAll,
-	beforeEach,
-	expect,
-	spyOn,
-	test,
-} from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { polarClient } from "@backend/infrastructure/polar";
 import createApp from "@backend/lib/app";
 import {
+	activateOrganization,
 	createUserWithSession,
 	insertOrganization,
 	joinOrganization,
-	polarPages,
 } from "@backend/test/helpers";
 import db from "@db";
 import {
@@ -185,47 +177,22 @@ test("the database refuses a second owner", async () => {
 	).rejects.toThrow();
 });
 
-let listSpy: ReturnType<typeof spyOn> | undefined;
-let revokeSpy: ReturnType<typeof spyOn> | undefined;
-
-afterEach(() => {
-	listSpy?.mockRestore();
-	revokeSpy?.mockRestore();
-});
-
-const polarSubscription = (id: string) => {
-	listSpy = spyOn(polarClient.subscriptions, "iterList").mockImplementation(
-		polarPages([{ id, status: "active" }]),
-	);
-	revokeSpy = spyOn(polarClient.subscriptions, "revoke").mockResolvedValue(
-		{} as never,
-	);
-};
-
-const orgExists = async () =>
-	(
-		await db
-			.select({ id: organization.id })
-			.from(organization)
-			.where(eq(organization.id, orgId))
-	).length > 0;
-
-test("deleting the organization through Better Auth revokes its subscription first", async () => {
-	polarSubscription("sub_solo");
+test("deleting the organization through Better Auth frees its slot and never asks Polar", async () => {
+	await activateOrganization(orgId);
+	const listSpy = spyOn(polarClient.subscriptions, "iterList");
+	const revokeSpy = spyOn(polarClient.subscriptions, "revoke");
 
 	const res = await post("delete", ownerCookie, { organizationId: orgId });
 
 	expect(res.status).toBe(200);
-	expect(revokeSpy).toHaveBeenCalledWith("sub_solo");
-	expect(await orgExists()).toBe(false);
-});
-
-test("a failed revoke keeps the organization", async () => {
-	polarSubscription("sub_solo");
-	revokeSpy?.mockRejectedValue(new Error("polar down"));
-
-	const res = await post("delete", ownerCookie, { organizationId: orgId });
-
-	expect(res.status).toBe(500);
-	expect(await orgExists()).toBe(true);
+	expect(
+		await db
+			.select({ id: organization.id })
+			.from(organization)
+			.where(eq(organization.id, orgId)),
+	).toEqual([]);
+	expect(listSpy).not.toHaveBeenCalled();
+	expect(revokeSpy).not.toHaveBeenCalled();
+	listSpy.mockRestore();
+	revokeSpy.mockRestore();
 });

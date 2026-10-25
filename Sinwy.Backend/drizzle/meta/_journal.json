@@ -92,6 +92,20 @@
       "when": 1792947592429,
       "tag": "0012_chilly_terror",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792959157270,
+      "tag": "0013_account_plan",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792959157785,
+      "tag": "0014_organization_slot",
+      "breakpoints": true
     }
   ]
 }

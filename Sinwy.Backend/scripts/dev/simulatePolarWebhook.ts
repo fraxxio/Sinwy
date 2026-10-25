@@ -22,7 +22,8 @@ const isEventType = (type: string): type is PolarEventType =>
 
 export type PolarDeliveryOptions = {
 	type: PolarEventType;
-	organizationId: string;
+	/** The app user whose Polar customer holds the subscription. */
+	userId: string;
 	subscriptionId?: string;
 	plan?: PlanSlug;
 	/** Marks it as bought on accepting this ownership transfer. */
@@ -37,14 +38,14 @@ export type PolarDeliveryOptions = {
 const SENT_AFTER_AN_UPDATE: readonly PolarEventType[] = ["subscription.paused"];
 
 /**
- * A recorded sandbox event with only the ids, `referenceId`, product and
- * times replaced, signed like Polar signs it. The product is this
+ * A recorded sandbox event with only the ids, the customer's `external_id`,
+ * product, metadata and times replaced, signed like Polar signs it. The product is this
  * environment's one for `plan`. `timestamp` is both the event time and the
  * subscription's `modified_at`, which orders the projection.
  */
 export const buildPolarDelivery = ({
 	type,
-	organizationId,
+	userId,
 	subscriptionId = crypto.randomUUID(),
 	plan = "enterprise",
 	transferId,
@@ -63,11 +64,8 @@ export const buildPolarDelivery = ({
 			product_id: productIdFor(plan),
 			product: { ...payload.data.product, id: productIdFor(plan) },
 			modified_at: timestamp.toISOString(),
-			metadata: {
-				...payload.data.metadata,
-				referenceId: organizationId,
-				...(transferId && { transferId }),
-			},
+			customer: { ...payload.data.customer, external_id: userId },
+			metadata: transferId ? { transferId } : {},
 		},
 	});
 
@@ -135,7 +133,7 @@ if (import.meta.main) {
 	const { values } = parseArgs({
 		options: {
 			type: { type: "string" },
-			org: { type: "string" },
+			user: { type: "string" },
 			"subscription-id": { type: "string" },
 			plan: { type: "string" },
 			"transfer-id": { type: "string" },
@@ -150,19 +148,19 @@ if (import.meta.main) {
 	const plan = values.plan ? toPlanSlug(values.plan) : undefined;
 	if (
 		!isEventType(type) ||
-		!values.org ||
+		!values.user ||
 		plan === null ||
 		(timestamp && Number.isNaN(timestamp.getTime()))
 	) {
 		console.error(
-			`Usage: bun run dev:simulate-polar-webhook --type <${Object.keys(polarFixtures).join("|")}> --org <organizationId> [--subscription-id <id>] [--plan <${PLAN_SLUGS.join("|")}>] [--transfer-id <id>] [--timestamp <iso>] [--webhook-id <id>] [--url <backend url>]`,
+			`Usage: bun run dev:simulate-polar-webhook --type <${Object.keys(polarFixtures).join("|")}> --user <userId> [--subscription-id <id>] [--plan <${PLAN_SLUGS.join("|")}>] [--transfer-id <id>] [--timestamp <iso>] [--webhook-id <id>] [--url <backend url>]`,
 		);
 		process.exit(1);
 	}
 
 	const deliveries = buildPolarDeliveries({
 		type,
-		organizationId: values.org,
+		userId: values.user,
 		...(values["subscription-id"] && {
 			subscriptionId: values["subscription-id"],
 		}),
@@ -184,7 +182,7 @@ if (import.meta.main) {
 			JSON.stringify(
 				{
 					type: delivery.type,
-					organizationId: values.org,
+					userId: values.user,
 					subscriptionId: delivery.subscriptionId,
 					timestamp: delivery.timestamp,
 					webhookId: delivery.webhookId,

@@ -1,0 +1,1 @@
+ALTER TABLE "organization" ADD COLUMN "slot_held_at" timestamp;

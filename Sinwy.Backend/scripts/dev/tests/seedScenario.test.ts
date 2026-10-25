@@ -10,8 +10,11 @@ import {
 	organization,
 	organizationProfile,
 } from "@db/schema/organizationSchema";
-import { user } from "@db/schema/userSchema";
-import { registerOrganizationRoutes } from "@organizationsModule";
+import { user, userSubscription } from "@db/schema/userSchema";
+import {
+	getOrganizationState,
+	registerOrganizationRoutes,
+} from "@organizationsModule";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import { loginAs } from "../loginAs";
@@ -63,13 +66,20 @@ const seed = async (scenario: Exclude<Scenario, "user">) => {
 const orgRow = async (id: string) => {
 	const [row] = await db
 		.select({
-			status: organization.status,
-			subscriptionStatusAt: organization.subscriptionStatusAt,
+			slotHeldAt: organization.slotHeldAt,
 			onboardingCompletedAt: organization.onboardingCompletedAt,
 		})
 		.from(organization)
 		.where(eq(organization.id, id));
-	return row;
+	return row && { status: (await getOrganizationState(id))?.status, ...row };
+};
+
+const planOf = async (userId: string) => {
+	const [row] = await db
+		.select({ plan: userSubscription.plan })
+		.from(userSubscription)
+		.where(eq(userSubscription.userId, userId));
+	return row?.plan ?? null;
 };
 
 const roles = (organizationId: string) =>
@@ -118,20 +128,23 @@ test("owner-with-org: a verified owner with a credential account and an unpaid o
 
 	expect(await orgRow(result.organization.id)).toEqual({
 		status: "inactive",
-		subscriptionStatusAt: null,
+		slotHeldAt: null,
 		onboardingCompletedAt: null,
 	});
+	expect(await planOf(owner.userId)).toBeNull();
 	expect(await roles(result.organization.id)).toEqual([
 		{ userId: owner.userId, role: "owner" },
 	]);
 });
 
-test("subscribed-org: active through the webhook, onboarding done", async () => {
+test("subscribed-org: the owner on Starter through the webhook, the org on its slot, onboarding done", async () => {
 	const result = await seed("subscribed-org");
+	const [owner] = result.users;
 
 	const row = await orgRow(result.organization.id);
 	expect(row?.status).toBe("active");
-	expect(row?.subscriptionStatusAt).toBeInstanceOf(Date);
+	expect(row?.slotHeldAt).toBeInstanceOf(Date);
+	expect(await planOf(owner?.userId ?? "")).toBe("starter");
 	expect(row?.onboardingCompletedAt).toBeInstanceOf(Date);
 	const [profile] = await db
 		.select({ country: organizationProfile.country })

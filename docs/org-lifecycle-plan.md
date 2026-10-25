@@ -22,7 +22,7 @@ logs are in [org-lifecycle-log.md](org-lifecycle-log.md).
 | 3 | Owner deletion and 30-day retention | 2 | done | `feat(backend, web): keep organizations 30 days after owner account deletion, then purge` |
 | 4 | Ownership transfer | 3 | done | `feat(backend, web): transfer organization ownership to a member with a new checkout and prorated refund` |
 | 5 | Booking payments investigation | – | done | `docs: decide on Stripe Connect direct charges for booking payments` |
-| 6 | Account plan and organization slots | 4 | todo | |
+| 6 | Account plan and organization slots | 4 | done | `feat(backend): move billing to one plan per user with organization slots` |
 | 7 | Account billing page and onboarding | 6 | todo | |
 | 8 | Plan changes and the organization cap | 7 | todo | |
 | 9 | Account-wide suspend, cancel and lapse | 7 | todo | |
@@ -140,8 +140,14 @@ Polar SDK and plugin (log: Phase 0):
 - Plugin 2.x bodies are snake_case (`reference_id`); a bad webhook signature
   answers 403. Keep `experimental_organizationSync` off.
 - Each user is one Polar customer with `external_id` = user id
-  (`createCustomerOnSignUp`). From Phase 6 the subscription is tied to the
-  user through that customer, not through `referenceId` metadata.
+  (`createCustomerOnSignUp`). The subscription is tied to the user through
+  `customer.external_id`; checkouts carry no `reference_id`, and Polar lists
+  (subscriptions, orders) filter by `external_customer_id`.
+- Polar's customer delete cancels the customer's subscriptions at once, so a
+  subscription for an unknown user is only logged (log: Phase 6).
+- A better-auth `hooks.before` can return `{ context: { body } }` to change
+  the body; the plugin's `/checkout` forwards `allow_trial`, which is how the
+  one-trial rule (D10) strips the trial (log: Phase 6).
 - The plugin deletes the Polar customer on user delete; `polarCore` adds
   `anonymize=true` to it. Don't add a second delete (log: Phase 3).
 - better-auth 1.7 requires a fresh session for `unlinkAccount`.
@@ -171,9 +177,11 @@ App state (log: Phases 1–4):
 - Revoking must cover paused subscriptions too: the billable list is
   entitled plus `paused`, or a paused subscription with `resumes_at` charges
   later.
-- Owner account deletion runs `scheduleOrganizationsForDeletion` (one
-  transaction), which also cancels open transfers. Invitations the owner
-  sent are cascade-deleted, not canceled.
+- Owner account deletion: `beforeDelete` revokes the user's billable
+  subscriptions (`revokeAccountSubscriptions`), then
+  `scheduleOrganizationsForDeletion` (one transaction) frees every owned
+  org's slot and cancels open transfers. Invitations the owner sent are
+  cascade-deleted, not canceled.
 - Better Auth's `/organization/leave` fires no `afterRemoveMember`; a
   `hooks.after` covers it (log: Phase 4).
 - Ownership swaps go through `swapOwner` (locks both member rows, demotes,
@@ -181,9 +189,21 @@ App state (log: Phases 1–4):
 - Jobs: add a `Job` to `startJobs` in `Sinwy.Backend/index.ts`; the name is
   the advisory lock key. Self-heal queries skip rows younger than 1 hour,
   because better-auth writes the org and its owner member separately.
-- Better Auth's `beforeDelete` organization hook revokes the org's
-  subscription today (`modules/auth/auth.ts`). Under the account plan it must
-  only free the slot.
+- An org's status is derived, never stored: spread `organizationAccess`
+  (`db/organizationAccess.ts`) into the query and pass the row to
+  `organizationStatusOf` / `isOrganizationPublic`. `Membership.plan` is the
+  owner's plan while the org is active.
+- Anything that hands out a slot (onboarding in Phase 7, downgrade picks in
+  Phase 8, transfers in Phase 10) locks plan rows first with `lockPlan`, in
+  user-id order, then org rows, and counts with `countHeldSlots`; that lock
+  is what keeps two activations from passing the cap (log: Phase 6).
+- Transfers complete at once on accept (`completeTransfer`); the `accepted`
+  status and the transfer's checkout and subscription columns are unused
+  until Phase 10.
+- Until Phase 7 the web app's plan page, org billing settings and
+  `/checkout/success` call removed org endpoints. `GET /api/account/subscription`
+  reconciles a user without a plan from Polar, so a paid checkout projects
+  when it is called (log: Phase 6).
 - The onboarding page reads the org with `getFullOrganization` and never
   calls `setActive`.
 - Web helpers for the org list and closed-org rules live in
@@ -191,8 +211,7 @@ App state (log: Phases 1–4):
   notices.
 - e2e: file URLs use the `BETTER_AUTH_URL` origin (`localhost:3000` locally);
   `keyFromFileUrl` silently ignores any other origin.
-- e2e: `/checkout/success` activates a plain checkout from Polar on its own,
-  so its `subscription.active` needn't be simulated. Polar's card fields sit
+- e2e: Polar's card fields sit
   in Stripe iframes: type through `run-code` with
   `frameLocator('iframe[name^="__privateStripeFrame"]')` and
   `pressSequentially` (log: Phase 4).
@@ -201,105 +220,11 @@ Open, not caused by this plan:
 - The plan-change dialog shows USD catalog prices while Polar charges EUR.
 - `invite-member` accepts `role: "member"`, which isn't an app role.
 - A set-active refusal thrown in `hooks.before` is logged by Better Auth at
-  ERROR level, though it's a user-caused 403.
+  ERROR level, though it's a user-caused 403. So are the checkout refusals.
+- drizzle-kit `generate` needs a TTY when one table drops and adds columns
+  (rename prompt); generate the drops and the adds as two migrations.
 
 ---
-
-## Phase 6: Account plan and organization slots
-
-**Goal:** the subscription belongs to the user, and an organization is active
-when its owner's plan grants access and it holds one of the owner's slots.
-Backend only; the web billing pages follow in Phase 7.
-
-**Files:** `Sinwy.Backend/db/schema/{organizationSchema,userSchema}.ts`,
-`modules/billing/{projection,checkoutGuard,service,controller,routes,invoices,transfer}.ts`,
-`modules/organizations/{service,repository,purge}.ts`,
-`modules/auth/{auth,requireFeature,requirePermission,activeOrganization}.ts`
-(`beforeDelete`, `resolveMembership`, set-active refusal),
-`modules/transfers/service.ts` (`completeOrganizationTransfer`,
-`transferOwnershipBySupport`), `Sinwy.Backend/scripts/transferOrganization.ts`,
-`scripts/backfillSubscriptionBindings.ts` (delete),
-`scripts/dev/{seedScenario,simulatePolarWebhook,capturePolarFixture}.ts`,
-`Sinwy.Shared/types/{plan,organization}/`, `.agents/skills/e2e-test/`.
-Tests: `modules/billing/tests/{projection,checkoutGuard,billing,planFeatures}.test.ts`,
-`modules/transfers/tests/transfer.test.ts`.
-
-Data:
-- Table `user_subscription` (billing module): `user_id` (PK, cascade),
-  `subscription_id` (unique), `plan`, `status`, `subscription_status_at`,
-  `trial_used_at`, timestamps. `plan` only while entitled, as on the org
-  today.
-- `organization.slot_held_at` (nullable): set while the org holds a slot.
-- Drop `organization.status`, `plan`, `subscription_id` and
-  `subscription_status_at` with their checks (D14: no data migration).
-- `PLAN_ORGANIZATION_LIMITS` in `@sinwy/shared` (Starter 1, Professional 2,
-  Enterprise 5).
-
-Projection:
-- Find the user by the subscription's `customer.external_id`; ignore
-  `referenceId`. Keep the ordering guard (`subscription_status_at`), the
-  entitled and billable lists, and the paused rule (inactive, binding kept).
-- A second billable subscription for a user who already has one (a race past
-  the checkout guard) is revoked and refunded in full with `refundInFull`.
-- Drop `projectTransferSubscription`, the transfer checkout, the stray and
-  old-subscription refunds, and `reconcileInactiveOrganization`'s org lookup;
-  reconcile now runs per user.
-
-Derived status:
-- One repository read returns an org's access: holds a slot, not scheduled,
-  owner's plan entitled, owner's plan slug. `isOrganizationPublic`,
-  `resolveMembership`, `requireFeature` (owner's plan), the set-active
-  refusal and `getOrganizationStatus` read it. `ORGANIZATION_INACTIVE`
-  stays the single code.
-
-Slots:
-- `POST /api/account/organizations/:organizationId/activate` and
-  `.../deactivate`, owner only. Activate locks the owner's
-  `user_subscription` row, counts held slots of non-scheduled owned orgs and
-  refuses at the cap (`ORGANIZATION_LIMIT_REACHED`) or without an entitled
-  plan.
-- Scheduling for deletion and Better Auth's `beforeDelete` clear the slot and
-  no longer touch Polar for that org.
-- Owner account deletion revokes the user's subscription (billable list),
-  then schedules every owned org (D13).
-
-Checkout:
-- The checkout carries no `reference_id`. The guard refuses when the user
-  already has a billable subscription (`PLAN_EXISTS`: change the plan
-  instead) and strips the trial when `trial_used_at` is set (D10). Check in
-  the Polar docs how a checkout disables a product's trial.
-
-Transfers (until Phase 10):
-- Completion is a role swap plus a slot move in one transaction: lock both
-  owners' `user_subscription` rows in id order, clear the old owner's slot,
-  give the recipient one. Accept refuses with `RECIPIENT_NEEDS_PLAN` when
-  the recipient has no entitled plan or no free slot. No money moves (D12).
-- The support script swaps roles; the org keeps a slot only if the recipient
-  has one free, otherwise it stays inactive. No refund.
-
-Tests that matter:
-- Two concurrent activations at the cap: exactly one wins.
-- Projection: by customer, out-of-order events, paused keeps the binding, a
-  second subscription for the same user is revoked and refunded.
-- An org with a slot is inactive while the owner's plan is paused, lapsed or
-  missing, and active again when it grants access.
-- Scheduling and hard delete free the slot; account deletion revokes once.
-- Transfer completion moves the slot and keeps exactly one owner.
-
-Done when:
-- With a real sandbox checkout (no org): the user's plan projects, an org
-  activates, a second org at the Starter cap is refused, deactivating the
-  first frees the slot, and the second then activates. Checked against the
-  running backend.
-
-**Verify:** start from `owner-with-org` with a second org created through the
-API. Pay a real Starter checkout through the plugin's `/checkout` with no
-`reference_id`; `/checkout/success`'s reconcile or a simulated
-`subscription.active` (extend `dev:simulate-polar-webhook` to take
-`--user`) projects it. Then the activate/deactivate calls above, checking
-`user_subscription` and `organization.slot_held_at` with `psql`, and a public
-page of each org via `isOrganizationPublic`. Simulate `subscription.paused`
-and `subscription.revoked` and check both orgs go inactive.
 
 ## Phase 7: Account billing page and onboarding
 
@@ -309,24 +234,30 @@ free.
 
 **Files:** `Sinwy.WebFrontend/src/modules/account-dashboard/routes/`
 (new `_shell.billing.tsx`, `_shell.organizations.tsx`),
+`src/modules/account-dashboard/lib/account-queries.ts`,
 `src/modules/org-dashboard/components/billing/` (move what's reused to the
 account module, delete the rest), `src/modules/org-dashboard/routes/_shell.settings.billing.tsx`
-(delete), `src/modules/org-dashboard/lib/{billing-queries,plan-change}.ts`,
-`src/modules/organizations/routes/{$id.plan,$id.onboarding}.tsx`,
-`src/modules/organizations/lib/preselected-plan.ts`,
-`src/modules/checkout/routes/success.tsx`,
+(delete), `src/modules/org-dashboard/lib/{billing-queries,plan-change,subscription-status}.ts`
+(point at `/api/account/subscription…`, typed `AccountSubscriptionDto`),
+`src/modules/organizations/routes/{$id.plan,$id.onboarding}.tsx`
+(checkout with `{ slug }` only), `src/modules/organizations/lib/{preselected-plan,funnel}.ts`,
+`src/modules/checkout/routes/success.tsx` (poll `GET /api/account/subscription`),
 `src/modules/auth/lib/post-login.ts`, `src/shared/lib/{organizations,plans}.ts`,
-`src/shared/components/shell/OrganizationSwitcher.tsx`,
-`Sinwy.Backend/modules/billing/{service,controller,routes,invoices}.ts`
-(account-scoped reads), `modules/organizations/service.ts` (funnel),
-`Sinwy.Shared/types/organization/FunnelStep.ts`. Tests:
-`src/shared/tests/{organizations,plans}.test.ts`,
-`src/modules/auth/tests/post-login.test.ts`.
+`src/shared/components/shell/OrganizationSwitcher.tsx`.
+Backend: `modules/organizations/{service,repository}.ts` (onboarding
+completion takes a free slot through `holdSlot`; `findUnpaidOwnedOrganization`
+and `findUnfinishedOnboardingOrganization` for the funnel; `listOrganizations`
+tier for admins), `modules/user/service.ts` (post-login flags),
+`Sinwy.Shared/types/{organization/FunnelStep.ts,organization/OrganizationSummary.ts,plan/Subscription.ts}`
+(drop `OrganizationSubscriptionDto`). The account billing endpoints already
+exist (Phase 6). Tests: `src/shared/tests/{organizations,plans}.test.ts`,
+`src/modules/auth/tests/post-login.test.ts`,
+`Sinwy.Backend/modules/user/tests/flags.test.ts`,
+`modules/organizations/tests/{organizations,slots}.test.ts`.
 
 Backend:
-- `GET /api/account/subscription` (plan, status, period end, cap, slots
-  used) and `GET /api/account/invoices` (+ download), replacing the
-  organization-scoped ones.
+- `GET /api/account/subscription` and `GET /api/account/invoices` (+
+  download) shipped in Phase 6; add only what the page still needs.
 - The organization payload gives admins the tier name only (D15); staff get
   none.
 - Funnel: create → select plan (only without an entitled plan) → pay. With an
