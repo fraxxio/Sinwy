@@ -7,7 +7,7 @@ import { hasCompletedSetup } from "#/shared/lib/organizations";
  */
 export const FUNNEL_STEPS = {
 	[FunnelStep.Create]: { label: "Create", to: "/organizations/new" },
-	[FunnelStep.Plan]: { label: "Plan", to: "/organizations/$id/plan" },
+	[FunnelStep.Plan]: { label: "Plan", to: "/account/billing" },
 	[FunnelStep.Pay]: { label: "Pay", to: "/checkout/success" },
 } as const satisfies Record<FunnelStep, { label: string; to: string }>;
 

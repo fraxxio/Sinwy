@@ -11,22 +11,25 @@ const org = (
 	slug: `slug-${id}`,
 	status: "active",
 	plan: "starter",
+	features: [],
 	isOwner: true,
 	suspended: false,
+	draft: false,
 	deletesAt: null,
 	onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
 	...overrides,
 });
 
-const neverPaid = (id: string, overrides: Partial<OrganizationSummary> = {}) =>
+const draft = (id: string, overrides: Partial<OrganizationSummary> = {}) =>
 	org(id, {
 		status: "inactive",
 		plan: null,
+		draft: true,
 		onboardingCompletedAt: null,
 		...overrides,
 	});
 
-const lapsed = (id: string, overrides: Partial<OrganizationSummary> = {}) =>
+const inactive = (id: string, overrides: Partial<OrganizationSummary> = {}) =>
 	org(id, { status: "inactive", plan: null, ...overrides });
 
 const dashboard = (id: string) => ({
@@ -34,10 +37,7 @@ const dashboard = (id: string) => ({
 	params: { organizationSlug: `slug-${id}` },
 });
 
-const planPage = (id: string) => ({
-	to: "/organizations/$id/plan",
-	params: { id },
-});
+const organizations = { to: "/account/organizations" };
 
 const account = { to: "/account" };
 
@@ -61,8 +61,8 @@ it.each([
 		dashboard("b"),
 	],
 	[
-		"another open org when the session's org lapsed",
-		[org("a"), lapsed("b")],
+		"another open org when the session's org is inactive",
+		[org("a"), inactive("b")],
 		"b",
 		dashboard("a"),
 	],
@@ -73,38 +73,38 @@ it.each([
 		dashboard("a"),
 	],
 	[
-		"an open org over an owned never-paid one",
-		[org("a"), neverPaid("b")],
+		"an open org over an owned draft",
+		[org("a"), draft("b")],
 		null,
 		dashboard("a"),
 	],
 	[
-		"the plan page for an owner with only a never-paid org",
-		[lapsed("a"), neverPaid("b")],
-		"a",
-		planPage("b"),
-	],
-	[
-		"the account for an owner with only lapsed orgs",
-		[lapsed("a")],
-		"a",
-		account,
-	],
-	[
-		"the account for an owner whose only org is suspended before finishing setup",
-		[neverPaid("a", { suspended: true })],
+		"Account → Organizations for an owner with only a draft",
+		[draft("a")],
 		null,
-		account,
+		organizations,
+	],
+	[
+		"Account → Organizations for an owner with only inactive orgs",
+		[inactive("a"), draft("b")],
+		"a",
+		organizations,
+	],
+	[
+		"Account → Organizations for an owner whose only org is suspended",
+		[inactive("a", { suspended: true })],
+		null,
+		organizations,
 	],
 	[
 		"the account for staff with only inactive orgs",
-		[neverPaid("a", { isOwner: false }), lapsed("b", { isOwner: false })],
+		[draft("a", { isOwner: false }), inactive("b", { isOwner: false })],
 		null,
 		account,
 	],
 	[
-		"the account for an owner whose never-paid org is scheduled for deletion",
-		[neverPaid("a", { deletesAt: "2026-11-24T12:00:00.000Z" })],
+		"the account for an owner whose only org is scheduled for deletion",
+		[draft("a", { draft: false, deletesAt: "2026-11-24T12:00:00.000Z" })],
 		null,
 		account,
 	],

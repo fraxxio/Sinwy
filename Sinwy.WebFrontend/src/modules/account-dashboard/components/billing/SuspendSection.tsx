@@ -1,13 +1,12 @@
-import type { OrganizationSubscriptionDto } from "@sinwy/shared";
+import type { AccountSubscriptionDto } from "@sinwy/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import {
 	billingKeys,
 	runSubscriptionAction,
 	subscriptionQuery,
-} from "#/modules/org-dashboard/lib/billing-queries";
-import { suspensionBlocker } from "#/modules/org-dashboard/lib/subscription-status";
+} from "#/modules/account-dashboard/lib/billing-queries";
+import { suspensionBlocker } from "#/modules/account-dashboard/lib/subscription-status";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import {
 	AlertDialog,
@@ -23,36 +22,24 @@ import {
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { toast } from "#/shared/components/ui/toast";
-import { handleOrganizationInactive } from "#/shared/lib/auth/organization-inactive";
 import { formatDay } from "#/shared/lib/date";
 import { invalidateOrganizations } from "#/shared/lib/organizations";
 
-export function SuspendSection({
-	organizationId,
-	organizationName,
-}: {
-	organizationId: string;
-	organizationName: string;
-}) {
+export function SuspendSection() {
 	const queryClient = useQueryClient();
-	const router = useRouter();
 	const [open, setOpen] = useState(false);
-	const { data } = useQuery(subscriptionQuery(organizationId));
-	const subscriptionKey = billingKeys.subscription(organizationId);
+	const { data } = useQuery(subscriptionQuery);
+	const subscriptionKey = billingKeys.subscription;
 
 	const action = useMutation({
 		mutationFn: async (suspend: boolean) => {
 			const res = await runSubscriptionAction(
-				organizationId,
 				suspend ? "suspend" : "unsuspend",
 			);
-			if (!res.isSuccess) {
-				handleOrganizationInactive(res, router, queryClient);
-				throw new Error(res.message);
-			}
+			if (!res.isSuccess) throw new Error(res.message);
 			return res.data;
 		},
-		onSuccess: (subscription: OrganizationSubscriptionDto, suspend) => {
+		onSuccess: (subscription: AccountSubscriptionDto, suspend) => {
 			queryClient.setQueryData(subscriptionKey, subscription);
 			void invalidateOrganizations(queryClient);
 			setOpen(false);
@@ -75,7 +62,7 @@ export function SuspendSection({
 			<SettingsSection
 				id="suspend"
 				title="Suspension scheduled"
-				description={`${organizationName} goes offline on ${periodEnd}. Until then everything keeps working, and you can still undo it.`}
+				description={`Your organizations go offline on ${periodEnd}. Until then everything keeps working, and you can still undo it.`}
 				action={
 					<Button
 						type="button"
@@ -97,8 +84,8 @@ export function SuspendSection({
 	return (
 		<SettingsSection
 			id="suspend"
-			title="Suspend organization"
-			description="Take the organization offline at the end of the paid period, then resume it whenever you're ready, without a new checkout."
+			title="Suspend plan"
+			description="Take every organization you own offline at the end of the paid period, then resume whenever you're ready, without a new checkout."
 			action={
 				<AlertDialog
 					open={open}
@@ -122,11 +109,11 @@ export function SuspendSection({
 					</AlertDialogTrigger>
 					<AlertDialogContent>
 						<AlertDialogHeader>
-							<AlertDialogTitle>Suspend {organizationName}?</AlertDialogTitle>
+							<AlertDialogTitle>Suspend your plan?</AlertDialogTitle>
 							<AlertDialogDescription>
-								It stays active until {periodEnd}, then goes offline: members
-								lose access and its public pages stop. The rest of this period
-								isn't refunded.
+								Your organizations stay active until {periodEnd}, then go
+								offline: members lose access and public pages stop. The rest of
+								this period isn't refunded.
 							</AlertDialogDescription>
 						</AlertDialogHeader>
 						<p className="text-muted-foreground text-sm">

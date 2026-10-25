@@ -68,18 +68,8 @@ export const organizationNav = (organizationSlug: string): SidebarNavItem[] => {
 		{
 			title: "Settings",
 			icon: <Settings2Icon />,
-			items: [
-				{
-					title: "General",
-					link: linkOptions({ to: ORG_SECTIONS.settings.to, params }),
-					permission: ORG_SECTIONS.settings.permission,
-				},
-				{
-					title: "Billing",
-					link: linkOptions({ to: ORG_SECTIONS.billing.to, params }),
-					permission: ORG_SECTIONS.billing.permission,
-				},
-			],
+			link: linkOptions({ to: ORG_SECTIONS.settings.to, params }),
+			permission: ORG_SECTIONS.settings.permission,
 		},
 	];
 };

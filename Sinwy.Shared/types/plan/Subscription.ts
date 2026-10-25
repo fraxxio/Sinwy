@@ -1,7 +1,5 @@
 import { z } from "zod";
-import type { OrganizationStatus } from "../organization/Organization";
 import { PLAN_SLUGS, type PlanSlug } from "./Plan";
-import type { Feature } from "./PlanFeatures";
 
 export const SUBSCRIPTION_BILLING_STATUSES = [
 	"incomplete",
@@ -41,16 +39,6 @@ export type SubscriptionBillingDto = {
 	pauseAtPeriodEnd: boolean;
 	/** When Polar resumes a paused subscription by itself; null until resumed by hand. */
 	resumesAt: string | null;
-};
-
-export type OrganizationSubscriptionDto = {
-	status: OrganizationStatus;
-	/** Inactive because its owner suspended it: it resumes without a new checkout. */
-	suspended: boolean;
-	plan: PlanSlug | null;
-	features: readonly Feature[];
-	/** null when there is no subscription or Polar could not be reached. */
-	billing: SubscriptionBillingDto | null;
 };
 
 /** The user's own plan, which every organization they own runs on. */

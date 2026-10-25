@@ -1,12 +1,13 @@
-import type { OrganizationSubscriptionDto } from "@sinwy/shared";
+import type { AccountSubscriptionDto } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { type ReactNode, useEffect } from "react";
-import { ChangePlanDialog } from "#/modules/org-dashboard/components/billing/ChangePlanDialog";
-import { subscriptionQuery } from "#/modules/org-dashboard/lib/billing-queries";
+import { ChangePlanDialog } from "#/modules/account-dashboard/components/billing/ChangePlanDialog";
+import { subscriptionQuery } from "#/modules/account-dashboard/lib/billing-queries";
 import {
 	describeSubscription,
 	formatPrice,
-} from "#/modules/org-dashboard/lib/subscription-status";
+} from "#/modules/account-dashboard/lib/subscription-status";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Badge } from "#/shared/components/ui/badge";
 import { Button } from "#/shared/components/ui/button";
@@ -16,17 +17,14 @@ import { toast } from "#/shared/components/ui/toast";
 import { getPlanName } from "#/shared/lib/plans";
 
 export function CurrentPlanSection({
-	organizationId,
 	changePlanOpen,
 	onChangePlanOpenChange,
 }: {
-	organizationId: string;
 	changePlanOpen: boolean;
 	onChangePlanOpenChange: (open: boolean) => void;
 }) {
-	const { data, isPending, isError, isFetching, refetch } = useQuery(
-		subscriptionQuery(organizationId),
-	);
+	const { data, isPending, isError, isFetching, refetch } =
+		useQuery(subscriptionQuery);
 
 	const retry = (
 		<Button
@@ -55,7 +53,7 @@ export function CurrentPlanSection({
 		: plan === null
 			? "There's no current plan to change from."
 			: suspending
-				? "The organization is set to suspend. Undo that first."
+				? "Your plan is set to suspend. Undo that first."
 				: !canChangePlan
 					? "The subscription is canceled or set to cancel. Resume it from the Polar portal first."
 					: null;
@@ -76,7 +74,7 @@ export function CurrentPlanSection({
 		<SettingsSection
 			id="plan"
 			title="Plan"
-			description="What this organization pays for."
+			description="Every organization you own runs on it."
 			action={
 				<Button
 					type="button"
@@ -101,7 +99,6 @@ export function CurrentPlanSection({
 			)}
 			{plan && (
 				<ChangePlanDialog
-					organizationId={organizationId}
 					current={plan}
 					billing={data?.billing ?? null}
 					open={changePlanOpen && canChangePlan}
@@ -116,7 +113,7 @@ function PlanSummary({
 	subscription,
 	retry,
 }: {
-	subscription: OrganizationSubscriptionDto;
+	subscription: AccountSubscriptionDto;
 	retry: ReactNode;
 }) {
 	const { label, variant, detail } = describeSubscription(subscription);
@@ -131,6 +128,18 @@ function PlanSummary({
 				<Badge variant={variant}>{label}</Badge>
 			</div>
 			{billing && <p className="text-sm">{formatPrice(billing)}</p>}
+			{plan && (
+				<p className="text-sm">
+					{subscription.activeOrganizations} of {subscription.organizationLimit}{" "}
+					organizations active.{" "}
+					<Link
+						to="/account/organizations"
+						className="underline underline-offset-4"
+					>
+						Manage organizations
+					</Link>
+				</p>
+			)}
 			{detail ? (
 				<p className="text-muted-foreground text-sm">{detail}</p>
 			) : (

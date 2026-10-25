@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { ExternalLinkIcon } from "lucide-react";
-import { openPolarPortal } from "#/modules/org-dashboard/lib/billing-queries";
+import { openPolarPortal } from "#/modules/account-dashboard/lib/billing-queries";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Button } from "#/shared/components/ui/button";
 import { toast } from "#/shared/components/ui/toast";
@@ -22,7 +22,7 @@ export function ManageBillingSection() {
 		<SettingsSection
 			id="payment"
 			title="Payment and receipts"
-			description="Payment method, billing address and receipts for all your subscriptions. Polar lists every organization you pay for, so pick this one there."
+			description="Payment method, billing address and receipts for your plan."
 			action={
 				<Button
 					type="button"

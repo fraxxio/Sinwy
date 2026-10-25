@@ -1,31 +1,22 @@
-import {
-	FunnelStep,
-	type OrganizationStatus,
-	type OrganizationSummary,
-} from "@sinwy/shared";
+import { FunnelStep, type OrganizationSummary } from "@sinwy/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import {
-	CheckIcon,
-	ClockIcon,
-	CloudOffIcon,
-	Loader2Icon,
-	SearchXIcon,
-} from "lucide-react";
+import { CheckIcon, ClockIcon, CloudOffIcon, Loader2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
+import {
+	billingKeys,
+	fetchSubscription,
+	runOrganizationSlotAction,
+} from "#/modules/account-dashboard/lib/billing-queries";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
-import { activeOrganizationDestination } from "#/modules/organizations/lib/funnel";
 import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { Button } from "#/shared/components/ui/button";
 import { Skeleton } from "#/shared/components/ui/skeleton";
+import { toast } from "#/shared/components/ui/toast";
 import { api } from "#/shared/lib/api";
-import { authClient } from "#/shared/lib/auth/auth-client";
 import { protectedRoute } from "#/shared/lib/auth/protected-route";
-import {
-	hasCompletedSetup,
-	invalidateOrganizations,
-} from "#/shared/lib/organizations";
+import { invalidateOrganizations } from "#/shared/lib/organizations";
 import { pollUntil } from "#/shared/lib/poll-until";
 import { cn } from "#/shared/lib/utils";
 
@@ -39,10 +30,8 @@ export const Route = createFileRoute("/checkout/success")({
 });
 
 enum Phase {
-	Resolving = "resolving",
-	Activating = "activating",
-	MissingCheckout = "missing-checkout",
-	UnknownOrg = "unknown-org",
+	Plan = "plan",
+	Organization = "organization",
 	Unreachable = "unreachable",
 	TimedOut = "timed-out",
 }
@@ -84,152 +73,95 @@ function CheckoutSuccessPending() {
 }
 
 function CheckoutSuccessPage() {
-	const { checkout_id: checkoutId } = Route.useSearch();
 	const [attempt, setAttempt] = useState(0);
 
-	return (
-		<Activation
-			key={attempt}
-			checkoutId={checkoutId}
-			onRetry={() => setAttempt((n) => n + 1)}
-		/>
-	);
+	return <Activation key={attempt} onRetry={() => setAttempt((n) => n + 1)} />;
 }
 
-function Activation({
-	checkoutId,
-	onRetry,
-}: {
-	checkoutId: string | undefined;
-	onRetry: () => void;
-}) {
+/** The oldest draft the user owns: the one the funnel was paying for. */
+const findFunnelDraft = (organizations: OrganizationSummary[]) =>
+	organizations.find((org) => org.isOwner && org.draft) ?? null;
+
+function Activation({ onRetry }: { onRetry: () => void }) {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
-	const [phase, setPhase] = useState<Phase>(
-		checkoutId ? Phase.Resolving : Phase.MissingCheckout,
-	);
-	// unknown until the checkout resolves, so a renewal never flashes setup steps
-	const [firstTimeSetup, setFirstTimeSetup] = useState(false);
-	const [transfer, setTransfer] = useState(false);
+	const [phase, setPhase] = useState<Phase>(Phase.Plan);
+	const [draft, setDraft] = useState<OrganizationSummary | null>(null);
 
 	useEffect(() => {
-		if (!checkoutId) return;
 		let cancelled = false;
 
 		void (async () => {
-			// Polar carries the org id in the checkout metadata, resolve it
-			// server-side so the handoff survives a different tab/browser context.
-			const res = await api<{ organizationId: string; transfer: boolean }>(
-				`/organizations/checkout/${checkoutId}`,
-			);
+			const list = await api<OrganizationSummary[]>("/organizations");
 			if (cancelled) return;
-			if (!res.isSuccess) {
-				// only a 4xx is the API telling us this checkout is unknown;
-				// anything else means we never got an answer
-				const answered = res.code >= 400 && res.code < 500;
-				setPhase(answered ? Phase.UnknownOrg : Phase.Unreachable);
+			if (!list.isSuccess) {
+				setPhase(Phase.Unreachable);
 				return;
 			}
-			const orgId = res.data.organizationId;
-			if (res.data.transfer) {
-				setTransfer(true);
-				setPhase(Phase.Activating);
-				// the org is already active; done once the payment made the caller its owner
-				const owned = await pollUntil(
-					async () => {
-						const list = await api<OrganizationSummary[]>("/organizations");
-						return list.isSuccess
-							? (list.data.find((org) => org.id === orgId) ?? null)
-							: null;
-					},
-					(org) => org?.isOwner === true,
-					{ isCancelled: () => cancelled },
-				);
-				if (cancelled) return;
-				if (!owned) {
-					setPhase(Phase.TimedOut);
-					return;
-				}
-				// the cached member roles are the previous ones
-				await queryClient.invalidateQueries({ queryKey: ["organizations"] });
-				void navigate({
-					to: "/$organizationSlug",
-					params: { organizationSlug: owned.slug },
-				});
-				return;
-			}
-			// checked on setup, not status: the webhook may have activated it already
-			const { data: organization } =
-				await authClient.organization.getFullOrganization({
-					query: { organizationId: orgId, membersLimit: 1 },
-				});
-			if (cancelled) return;
-			setFirstTimeSetup(!!organization && !hasCompletedSetup(organization));
-			setPhase(Phase.Activating);
+			const funnelDraft = findFunnelDraft(list.data);
+			setDraft(funnelDraft);
 
-			const active = await pollUntil(
-				async () => {
-					const status = await api<{ status: OrganizationStatus }>(
-						`/organizations/${orgId}/status`,
-					);
-					return status.isSuccess ? status.data.status : null;
-				},
-				(status) => status === "active",
+			// the plan is projected from Polar's webhook, or reconciled on read
+			const subscription = await pollUntil(
+				fetchSubscription,
+				(subscription) => subscription.plan !== null,
 				{ isCancelled: () => cancelled },
 			);
 			if (cancelled) return;
-			if (!active) {
+			if (!subscription) {
 				setPhase(Phase.TimedOut);
 				return;
 			}
+			queryClient.setQueryData(billingKeys.subscription, subscription);
+			if (!funnelDraft) {
+				await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
+				void navigate({ to: "/account/billing" });
+				return;
+			}
+
+			setPhase(Phase.Organization);
+			const activated = await runOrganizationSlotAction(
+				funnelDraft.id,
+				"activate",
+			);
+			if (cancelled) return;
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: postLoginFlagsKey }),
+				queryClient.invalidateQueries({ queryKey: billingKeys.subscription }),
 				invalidateOrganizations(queryClient),
 			]);
-			// onboarding is the safe fallback: it also serves a completed profile
-			void navigate(
-				organization
-					? activeOrganizationDestination(organization)
-					: { to: "/organizations/$id/onboarding", params: { id: orgId } },
-			);
+			if (!activated.isSuccess) {
+				toast.add({
+					type: "info",
+					title: "Your plan is active",
+					description: `${funnelDraft.name} couldn't be activated (${activated.message}). Activate it from your organizations.`,
+				});
+				void navigate({ to: "/account/organizations" });
+				return;
+			}
+			void navigate({
+				to: "/organizations/$id/onboarding",
+				params: { id: funnelDraft.id },
+			});
 		})();
 
 		return () => {
 			cancelled = true;
 		};
-	}, [checkoutId, navigate, queryClient]);
+	}, [navigate, queryClient]);
 
-	const activating = phase === Phase.Resolving || phase === Phase.Activating;
+	const activating = phase === Phase.Plan || phase === Phase.Organization;
 
 	return (
-		<PageShell showSteps={firstTimeSetup}>
+		<PageShell showSteps={draft !== null}>
 			<div className="space-y-3 text-center">
 				{activating ? (
-					<ActivationProgress phase={phase} transfer={transfer} />
-				) : phase === Phase.MissingCheckout ? (
-					<FailedState
-						icon={SearchXIcon}
-						title="Missing checkout details"
-						description="This page was opened without a checkout reference. If you just paid, your payment is safe and your organization will activate on its own, check back from your dashboard in a minute."
-					>
-						<HomeButton primary />
-					</FailedState>
-				) : phase === Phase.UnknownOrg ? (
-					<FailedState
-						icon={SearchXIcon}
-						title="Payment received"
-						description="We couldn't match this checkout to an organization yet. Your payment is safe, this usually resolves itself within a minute."
-					>
-						<Button variant="outline" onClick={onRetry}>
-							Try again
-						</Button>
-						<HomeButton />
-					</FailedState>
+					<ActivationProgress phase={phase} withOrganization={draft !== null} />
 				) : phase === Phase.Unreachable ? (
 					<FailedState
 						icon={CloudOffIcon}
 						title="Payment received"
-						description="Your payment went through, but we couldn't reach the server to finish setting up your organization. Check your connection and try again."
+						description="Your payment went through, but we couldn't reach the server to finish setting up your plan. Check your connection and try again."
 					>
 						<Button variant="outline" onClick={onRetry}>
 							Try again
@@ -255,10 +187,10 @@ function Activation({
 
 function ActivationProgress({
 	phase,
-	transfer,
+	withOrganization,
 }: {
 	phase: Phase;
-	transfer: boolean;
+	withOrganization: boolean;
 }) {
 	// reassure during the long poll window instead of sitting silent for 60s
 	const [slow, setSlow] = useState(false);
@@ -267,13 +199,13 @@ function ActivationProgress({
 		return () => clearTimeout(timer);
 	}, []);
 
-	const resolving = phase === Phase.Resolving;
+	const planDone = phase === Phase.Organization;
 
 	return (
 		<>
 			<h1 className="text-2xl font-bold tracking-tight">Payment received</h1>
 			<p className="text-sm text-muted-foreground">
-				Hold tight while we finish setting up your organization.
+				Hold tight while we finish setting up your plan.
 			</p>
 			<ol
 				className="mx-auto w-fit space-y-2.5 pt-3 text-left text-sm"
@@ -281,12 +213,14 @@ function ActivationProgress({
 				aria-live="polite"
 			>
 				<StepRow state="done">Payment confirmed</StepRow>
-				<StepRow state={resolving ? "running" : "done"}>
-					Linking payment to your organization
+				<StepRow state={planDone ? "done" : "running"}>
+					Activating your plan
 				</StepRow>
-				<StepRow state={resolving ? "pending" : "running"}>
-					{transfer ? "Making you the owner" : "Activating your organization"}
-				</StepRow>
+				{withOrganization && (
+					<StepRow state={planDone ? "running" : "pending"}>
+						Activating your organization
+					</StepRow>
+				)}
 			</ol>
 			{slow && (
 				<p className="pt-2 text-xs text-muted-foreground">

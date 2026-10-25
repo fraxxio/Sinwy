@@ -11,11 +11,11 @@ import {
 	invoicesQuery,
 	openPolarPortal,
 	requestInvoiceDownload,
-} from "#/modules/org-dashboard/lib/billing-queries";
+} from "#/modules/account-dashboard/lib/billing-queries";
 import {
 	downloadInvoice,
 	type InvoiceDownloadResult,
-} from "#/modules/org-dashboard/lib/download-invoice";
+} from "#/modules/account-dashboard/lib/download-invoice";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Badge } from "#/shared/components/ui/badge";
 import { Button } from "#/shared/components/ui/button";
@@ -42,16 +42,14 @@ const REASON_LABELS: Record<InvoiceBillingReason, string> = {
 };
 
 export function InvoicesSection({
-	organizationId,
 	page,
 	onPageChange,
 }: {
-	organizationId: string;
 	page: number;
 	onPageChange: (page: number) => void;
 }) {
 	const { data, isPending, isError, isFetching, refetch } = useQuery(
-		invoicesQuery(organizationId, page),
+		invoicesQuery(page),
 	);
 
 	const pageCount = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
@@ -60,7 +58,7 @@ export function InvoicesSection({
 		<SettingsSection
 			id="invoices"
 			title="Invoices"
-			description="Every payment for this organization's plan."
+			description="Every payment for your plan."
 		>
 			{isPending ? (
 				<Skeleton className="h-24" />
@@ -97,11 +95,7 @@ export function InvoicesSection({
 				<>
 					<ul className="divide-y">
 						{data.items.map((invoice) => (
-							<InvoiceRow
-								key={invoice.id}
-								organizationId={organizationId}
-								invoice={invoice}
-							/>
+							<InvoiceRow key={invoice.id} invoice={invoice} />
 						))}
 					</ul>
 					{pageCount > 1 && (
@@ -137,27 +131,20 @@ export function InvoicesSection({
 	);
 }
 
-function InvoiceRow({
-	organizationId,
-	invoice,
-}: {
-	organizationId: string;
-	invoice: InvoiceDto;
-}) {
+function InvoiceRow({ invoice }: { invoice: InvoiceDto }) {
 	const queryClient = useQueryClient();
 	// after a 202 the next click should find the file
 	const [requested, setRequested] = useState(false);
 	const expectsFile = invoice.invoiceGenerated || requested;
 
 	const download = useMutation({
-		mutationFn: () =>
-			downloadInvoice(() => requestInvoiceDownload(organizationId, invoice.id)),
+		mutationFn: () => downloadInvoice(() => requestInvoiceDownload(invoice.id)),
 		onSuccess: (result: InvoiceDownloadResult) => {
 			switch (result.kind) {
 				case "downloading":
 					if (!invoice.invoiceGenerated)
 						void queryClient.invalidateQueries({
-							queryKey: billingKeys.invoices(organizationId),
+							queryKey: billingKeys.invoices,
 						});
 					return;
 				case "generating":

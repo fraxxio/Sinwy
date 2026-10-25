@@ -42,6 +42,7 @@ export const findOrganizationAccess = async (organizationId: string) => {
 	const [row] = await db
 		.select({
 			...organizationAccess,
+			onboardingCompletedAt: organization.onboardingCompletedAt,
 			ownerUserId: sql<string | null>`(${db
 				.select({ userId: member.userId })
 				.from(member)
@@ -113,6 +114,16 @@ export const releaseSlot = async (userId: string, organizationId: string) => {
 
 export const countOwnedHeldSlots = (userId: string) =>
 	countHeldSlots(db, userId);
+
+/** Whether the user's plan grants access and has a slot no organization holds. */
+export const hasFreeSlot = async (userId: string) => {
+	const [row] = await db
+		.select({ plan: userSubscription.plan })
+		.from(userSubscription)
+		.where(eq(userSubscription.userId, userId));
+	const limit = slotLimit(row?.plan ?? null);
+	return limit > 0 && (await countHeldSlots(db, userId)) < limit;
+};
 
 export const findOwnedOrganizationIds = (userId: string) =>
 	db.select({ id: organization.id }).from(organization).where(ownedBy(userId));
@@ -301,6 +312,7 @@ export const findUnpaidOwnedOrganization = async (userId: string) => {
 				memberHasRole("owner"),
 				isNull(organization.slotHeldAt),
 				isNull(organization.onboardingCompletedAt),
+				isNull(organization.deletionScheduledAt),
 				not(
 					exists(
 						db
@@ -337,8 +349,15 @@ export const findMemberOrganizations = (userId: string) =>
 		.where(eq(member.userId, userId))
 		.orderBy(asc(organization.createdAt), asc(organization.id));
 
-/** Oldest active organization the user owns that never finished its setup wizard. */
-export const findUnfinishedOnboardingOrganization = async (userId: string) => {
+/**
+ * Oldest organization the user owns that never finished its setup wizard:
+ * an active one, or with `withDrafts` (the owner has a free slot) a draft,
+ * whose wizard takes that slot.
+ */
+export const findUnfinishedOnboardingOrganization = async (
+	userId: string,
+	withDrafts: boolean,
+) => {
 	const [row] = await db
 		.select({ organizationId: organization.id })
 		.from(member)
@@ -347,10 +366,10 @@ export const findUnfinishedOnboardingOrganization = async (userId: string) => {
 			and(
 				eq(member.userId, userId),
 				memberHasRole("owner"),
-				isNotNull(organization.slotHeldAt),
 				isNull(organization.deletionScheduledAt),
 				isNotNull(organizationAccess.ownerPlan),
 				isNull(organization.onboardingCompletedAt),
+				withDrafts ? undefined : isNotNull(organization.slotHeldAt),
 			),
 		)
 		.orderBy(asc(organization.createdAt))

@@ -7,6 +7,8 @@ import type { OrganizationAccess } from "@db/organizationAccess";
 import {
 	type AccountDeletionPreviewDto,
 	EMPTY_ORGANIZATION_PROFILE,
+	featuresFor,
+	hasPermission,
 	ORGANIZATION_RETENTION_DAYS,
 	type OrganizationDto,
 	type OrganizationIndustry,
@@ -29,6 +31,7 @@ import {
 	findSoleOwnedOrganizations,
 	findUnfinishedOnboardingOrganization,
 	findUnpaidOwnedOrganization,
+	hasFreeSlot,
 	holdSlot,
 	isSlugTaken,
 	markOnboardingCompleted,
@@ -50,13 +53,17 @@ export const createOrganization = async (
 		body: { name, slug, userId, industry },
 	});
 	if (!org) throw new Error("Organization creation failed");
+	// a new organization, not a freed slot, so it takes one when it can;
+	// otherwise it stays a draft
+	const hold = await holdSlot(userId, org.id);
+	const state = await getOrganizationState(org.id);
+	const active = hold.result === "held" && state?.status === "active";
 	return {
 		id: org.id,
 		name: org.name,
 		slug: org.slug,
-		// a new organization holds no slot yet
-		status: "inactive",
-		plan: null,
+		status: active ? "active" : "inactive",
+		plan: active ? state.ownerPlan : null,
 		industry: org.industry as OrganizationIndustry,
 	};
 };
@@ -86,6 +93,14 @@ export const isSuspended = (access: OrganizationAccess) =>
 	access.deletionScheduledAt === null &&
 	access.ownerSubscriptionStatus === "paused";
 
+/** Never finished setup and holds no slot; its setup may go on before a slot is free. */
+export const isDraft = (
+	access: OrganizationAccess & { onboardingCompletedAt: Date | null },
+) =>
+	access.slotHeldAt === null &&
+	access.onboardingCompletedAt === null &&
+	access.deletionScheduledAt === null;
+
 export const RETENTION_MS = ORGANIZATION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 const deletesAtOf = (deletionScheduledAt: Date | null) =>
@@ -99,17 +114,24 @@ export const listOrganizations = async (
 	userId: string,
 ): Promise<OrganizationSummary[]> => {
 	const rows = await findMemberOrganizations(userId);
-	return rows.map((row) => ({
-		id: row.id,
-		name: row.name,
-		slug: row.slug,
-		status: organizationStatusOf(row),
-		suspended: isSuspended(row),
-		plan: organizationPlanOf(row),
-		isOwner: parseMemberRoles(row.role).includes("owner"),
-		deletesAt: deletesAtOf(row.deletionScheduledAt),
-		onboardingCompletedAt: row.onboardingCompletedAt?.toISOString() ?? null,
-	}));
+	return rows.map((row) => {
+		const roles = parseMemberRoles(row.role);
+		const plan = organizationPlanOf(row);
+		return {
+			id: row.id,
+			name: row.name,
+			slug: row.slug,
+			status: organizationStatusOf(row),
+			suspended: isSuspended(row),
+			draft: isDraft(row),
+			// billing is the owner's; admins see the tier name only, staff nothing
+			plan: hasPermission(roles, "settings:manage") ? plan : null,
+			features: featuresFor(plan),
+			isOwner: roles.includes("owner"),
+			deletesAt: deletesAtOf(row.deletionScheduledAt),
+			onboardingCompletedAt: row.onboardingCompletedAt?.toISOString() ?? null,
+		};
+	});
 };
 
 export type OrganizationState = {
@@ -157,16 +179,23 @@ export const activateOrganization = async (
 /** Owner only; frees the slot for another organization. Never automatically refilled. */
 export const deactivateOrganization = releaseSlot;
 
-type WriteResult<T> =
+type WriteResult<T, E = never> =
 	| { ok: true; data: T }
-	| { ok: false; error: "not-found" | "inactive" };
+	| { ok: false; error: "not-found" | "inactive" | E };
 
 /**
- * `null` when writable, otherwise the reason to refuse. Onboarding writes are
- * for paid organizations only; the funnel activates before the wizard starts.
+ * The wizard writes to active organizations and to drafts, so setup can
+ * start before a slot is free (D5). `null` for an unknown organization.
  */
-const denyInactive = (membership: Membership) =>
-	membership.status === "active" ? null : ("inactive" as const);
+const findWizardTarget = async ({ organizationId, status }: Membership) => {
+	const row = await findOrganizationAccess(organizationId);
+	if (!row) return null;
+	return {
+		writable: status === "active" || isDraft(row),
+		draft: isDraft(row),
+		ownerUserId: row.ownerUserId,
+	};
+};
 
 const toProfileDto = (
 	row: Awaited<ReturnType<typeof findProfile>> | undefined,
@@ -200,20 +229,30 @@ export const saveOrganizationProfile = async (
 	membership: Membership,
 	input: OrganizationProfileInput,
 ): Promise<WriteResult<OrganizationProfileDto>> => {
-	const denied = denyInactive(membership);
-	if (denied) return { ok: false, error: denied };
+	const target = await findWizardTarget(membership);
+	if (!target) return { ok: false, error: "not-found" };
+	if (!target.writable) return { ok: false, error: "inactive" };
 
 	const row = await upsertProfile(membership.organizationId, input);
 	return { ok: true, data: toProfileDto(row) };
 };
 
+/**
+ * Finishing a draft's wizard takes one of its owner's free slots (Default 10);
+ * without a plan or at the cap it stays a draft.
+ */
 export const completeOrganizationOnboarding = async (
 	membership: Membership,
-): Promise<WriteResult<{ completedAt: string }>> => {
-	const denied = denyInactive(membership);
-	if (denied) return { ok: false, error: denied };
+): Promise<WriteResult<{ completedAt: string }, SlotResult>> => {
+	const target = await findWizardTarget(membership);
+	if (!target?.ownerUserId) return { ok: false, error: "not-found" };
+	if (!target.writable) return { ok: false, error: "inactive" };
 
 	const { organizationId } = membership;
+	if (target.draft) {
+		const hold = await holdSlot(target.ownerUserId, organizationId);
+		if (hold.result !== "held") return { ok: false, error: hold.result };
+	}
 	const completedAt =
 		(await markOnboardingCompleted(organizationId)) ??
 		(await findOnboardingCompletedAt(organizationId));
@@ -235,10 +274,12 @@ export const getAccountDeletionPreview = async (
 	};
 };
 
-/** Post-login prompts: the oldest owned org that still has to pay, then one that has to finish onboarding. */
+/** Post-login prompts: the oldest owned draft while there is no plan to pay for it. */
 export const getUnpaidOwnedOrganizationId = findUnpaidOwnedOrganization;
-export const getUnfinishedOnboardingOrganizationId =
-	findUnfinishedOnboardingOrganization;
+
+/** Then the oldest owned org whose wizard is unfinished: active, or a draft when a slot is free for it. */
+export const getUnfinishedOnboardingOrganizationId = async (userId: string) =>
+	findUnfinishedOnboardingOrganization(userId, await hasFreeSlot(userId));
 
 /** Takes every owned organization out of service for the retention period. */
 export const scheduleOwnedOrganizationsForDeletion = async (userId: string) => {

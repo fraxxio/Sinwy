@@ -15,29 +15,22 @@ const org = (
 	slug: "acme",
 	status: "inactive",
 	suspended: false,
+	draft: false,
 	plan: null,
+	features: [],
 	isOwner: true,
 	deletesAt: null,
 	onboardingCompletedAt: null,
 	...overrides,
 });
 
-const completed = { onboardingCompletedAt: "2026-01-01T00:00:00.000Z" };
-
 it.each([
-	["a never-paid org into the funnel", org(), {}],
-	["a lapsed org to renew", org(completed), { intent: "renew" }],
-	["a suspended org to resume", org({ suspended: true }), { intent: "renew" }],
-	[
-		"a suspended org that finished setup to resume",
-		org({ suspended: true, ...completed }),
-		{ intent: "renew" },
-	],
-] as const)("leads the owner of %s on the plan page", (_, organization, search) => {
+	["a draft", org({ draft: true })],
+	["an inactive org", org()],
+	["a suspended org", org({ suspended: true })],
+] as const)("leads the owner of %s to Account → Organizations", (_, organization) => {
 	expect(reactivationLink(organization)).toMatchObject({
-		to: "/organizations/$id/plan",
-		params: { id: "org-1" },
-		search,
+		to: "/account/organizations",
 	});
 });
 
@@ -48,13 +41,14 @@ it("leads nobody else anywhere, and nobody once it is scheduled for deletion", (
 	).toBeNull();
 });
 
-it("tells a suspended org from one without a plan, scheduled deletion first", () => {
+it("tells suspended, draft and inactive orgs apart, scheduled deletion first", () => {
 	expect(closedOrganizationReason(org({ suspended: true }))).toBe(
 		"This organization is suspended",
 	);
-	expect(closedOrganizationReason(org())).toBe(
-		"This organization has no active plan",
+	expect(closedOrganizationReason(org({ draft: true }))).toBe(
+		"This organization is still a draft",
 	);
+	expect(closedOrganizationReason(org())).toBe("This organization is inactive");
 	expect(
 		closedOrganizationReason(
 			org({ suspended: true, deletesAt: "2026-11-24T12:00:00.000Z" }),
@@ -68,5 +62,6 @@ it("tells a suspended org from one without a plan, scheduled deletion first", ()
 			org({ suspended: true, deletesAt: "2026-11-24T12:00:00.000Z" }),
 		),
 	).toBe("Scheduled for deletion");
+	expect(closedOrganizationBadge(org({ draft: true }))).toBe("Draft");
 	expect(closedOrganizationBadge(org())).toBe("Inactive");
 });

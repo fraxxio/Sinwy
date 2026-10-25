@@ -5,18 +5,17 @@ import {
 	type SubscriptionBillingDto,
 } from "@sinwy/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
 	billingKeys,
 	changePlan,
 	fetchSubscription,
-} from "#/modules/org-dashboard/lib/billing-queries";
+} from "#/modules/account-dashboard/lib/billing-queries";
 import {
 	describePlanChange,
 	PRORATION_COPY,
-} from "#/modules/org-dashboard/lib/plan-change";
-import { formatPrice } from "#/modules/org-dashboard/lib/subscription-status";
+} from "#/modules/account-dashboard/lib/plan-change";
+import { formatPrice } from "#/modules/account-dashboard/lib/subscription-status";
 import { Badge } from "#/shared/components/ui/badge";
 import { Button } from "#/shared/components/ui/button";
 import {
@@ -30,7 +29,6 @@ import {
 } from "#/shared/components/ui/dialog";
 import { FieldError } from "#/shared/components/ui/field";
 import { toast } from "#/shared/components/ui/toast";
-import { handleOrganizationInactive } from "#/shared/lib/auth/organization-inactive";
 import { invalidateOrganizations } from "#/shared/lib/organizations";
 import { FEATURE_NAMES, getPlanName, PLAN_PRICES } from "#/shared/lib/plans";
 import { pollUntil } from "#/shared/lib/poll-until";
@@ -40,13 +38,11 @@ const featureNames = (features: readonly Feature[]) =>
 	features.map((feature) => FEATURE_NAMES[feature]).join(", ");
 
 export function ChangePlanDialog({
-	organizationId,
 	current,
 	billing,
 	open,
 	onOpenChange,
 }: {
-	organizationId: string;
 	current: PlanSlug;
 	/** From Polar; null when billing details are unavailable. */
 	billing: Pick<SubscriptionBillingDto, "interval" | "intervalCount"> | null;
@@ -54,9 +50,8 @@ export function ChangePlanDialog({
 	onOpenChange: (open: boolean) => void;
 }) {
 	const queryClient = useQueryClient();
-	const router = useRouter();
 	const [target, setTarget] = useState<PlanSlug | null>(null);
-	const subscriptionKey = billingKeys.subscription(organizationId);
+	const subscriptionKey = billingKeys.subscription;
 	const mounted = useRef(true);
 	useEffect(() => {
 		mounted.current = true;
@@ -67,16 +62,13 @@ export function ChangePlanDialog({
 
 	const change = useMutation({
 		mutationFn: async (plan: PlanSlug) => {
-			const res = await changePlan(organizationId, { plan });
-			if (!res.isSuccess) {
-				handleOrganizationInactive(res, router, queryClient);
-				throw new Error(res.message);
-			}
+			const res = await changePlan({ plan });
+			if (!res.isSuccess) throw new Error(res.message);
 			if (res.data.plan === plan) return res.data;
 			// the response lags when a newer webhook already owns the projection
 			return (
 				(await pollUntil(
-					() => fetchSubscription(organizationId),
+					fetchSubscription,
 					(subscription) => subscription.plan === plan,
 					{ attempts: 10, isCancelled: () => !mounted.current },
 				)) ?? res.data
@@ -87,7 +79,6 @@ export function ChangePlanDialog({
 				queryClient.setQueryData(subscriptionKey, subscription);
 			else void queryClient.invalidateQueries({ queryKey: subscriptionKey });
 			void invalidateOrganizations(queryClient);
-			void router.invalidate();
 		},
 		// a refused change usually means Polar's state moved (canceled, revoked);
 		// not awaited, so the error shows without waiting for the refetch
@@ -214,8 +205,8 @@ export function ChangePlanDialog({
 						<p>{PRORATION_COPY[selected.direction]}</p>
 						{selected.lost.length > 0 && (
 							<p>
-								Your team loses access to {featureNames(selected.lost)} right
-								away.
+								Your organizations lose access to {featureNames(selected.lost)}{" "}
+								right away.
 							</p>
 						)}
 					</div>

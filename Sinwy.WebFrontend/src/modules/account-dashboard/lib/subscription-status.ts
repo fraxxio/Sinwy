@@ -1,5 +1,5 @@
 import type {
-	OrganizationSubscriptionDto,
+	AccountSubscriptionDto,
 	SubscriptionBillingDto,
 } from "@sinwy/shared";
 import { formatDay } from "#/shared/lib/date";
@@ -8,13 +8,13 @@ import { formatMinorUnits } from "#/shared/lib/money";
 export type SubscriptionDescription = {
 	label: string;
 	variant: "default" | "secondary" | "destructive" | "outline";
-	/** null only when the organization is active but Polar's details are unavailable. */
+	/** null only when the plan grants access but Polar's details are unavailable. */
 	detail: string | null;
 };
 
 /** Badge and sentence for the billing page, kept together so they never disagree. */
 export function describeSubscription(
-	subscription: OrganizationSubscriptionDto,
+	subscription: Pick<AccountSubscriptionDto, "plan" | "suspended" | "billing">,
 	locale?: string,
 ): SubscriptionDescription {
 	const { billing } = subscription;
@@ -23,14 +23,14 @@ export function describeSubscription(
 			label: "Suspended",
 			variant: "secondary",
 			detail:
-				"Offline until you resume it. Resuming charges for a new period right away.",
+				"Your organizations are offline until you resume it. Resuming charges for a new period right away.",
 		};
 
-	if (subscription.status !== "active")
+	if (subscription.plan === null)
 		return {
 			label: "Inactive",
 			variant: "destructive",
-			detail: "This organization has no active plan.",
+			detail: "You have no active plan.",
 		};
 
 	if (!billing) return { label: "Active", variant: "default", detail: null };

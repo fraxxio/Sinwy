@@ -23,7 +23,7 @@ it("prompts outside the funnel", () => {
 });
 
 it.each([
-	"/organizations/$id/plan",
+	"/account/_shell/billing",
 	"/organizations/$id/onboarding",
 	"/organizations/new",
 	"/checkout/success",
@@ -48,13 +48,10 @@ it("matches whole segments, not bare string prefixes", () => {
 	).not.toBeNull();
 });
 
-it("sends select-plan back to the plan page", () => {
+it("sends select-plan to Account → Billing, where the plan is bought", () => {
 	expect(
 		resumePrompt({ step: "select-plan", organizationId: "abc123" }),
-	).toMatchObject({
-		to: "/organizations/$id/plan",
-		params: { id: "abc123" },
-	});
+	).toMatchObject({ to: "/account/billing" });
 });
 
 it("sends business-profile back to organization onboarding", () => {

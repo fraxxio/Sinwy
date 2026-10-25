@@ -18,7 +18,7 @@ import {
 	reactivationLink,
 } from "#/shared/lib/organizations";
 
-/** Owner → plan page, everyone else → their account with a notice. */
+/** Owner → Account → Organizations, everyone else → their account with a notice. */
 const leaveClosedOrganization = (
 	organization: OrganizationSummary | undefined,
 	preload: boolean,
@@ -64,11 +64,17 @@ export const Route = createFileRoute("/$organizationSlug/_shell")({
 		}
 		if (error || !data) throw redirect({ to: "/" });
 		const member = await requireMember(context.queryClient, data.id);
+		// a list cached before joining it doesn't have it yet
+		const entitled =
+			summary ??
+			(await context.queryClient
+				.fetchQuery({ ...organizationsQuery, staleTime: 0 })
+				.then(findSummary, () => undefined));
 		return {
 			...ctx,
 			organization: data,
 			member,
-			entitlements: toEntitlements(data),
+			entitlements: toEntitlements(entitled),
 		};
 	},
 	staticData: { appShell: true },

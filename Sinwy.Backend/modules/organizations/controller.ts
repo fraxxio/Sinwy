@@ -13,6 +13,7 @@ import {
 	deactivateOrganization,
 	getOrganizationOnboarding,
 	listOrganizations,
+	type SlotResult,
 	saveOrganizationProfile,
 } from "./service";
 
@@ -26,6 +27,25 @@ const respondWriteError = (error: "not-found" | "inactive") => {
 			);
 		case "not-found":
 			return fail("Not found", 404);
+	}
+};
+
+const respondSlotError = (error: SlotResult) => {
+	switch (error) {
+		case "not-found":
+			return fail("Not found", 404);
+		case "no-plan":
+			return fail(
+				"You need an active plan to activate an organization",
+				409,
+				API_ERROR_CODES.PLAN_REQUIRED,
+			);
+		case "limit-reached":
+			return fail(
+				"Your plan has no free organization slot; deactivate one or upgrade",
+				409,
+				API_ERROR_CODES.ORGANIZATION_LIMIT_REACHED,
+			);
 	}
 };
 
@@ -71,33 +91,20 @@ export const saveOrganizationProfileHandler: Handler = async (c) => {
 
 export const completeOrganizationOnboardingHandler: Handler = async (c) => {
 	const result = await completeOrganizationOnboarding(membershipFrom(c));
-	if (!result.ok) return respondWriteError(result.error);
+	if (result.ok) return ok(result.data);
 
-	return ok(result.data);
+	return result.error === "inactive"
+		? respondWriteError(result.error)
+		: respondSlotError(result.error);
 };
 
 export const activateOrganizationHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
 	const { organizationId } = c.req.params as { organizationId: string };
 	const result = await activateOrganization(user.id, organizationId);
-	if (result.ok) return ok(null, 200, "Organization activated");
-
-	switch (result.error) {
-		case "not-found":
-			return fail("Not found", 404);
-		case "no-plan":
-			return fail(
-				"You need an active plan to activate an organization",
-				409,
-				API_ERROR_CODES.PLAN_REQUIRED,
-			);
-		case "limit-reached":
-			return fail(
-				"Your plan has no free organization slot; deactivate one or upgrade",
-				409,
-				API_ERROR_CODES.ORGANIZATION_LIMIT_REACHED,
-			);
-	}
+	return result.ok
+		? ok(null, 200, "Organization activated")
+		: respondSlotError(result.error);
 };
 
 export const deactivateOrganizationHandler: Handler = async (c) => {

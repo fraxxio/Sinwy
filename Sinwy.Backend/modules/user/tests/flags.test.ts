@@ -224,6 +224,37 @@ test("active org mid-setup alongside a draft → the active one's setup; with a 
 	});
 });
 
+// the draft's wizard takes the free slot (Default 10)
+test("draft whose owner has a plan with a free slot → resume at business-profile", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, {
+		status: "active",
+		onboardingCompletedAt: new Date(),
+	});
+	await givePlan(userId, "professional");
+	const draft = await createOrg(userId, { status: "inactive" });
+	expect(await getFlags(cookie)).toEqual({
+		unfinishedOnboarding: { step: "business-profile", organizationId: draft },
+	});
+});
+
+test("draft whose owner's plan is at the cap → not prompted", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, {
+		status: "active",
+		onboardingCompletedAt: new Date(),
+	});
+	await createOrg(userId, { status: "inactive" });
+	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
+});
+
+test("draft whose owner's plan is paused → not prompted", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, { status: "inactive", subscriptionId: "sub_paused" });
+	await createOrg(userId, { status: "inactive" });
+	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
+});
+
 test("several unpaid organizations → resumes the oldest", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	const oldest = await createOrg(userId, {

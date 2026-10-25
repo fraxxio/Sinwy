@@ -23,15 +23,12 @@ logs are in [org-lifecycle-log.md](org-lifecycle-log.md).
 | 4 | Ownership transfer | 3 | done | `feat(backend, web): transfer organization ownership to a member with a new checkout and prorated refund` |
 | 5 | Booking payments investigation | – | done | `docs: decide on Stripe Connect direct charges for booking payments` |
 | 6 | Account plan and organization slots | 4 | done | `feat(backend): move billing to one plan per user with organization slots` |
-| 7 | Account billing page and onboarding | 6 | todo | |
+| 7 | Account billing page and onboarding | 6 | done | `feat(backend, web): move billing to Account → Billing with organization slots and drafts` |
 | 8 | Plan changes and the organization cap | 7 | todo | |
 | 9 | Account-wide suspend, cancel and lapse | 7 | todo | |
 | 10 | Transfer on the account plan | 8 | todo | |
 | 11 | Code review | 0–10 | todo | |
 | 12 | Organization and billing rules map | 11 and its fixes | todo | |
-
-Phases 6 and 7 land back to back: Phase 6 removes the organization-scoped
-billing endpoints the web app still calls until Phase 7.
 
 ## Decisions
 
@@ -193,19 +190,30 @@ App state (log: Phases 1–4):
   (`db/organizationAccess.ts`) into the query and pass the row to
   `organizationStatusOf` / `isOrganizationPublic`. `Membership.plan` is the
   owner's plan while the org is active.
-- Anything that hands out a slot (onboarding in Phase 7, downgrade picks in
-  Phase 8, transfers in Phase 10) locks plan rows first with `lockPlan`, in
-  user-id order, then org rows, and counts with `countHeldSlots`; that lock
-  is what keeps two activations from passing the cap (log: Phase 6).
+- Anything that hands out a slot (downgrade picks in Phase 8, transfers in
+  Phase 10) locks plan rows first with `lockPlan`, in user-id order, then org
+  rows, and counts with `countHeldSlots`; that lock is what keeps two
+  activations from passing the cap (log: Phase 6). Creation, a draft's
+  wizard completion and Activate all go through `holdSlot` (log: Phase 7).
+- A draft is derived, not stored: no slot, setup unfinished, not scheduled
+  (`isDraft`, the summary's `draft`). An org activated before finishing setup
+  reads as a draft again once deactivated (log: Phase 7).
 - Transfers complete at once on accept (`completeTransfer`); the `accepted`
   status and the transfer's checkout and subscription columns are unused
   until Phase 10.
-- Until Phase 7 the web app's plan page, org billing settings and
-  `/checkout/success` call removed org endpoints. `GET /api/account/subscription`
-  reconciles a user without a plan from Polar, so a paid checkout projects
-  when it is called (log: Phase 6).
+- `GET /api/account/subscription` reconciles a user without a plan from
+  Polar, so a paid checkout projects when it is called; `/checkout/success`
+  polls it, then activates the owner's oldest draft. The checkout body is
+  strictly `{ slug, redirect }`, so nothing ties a checkout to an org
+  (log: Phases 6, 7).
+- Better Auth's org row has no status or plan. Status, tier name (owner and
+  admin only, D15), features and `draft` come from `GET /api/organizations`;
+  the org shell builds its entitlements from that summary (log: Phase 7).
 - The onboarding page reads the org with `getFullOrganization` and never
-  calls `setActive`.
+  calls `setActive`; it serves active orgs and the owner's drafts.
+- Web billing lives in `modules/account-dashboard/` (`components/billing/`,
+  `lib/billing-queries.ts`, `routes/_shell.billing.tsx`); invalidate
+  `subscriptionQuery` after anything that changes slots or the plan.
 - Web helpers for the org list and closed-org rules live in
   `shared/lib/organizations.ts`. `AppShell`'s `banner` slot is free for
   notices.
@@ -221,78 +229,13 @@ Open, not caused by this plan:
 - `invite-member` accepts `role: "member"`, which isn't an app role.
 - A set-active refusal thrown in `hooks.before` is logged by Better Auth at
   ERROR level, though it's a user-caused 403. So are the checkout refusals.
+- `/organizations/new` shows the Plan and Pay steps to a user who already
+  has a plan; the transfer section's copy is from the per-org model (Phase
+  10); Account → Organizations labels admins "Member" (log: Phase 7).
 - drizzle-kit `generate` needs a TTY when one table drops and adds columns
   (rename prompt); generate the drops and the adds as two migrations.
 
 ---
-
-## Phase 7: Account billing page and onboarding
-
-**Goal:** the owner manages their plan, slots and invoices from the account,
-and a new organization activates without its own checkout when a slot is
-free.
-
-**Files:** `Sinwy.WebFrontend/src/modules/account-dashboard/routes/`
-(new `_shell.billing.tsx`, `_shell.organizations.tsx`),
-`src/modules/account-dashboard/lib/account-queries.ts`,
-`src/modules/org-dashboard/components/billing/` (move what's reused to the
-account module, delete the rest), `src/modules/org-dashboard/routes/_shell.settings.billing.tsx`
-(delete), `src/modules/org-dashboard/lib/{billing-queries,plan-change,subscription-status}.ts`
-(point at `/api/account/subscription…`, typed `AccountSubscriptionDto`),
-`src/modules/organizations/routes/{$id.plan,$id.onboarding}.tsx`
-(checkout with `{ slug }` only), `src/modules/organizations/lib/{preselected-plan,funnel}.ts`,
-`src/modules/checkout/routes/success.tsx` (poll `GET /api/account/subscription`),
-`src/modules/auth/lib/post-login.ts`, `src/shared/lib/{organizations,plans}.ts`,
-`src/shared/components/shell/OrganizationSwitcher.tsx`.
-Backend: `modules/organizations/{service,repository}.ts` (onboarding
-completion takes a free slot through `holdSlot`; `findUnpaidOwnedOrganization`
-and `findUnfinishedOnboardingOrganization` for the funnel; `listOrganizations`
-tier for admins), `modules/user/service.ts` (post-login flags),
-`Sinwy.Shared/types/{organization/FunnelStep.ts,organization/OrganizationSummary.ts,plan/Subscription.ts}`
-(drop `OrganizationSubscriptionDto`). The account billing endpoints already
-exist (Phase 6). Tests: `src/shared/tests/{organizations,plans}.test.ts`,
-`src/modules/auth/tests/post-login.test.ts`,
-`Sinwy.Backend/modules/user/tests/flags.test.ts`,
-`modules/organizations/tests/{organizations,slots}.test.ts`.
-
-Backend:
-- `GET /api/account/subscription` and `GET /api/account/invoices` (+
-  download) shipped in Phase 6; add only what the page still needs.
-- The organization payload gives admins the tier name only (D15); staff get
-  none.
-- Funnel: create → select plan (only without an entitled plan) → pay. With an
-  entitled plan, finishing onboarding takes a free slot (Default 10); at the
-  cap the org stays a draft.
-
-Frontend:
-- Account → Billing: current plan with "{n} of {cap} organizations active",
-  plan cards and checkout when there is no plan, invoices, and the portal
-  link for the payment method.
-- Account → Organizations: each owned org shows active, inactive or draft,
-  with Activate / Deactivate. At the cap, Activate is disabled with an
-  upgrade link.
-- Onboarding: at the cap, a notice that the org stays a draft until a slot is
-  free, linking to Account → Billing.
-- Org settings: the tier name for admins; no billing pages. The switcher and
-  post-login send the owner of an inactive org to Account → Organizations.
-- `/checkout/success` waits for the user's plan instead of an org.
-
-Tests that matter:
-- The funnel step for each combination of plan, free slot and onboarding
-  state.
-- Switcher and post-login targets for drafts, inactive orgs and scheduled
-  orgs.
-
-Done when:
-- Sign up → create org → pay → active; create a second org on Starter →
-  stays a draft; deactivate the first, activate the second. An admin sees the
-  tier name and nothing else. Checked in the running app.
-
-**Verify:** `user` scenario, real sandbox checkout from onboarding, then the
-flow above in the browser. Add a staff member through `org-with-staff` and
-check their settings show no billing and no tier. Old URLs
-(`/<org>/settings/billing`, `/organizations/<id>/plan`) answer 404 or
-redirect to Account → Billing.
 
 ## Phase 8: Plan changes and the organization cap
 
@@ -300,13 +243,18 @@ redirect to Account → Billing.
 which organizations stay active when the new cap is lower.
 
 **Files:** `Sinwy.Backend/modules/billing/{service,projection,controller,routes}.ts`
-(`changeOrganizationPlan` becomes an account plan change),
-`modules/organizations/{service,repository}.ts`, `db/schema/userSchema.ts`
-(pending downgrade), `Sinwy.Backend/lib/jobs.ts` and `index.ts` if a job
-applies the downgrade, a new email under `modules/billing/`,
-the Account → Billing change-plan dialog. Tests:
-`modules/billing/tests/billing.test.ts`, `src/modules/org-dashboard/tests/plan-change.test.ts`
-(move with the dialog).
+(`changeAccountPlan` and `POST /api/account/subscription/plan` already act
+on the user's plan; add the downgrade picks and the pending state),
+`modules/organizations/{service,repository}.ts` (`holdSlot`, `releaseSlot`,
+`countHeldSlots`), `db/organizationAccess.ts` (`lockPlan`, `slotLimit`),
+`db/schema/userSchema.ts` (pending downgrade), `Sinwy.Backend/lib/jobs.ts`
+and `index.ts` if a job applies the downgrade, a new email under
+`modules/billing/`, `Sinwy.Shared/types/plan/Subscription.ts`
+(`AccountSubscriptionDto`, `changePlanBody`). Web:
+`src/modules/account-dashboard/components/billing/{ChangePlanDialog,CurrentPlanSection}.tsx`,
+`lib/{billing-queries,plan-change}.ts`, `routes/{_shell.billing,_shell.organizations}.tsx`.
+Tests: `modules/billing/tests/billing.test.ts`,
+`src/modules/account-dashboard/tests/plan-change.test.ts`.
 
 Backend:
 - Upgrade: `subscriptions.update` with the new product, prorated (Default 7).
@@ -354,8 +302,9 @@ sees which organizations go offline before confirming.
 **Files:** `Sinwy.Backend/modules/billing/{service,controller,routes}.ts`
 (`suspendOrganization`, `unsuspendOrganization`, `resumeOrganization` become
 account actions), `modules/organizations/service.ts` (`isSuspended` derives
-from the owner's plan), the Account → Billing page and the moved
-`SuspendSection.tsx`, `src/shared/lib/plans.ts` (`describeSubscription`).
+from the owner's plan), `src/modules/account-dashboard/routes/_shell.billing.tsx`,
+`components/billing/{SuspendSection,ResumePanel}.tsx` and
+`lib/subscription-status.ts` (`describeSubscription`, `suspensionBlocker`).
 Tests: `modules/billing/tests/billing.test.ts`.
 
 Backend:

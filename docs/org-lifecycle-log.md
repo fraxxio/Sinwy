@@ -947,3 +947,127 @@ and `subscription.revoked` and check both orgs go inactive.
   real webhook deliveries, the trial path, Professional and Enterprise caps
   (covered by tests), and the web billing pages (Phase 7). The race test
   fails with `lockPlan`'s lock removed, so it tests the lock.
+
+## Phase 7: Account billing page and onboarding
+
+**Goal:** the owner manages their plan, slots and invoices from the account,
+and a new organization activates without its own checkout when a slot is
+free.
+
+**Files:** `Sinwy.WebFrontend/src/modules/account-dashboard/routes/`
+(new `_shell.billing.tsx`, `_shell.organizations.tsx`),
+`src/modules/account-dashboard/lib/account-queries.ts`,
+`src/modules/org-dashboard/components/billing/` (move what's reused to the
+account module, delete the rest), `src/modules/org-dashboard/routes/_shell.settings.billing.tsx`
+(delete), `src/modules/org-dashboard/lib/{billing-queries,plan-change,subscription-status}.ts`
+(point at `/api/account/subscription…`, typed `AccountSubscriptionDto`),
+`src/modules/organizations/routes/{$id.plan,$id.onboarding}.tsx`
+(checkout with `{ slug }` only), `src/modules/organizations/lib/{preselected-plan,funnel}.ts`,
+`src/modules/checkout/routes/success.tsx` (poll `GET /api/account/subscription`),
+`src/modules/auth/lib/post-login.ts`, `src/shared/lib/{organizations,plans}.ts`,
+`src/shared/components/shell/OrganizationSwitcher.tsx`.
+Backend: `modules/organizations/{service,repository}.ts` (onboarding
+completion takes a free slot through `holdSlot`; `findUnpaidOwnedOrganization`
+and `findUnfinishedOnboardingOrganization` for the funnel; `listOrganizations`
+tier for admins), `modules/user/service.ts` (post-login flags),
+`Sinwy.Shared/types/{organization/FunnelStep.ts,organization/OrganizationSummary.ts,plan/Subscription.ts}`
+(drop `OrganizationSubscriptionDto`). The account billing endpoints already
+exist (Phase 6). Tests: `src/shared/tests/{organizations,plans}.test.ts`,
+`src/modules/auth/tests/post-login.test.ts`,
+`Sinwy.Backend/modules/user/tests/flags.test.ts`,
+`modules/organizations/tests/{organizations,slots}.test.ts`.
+
+Backend:
+- `GET /api/account/subscription` and `GET /api/account/invoices` (+
+  download) shipped in Phase 6; add only what the page still needs.
+- The organization payload gives admins the tier name only (D15); staff get
+  none.
+- Funnel: create → select plan (only without an entitled plan) → pay. With an
+  entitled plan, finishing onboarding takes a free slot (Default 10); at the
+  cap the org stays a draft.
+
+Frontend:
+- Account → Billing: current plan with "{n} of {cap} organizations active",
+  plan cards and checkout when there is no plan, invoices, and the portal
+  link for the payment method.
+- Account → Organizations: each owned org shows active, inactive or draft,
+  with Activate / Deactivate. At the cap, Activate is disabled with an
+  upgrade link.
+- Onboarding: at the cap, a notice that the org stays a draft until a slot is
+  free, linking to Account → Billing.
+- Org settings: the tier name for admins; no billing pages. The switcher and
+  post-login send the owner of an inactive org to Account → Organizations.
+- `/checkout/success` waits for the user's plan instead of an org.
+
+Tests that matter:
+- The funnel step for each combination of plan, free slot and onboarding
+  state.
+- Switcher and post-login targets for drafts, inactive orgs and scheduled
+  orgs.
+
+Done when:
+- Sign up → create org → pay → active; create a second org on Starter →
+  stays a draft; deactivate the first, activate the second. An admin sees the
+  tier name and nothing else. Checked in the running app.
+
+**Verify:** `user` scenario, real sandbox checkout from onboarding, then the
+flow above in the browser. Add a staff member through `org-with-staff` and
+check their settings show no billing and no tier. Old URLs
+(`/<org>/settings/billing`, `/organizations/<id>/plan`) answer 404 or
+redirect to Account → Billing.
+
+### Log (2026-10-25, `feat(backend, web): move billing to Account → Billing with organization slots and drafts`)
+- Shipped: Account → Billing (`/account/billing`: plan cards and checkout
+  without a plan, resume while suspended, else plan with "{n} of {cap}
+  organizations active", change plan, invoices, portal, suspend) and
+  Account → Organizations (tier / Draft / Inactive badges, Activate,
+  Deactivate with confirm, disabled Activate plus Upgrade at the cap). The
+  org billing components and libs moved to `modules/account-dashboard/` on
+  the account endpoints; `OrganizationSubscriptionDto` is gone. Creating an
+  org takes a free slot (Default 10), else it is a draft; the wizard opens
+  for the owner's drafts, saves their profile, and completing it takes a
+  free slot (`PLAN_REQUIRED` / `ORGANIZATION_LIMIT_REACHED` otherwise).
+  `/checkout/success` polls the account plan, then activates the oldest
+  owned draft and opens its onboarding. `GET /api/organizations` adds
+  `draft` and `features`; `plan` only for owner and admin (D15). Post-login
+  flags: select-plan for a draft without a plan; business-profile for an
+  unfinished active org, or a draft when a slot is free. Switcher,
+  post-login and the org shell send the owner of a closed org to Account →
+  Organizations. Org settings show the tier name to owner and admin; the org
+  Billing page and nav item are gone, `/organizations/<id>/plan` redirects
+  to `/account/billing`.
+- Differs from plan:
+  - The plan step moved to Account → Billing (Verify asked for the old URL
+    to redirect there); `$id.plan.tsx` is only a redirect.
+  - "Finishing onboarding takes a free slot" is done in three places:
+    creation, the success page after payment, and a draft's wizard
+    completion. The checkout body is strict `{ slug, redirect }`, so the
+    success page picks the oldest owned draft instead of a checkout's org.
+  - Phase 6 had left the org shell's entitlements reading `status`/`plan`
+    from Better Auth's org row, which no longer has them; they now come from
+    the org summary, with `features` for every member so staff keep feature
+    gates without seeing the tier.
+  - Draft is derived (no slot, setup unfinished): an org activated before
+    finishing setup reads "Draft" again after Deactivate. Kept; storing
+    "ever activated" would need a column.
+- Checked in the running app (subagent run, real sandbox): `user` scenario →
+  new org → Account → Billing plan cards → real Starter checkout (€9/mo,
+  subscription `fb855687-b03c-43f5-b714-800fb113d778`, left in place) →
+  `/checkout/success` → onboarding with the org active (projected by the
+  GET reconcile, no webhook). A second org stayed a draft with the at-cap
+  notice, Save profile kept it a draft; Deactivate the first and Activate
+  the second moved the slots (psql) and the switcher followed. Billing page
+  showed the real price, renewal date and invoice. `org-with-staff` with one
+  member promoted to admin via psql: admin settings show only the tier
+  name; staff have no settings and `plan: null`. `/<slug>/settings/billing`
+  → 404, `/organizations/<id>/plan` → `/account/billing`; post-login for a
+  draft owner → Account → Organizations. No backend warnings. Not checked:
+  real webhook delivery, plan change, invoice download, suspend/resume and
+  the portal from the new page (Phases 8 and 9).
+- Open from the run: `/organizations/new` still shows the Create / Plan /
+  Pay stepper and "Next, you'll pick a plan" to a user who has a plan; the
+  transfer section's copy ("They pay for its plan from then on") is from
+  the per-org model (Phase 10); Account → Organizations labels an admin
+  "Member"; `dev:seed-scenario` prints the draft creation response
+  (`plan: null`) for `subscribed-org`; `console-errors.sh` doesn't hide the
+  client-side `append` rejection.

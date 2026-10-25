@@ -1,5 +1,5 @@
 import type { Feature } from "@sinwy/shared";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { LockIcon } from "lucide-react";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { Button } from "#/shared/components/ui/button";
@@ -8,7 +8,6 @@ import { FEATURE_NAMES, getPlanName, minimumPlanFor } from "#/shared/lib/plans";
 
 export function UpgradePrompt({ feature }: { feature: Feature }) {
 	const { can } = usePermissions();
-	const { organizationSlug } = useParams({ strict: false });
 	const plan = minimumPlanFor(feature);
 
 	const description = plan
@@ -22,17 +21,12 @@ export function UpgradePrompt({ feature }: { feature: Feature }) {
 			description={description}
 			action={
 				plan &&
-				(can("billing:manage") && organizationSlug ? (
+				// the plan is the owner's own, changed from their account
+				(can("billing:manage") ? (
 					<Button
 						size="sm"
 						nativeButton={false}
-						render={
-							<Link
-								to="/$organizationSlug/settings/billing"
-								params={{ organizationSlug }}
-								search={{ change: "plan" }}
-							/>
-						}
+						render={<Link to="/account/billing" search={{ change: "plan" }} />}
 					>
 						Upgrade plan
 					</Button>

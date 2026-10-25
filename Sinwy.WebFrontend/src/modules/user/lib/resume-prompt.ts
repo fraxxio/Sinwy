@@ -1,5 +1,4 @@
 import {
-	FUNNEL_STEP_ORDER,
 	OnboardingStep,
 	type PostLoginFlags,
 	type UnfinishedOnboarding,
@@ -9,12 +8,13 @@ import { FUNNEL_STEPS } from "#/modules/organizations/lib/funnel";
 /**
  * Route ids the prompt stays quiet on, matched by whole segments: an entry
  * covers that route and everything under it, so `/auth` takes the whole module.
- * The funnel steps carry their own routes; the rest surround them.
  */
 const FUNNEL_ROUTES = [
 	"/auth",
+	"/organizations/new",
 	"/organizations/$id/onboarding",
-	...FUNNEL_STEP_ORDER.map((step) => FUNNEL_STEPS[step].to),
+	"/account/_shell/billing",
+	"/checkout/success",
 ];
 
 function isFunnelRoute(routeId: string) {
@@ -42,7 +42,7 @@ export function resumePrompt(unfinished: UnfinishedOnboarding) {
 				description: "Pick a plan to activate it.",
 				action: "Choose a plan",
 				to: FUNNEL_STEPS[unfinished.step].to,
-				params: { id: unfinished.organizationId },
+				params: {},
 			} as const;
 		case OnboardingStep.Profile:
 			return {

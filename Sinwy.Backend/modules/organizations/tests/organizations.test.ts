@@ -16,6 +16,7 @@ import {
 	API_ERROR_CODES,
 	type ApiResponse,
 	type OrganizationSummary,
+	PLAN_FEATURES,
 } from "@sinwy/shared";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
@@ -119,6 +120,30 @@ test("valid request → 201 with exactly { id, name, slug, status, plan, industr
 	expect(org.status).toBe("inactive");
 	expect(org.plan).toBeNull();
 	expect(org.industry).toBe("beauty");
+});
+
+test("a new org takes a free slot on the owner's plan; at the cap it stays a draft", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await givePlan(userId, "starter");
+
+	const first = await createOrg("First", cookie);
+	expect({ status: first.status, plan: first.plan }).toEqual({
+		status: "active",
+		plan: "starter",
+	});
+
+	const second = await createOrg("Second", cookie);
+	expect({ status: second.status, plan: second.plan }).toEqual({
+		status: "inactive",
+		plan: null,
+	});
+	const list = await unwrap<OrganizationSummary[]>(
+		await get("/api/organizations", cookie),
+	);
+	expect(list.map(({ id, draft }) => ({ id, draft }))).toEqual([
+		{ id: first.id, draft: false },
+		{ id: second.id, draft: true },
+	]);
 });
 
 test("industry is persisted", async () => {
@@ -511,26 +536,75 @@ test("POST onboarding/complete: admin → 200", async () => {
 	).toBe(200);
 });
 
-// pay → then onboard: the wizard never runs for an unpaid organization, so the
-// API refuses too instead of leaving that ordering to the frontend guard
-test("PUT profile & complete on an unpaid organization → 409", async () => {
+const complete = (id: string, cookie: string) =>
+	post(`/api/organizations/${id}/onboarding/complete`, {}, cookie);
+
+const codeOf = async (res: Response) =>
+	((await res.json()) as ApiResponse).code;
+
+const isActive = async (id: string, cookie: string) => {
+	const list = await unwrap<OrganizationSummary[]>(
+		await get("/api/organizations", cookie),
+	);
+	return list.find((org) => org.id === id)?.status === "active";
+};
+
+// setup can start before there is a slot for it (D5)
+test("draft without a plan: the profile saves, completing → 409 PLAN_REQUIRED and it stays a draft", async () => {
 	const { cookie } = await createUserWithSession();
 	const { id } = await createOrg("Acme", cookie);
 
-	const saved = await saveProfile(id, cookie);
-	expect(saved.status).toBe(409);
-	expect(((await saved.json()) as ApiResponse).code).toBe(
-		API_ERROR_CODES.ORGANIZATION_INACTIVE,
-	);
-	expect(
-		(await post(`/api/organizations/${id}/onboarding/complete`, {}, cookie))
-			.status,
-	).toBe(409);
+	expect((await saveProfile(id, cookie)).status).toBe(200);
+	const res = await complete(id, cookie);
+	expect(res.status).toBe(409);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.PLAN_REQUIRED);
 
 	const onboarding = await unwrap<{ completedAt: string | null }>(
 		await get(`/api/organizations/${id}/onboarding`, cookie),
 	);
 	expect(onboarding.completedAt).toBeNull();
+	expect(await isActive(id, cookie)).toBe(false);
+});
+
+test("draft whose owner has a free slot: completing takes it", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const { id } = await createOrg("Acme", cookie);
+	await givePlan(userId, "starter");
+
+	const done = await unwrap<{ completedAt: string }>(
+		await complete(id, cookie),
+	);
+	expect(done.completedAt).toBeString();
+	expect(await isActive(id, cookie)).toBe(true);
+});
+
+test("draft at the cap: completing → 409 ORGANIZATION_LIMIT_REACHED and nothing is marked done", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await givePlan(userId, "starter");
+	await createOrg("Active", cookie);
+	const { id } = await createOrg("Draft", cookie);
+
+	const res = await complete(id, cookie);
+	expect(res.status).toBe(409);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.ORGANIZATION_LIMIT_REACHED);
+	const onboarding = await unwrap<{ completedAt: string | null }>(
+		await get(`/api/organizations/${id}/onboarding`, cookie),
+	);
+	expect(onboarding.completedAt).toBeNull();
+});
+
+test("inactive after finishing setup: profile and complete → 409 ORGANIZATION_INACTIVE", async () => {
+	const { cookie } = await createUserWithSession();
+	const { id } = await createOrg("Acme", cookie);
+	await db
+		.update(organization)
+		.set({ onboardingCompletedAt: new Date() })
+		.where(eq(organization.id, id));
+
+	const saved = await saveProfile(id, cookie);
+	expect(saved.status).toBe(409);
+	expect(await codeOf(saved)).toBe(API_ERROR_CODES.ORGANIZATION_INACTIVE);
+	expect((await complete(id, cookie)).status).toBe(409);
 });
 
 test("GET /api/organizations: only the caller's organizations, with their role and state", async () => {
@@ -570,7 +644,9 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 			slug: owned,
 			status: "inactive",
 			suspended: false,
+			draft: false,
 			plan: null,
+			features: [],
 			isOwner: true,
 			deletesAt: new Date(
 				scheduledAt.getTime() + 30 * 24 * 60 * 60 * 1000,
@@ -583,12 +659,39 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 			slug: joined,
 			status: "active",
 			suspended: false,
+			draft: false,
 			plan: "professional",
+			features: PLAN_FEATURES.professional,
 			isOwner: false,
 			deletesAt: null,
 			onboardingCompletedAt: null,
 		},
 	]);
+});
+
+// D15: billing is the owner's; staff still get the tier's features
+test("GET /api/organizations: admins see the tier name, staff only its features", async () => {
+	const admin = await createUserWithSession();
+	const staff = await createUserWithSession();
+	const orgId = await insertOrganization("Acme");
+	await activateOrganization(orgId, "professional");
+	await joinAsAdmin(orgId, admin.userId);
+	await joinAsStaff(orgId, staff.userId);
+	const viewOf = async (cookie: string) => {
+		const [org] = await unwrap<OrganizationSummary[]>(
+			await get("/api/organizations", cookie),
+		);
+		return { plan: org?.plan, features: org?.features };
+	};
+
+	expect(await viewOf(admin.cookie)).toEqual({
+		plan: "professional",
+		features: PLAN_FEATURES.professional,
+	});
+	expect(await viewOf(staff.cookie)).toEqual({
+		plan: null,
+		features: PLAN_FEATURES.professional,
+	});
 });
 
 test("GET /api/organizations: an org holding a slot while its owner's plan is paused is suspended", async () => {

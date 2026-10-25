@@ -1,14 +1,14 @@
 import { API_ERROR_CODES, type SubscriptionBillingDto } from "@sinwy/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import {
+	billingKeys,
 	fetchSubscription,
+	invalidateSubscription,
 	openPolarPortal,
 	runSubscriptionAction,
-} from "#/modules/org-dashboard/lib/billing-queries";
-import { formatPrice } from "#/modules/org-dashboard/lib/subscription-status";
-import { activeOrganizationDestination } from "#/modules/organizations/lib/funnel";
+} from "#/modules/account-dashboard/lib/billing-queries";
+import { formatPrice } from "#/modules/account-dashboard/lib/subscription-status";
 import { Button } from "#/shared/components/ui/button";
 import {
 	Card,
@@ -31,26 +31,18 @@ class ResumeError extends Error {
 	}
 }
 
-// the organization's state moved on, so the page's own loader knows better
+// the plan's state moved on, so a fresh read knows better
 const STALE_CODES: readonly number[] = [
 	API_ERROR_CODES.ORGANIZATION_NOT_SUSPENDED,
 	API_ERROR_CODES.ORGANIZATION_INACTIVE,
 ];
 
 export function ResumePanel({
-	organization,
 	billing,
 }: {
-	organization: {
-		id: string;
-		slug: string;
-		onboardingCompletedAt?: Date | null;
-	};
 	/** null when Polar could not be reached. */
 	billing: SubscriptionBillingDto | null;
 }) {
-	const navigate = useNavigate();
-	const router = useRouter();
 	const queryClient = useQueryClient();
 	const mounted = useRef(true);
 	useEffect(() => {
@@ -62,20 +54,21 @@ export function ResumePanel({
 
 	const resume = useMutation({
 		mutationFn: async () => {
-			const res = await runSubscriptionAction(organization.id, "resume");
+			const res = await runSubscriptionAction("resume");
 			if (!res.isSuccess) throw new ResumeError(res.message, res.code);
 			const resumed =
-				res.data.status === "active"
+				res.data.plan !== null
 					? res.data
 					: await pollUntil(
-							() => fetchSubscription(organization.id),
-							(subscription) => subscription.status === "active",
+							fetchSubscription,
+							(subscription) => subscription.plan !== null,
 							{ isCancelled: () => !mounted.current },
 						);
 			return { resumed, message: res.message };
 		},
 		onSuccess: async ({ resumed, message }) => {
 			if (!resumed) return;
+			queryClient.setQueryData(billingKeys.subscription, resumed);
 			await invalidateOrganizations(queryClient);
 			toast.add(
 				resumed.billing?.subscriptionStatus === "past_due"
@@ -88,11 +81,10 @@ export function ResumePanel({
 						}
 					: { type: "success", title: "Welcome back", timeout: 4_000 },
 			);
-			void navigate(activeOrganizationDestination(organization));
 		},
 		onError: (error) => {
 			if (error instanceof ResumeError && STALE_CODES.includes(error.code))
-				void router.invalidate();
+				void invalidateSubscription(queryClient);
 		},
 	});
 
@@ -105,15 +97,16 @@ export function ResumePanel({
 	const price = billing && formatPrice(billing);
 
 	return (
-		<Card className="mx-auto max-w-md">
+		<Card>
 			<CardHeader>
 				<CardTitle>Resume your plan</CardTitle>
 				{price && <p className="font-medium text-2xl">{price}</p>}
 			</CardHeader>
 			<CardContent className="space-y-2 text-muted-foreground text-sm">
 				<p>
-					Resuming starts a new billing period today. Polar charges your saved
-					payment method right away; there's no new checkout.
+					Your plan is suspended, so every organization you own is offline.
+					Resuming starts a new billing period today and brings them back. Polar
+					charges your saved payment method right away; there's no new checkout.
 				</p>
 				{!billing && (
 					<p>
@@ -127,7 +120,9 @@ export function ResumePanel({
 					size="lg"
 					disabled={busy && !timedOut}
 					onClick={() =>
-						timedOut ? void router.invalidate() : resume.mutate()
+						timedOut
+							? void invalidateSubscription(queryClient)
+							: resume.mutate()
 					}
 				>
 					{timedOut

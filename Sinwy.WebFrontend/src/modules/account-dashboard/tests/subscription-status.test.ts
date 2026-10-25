@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type {
-	OrganizationSubscriptionDto,
+	AccountSubscriptionDto,
+	PlanSlug,
 	SubscriptionBillingDto,
 } from "@sinwy/shared";
 import {
@@ -24,45 +25,45 @@ const billing: SubscriptionBillingDto = {
 
 const subscription = (
 	overrides: Partial<SubscriptionBillingDto> = {},
-	status: OrganizationSubscriptionDto["status"] = "active",
-): OrganizationSubscriptionDto => ({
-	status,
+	plan: PlanSlug | null = "professional",
+): AccountSubscriptionDto => ({
+	plan,
 	suspended: false,
-	plan: "professional",
-	features: [],
+	organizationLimit: plan ? 2 : 0,
+	activeOrganizations: 1,
 	billing: { ...billing, ...overrides },
 });
 
-const describeIn = (dto: OrganizationSubscriptionDto) =>
+const describeIn = (dto: AccountSubscriptionDto) =>
 	describeSubscription(dto, "en-US");
 
 describe("describeSubscription", () => {
-	it("marks an inactive organization regardless of Polar's status", () => {
-		expect(describeIn(subscription({}, "inactive"))).toMatchObject({
+	it("marks a user without a plan inactive regardless of Polar's status", () => {
+		expect(describeIn(subscription({}, null))).toMatchObject({
 			label: "Inactive",
 			variant: "destructive",
 		});
 	});
 
-	it("reports a suspended organization as suspended, not lapsed", () => {
+	it("reports a suspended plan as suspended, not lapsed", () => {
 		expect(
 			describeIn({
-				...subscription({ subscriptionStatus: "paused" }, "inactive"),
+				...subscription({ subscriptionStatus: "paused" }, null),
 				suspended: true,
 			}),
 		).toMatchObject({ label: "Suspended", variant: "secondary" });
 	});
 
-	it("reports a paused subscription as suspended, even before the org is", () => {
+	it("reports a paused subscription as suspended, even before the plan is", () => {
 		expect(
 			describeIn(subscription({ subscriptionStatus: "paused" })),
 		).toMatchObject({ label: "Suspended" });
 	});
 
-	it("reports a suspended organization whose billing is unavailable as suspended", () => {
+	it("reports a suspended plan whose billing is unavailable as suspended", () => {
 		expect(
 			describeIn({
-				...subscription({}, "inactive"),
+				...subscription({}, null),
 				suspended: true,
 				billing: null,
 			}).label,

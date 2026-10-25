@@ -25,8 +25,4 @@ export const ORG_SECTIONS = {
 		to: "/$organizationSlug/settings",
 		permission: "settings:manage",
 	},
-	billing: {
-		to: "/$organizationSlug/settings/billing",
-		permission: "billing:manage",
-	},
 } as const satisfies Record<string, OrgSection>;

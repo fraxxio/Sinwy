@@ -24,8 +24,6 @@ export const authClient = createAuthClient({
 			schema: {
 				organization: {
 					additionalFields: {
-						status: { type: "string", input: false, required: true },
-						plan: { type: "string", input: false, required: false },
 						industry: { type: "string", required: true },
 						onboardingCompletedAt: {
 							type: "date",
@@ -37,6 +35,7 @@ export const authClient = createAuthClient({
 							input: false,
 							required: false,
 						},
+						slotHeldAt: { type: "date", input: false, required: false },
 					},
 				},
 			},
