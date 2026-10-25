@@ -1,0 +1,1 @@
+export { transferOwnershipBySupport } from "./service";

@@ -24,7 +24,7 @@ export const isEntitled = (subscription: Subscription) =>
 	ENTITLED_STATUSES.includes(subscription.status);
 
 /** Grants access now, or could charge later: a paused one resumes with a charge. */
-const isBillable = (subscription: Subscription) =>
+export const isBillable = (subscription: Subscription) =>
 	isEntitled(subscription) || subscription.status === "paused";
 
 const writeFor = (

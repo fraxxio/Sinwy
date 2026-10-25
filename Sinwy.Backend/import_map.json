@@ -9,6 +9,7 @@
 		"@organizationsModule": "./modules/organizations",
 		"@userModule": "./modules/user",
 		"@filesModule": "./modules/files",
+		"@transfersModule": "./modules/transfers",
 		"@backend/*": "./*"
 	}
 }
