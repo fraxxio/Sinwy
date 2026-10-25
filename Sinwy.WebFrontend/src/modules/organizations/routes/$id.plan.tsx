@@ -1,6 +1,6 @@
 import {
 	FunnelStep,
-	type OrganizationStatus,
+	type OrganizationSubscriptionDto,
 	type PlanSlug,
 } from "@sinwy/shared";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
@@ -8,6 +8,7 @@ import { useCallback, useState } from "react";
 import { z } from "zod";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
 import { PlanCards } from "#/modules/organizations/components/PlanCards";
+import { ResumePanel } from "#/modules/organizations/components/ResumePanel";
 import { activeOrganizationDestination } from "#/modules/organizations/lib/funnel";
 import {
 	clearPreselectedPlan,
@@ -54,14 +55,16 @@ export const Route = createFileRoute("/organizations/$id/plan")({
 		});
 		// an already-active org must not buy a second subscription, so an
 		// unreadable status blocks checkout rather than falling through
-		const res = await api<{ status: OrganizationStatus }>(
-			`/organizations/${params.id}/status`,
+		const res = await api<OrganizationSubscriptionDto>(
+			`/organizations/${params.id}/subscription`,
 		);
 		if (res.isSuccess && res.data.status === "active")
 			throw redirect(activeOrganizationDestination(organization));
 		return {
 			...ctx,
+			organization,
 			organizationName: organization.name,
+			subscription: res.isSuccess ? res.data : null,
 			statusError: res.isSuccess ? null : res.message,
 		};
 	},
@@ -72,13 +75,16 @@ export const Route = createFileRoute("/organizations/$id/plan")({
 
 function PageShell({
 	organizationName,
+	suspended = false,
 	children,
 }: {
 	organizationName?: string;
+	suspended?: boolean;
 	children: React.ReactNode;
 }) {
 	const renew =
-		Route.useSearch({ select: (search) => search.intent }) === "renew";
+		Route.useSearch({ select: (search) => search.intent }) === "renew" ||
+		suspended;
 
 	return (
 		<main className="page-wrap relative isolate py-14">
@@ -99,14 +105,16 @@ function PageShell({
 						<>
 							{organizationName ? (
 								<h1 className="font-heading text-4xl font-bold tracking-tight sm:text-5xl">
-									Pick a plan to reactivate{" "}
+									{suspended ? "Resume" : "Pick a plan to reactivate"}{" "}
 									<span className="text-primary">{organizationName}</span>
 								</h1>
 							) : (
 								<Skeleton className="mx-auto h-10 max-w-lg rounded-md sm:h-12" />
 							)}
 							<p className="text-muted-foreground">
-								Your data is kept. Changes resume as soon as payment completes.
+								{suspended
+									? "It's suspended. Your data is kept, and it's back online as soon as the payment goes through."
+									: "Your data is kept. Changes resume as soon as payment completes."}
 							</p>
 						</>
 					) : (
@@ -204,7 +212,8 @@ function PlanPagePending() {
 
 function PlanPage() {
 	const { id } = Route.useParams();
-	const { organizationName, statusError } = Route.useRouteContext();
+	const { organization, organizationName, subscription, statusError } =
+		Route.useRouteContext();
 	const router = useRouter();
 	const [serverError, setServerError] = useState<string | null>(null);
 	const [pendingSlug, setPendingSlug] = useState<string | null>(null);
@@ -247,6 +256,17 @@ function PlanPage() {
 		clearPreselectedPlan();
 		setPreselectedPlan(null);
 	};
+
+	// its paused subscription is still bound: it resumes, a checkout is refused
+	if (subscription?.suspended)
+		return (
+			<PageShell organizationName={organizationName} suspended>
+				<ResumePanel
+					organization={organization}
+					billing={subscription.billing}
+				/>
+			</PageShell>
+		);
 
 	return (
 		<PageShell organizationName={organizationName}>

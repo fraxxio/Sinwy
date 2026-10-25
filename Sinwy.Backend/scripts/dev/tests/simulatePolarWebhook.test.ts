@@ -8,6 +8,7 @@ import { webhooks } from "@polar-sh/sdk/2026-10";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import {
+	buildPolarDeliveries,
 	buildPolarDelivery,
 	type PolarDeliveryOptions,
 	type PolarEventType,
@@ -107,6 +108,35 @@ test("subscription.paused alone → 200, ignored: the subscription.updated Polar
 		status: 200,
 	});
 	expect(await storedStatus()).toBe("active");
+});
+
+test("subscription.paused as Polar sends it, after a subscription.updated → org suspended, still bound", async () => {
+	const subscriptionId = crypto.randomUUID();
+	await send("subscription.active", {
+		subscriptionId,
+		timestamp: new Date(Date.now() - 60_000),
+	});
+
+	const deliveries = buildPolarDeliveries({
+		type: "subscription.paused",
+		organizationId: orgId,
+		subscriptionId,
+	});
+	expect(deliveries.map((delivery) => delivery.type)).toEqual([
+		"subscription.updated",
+		"subscription.paused",
+	]);
+	for (const delivery of deliveries)
+		expect((await sendPolarDelivery(base, delivery)).status).toBe(200);
+
+	const [row] = await db
+		.select({
+			status: organization.status,
+			subscriptionId: organization.subscriptionId,
+		})
+		.from(organization)
+		.where(eq(organization.id, orgId));
+	expect(row).toEqual({ status: "inactive", subscriptionId });
 });
 
 test("tampered body → 403, status unchanged", async () => {

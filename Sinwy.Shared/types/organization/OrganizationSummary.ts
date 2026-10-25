@@ -7,6 +7,7 @@ export type OrganizationSummary = {
 	name: string;
 	slug: string;
 	status: OrganizationStatus;
+	suspended: boolean;
 	plan: PlanSlug | null;
 	isOwner: boolean;
 	scheduledForDeletion: boolean;

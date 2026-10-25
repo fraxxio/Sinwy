@@ -3,6 +3,7 @@ import { z } from "zod";
 import { CurrentPlanSection } from "#/modules/org-dashboard/components/billing/CurrentPlanSection";
 import { InvoicesSection } from "#/modules/org-dashboard/components/billing/InvoicesSection";
 import { ManageBillingSection } from "#/modules/org-dashboard/components/billing/ManageBillingSection";
+import { SuspendSection } from "#/modules/org-dashboard/components/billing/SuspendSection";
 import { ORG_SECTIONS } from "#/modules/org-dashboard/lib/sections";
 import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
@@ -45,7 +46,7 @@ function BillingPage() {
 		<>
 			<PageHeader
 				title="Billing"
-				description="Your organization's plan, invoices and payment method."
+				description="Your organization's plan, invoices, payment method and suspension."
 			/>
 			<ContentBox className="divide-y">
 				<CurrentPlanSection
@@ -59,6 +60,10 @@ function BillingPage() {
 					onPageChange={setInvoicePage}
 				/>
 				<ManageBillingSection />
+				<SuspendSection
+					organizationId={organization.id}
+					organizationName={organization.name}
+				/>
 			</ContentBox>
 		</>
 	);

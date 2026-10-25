@@ -30,6 +30,7 @@ import {
 	findUnpaidOwnedOrganization,
 	isSlugTaken,
 	markOnboardingCompleted,
+	pauseSubscription,
 	releaseSubscription,
 	upsertProfile,
 } from "./repository";
@@ -67,6 +68,12 @@ export const isOrganizationPublic = (org: {
 	deletionScheduledAt: Date | null;
 }) => org.status === "active" && org.deletionScheduledAt === null;
 
+/** Inactive with its paused subscription still bound; see `pauseSubscription`. */
+export const isSuspended = (state: {
+	status: string;
+	subscriptionId: string | null;
+}) => state.status !== "active" && state.subscriptionId !== null;
+
 export const listOrganizations = async (
 	userId: string,
 ): Promise<OrganizationSummary[]> => {
@@ -76,6 +83,7 @@ export const listOrganizations = async (
 		name: row.name,
 		slug: row.slug,
 		status: toOrganizationStatus(row.status),
+		suspended: isSuspended(row),
 		plan: toPlanSlug(row.plan),
 		isOwner: parseMemberRoles(row.role).includes("owner"),
 		scheduledForDeletion: row.deletionScheduledAt !== null,
@@ -104,7 +112,7 @@ export const getSubscriptionState = async (
 };
 
 /**
- * Billing projection writes. Both refuse a subscription other than the one
+ * Billing projection writes. Each refuses a subscription other than the one
  * currently backing the organization, state observed no later than the
  * applied one, and an unknown organization, and report which it was.
  */
@@ -114,6 +122,12 @@ export const activateSubscription = (
 	plan: PlanSlug | null,
 	observedAt: Date,
 ) => bindSubscription(organizationId, subscriptionId, plan, observedAt);
+
+export const suspendSubscription = (
+	organizationId: string,
+	subscriptionId: string,
+	observedAt: Date,
+) => pauseSubscription(organizationId, subscriptionId, observedAt);
 
 export const deactivateSubscription = (
 	organizationId: string,

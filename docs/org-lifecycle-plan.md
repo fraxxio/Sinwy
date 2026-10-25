@@ -39,7 +39,7 @@ This plan covers the rest.
 | --- | --- | --- | --- | --- |
 | 0 | Polar SDK and plugin upgrade | – | done | `feat(backend, web): upgrade Polar SDK 1.x, plugin 2.x and better-auth 1.7` |
 | 1 | Inactive orgs are locked out | 0 | done | `feat(backend, web): lock inactive organizations out of the dashboard` |
-| 2 | Suspend with Polar pause | 1 | todo | |
+| 2 | Suspend with Polar pause | 1 | done | `feat(backend, web): suspend and resume organizations with Polar pause` |
 | 3 | Owner deletion and 30-day retention | 2 | todo | |
 | 4 | Ownership transfer | 3 | todo | |
 | 5 | Booking payments investigation | – | todo | |
@@ -622,3 +622,90 @@ Template:
   - E2E tooling: `playwright-cli` kept only one named browser session alive
     at a time here, and `playwright-cli list` hung; reopen a session with
     `open` + `state-load` when it reports "not open".
+
+### Phase 2: Suspend with Polar pause (2026-10-25, `feat(backend, web): suspend and resume organizations with Polar pause`)
+- Shipped:
+  - `POST /api/organizations/:id/subscription/{suspend,unsuspend,resume}`
+    (`billing:manage`). Each reads the bound subscription from Polar first
+    and projects it, so a missed webhook neither decides the refusal nor
+    lingers, then refuses with its own `API_ERROR_CODES` entry:
+    `ORGANIZATION_INACTIVE`, `ORGANIZATION_SUSPENDED`,
+    `ORGANIZATION_NOT_SUSPENDED`, `SUBSCRIPTION_TRIALING`,
+    `SUBSCRIPTION_PAST_DUE`, `SUSPENSION_PENDING`, `SUSPENSION_NOT_PENDING`,
+    `CANCELLATION_PENDING`, `RESUME_PAYMENT_FAILED` (402). When Polar refuses
+    anyway (a concurrent change), its re-read state explains the refusal.
+    The returned subscription is applied at once.
+  - Projection: `paused` → `pauseSubscription` (inactive, no plan,
+    `subscription_id` kept). "Suspended" is derived, not stored:
+    `isSuspended` = inactive and still bound, which only that write leaves
+    (no existing row broke it). `OrganizationSubscriptionDto` and
+    `OrganizationSummary` carry `suspended`; `SubscriptionBillingDto` carries
+    `pauseAtPeriodEnd` and `resumesAt`.
+  - `listBillableSubscriptions` (entitled + paused) backs the revoke helper;
+    reconcile still uses the entitled list, so a paused one never activates.
+  - Checkout guard refuses a suspended org ("resume it instead"). Plan change
+    refuses a suspended org and, after a Polar read, a pending pause.
+  - Post-login and the post-login flags don't treat a suspended org as
+    never-paid.
+  - Web: billing page Suspend section (confirmation dialog: offline on the
+    period end, no refund; while pending "Suspension scheduled" with Undo;
+    disabled with the reason during a trial, failed payment, pending cancel
+    or when billing is unavailable). `describeSubscription` shows
+    "Suspends on {date}" and "Suspended"; Change plan is disabled while a
+    pause is pending. The plan page loads `GET …/subscription` instead of
+    `…/status` and shows a Resume panel for a suspended org; the switcher,
+    Account → Organizations and the shell's redirect say "Suspended".
+  - `dev:simulate-polar-webhook --type subscription.paused` now sends the
+    `subscription.updated` Polar sends first, then the `subscription.paused`.
+  - E2E against the sandbox, fresh `owner-with-org`: real checkout (activated
+    by reconcile) → Suspend → Polar `pause_at_period_end` → Undo → Suspend →
+    period end moved to now + 2 min in Polar (`current_billing_period_end`),
+    which really paused it → period-end webhooks simulated with the real
+    subscription id → org inactive, still bound, out of every session → the
+    open dashboard tab's next navigation and a hard load both land on the
+    Resume page; switcher and Account → Organizations say "Suspended";
+    plugin checkout refused → Resume from Account → Organizations → Polar
+    `active`, new period → onboarding (setup unfinished) → dashboard opens,
+    active org set again.
+- Differs from plan:
+  - Account → Organizations' Resume links to the plan page rather than
+    resuming in place: the charge is explained once, next to its price.
+  - The plan's "failed charge leaves it past_due" can't be relied on
+    synchronously: Polar **charges asynchronously**. Both sandbox resumes
+    (this phase's and Phase 0's FastPaint one) answered `active` with a new
+    period and no order; the paid `subscription_cycle` order came exactly
+    15 minutes later (15:27:27 → 15:42:27). So resume answers 200 `active`
+    and a failed
+    charge arrives later as a `past_due` webhook, handled by the existing
+    dunning rule. The 402 handling (past_due → 200 with a warning, still
+    paused → `RESUME_PAYMENT_FAILED`) stays for the synchronous case, tested
+    against stubs only.
+  - Polar's pause refusals are 409s the SDK doesn't type:
+    `CannotPauseSubscription` (already pending, or cancel pending),
+    `NoScheduledPause` (unsuspend with none), `NotPausedSubscription`
+    (resume when not paused). They are not mapped by name; the re-read
+    explains them. `PauseResumeNotAllowed` exists only on the customer
+    portal endpoint.
+  - Setting `cancel_at_period_end: true` while a pause is pending replaces
+    the pause with a cancellation (checked in the sandbox). Default 3 can't
+    fully hold: Polar's portal always allows cancel at period end. Such an
+    org ends up lapsed, as the default already says. The portal settings
+    expose no pause toggle, so pause is off there.
+- Notes for later phases:
+  - Phase 3: `revokeOrganizationSubscription` already revokes paused
+    subscriptions. A suspended org is inactive but bound; scheduling it for
+    deletion must clear `subscription_id` (as planned), or `isSuspended`
+    would still report it.
+  - Phase 4: Polar's `allow_multiple_subscriptions` is **false** in the
+    sandbox org (`sinwydev`). Default 7 needs it on; ask before changing it.
+    Transfer offers must also refuse a pending pause (planned) and a
+    suspended org (inactive, so the "org active" check covers it).
+  - Suspend and resume need a real Polar subscription; a seeded or simulated
+    one answers 422. The e2e references say so now.
+  - The sandbox webhook endpoint is still disabled, so no real
+    `subscription.paused`/`resumed` delivery was captured; the derived
+    fixture stays. Capture real ones when the endpoint is re-enabled.
+  - Not checked in the browser: the staff view of a suspended org (the
+    disabled-entry path from Phase 1, with the new "suspended" reason), and
+    the past_due/402 resume paths.
+

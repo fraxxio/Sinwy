@@ -31,6 +31,7 @@ import {
 } from "#/shared/components/ui/tooltip";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import {
+	closedOrganizationBadge,
 	closedOrganizationReason,
 	isOrganizationOpen,
 	organizationsQuery,
@@ -147,7 +148,7 @@ function OrganizationItem({
 			{organization.name}
 			{!open && (
 				<Badge variant="outline" className="ml-auto">
-					Inactive
+					{closedOrganizationBadge(organization)}
 				</Badge>
 			)}
 		</>

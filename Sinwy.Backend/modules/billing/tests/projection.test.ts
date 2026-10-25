@@ -95,11 +95,68 @@ test("statuses that grant no access → inactive, one Polar adds later included"
 		"incomplete",
 		"incomplete_expired",
 		"unpaid",
-		"paused",
 	] as Subscription["status"][]) {
 		await project();
 		expect(await project({ status })).toBe("inactive");
 	}
+});
+
+test("paused subscription → inactive without a plan, still bound so it can resume", async () => {
+	await project();
+	expect(await project({ status: "paused" })).toBe("inactive");
+	expect(await getSubscriptionState(orgId)).toEqual({
+		...inactive,
+		subscriptionId: "sub_1",
+	});
+});
+
+test("paused, then active again on the same subscription → reactivated on its plan", async () => {
+	await project();
+	await project({ status: "paused" });
+
+	expect(await project()).toBe("active");
+	expect(await getSubscriptionState(orgId)).toEqual({
+		status: "active",
+		plan: "professional",
+		subscriptionId: "sub_1",
+	});
+});
+
+test("an older active state arriving after the pause is ignored", async () => {
+	const activeAt = later();
+	await project({ status: "paused" });
+
+	expect(await project({ modified_at: activeAt })).toBeNull();
+	expect((await getSubscriptionState(orgId))?.status).toBe("inactive");
+});
+
+test("canceled after paused → binding released", async () => {
+	await project();
+	await project({ status: "paused" });
+
+	expect(await project({ status: "canceled" })).toBe("inactive");
+	expect(await getSubscriptionState(orgId)).toEqual(inactive);
+});
+
+test("a paused subscription the org isn't bound to changes nothing", async () => {
+	await project({ id: "sub_first" });
+
+	expect(await project({ id: "sub_other", status: "paused" })).toBeNull();
+	expect((await getSubscriptionState(orgId))?.status).toBe("active");
+});
+
+test("pausing takes the org out of sessions", async () => {
+	await db.delete(user);
+	const inOrg = await createUserWithSession({ activeOrganizationId: orgId });
+	await project();
+
+	await project({ status: "paused" });
+
+	const [row] = await db
+		.select({ activeOrganizationId: session.activeOrganizationId })
+		.from(session)
+		.where(eq(session.userId, inOrg.userId));
+	expect(row?.activeOrganizationId).toBeNull();
 });
 
 test("revoked subscription → inactive, plan and binding cleared", async () => {
@@ -271,6 +328,17 @@ test("reconcile: a past_due subscription counts, ended ones are skipped", async 
 	expect((await getSubscriptionState(orgId))?.subscriptionId).toBe(
 		subscription().id,
 	);
+});
+
+test("reconcile: a paused subscription never activates the org", async () => {
+	await project({ status: "paused" });
+	listSpy = polarActive([subscription({ status: "paused" })]);
+
+	expect(await reconcileInactiveOrganization(orgId)).toBe(false);
+	expect(await getSubscriptionState(orgId)).toEqual({
+		...inactive,
+		subscriptionId: "sub_1",
+	});
 });
 
 test("reconcile: nothing in Polar or Polar down → stays inactive", async () => {

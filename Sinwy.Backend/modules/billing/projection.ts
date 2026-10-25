@@ -9,6 +9,7 @@ import { createLogger } from "@logger";
 import {
 	activateSubscription,
 	deactivateSubscription,
+	suspendSubscription,
 } from "@organizationsModule";
 import type { OrganizationStatus } from "@sinwy/shared";
 
@@ -18,6 +19,30 @@ const billingLogger = createLogger("billing:projection");
 
 // past_due keeps access: Polar's dunning retries are the grace period
 const ENTITLED_STATUSES: readonly string[] = ["active", "trialing", "past_due"];
+
+export const isEntitled = (subscription: Subscription) =>
+	ENTITLED_STATUSES.includes(subscription.status);
+
+/** Grants access now, or could charge later: a paused one resumes with a charge. */
+const isBillable = (subscription: Subscription) =>
+	isEntitled(subscription) || subscription.status === "paused";
+
+const writeFor = (
+	organizationId: string,
+	subscription: Subscription,
+	observedAt: Date,
+) => {
+	if (isEntitled(subscription))
+		return activateSubscription(
+			organizationId,
+			subscription.id,
+			planOf(subscription),
+			observedAt,
+		);
+	if (subscription.status === "paused")
+		return suspendSubscription(organizationId, subscription.id, observedAt);
+	return deactivateSubscription(organizationId, subscription.id, observedAt);
+};
 
 const planOf = (subscription: Subscription) => {
 	const plan = planFor(subscription.product_id);
@@ -31,7 +56,8 @@ const planOf = (subscription: Subscription) => {
 
 /**
  * Projects a Polar subscription onto its organization (`status`, `plan`,
- * `subscription_id`). State is derived from the subscription object only,
+ * `subscription_id`). A paused subscription stays bound to its inactive
+ * organization; only an ended one releases it. State is derived from the subscription object only,
  * so re-delivery and overlapping events converge on the same result.
  * State is ordered by Polar's own modification time, whichever path
  * (webhook, reconcile, plan change) delivers it; anything not newer than the
@@ -52,15 +78,8 @@ export const projectSubscription = async (
 		return null;
 	}
 
-	const entitled = ENTITLED_STATUSES.includes(subscription.status);
-	const write = entitled
-		? await activateSubscription(
-				organizationId,
-				subscription.id,
-				planOf(subscription),
-				observedAt,
-			)
-		: await deactivateSubscription(organizationId, subscription.id, observedAt);
+	const entitled = isEntitled(subscription);
+	const write = await writeFor(organizationId, subscription, observedAt);
 
 	const context = {
 		organizationId,
@@ -109,25 +128,35 @@ export const applySubscriptionEvent = async (event: { data: Subscription }) => {
 	await projectSubscription(event.data);
 };
 
-/**
- * Subscriptions of the organization that still grant access, across pages.
- * Polar's `active` filter leaves out past_due, hence the filter here.
- */
-export const listEntitledSubscriptions = async (organizationId: string) => {
-	const entitled: Subscription[] = [];
+const listSubscriptions = async (
+	organizationId: string,
+	keep: (subscription: Subscription) => boolean,
+) => {
+	const kept: Subscription[] = [];
 	const subscriptions = polarClient.subscriptions.iterList({
 		metadata: { referenceId: organizationId },
 		limit: 100,
 	});
 	for await (const subscription of subscriptions)
-		if (ENTITLED_STATUSES.includes(subscription.status))
-			entitled.push(subscription);
-	return entitled;
+		if (keep(subscription)) kept.push(subscription);
+	return kept;
 };
 
 /**
+ * Subscriptions of the organization that still grant access, across pages.
+ * Polar's `active` filter leaves out past_due, hence the filter here.
+ */
+export const listEntitledSubscriptions = (organizationId: string) =>
+	listSubscriptions(organizationId, isEntitled);
+
+/** The entitled ones plus paused ones, which charge again when they resume. */
+export const listBillableSubscriptions = (organizationId: string) =>
+	listSubscriptions(organizationId, isBillable);
+
+/**
  * Backstop for a webhook that never landed: an inactive organization asks
- * Polar for an entitled subscription and activates on positive evidence only.
+ * Polar for an entitled subscription and activates on positive evidence only,
+ * so a paused subscription never activates it.
  * Never deactivates, since a failed lookup must not lock out a paying org.
  * Returns whether the organization is now active.
  */

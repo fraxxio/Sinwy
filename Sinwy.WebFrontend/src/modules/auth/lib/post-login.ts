@@ -1,5 +1,5 @@
 import type { OrganizationSummary } from "@sinwy/shared";
-import { isLapsed, isOrganizationOpen } from "#/shared/lib/organizations";
+import { isNeverPaid, isOrganizationOpen } from "#/shared/lib/organizations";
 
 /**
  * Where a signed-in user lands after login: the session's organization if it
@@ -24,13 +24,7 @@ export function postLoginDestination(
 		} as const;
 
 	const unpaid = organizations
-		.filter(
-			(o) =>
-				o.isOwner &&
-				!o.scheduledForDeletion &&
-				o.status !== "active" &&
-				!isLapsed(o),
-		)
+		.filter((o) => o.isOwner && !o.scheduledForDeletion && isNeverPaid(o))
 		.at(-1);
 	if (unpaid)
 		return {

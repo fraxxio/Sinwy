@@ -3,7 +3,11 @@ import type {
 	OrganizationSubscriptionDto,
 	SubscriptionBillingDto,
 } from "@sinwy/shared";
-import { describeSubscription, formatPrice } from "../lib/subscription-status";
+import {
+	describeSubscription,
+	formatPrice,
+	suspensionBlocker,
+} from "../lib/subscription-status";
 
 const billing: SubscriptionBillingDto = {
 	subscriptionStatus: "active",
@@ -14,6 +18,8 @@ const billing: SubscriptionBillingDto = {
 	currentPeriodEnd: "2026-11-21T12:00:00Z",
 	cancelAtPeriodEnd: false,
 	endsAt: null,
+	pauseAtPeriodEnd: false,
+	resumesAt: null,
 };
 
 const subscription = (
@@ -21,6 +27,7 @@ const subscription = (
 	status: OrganizationSubscriptionDto["status"] = "active",
 ): OrganizationSubscriptionDto => ({
 	status,
+	suspended: false,
 	plan: "professional",
 	features: [],
 	billing: { ...billing, ...overrides },
@@ -37,10 +44,37 @@ describe("describeSubscription", () => {
 		});
 	});
 
-	it("reports a paused subscription as inactive, even before the org is", () => {
+	it("reports a suspended organization as suspended, not lapsed", () => {
+		expect(
+			describeIn({
+				...subscription({ subscriptionStatus: "paused" }, "inactive"),
+				suspended: true,
+			}),
+		).toMatchObject({ label: "Suspended", variant: "secondary" });
+	});
+
+	it("reports a paused subscription as suspended, even before the org is", () => {
 		expect(
 			describeIn(subscription({ subscriptionStatus: "paused" })),
-		).toMatchObject({ label: "Inactive", variant: "destructive" });
+		).toMatchObject({ label: "Suspended" });
+	});
+
+	it("reports a suspended organization whose billing is unavailable as suspended", () => {
+		expect(
+			describeIn({
+				...subscription({}, "inactive"),
+				suspended: true,
+				billing: null,
+			}).label,
+		).toBe("Suspended");
+	});
+
+	it("shows when a scheduled suspension takes effect", () => {
+		expect(describeIn(subscription({ pauseAtPeriodEnd: true }))).toEqual({
+			label: "Suspends on Nov 21, 2026",
+			variant: "outline",
+			detail: "You keep access until then. Undo it below to keep it running.",
+		});
 	});
 
 	it("reports a failed payment", () => {
@@ -145,4 +179,23 @@ it("formats the price with its interval", () => {
 	expect(formatPrice({ ...billing, intervalCount: 3 }, "en-US")).toBe(
 		"$48.00 / 3 months",
 	);
+});
+
+describe("suspensionBlocker", () => {
+	it("lets an active subscription be suspended", () => {
+		expect(suspensionBlocker(billing)).toBeNull();
+	});
+
+	it.each([
+		["a trial", { subscriptionStatus: "trialing" }, "during its trial"],
+		["a failed payment", { subscriptionStatus: "past_due" }, "payment failed"],
+		["a pending cancellation", { cancelAtPeriodEnd: true }, "set to cancel"],
+		["an ended subscription", { subscriptionStatus: "canceled" }, "no active"],
+	] as const)("refuses %s", (_, overrides, reason) => {
+		expect(suspensionBlocker({ ...billing, ...overrides })).toContain(reason);
+	});
+
+	it("refuses while billing details are unavailable", () => {
+		expect(suspensionBlocker(null)).toContain("unavailable");
+	});
 });

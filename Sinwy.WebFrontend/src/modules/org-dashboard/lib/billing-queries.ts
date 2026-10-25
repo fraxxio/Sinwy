@@ -40,6 +40,17 @@ export const changePlan = (organizationId: string, body: ChangePlanBody) =>
 		{ method: "POST", body: JSON.stringify(body) },
 	);
 
+export type SubscriptionAction = "suspend" | "unsuspend" | "resume";
+
+export const runSubscriptionAction = (
+	organizationId: string,
+	action: SubscriptionAction,
+) =>
+	api<OrganizationSubscriptionDto>(
+		`/organizations/${organizationId}/subscription/${action}`,
+		{ method: "POST" },
+	);
+
 export const invoicesQuery = (organizationId: string, page: number) =>
 	queryOptions({
 		queryKey: [...billingKeys.invoices(organizationId), page],

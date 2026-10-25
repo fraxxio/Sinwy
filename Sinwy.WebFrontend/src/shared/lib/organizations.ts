@@ -30,6 +30,12 @@ export const isLapsed = (organization: {
 	onboardingCompletedAt?: Date | string | null;
 }) => organization.status !== "active" && hasCompletedSetup(organization);
 
+/** Never paid, so its owner still has the first-time funnel ahead. */
+export const isNeverPaid = (organization: OrganizationSummary) =>
+	organization.status !== "active" &&
+	!organization.suspended &&
+	!isLapsed(organization);
+
 /** The only organizations anyone can open; the backend refuses the rest. */
 export const isOrganizationOpen = (
 	organization: Pick<OrganizationSummary, "status" | "scheduledForDeletion">,
@@ -37,22 +43,29 @@ export const isOrganizationOpen = (
 
 /**
  * Where an organization that can't be opened still leads: its owner to the
- * plan page, to renew or to finish the funnel. Nobody else has anywhere to go,
- * and nobody does once it is scheduled for deletion.
+ * plan page, to resume, renew or finish the funnel. Nobody else has anywhere
+ * to go, and nobody does once it is scheduled for deletion.
  */
 export const reactivationLink = (organization: OrganizationSummary) =>
 	organization.isOwner && !organization.scheduledForDeletion
 		? linkOptions({
 				to: "/organizations/$id/plan",
 				params: { id: organization.id },
-				search: isLapsed(organization) ? { intent: "renew" as const } : {},
+				search: isNeverPaid(organization) ? {} : { intent: "renew" as const },
 			})
 		: null;
 
 /** Why an organization can't be opened, for whoever is turned away from it. */
 export const closedOrganizationReason = (
-	organization: Pick<OrganizationSummary, "scheduledForDeletion">,
+	organization: Pick<OrganizationSummary, "scheduledForDeletion" | "suspended">,
 ) =>
 	organization.scheduledForDeletion
 		? "This organization is scheduled for deletion"
-		: "This organization has no active plan";
+		: organization.suspended
+			? "This organization is suspended"
+			: "This organization has no active plan";
+
+/** Badge for an organization that can't be opened; scheduled deletion has its own. */
+export const closedOrganizationBadge = (
+	organization: Pick<OrganizationSummary, "suspended">,
+) => (organization.suspended ? "Suspended" : "Inactive");

@@ -40,8 +40,8 @@ Enter credentials (email+password | Google)
 ```text
 ├─ has an active organization (last active if still active, else newest) → org dashboard
 ├─ none active, owns one whose setup never finished → Plan selection [5]
-└─ otherwise (lapsed or staff-only orgs, or no organization) → Customer Mode
-    ├─ Account → Organizations lists every org; owner renews from there [8]
+└─ otherwise (lapsed, suspended or staff-only orgs, or no organization) → Customer Mode
+    ├─ Account → Organizations lists every org; owner renews or resumes from there [8]
     └─ "create your business" CTA → Organization Creation flow [5]
 ```
 
@@ -101,6 +101,17 @@ Later steps (page template, plugins) land here as the page builder arrives.
 │       → plan + features updated in place, org stays active
 ├─ canceled at period end (Polar portal) → still active, "Cancels on {date}"
 │   → plan change disabled until renewed in the portal
+├─ owner suspends (Settings → Billing → Suspend, not during a trial or failed payment)
+│   → POST /organizations/:id/subscription/suspend → Polar pauses at period end, no refund
+│   → still active, "Suspends on {date}", plan change disabled, Undo until then
+│       (POST …/subscription/unsuspend)
+│   → period end: subscription paused → org inactive, suspended, still bound to it
+│       → locked out like a lapsed org; a new checkout is refused
+│       ├─ owner → plan page shows Resume (switcher, Account → Organizations "Resume")
+│       │   → POST …/subscription/resume → Polar charges now, new period, no checkout
+│       │   → org active → dashboard; a failed charge → past due (still active, fix payment)
+│       │       or, if Polar keeps it paused, an error with a link to the Polar portal
+│       └─ staff → disabled in the switcher ("suspended"), sent to /account
 └─ subscription revoked / expired / canceled → org status = inactive (lapsed once onboarded)
     → data kept, public pages unpublished, removed from every session
     → nobody opens its dashboard; an open tab is sent out on its next load or write

@@ -85,11 +85,13 @@ const createOrg = async (
 		role = "owner",
 		createdAt = new Date(),
 		onboardingCompletedAt = null,
+		subscriptionId = null,
 	}: {
 		status: "active" | "inactive";
 		role?: string;
 		createdAt?: Date;
 		onboardingCompletedAt?: Date | null;
+		subscriptionId?: string | null;
 	},
 ) => {
 	const id = `org_flags_${++seq}`;
@@ -100,6 +102,7 @@ const createOrg = async (
 		status,
 		createdAt,
 		onboardingCompletedAt,
+		subscriptionId,
 	});
 	await db.insert(member).values({
 		id: `member_${id}`,
@@ -144,6 +147,12 @@ test("owner of a lapsed organization → not prompted to pay", async () => {
 		status: "inactive",
 		onboardingCompletedAt: new Date(),
 	});
+	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
+});
+
+test("owner of an organization suspended before finishing setup → not prompted to pay", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, { status: "inactive", subscriptionId: "sub_paused" });
 	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
 });
 

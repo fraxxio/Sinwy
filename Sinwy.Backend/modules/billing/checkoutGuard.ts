@@ -1,11 +1,13 @@
 import { resolveMembership } from "@authModule";
+import { getSubscriptionState, isSuspended } from "@organizationsModule";
 import { hasPermission } from "@sinwy/shared";
 import { APIError } from "better-auth/api";
 import { getOrganizationStatus } from "./service";
 
 /**
  * Guards POST /checkout: buying a plan is `billing:manage` on the org the
- * checkout references, and an already-active org can't be re-purchased.
+ * checkout references. An already-active org can't be re-purchased, and a
+ * suspended one resumes its paused subscription instead.
  */
 export const ensureCheckoutAllowed = async (
 	userId: string,
@@ -23,5 +25,10 @@ export const ensureCheckoutAllowed = async (
 	if ((await getOrganizationStatus(membership)) === "active")
 		throw new APIError("BAD_REQUEST", {
 			message: "Organization is already active",
+		});
+	const state = await getSubscriptionState(organizationId);
+	if (state && isSuspended(state))
+		throw new APIError("BAD_REQUEST", {
+			message: "Organization is suspended; resume it instead",
 		});
 };

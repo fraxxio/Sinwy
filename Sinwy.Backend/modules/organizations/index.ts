@@ -11,7 +11,9 @@ export {
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
 	isOrganizationPublic,
+	isSuspended,
 	listOrganizations,
 	type SubscriptionState,
 	saveOrganizationProfile,
+	suspendSubscription,
 } from "./service";

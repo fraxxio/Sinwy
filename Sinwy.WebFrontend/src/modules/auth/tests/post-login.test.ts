@@ -12,6 +12,7 @@ const org = (
 	status: "active",
 	plan: "starter",
 	isOwner: true,
+	suspended: false,
 	scheduledForDeletion: false,
 	onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
 	...overrides,
@@ -87,6 +88,12 @@ it.each([
 		"the account for an owner with only lapsed orgs",
 		[lapsed("a")],
 		"a",
+		account,
+	],
+	[
+		"the account for an owner whose only org is suspended before finishing setup",
+		[neverPaid("a", { suspended: true })],
+		null,
 		account,
 	],
 	[

@@ -18,10 +18,15 @@ export function describeSubscription(
 	locale?: string,
 ): SubscriptionDescription {
 	const { billing } = subscription;
-	if (
-		subscription.status !== "active" ||
-		billing?.subscriptionStatus === "paused"
-	)
+	if (subscription.suspended || billing?.subscriptionStatus === "paused")
+		return {
+			label: "Suspended",
+			variant: "secondary",
+			detail:
+				"Offline until you resume it. Resuming charges for a new period right away.",
+		};
+
+	if (subscription.status !== "active")
 		return {
 			label: "Inactive",
 			variant: "destructive",
@@ -68,6 +73,13 @@ export function describeSubscription(
 			detail: "You keep access until then. Resume from the Polar portal.",
 		};
 
+	if (billing.pauseAtPeriodEnd)
+		return {
+			label: `Suspends on ${date(billing.currentPeriodEnd)}`,
+			variant: "outline",
+			detail: "You keep access until then. Undo it below to keep it running.",
+		};
+
 	if (billing.subscriptionStatus === "trialing")
 		return {
 			label: "Trial",
@@ -80,6 +92,29 @@ export function describeSubscription(
 		variant: "default",
 		detail: `Renews on ${date(billing.currentPeriodEnd)}`,
 	};
+}
+
+/**
+ * Why the owner can't schedule a suspension now, or null when they can. A
+ * pending suspension is its own state, undone rather than scheduled.
+ */
+export function suspensionBlocker(
+	billing: SubscriptionBillingDto | null,
+): string | null {
+	if (!billing) return "Billing details are unavailable right now.";
+	if (billing.cancelAtPeriodEnd) return "The subscription is set to cancel.";
+	switch (billing.subscriptionStatus) {
+		case "active":
+			return null;
+		// Polar only pauses an active subscription
+		case "trialing":
+			return "A subscription can't be suspended during its trial.";
+		case "past_due":
+		case "unpaid":
+			return "The last payment failed. Update your payment method on Polar first.";
+		default:
+			return "There's no active subscription to suspend.";
+	}
 }
 
 /** "$48.00 / month", "$120.00 / 3 months" */

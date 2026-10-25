@@ -13,12 +13,94 @@ import {
 	getCheckoutOrganization,
 	getOrganizationStatus,
 	getOrganizationSubscription,
+	resumeOrganization,
+	type SubscriptionActionError,
+	suspendOrganization,
+	unsuspendOrganization,
 } from "./service";
 
 const failPolar = (failure: PolarFailure) =>
 	failure === "rejected"
 		? fail("The billing provider refused this request", 422)
 		: fail("The billing provider is unavailable; try again later", 502);
+
+const failInactive = () =>
+	fail(
+		"This organization has no active subscription; start a checkout instead",
+		409,
+		API_ERROR_CODES.ORGANIZATION_INACTIVE,
+	);
+
+const failSuspended = () =>
+	fail(
+		"This organization is suspended; resume it first",
+		409,
+		API_ERROR_CODES.ORGANIZATION_SUSPENDED,
+	);
+
+const failPausePending = () =>
+	fail(
+		"This organization is set to suspend at the end of the period; undo that first",
+		409,
+		API_ERROR_CODES.SUSPENSION_PENDING,
+	);
+
+const failLocked = () =>
+	fail("The subscription is being updated; try again in a moment", 409);
+
+const failSubscriptionAction = (error: SubscriptionActionError) => {
+	switch (error) {
+		case "not-found":
+			return fail("Not found", 404);
+		case "inactive":
+			return failInactive();
+		case "suspended":
+			return failSuspended();
+		case "not-suspended":
+			return fail(
+				"This organization isn't suspended",
+				409,
+				API_ERROR_CODES.ORGANIZATION_NOT_SUSPENDED,
+			);
+		case "trialing":
+			return fail(
+				"A subscription can't be suspended during its trial",
+				409,
+				API_ERROR_CODES.SUBSCRIPTION_TRIALING,
+			);
+		case "past-due":
+			return fail(
+				"The last payment failed; update your payment method before suspending",
+				409,
+				API_ERROR_CODES.SUBSCRIPTION_PAST_DUE,
+			);
+		case "pause-pending":
+			return failPausePending();
+		case "pause-not-pending":
+			return fail(
+				"This organization isn't set to suspend",
+				409,
+				API_ERROR_CODES.SUSPENSION_NOT_PENDING,
+			);
+		case "cancel-pending":
+			return fail(
+				"The subscription is set to cancel; resume it from the Polar portal first",
+				409,
+				API_ERROR_CODES.CANCELLATION_PENDING,
+			);
+		case "locked":
+			return failLocked();
+		case "payment-failed":
+			return fail(
+				"The payment for the new period failed; update your payment method on Polar and try again",
+				402,
+				API_ERROR_CODES.RESUME_PAYMENT_FAILED,
+			);
+		case "rejected":
+		case "unavailable":
+			return failPolar(error);
+	}
+};
 
 export const getOrganizationStatusHandler: Handler = async (c) => {
 	const status = await getOrganizationStatus(membershipFrom(c));
@@ -54,11 +136,11 @@ export const changePlanHandler: Handler = async (c) => {
 		case "not-found":
 			return fail("Not found", 404);
 		case "inactive":
-			return fail(
-				"This organization has no active subscription; start a checkout instead",
-				409,
-				API_ERROR_CODES.ORGANIZATION_INACTIVE,
-			);
+			return failInactive();
+		case "suspended":
+			return failSuspended();
+		case "pause-pending":
+			return failPausePending();
 		case "same-plan":
 			return fail("The organization is already on this plan", 400);
 		case "canceled":
@@ -67,14 +149,37 @@ export const changePlanHandler: Handler = async (c) => {
 				409,
 			);
 		case "locked":
-			return fail(
-				"The subscription is being updated; try again in a moment",
-				409,
-			);
+			return failLocked();
 		case "rejected":
 		case "unavailable":
 			return failPolar(result.error);
 	}
+};
+
+export const suspendHandler: Handler = async (c) => {
+	const result = await suspendOrganization(membershipFrom(c));
+	return result.ok
+		? ok(result.data, 200, "Suspension scheduled")
+		: failSubscriptionAction(result.error);
+};
+
+export const unsuspendHandler: Handler = async (c) => {
+	const result = await unsuspendOrganization(membershipFrom(c));
+	return result.ok
+		? ok(result.data, 200, "Suspension canceled")
+		: failSubscriptionAction(result.error);
+};
+
+export const resumeHandler: Handler = async (c) => {
+	const result = await resumeOrganization(membershipFrom(c));
+	if (!result.ok) return failSubscriptionAction(result.error);
+	return result.data.billing?.subscriptionStatus === "past_due"
+		? ok(
+				result.data,
+				200,
+				"Resumed, but the payment failed; update your payment method on Polar",
+			)
+		: ok(result.data, 200, "Resumed");
 };
 
 export const listInvoicesHandler: Handler = async (c) => {

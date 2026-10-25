@@ -33,10 +33,16 @@ export type SubscriptionBillingDto = {
 	currentPeriodEnd: string;
 	cancelAtPeriodEnd: boolean;
 	endsAt: string | null;
+	/** Suspends on `currentPeriodEnd`; can still be undone. */
+	pauseAtPeriodEnd: boolean;
+	/** When Polar resumes a paused subscription by itself; null until resumed by hand. */
+	resumesAt: string | null;
 };
 
 export type OrganizationSubscriptionDto = {
 	status: OrganizationStatus;
+	/** Inactive because its owner suspended it: it resumes without a new checkout. */
+	suspended: boolean;
 	plan: PlanSlug | null;
 	features: readonly Feature[];
 	/** null when there is no subscription or Polar could not be reached. */

@@ -5,6 +5,7 @@ import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
 import { getSubscriptionState } from "@organizationsModule";
+import { eq } from "drizzle-orm";
 import { ensureCheckoutAllowed } from "../checkoutGuard";
 
 const orgId = "org_guard_1";
@@ -85,6 +86,17 @@ test("owner of an already-active org → rejected", async () => {
 	await seed("active");
 	await expect(ensureCheckoutAllowed(ownerId, orgId)).rejects.toThrow(
 		"Organization is already active",
+	);
+});
+
+test("owner of a suspended org → rejected, it resumes instead", async () => {
+	await db
+		.update(organization)
+		.set({ subscriptionId: "sub_paused" })
+		.where(eq(organization.id, orgId));
+
+	await expect(ensureCheckoutAllowed(ownerId, orgId)).rejects.toThrow(
+		"Organization is suspended; resume it instead",
 	);
 });
 

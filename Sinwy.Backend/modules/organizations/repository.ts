@@ -106,6 +106,22 @@ export const bindSubscription = (
 		subscriptionId,
 	});
 
+/**
+ * Inactive but still bound: the paused subscription can resume, and while it
+ * is bound no second checkout can take over. The only write that leaves an
+ * organization inactive with a subscription.
+ */
+export const pauseSubscription = (
+	organizationId: string,
+	subscriptionId: string,
+	observedAt: Date,
+) =>
+	writeSubscription(organizationId, subscriptionId, observedAt, {
+		status: "inactive",
+		plan: null,
+		subscriptionId,
+	});
+
 export const releaseSubscription = (
 	organizationId: string,
 	subscriptionId: string,
@@ -197,7 +213,8 @@ export const deleteOrganizations = (ids: string[]) =>
 
 /**
  * Oldest organization the user owns that billing has not activated yet. A
- * lapsed one (onboarding finished) renews from Account → Organizations.
+ * lapsed one (onboarding finished) renews from Account → Organizations, and a
+ * suspended one (still bound) resumes from there.
  * Single index hit on member_userId_idx, then a primary-key join, this runs
  * on every app load, so it must stay a bounded lookup.
  */
@@ -211,6 +228,7 @@ export const findUnpaidOwnedOrganization = async (userId: string) => {
 				eq(member.userId, userId),
 				memberHasRole("owner"),
 				eq(organization.status, "inactive"),
+				isNull(organization.subscriptionId),
 				isNull(organization.onboardingCompletedAt),
 			),
 		)
@@ -228,6 +246,7 @@ export const findMemberOrganizations = (userId: string) =>
 			slug: organization.slug,
 			status: organization.status,
 			plan: organization.plan,
+			subscriptionId: organization.subscriptionId,
 			role: member.role,
 			deletionScheduledAt: organization.deletionScheduledAt,
 			onboardingCompletedAt: organization.onboardingCompletedAt,

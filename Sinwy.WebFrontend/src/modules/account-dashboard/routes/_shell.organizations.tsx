@@ -10,6 +10,7 @@ import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import {
+	closedOrganizationBadge,
 	closedOrganizationReason,
 	isLapsed,
 	isOrganizationOpen,
@@ -101,7 +102,9 @@ function OrganizationRow({
 							{organization.plan ? getPlanName(organization.plan) : "Active"}
 						</Badge>
 					) : (
-						<Badge variant="outline">Inactive</Badge>
+						<Badge variant="outline">
+							{closedOrganizationBadge(organization)}
+						</Badge>
 					)}
 				</div>
 				{!open && (
@@ -109,7 +112,9 @@ function OrganizationRow({
 						{closedOrganizationReason(organization)}
 						{!link &&
 							!organization.scheduledForDeletion &&
-							". Ask the owner to renew it."}
+							(organization.suspended
+								? ". Ask the owner to resume it."
+								: ". Ask the owner to renew it.")}
 					</span>
 				)}
 			</div>
@@ -129,7 +134,11 @@ function OrganizationRow({
 				</Button>
 			) : link ? (
 				<Button size="sm" nativeButton={false} render={<Link {...link} />}>
-					{isLapsed(organization) ? "Renew plan" : "Choose a plan"}
+					{organization.suspended
+						? "Resume"
+						: isLapsed(organization)
+							? "Renew plan"
+							: "Choose a plan"}
 				</Button>
 			) : null}
 		</li>

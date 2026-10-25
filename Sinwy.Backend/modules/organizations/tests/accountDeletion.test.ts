@@ -107,7 +107,7 @@ test("org where the user is only admin is not previewed and survives", async () 
 	expect(await memberCount(orgId)).toBe(2);
 });
 
-test("every entitled subscription, across pages and past_due included, is revoked before the org is deleted", async () => {
+test("every billable subscription, across pages, past_due and paused included, is revoked before the org is deleted", async () => {
 	const { userId } = await createUserWithSession();
 	const orgId = await insertOrganization("Paying Co");
 	await joinOrganization(orgId, userId, "owner");
@@ -117,7 +117,10 @@ test("every entitled subscription, across pages and past_due included, is revoke
 				{ id: "sub_1", status: "active" },
 				{ id: "sub_old", status: "canceled" },
 			],
-			[{ id: "sub_2", status: "past_due" }],
+			[
+				{ id: "sub_2", status: "past_due" },
+				{ id: "sub_paused", status: "paused" },
+			],
 		),
 	);
 
@@ -127,9 +130,10 @@ test("every entitled subscription, across pages and past_due included, is revoke
 		metadata: { referenceId: orgId },
 		limit: 100,
 	});
-	expect(revokeSpy).toHaveBeenCalledTimes(2);
+	expect(revokeSpy).toHaveBeenCalledTimes(3);
 	expect(revokeSpy).toHaveBeenCalledWith("sub_1");
 	expect(revokeSpy).toHaveBeenCalledWith("sub_2");
+	expect(revokeSpy).toHaveBeenCalledWith("sub_paused");
 	expect(await orgExists(orgId)).toBe(false);
 });
 

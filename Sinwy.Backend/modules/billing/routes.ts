@@ -12,6 +12,9 @@ import {
 	getOrganizationStatusHandler,
 	getSubscriptionHandler,
 	listInvoicesHandler,
+	resumeHandler,
+	suspendHandler,
+	unsuspendHandler,
 } from "./controller";
 
 // billing details and presigned invoice URLs must never sit in a cache
@@ -44,6 +47,15 @@ export const registerBillingRoutes = (app: IApp) => {
 		method: "POST",
 		routeMiddlewares: billingManager,
 	});
+	for (const [path, handler] of [
+		["subscription/suspend", suspendHandler],
+		["subscription/unsuspend", unsuspendHandler],
+		["subscription/resume", resumeHandler],
+	] as const)
+		app.route(organizationPath(path), handler, {
+			method: "POST",
+			routeMiddlewares: billingManager,
+		});
 	// invoices carry billing name and address, so billing managers only
 	app.route(organizationPath("invoices"), listInvoicesHandler, {
 		routeMiddlewares: billingManager,

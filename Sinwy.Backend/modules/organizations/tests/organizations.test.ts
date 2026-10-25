@@ -567,6 +567,7 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 			name: "Owned",
 			slug: owned,
 			status: "inactive",
+			suspended: false,
 			plan: null,
 			isOwner: true,
 			scheduledForDeletion: true,
@@ -577,11 +578,35 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 			name: "Joined",
 			slug: joined,
 			status: "active",
+			suspended: false,
 			plan: "professional",
 			isOwner: false,
 			scheduledForDeletion: false,
 			onboardingCompletedAt: null,
 		},
+	]);
+});
+
+test("GET /api/organizations: an inactive org still bound to its paused subscription is suspended", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const suspended = await insertOrganization("Suspended");
+	const lapsed = await insertOrganization("Lapsed");
+	await joinOrganization(suspended, userId, "owner");
+	await joinOrganization(lapsed, userId, "owner");
+	await db
+		.update(organization)
+		.set({ subscriptionId: "sub_paused" })
+		.where(eq(organization.id, suspended));
+
+	const list = await unwrap<OrganizationSummary[]>(
+		await get("/api/organizations", cookie),
+	);
+
+	expect(
+		list.map(({ id, status, suspended }) => ({ id, status, suspended })),
+	).toEqual([
+		{ id: suspended, status: "inactive", suspended: true },
+		{ id: lapsed, status: "inactive", suspended: false },
 	]);
 });
 
