@@ -15,7 +15,7 @@ logs are in [org-lifecycle-log.md](org-lifecycle-log.md).
 | 0 | Polar SDK and plugin upgrade | – | done | `feat(backend, web): upgrade Polar SDK 1.x, plugin 2.x and better-auth 1.7` |
 | 1 | Inactive orgs are locked out | 0 | done | `feat(backend, web): lock inactive organizations out of the dashboard` |
 | 2 | Suspend with Polar pause | 1 | done | `feat(backend, web): suspend and resume organizations with Polar pause` |
-| 3 | Owner deletion and 30-day retention | 2 | todo | |
+| 3 | Owner deletion and 30-day retention | 2 | done | `feat(backend, web): keep organizations 30 days after owner account deletion, then purge` |
 | 4 | Ownership transfer | 3 | todo | |
 | 5 | Booking payments investigation | – | todo | |
 | 6 | Code review | 0–5 | todo | |
@@ -69,8 +69,8 @@ Polar SDK and plugin (log: Phase 0):
   snake_case, ISO date strings (wrap in `new Date()`), no runtime validation.
   Webhook `validateEvent` checks only the signature and event type.
 - Ids are positional: `subscriptions.update(id, body)`, `get(id)`,
-  `revoke(id)`, `customers.deleteExternal(externalId, { anonymize: true })`.
-  Paging: `subscriptions.iterList`; tests stub it with `polarPages(...)`.
+  `revoke(id)`. Paging: `subscriptions.iterList`; tests stub it with
+  `polarPages(...)`.
 - Errors: `PolarClientError` (4xx, parsed body on `.error`; tell union members
   apart by `error.error.error`), `PolarServerError`, `PolarNetworkError`.
   Polar's pause refusals are untyped 409s; re-read the subscription to explain
@@ -80,8 +80,8 @@ Polar SDK and plugin (log: Phase 0):
 - Plugin 2.x bodies are snake_case (`reference_id`); a bad webhook signature
   answers 403. Keep `experimental_organizationSync` off; billing stays on
   `referenceId` metadata.
-- Phase 3: plugin 2.x and `cleanupDeletedUser` both delete the Polar customer
-  on user delete, so one gets a 404. Pick one when adding `anonymize: true`.
+- The plugin deletes the Polar customer on user delete; `polarCore` adds
+  `anonymize=true` to it. Don't add a second delete (log: Phase 3).
 - better-auth 1.7 requires a fresh session for `unlinkAccount`.
 
 Polar sandbox (log: Phase 2):
@@ -96,129 +96,64 @@ Polar sandbox (log: Phase 2):
   simulate them. Re-enabling it (ngrok) needs the user. The
   `subscription.paused` fixture is derived; capture real fixtures once it's on.
 
-App state (log: Phases 1–2):
+App state (log: Phases 1–3):
 - Public pages, booking pages and custom-domain resolution must go through
   `isOrganizationPublic(org)`.
 - One code, `ORGANIZATION_INACTIVE`, covers inactive and scheduled orgs.
-- Only the dashboard is locked: members' backend reads of an inactive org still
-  answer, writes answer 409. Phase 3 makes `requireMember` hide scheduled orgs.
-- "Suspended" is derived (`isSuspended` = inactive and still bound). Scheduling
-  for deletion must clear `subscription_id`, or the org still reads as
-  suspended. `revokeOrganizationSubscription` already revokes paused
-  subscriptions.
-- `clearActiveOrganization` runs after the projection's transaction; Phase 3
-  should clear sessions inside its own. `session.active_organization_id` has
-  no index.
-- `OrganizationSummary.scheduledForDeletion` is a boolean; Phase 3 adds
-  `deletionScheduledAt`. The switcher and Account → Organizations already
-  disable scheduled orgs ("This organization is scheduled for deletion").
+- Members' backend reads of an inactive org still answer, writes answer 409.
+  A scheduled org is hidden from everyone: `resolveMembership` returns null.
+- "Suspended" is derived (`isSuspended` = inactive and still bound).
+  `revokeOrganizationSubscription` revokes paused subscriptions too.
+- Projection writes to a scheduled org return `scheduled-for-deletion` and
+  revoke the subscription. Phase 4's `completeTransfer` rebind must refuse
+  scheduled orgs the same way.
+- Owner account deletion runs `scheduleOrganizationsForDeletion` (one
+  transaction); Phase 4 cancels pending transfers inside it. Invitations the
+  owner sent are cascade-deleted, not canceled.
+- Jobs: add a `Job` to `startJobs` in `Sinwy.Backend/index.ts`; the name is
+  the advisory lock key. Self-heal queries skip rows younger than 1 hour,
+  because better-auth writes the org and its owner member separately.
 - The plan and onboarding pages read the org with `getFullOrganization` and
   never call `setActive`.
 - Web helpers for the org list and closed-org rules live in
   `shared/lib/organizations.ts`. `AppShell`'s `banner` slot is free for
   notices.
 - Phase 4: transfer offers must refuse a pending pause and a suspended org.
+- e2e: file URLs use the `BETTER_AUTH_URL` origin (`localhost:3000` locally);
+  `keyFromFileUrl` silently ignores any other origin.
 
 Open, not caused by this plan:
 - The plan-change dialog shows USD catalog prices while Polar charges EUR.
 - Not checked in the browser yet: the staff view of a suspended org, and the
   past_due/402 resume paths.
+- `invite-member` accepts `role: "member"`, which isn't an app role.
+- A set-active refusal thrown in `hooks.before` is logged by Better Auth at
+  ERROR level, though it's a user-caused 403.
 
 ---
-
-## Phase 3: Owner deletion and 30-day retention
-
-**Goal:** deleting the owner's account stops all billing and makes their orgs
-inactive and scheduled for deletion; a job hard-deletes them 30 days later.
-Data stays intact for a future restore.
-
-**Files:** `Sinwy.Backend/modules/auth/auth.ts` (`beforeDelete`,
-`afterDelete`, invitation hooks), `modules/auth/deletedUserCleanup.ts`,
-`modules/organizations/{service,repository,index}.ts`
-(`deleteSoleOwnedOrganizations`, `bindSubscription`, `isSuspended`),
-`modules/auth/requirePermission.ts` (`requireMember`),
-`modules/billing/{service,projection}.ts`, `Sinwy.Backend/db/schema/`,
-`Sinwy.Shared/types/organization/OrganizationSummary.ts`,
-`Sinwy.WebFrontend/src/modules/account-dashboard/components/settings/DangerZone.tsx`,
-`account-dashboard/routes/_shell.organizations.tsx`,
-`shared/components/shell/OrganizationSwitcher.tsx`,
-`shared/lib/organizations.ts`. Tests:
-`modules/organizations/tests/accountDeletion.test.ts`,
-`modules/auth/tests/deleteUserCallback.test.ts`.
-
-Backend:
-- Replace `deleteSoleOwnedOrganizations` with
-  `scheduleOwnedOrganizationsForDeletion(userId)` in `beforeDelete`:
-  1. revoke every owned org's billable subscriptions (throws on failure,
-     blocking the account deletion, as today);
-  2. in one transaction per user: set `deletion_scheduled_at = now()`, set
-     `status = inactive`, `plan = null`, `subscription_id = null`, set pending
-     invitations to `canceled`, and clear the orgs from sessions.
-  Invitations the owner sent are removed anyway by the `inviter_id` cascade.
-- Keep the `afterDelete` Polar customer deletion; pass `anonymize: true`.
-- `bindSubscription` refuses scheduled orgs with a new result
-  `scheduled-for-deletion`; the projection then revokes that subscription and
-  logs an error. This covers a checkout racing the account deletion.
-- Invitation create and accept hooks refuse scheduled orgs. Checkout is already
-  refused (no owner left means nobody has `billing:manage`), but refuse
-  explicitly too.
-- `requireMember` treats a scheduled org as not found for every member.
-- Purge job `purgeScheduledOrganizations()` in the organizations module:
-  - deletes orgs with `deletion_scheduled_at <= now() - interval '30 days'`, in
-    batches, plus their logo files through the storage client;
-  - schedules any org with no owner and no `deletion_scheduled_at` (account
-    deletion succeeded after `beforeDelete` failed to mark it), with a warn log;
-  - unschedules any scheduled org that still has an owner (`beforeDelete`
-    marked it, then the user delete failed), with a warn log.
-- Runner: there is no job infrastructure, so add a minimal one in
-  `Sinwy.Backend/lib/` that runs registered jobs at startup and on an interval,
-  each under `pg_try_advisory_lock` so two server instances never run the same
-  job together. Register the purge hourly. Add `db:purge-organizations` to run
-  it by hand. Keep the runner small enough to swap for a real scheduler later.
-- `RETENTION_DAYS = 30` lives in one place (shared, since the UI shows it).
-
-Frontend:
-- Account deletion preview and `DangerZone` copy: owned orgs are scheduled for
-  deletion in 30 days, members lose access immediately, public pages go
-  offline, subscriptions are canceled.
-- Members of a scheduled org see it disabled in the switcher and in Account →
-  Organizations, with the deletion date.
-
-Tests that matter:
-- Account deletion schedules every owned org, cancels pending invitations and
-  revokes billable subscriptions; a revoke failure deletes nothing and
-  schedules nothing.
-- Orgs where the deleted user was only a member are untouched.
-- A subscription activating for a scheduled org is refused and revoked.
-- Purge deletes exactly the expired orgs, never lapsed or never-paid ones, and
-  is safe to run twice. Both self-healing branches.
-
-Done when:
-- Owner account deletion → org scheduled, invisible to members' dashboards,
-  purge with a backdated date removes it. Checked in the running app.
-
-**Verify:** start from `org-with-staff` with a pending invitation. As the
-owner: Account → Settings → Danger zone shows the 30-day copy; delete the
-account. DB: the org has `deletion_scheduled_at` set, `status = inactive`,
-`plan` and `subscription_id` null, the invitation `canceled`, and no session
-has it active. As staff: the switcher entry and Account → Organizations row
-are disabled with the deletion date; the dashboard URL lands on `/account`.
-Backdate `deletion_scheduled_at` by 31 days with `sinwy_rw` (state the app
-can't reach in time), run `bun run db:purge-organizations`: the org and its
-logo file are gone; a second run changes nothing. If time allows, repeat
-with an org that has a real sandbox subscription and check Polar shows it
-revoked.
 
 ## Phase 4: Ownership transfer
 
 **Goal:** the owner offers the org to a member; on acceptance the recipient
 pays through their own Polar customer and becomes the owner.
 
-**Files:** written by Phase 3 when it finishes. Known so far:
-`modules/auth/singleOwner.ts` (`refuseOwnerRole`), `modules/auth/auth.ts`
-(member hooks), `modules/billing/{service,projection,checkoutGuard}.ts`,
-`Sinwy.Backend/scripts/`, `Sinwy.Backend/db/schema/`, the Phase 3 job runner
-in `Sinwy.Backend/lib/`.
+**Files:** `Sinwy.Backend/modules/auth/singleOwner.ts` (`refuseOwnerRole`
+and its comment), `modules/auth/auth.ts` (organization hooks: add
+`afterRemoveMember`; `beforeDelete`),
+`modules/organizations/repository.ts` (`writeSubscription`/`changeableBy` for
+the `bound-elsewhere` bypass, `scheduleOrganizationsForDeletion` to cancel
+pending transfers), `modules/organizations/purge.ts` (pattern for an
+expiry job), `modules/billing/{service,projection,checkoutGuard}.ts`
+(`revokeOrganizationSubscription`, `projectSubscription`, plan change and
+suspend guards), `Sinwy.Backend/lib/jobs.ts` and `Sinwy.Backend/index.ts`
+(register the expiry job), `Sinwy.Backend/scripts/` (pattern:
+`backfillSubscriptionBindings.ts`), `scripts/dev/simulatePolarWebhook.ts`
+(carry `transferId`), `Sinwy.Backend/db/schema/organizationSchema.ts`,
+`Sinwy.Shared/types/organization/`,
+`Sinwy.WebFrontend/src/modules/account-dashboard/routes/_shell.organizations.tsx`,
+the org-dashboard settings and checkout success pages. Tests:
+`modules/auth/tests/singleOwner.test.ts`,
+`modules/billing/tests/projection.test.ts`.
 
 4a. Support script (ship first, in its own commit):
 - `Sinwy.Backend/scripts/transferOrganization.ts --org <id> --to <userId>`, dry

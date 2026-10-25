@@ -55,6 +55,29 @@ const planOf = (subscription: Subscription) => {
 };
 
 /**
+ * A checkout that raced its owner's account deletion. Throws when Polar
+ * refuses, so the webhook is retried.
+ */
+const revokeForDeletedOrganization = async (context: {
+	organizationId: string;
+	subscriptionId: string;
+}) => {
+	billingLogger.error(
+		"Subscription for an org scheduled for deletion; revoking it",
+		context,
+	);
+	try {
+		await polarClient.subscriptions.revoke(context.subscriptionId);
+	} catch (error) {
+		billingLogger.error("Revoke failed; revoke it in Polar", {
+			...context,
+			...describePolarError(error),
+		});
+		throw error;
+	}
+};
+
+/**
  * Projects a Polar subscription onto its organization (`status`, `plan`,
  * `subscription_id`). A paused subscription stays bound to its inactive
  * organization; only an ended one releases it. State is derived from the subscription object only,
@@ -101,6 +124,9 @@ export const projectSubscription = async (
 				"Ignored subscription state not newer than the applied one",
 				{ ...context, observedAt: observedAt.toISOString() },
 			);
+			return null;
+		case "scheduled-for-deletion":
+			if (isBillable(subscription)) await revokeForDeletedOrganization(context);
 			return null;
 		case "bound-elsewhere": {
 			const bound = {

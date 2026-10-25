@@ -7,6 +7,7 @@ import { revokeOrganizationSubscription } from "@billingModule";
 import {
 	type AccountDeletionPreviewDto,
 	EMPTY_ORGANIZATION_PROFILE,
+	ORGANIZATION_RETENTION_DAYS,
 	type OrganizationDto,
 	type OrganizationIndustry,
 	type OrganizationOnboardingDto,
@@ -20,7 +21,7 @@ import {
 } from "@sinwy/shared";
 import {
 	bindSubscription,
-	deleteOrganizations,
+	findDeletionScheduledAt,
 	findMemberOrganizations,
 	findOnboardingCompletedAt,
 	findProfile,
@@ -32,6 +33,7 @@ import {
 	markOnboardingCompleted,
 	pauseSubscription,
 	releaseSubscription,
+	scheduleOrganizationsForDeletion,
 	upsertProfile,
 } from "./repository";
 
@@ -74,6 +76,15 @@ export const isSuspended = (state: {
 	subscriptionId: string | null;
 }) => state.status !== "active" && state.subscriptionId !== null;
 
+export const RETENTION_MS = ORGANIZATION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+const deletesAtOf = (deletionScheduledAt: Date | null) =>
+	deletionScheduledAt &&
+	new Date(deletionScheduledAt.getTime() + RETENTION_MS).toISOString();
+
+export const isScheduledForDeletion = async (organizationId: string) =>
+	(await findDeletionScheduledAt(organizationId)) !== null;
+
 export const listOrganizations = async (
 	userId: string,
 ): Promise<OrganizationSummary[]> => {
@@ -86,7 +97,7 @@ export const listOrganizations = async (
 		suspended: isSuspended(row),
 		plan: toPlanSlug(row.plan),
 		isOwner: parseMemberRoles(row.role).includes("owner"),
-		scheduledForDeletion: row.deletionScheduledAt !== null,
+		deletesAt: deletesAtOf(row.deletionScheduledAt),
 		onboardingCompletedAt: row.onboardingCompletedAt?.toISOString() ?? null,
 	}));
 };
@@ -219,12 +230,16 @@ export const getUnfinishedOnboardingOrganizationId =
 	findUnfinishedOnboardingOrganization;
 
 /**
- * Revokes each sole-owned organization's active Polar subscription, then
- * deletes the rows. A revoke failure throws before anything is deleted.
+ * Revokes each owned organization's billable Polar subscriptions, then
+ * schedules them all for deletion. A revoke failure throws before anything
+ * is scheduled.
  */
-export const deleteSoleOwnedOrganizations = async (userId: string) => {
+export const scheduleOwnedOrganizationsForDeletion = async (userId: string) => {
 	const orgs = await findSoleOwnedOrganizations(userId);
 	if (orgs.length === 0) return;
 	for (const org of orgs) await revokeOrganizationSubscription(org.id);
-	await deleteOrganizations(orgs.map((org) => org.id));
+	await scheduleOrganizationsForDeletion(
+		orgs.map((org) => org.id),
+		new Date(),
+	);
 };

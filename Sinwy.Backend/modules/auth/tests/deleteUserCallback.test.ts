@@ -22,7 +22,6 @@ let server: Server<never>;
 let base: URL;
 let listSpy: ReturnType<typeof spyOn>;
 let revokeSpy: ReturnType<typeof spyOn>;
-let deleteCustomerSpy: ReturnType<typeof spyOn>;
 let polarCoreSpy: ReturnType<typeof stubPolarCore>;
 
 /** Active subscription per organization, as Polar answers the revoke lookup. */
@@ -42,15 +41,13 @@ beforeAll(() => {
 	base = server.url;
 	listSpy = spyOn(polarClient.subscriptions, "iterList");
 	revokeSpy = spyOn(polarClient.subscriptions, "revoke");
-	deleteCustomerSpy = spyOn(polarClient.customers, "deleteExternal");
-	// the polar plugin deletes the customer too, through its own client
+	// the polar plugin deletes the customer, through its own client
 	polarCoreSpy = stubPolarCore();
 });
 
 afterAll(() => {
 	listSpy.mockRestore();
 	revokeSpy.mockRestore();
-	deleteCustomerSpy.mockRestore();
 	polarCoreSpy.mockRestore();
 	server.stop(true);
 });
@@ -60,10 +57,9 @@ beforeEach(async () => {
 	await db.delete(user);
 	listSpy.mockClear();
 	revokeSpy.mockClear();
-	deleteCustomerSpy.mockClear();
+	polarCoreSpy.mockClear();
 	polarSubscriptions({});
 	revokeSpy.mockResolvedValue({} as never);
-	deleteCustomerSpy.mockResolvedValue(undefined as never);
 });
 
 /** The token Better Auth would have emailed; same row `POST /delete-user` creates. */
@@ -92,15 +88,25 @@ const userExists = async (id: string) =>
 	(await db.select({ id: user.id }).from(user).where(eq(user.id, id))).length >
 	0;
 
-const orgExists = async (id: string) =>
-	(
-		await db
-			.select({ id: organization.id })
-			.from(organization)
-			.where(eq(organization.id, id))
-	).length > 0;
+const deletionScheduledAt = async (id: string) => {
+	const [row] = await db
+		.select({ at: organization.deletionScheduledAt })
+		.from(organization)
+		.where(eq(organization.id, id));
+	return row?.at;
+};
 
-test("sole-owned paid org: subscription revoked, org and user gone, avatar and customer cleaned up", async () => {
+/** The customer deletes the plugin sent, as `path?query`. */
+const customerDeletes = () =>
+	polarCoreSpy.mock.calls
+		.map(([[url, init]]) => ({ url: new URL(url), method: init.method }))
+		.filter(
+			({ url, method }) =>
+				method === "DELETE" && url.pathname.startsWith("/v1/customers/"),
+		)
+		.map(({ url }) => `${url.pathname}${url.search}`);
+
+test("sole-owned paid org: subscription revoked, org scheduled, user gone, avatar deleted, customer anonymized", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	const avatarKey = `avatars/${userId}/old.png`;
 	await storageClient.put(avatarKey, new Uint8Array([1]), "image/png");
@@ -119,13 +125,15 @@ test("sole-owned paid org: subscription revoked, org and user gone, avatar and c
 	expect(res.status).toBe(302);
 	expect(res.headers.get("location")).toBe("/auth/goodbye");
 	expect(revokeSpy).toHaveBeenCalledWith("sub_solo");
-	expect(await orgExists(orgId)).toBe(false);
+	expect(await deletionScheduledAt(orgId)).toBeInstanceOf(Date);
 	expect(await userExists(userId)).toBe(false);
 	expect((await storageClient.serve(avatarKey)).status).toBe(404);
-	expect(deleteCustomerSpy).toHaveBeenCalledWith(userId);
+	expect(customerDeletes()).toEqual([
+		`/v1/customers/external/${userId}?anonymize=true`,
+	]);
 });
 
-test("admin of someone else's paid org: org and its subscription survive, Polar customer deleted", async () => {
+test("admin of someone else's paid org: org and its subscription untouched, Polar customer deleted", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	const { userId: ownerId } = await createUserWithSession();
 	const orgId = await insertOrganization("Employer Co");
@@ -137,12 +145,14 @@ test("admin of someone else's paid org: org and its subscription survive, Polar 
 
 	expect(res.status).toBe(302);
 	expect(await userExists(userId)).toBe(false);
-	expect(await orgExists(orgId)).toBe(true);
+	expect(await deletionScheduledAt(orgId)).toBeNull();
 	expect(revokeSpy).not.toHaveBeenCalled();
-	expect(deleteCustomerSpy).toHaveBeenCalledWith(userId);
+	expect(customerDeletes()).toEqual([
+		`/v1/customers/external/${userId}?anonymize=true`,
+	]);
 });
 
-test("Polar revoke failure: redirects to the goodbye error page and deletes nothing", async () => {
+test("Polar revoke failure: redirects to the goodbye error page, schedules and deletes nothing", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	const orgId = await insertOrganization("Stuck Co");
 	await joinOrganization(orgId, userId, "owner");
@@ -159,6 +169,6 @@ test("Polar revoke failure: redirects to the goodbye error page and deletes noth
 		).toString(),
 	);
 	expect(await userExists(userId)).toBe(true);
-	expect(await orgExists(orgId)).toBe(true);
-	expect(deleteCustomerSpy).not.toHaveBeenCalled();
+	expect(await deletionScheduledAt(orgId)).toBeNull();
+	expect(customerDeletes()).toEqual([]);
 });

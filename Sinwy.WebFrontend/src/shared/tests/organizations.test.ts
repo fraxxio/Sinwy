@@ -1,5 +1,6 @@
 import { expect, it } from "bun:test";
 import type { OrganizationSummary } from "@sinwy/shared";
+import { formatDay } from "../lib/date";
 import {
 	closedOrganizationBadge,
 	closedOrganizationReason,
@@ -16,7 +17,7 @@ const org = (
 	suspended: false,
 	plan: null,
 	isOwner: true,
-	scheduledForDeletion: false,
+	deletesAt: null,
 	onboardingCompletedAt: null,
 	...overrides,
 });
@@ -42,7 +43,9 @@ it.each([
 
 it("leads nobody else anywhere, and nobody once it is scheduled for deletion", () => {
 	expect(reactivationLink(org({ isOwner: false, suspended: true }))).toBeNull();
-	expect(reactivationLink(org({ scheduledForDeletion: true }))).toBeNull();
+	expect(
+		reactivationLink(org({ deletesAt: "2026-11-24T12:00:00.000Z" })),
+	).toBeNull();
 });
 
 it("tells a suspended org from one without a plan, scheduled deletion first", () => {
@@ -54,9 +57,16 @@ it("tells a suspended org from one without a plan, scheduled deletion first", ()
 	);
 	expect(
 		closedOrganizationReason(
-			org({ suspended: true, scheduledForDeletion: true }),
+			org({ suspended: true, deletesAt: "2026-11-24T12:00:00.000Z" }),
 		),
-	).toBe("This organization is scheduled for deletion");
+	).toBe(
+		`This organization will be deleted on ${formatDay("2026-11-24T12:00:00.000Z")}`,
+	);
 	expect(closedOrganizationBadge(org({ suspended: true }))).toBe("Suspended");
+	expect(
+		closedOrganizationBadge(
+			org({ suspended: true, deletesAt: "2026-11-24T12:00:00.000Z" }),
+		),
+	).toBe("Scheduled for deletion");
 	expect(closedOrganizationBadge(org())).toBe("Inactive");
 });

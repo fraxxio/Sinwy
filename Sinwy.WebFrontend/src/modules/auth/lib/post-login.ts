@@ -24,7 +24,7 @@ export function postLoginDestination(
 		} as const;
 
 	const unpaid = organizations
-		.filter((o) => o.isOwner && !o.scheduledForDeletion && isNeverPaid(o))
+		.filter((o) => o.isOwner && o.deletesAt === null && isNeverPaid(o))
 		.at(-1);
 	if (unpaid)
 		return {

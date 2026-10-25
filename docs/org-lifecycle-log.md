@@ -424,3 +424,152 @@ Done when:
   - Not checked in the browser: the staff view of a suspended org (the
     disabled-entry path from Phase 1, with the new "suspended" reason), and
     the past_due/402 resume paths.
+
+## Phase 3: Owner deletion and 30-day retention
+
+**Goal:** deleting the owner's account stops all billing and makes their orgs
+inactive and scheduled for deletion; a job hard-deletes them 30 days later.
+Data stays intact for a future restore.
+
+**Files:** `Sinwy.Backend/modules/auth/auth.ts` (`beforeDelete`,
+`afterDelete`, invitation hooks), `modules/auth/deletedUserCleanup.ts`,
+`modules/organizations/{service,repository,index}.ts`
+(`deleteSoleOwnedOrganizations`, `bindSubscription`, `isSuspended`),
+`modules/auth/requirePermission.ts` (`requireMember`),
+`modules/billing/{service,projection}.ts`, `Sinwy.Backend/db/schema/`,
+`Sinwy.Shared/types/organization/OrganizationSummary.ts`,
+`Sinwy.WebFrontend/src/modules/account-dashboard/components/settings/DangerZone.tsx`,
+`account-dashboard/routes/_shell.organizations.tsx`,
+`shared/components/shell/OrganizationSwitcher.tsx`,
+`shared/lib/organizations.ts`. Tests:
+`modules/organizations/tests/accountDeletion.test.ts`,
+`modules/auth/tests/deleteUserCallback.test.ts`.
+
+Backend:
+- Replace `deleteSoleOwnedOrganizations` with
+  `scheduleOwnedOrganizationsForDeletion(userId)` in `beforeDelete`:
+  1. revoke every owned org's billable subscriptions (throws on failure,
+     blocking the account deletion, as today);
+  2. in one transaction per user: set `deletion_scheduled_at = now()`, set
+     `status = inactive`, `plan = null`, `subscription_id = null`, set pending
+     invitations to `canceled`, and clear the orgs from sessions.
+  Invitations the owner sent are removed anyway by the `inviter_id` cascade.
+- Keep the `afterDelete` Polar customer deletion; pass `anonymize: true`.
+- `bindSubscription` refuses scheduled orgs with a new result
+  `scheduled-for-deletion`; the projection then revokes that subscription and
+  logs an error. This covers a checkout racing the account deletion.
+- Invitation create and accept hooks refuse scheduled orgs. Checkout is already
+  refused (no owner left means nobody has `billing:manage`), but refuse
+  explicitly too.
+- `requireMember` treats a scheduled org as not found for every member.
+- Purge job `purgeScheduledOrganizations()` in the organizations module:
+  - deletes orgs with `deletion_scheduled_at <= now() - interval '30 days'`, in
+    batches, plus their logo files through the storage client;
+  - schedules any org with no owner and no `deletion_scheduled_at` (account
+    deletion succeeded after `beforeDelete` failed to mark it), with a warn log;
+  - unschedules any scheduled org that still has an owner (`beforeDelete`
+    marked it, then the user delete failed), with a warn log.
+- Runner: there is no job infrastructure, so add a minimal one in
+  `Sinwy.Backend/lib/` that runs registered jobs at startup and on an interval,
+  each under `pg_try_advisory_lock` so two server instances never run the same
+  job together. Register the purge hourly. Add `db:purge-organizations` to run
+  it by hand. Keep the runner small enough to swap for a real scheduler later.
+- `RETENTION_DAYS = 30` lives in one place (shared, since the UI shows it).
+
+Frontend:
+- Account deletion preview and `DangerZone` copy: owned orgs are scheduled for
+  deletion in 30 days, members lose access immediately, public pages go
+  offline, subscriptions are canceled.
+- Members of a scheduled org see it disabled in the switcher and in Account →
+  Organizations, with the deletion date.
+
+Tests that matter:
+- Account deletion schedules every owned org, cancels pending invitations and
+  revokes billable subscriptions; a revoke failure deletes nothing and
+  schedules nothing.
+- Orgs where the deleted user was only a member are untouched.
+- A subscription activating for a scheduled org is refused and revoked.
+- Purge deletes exactly the expired orgs, never lapsed or never-paid ones, and
+  is safe to run twice. Both self-healing branches.
+
+Done when:
+- Owner account deletion → org scheduled, invisible to members' dashboards,
+  purge with a backdated date removes it. Checked in the running app.
+
+**Verify:** start from `org-with-staff` with a pending invitation. As the
+owner: Account → Settings → Danger zone shows the 30-day copy; delete the
+account. DB: the org has `deletion_scheduled_at` set, `status = inactive`,
+`plan` and `subscription_id` null, the invitation `canceled`, and no session
+has it active. As staff: the switcher entry and Account → Organizations row
+are disabled with the deletion date; the dashboard URL lands on `/account`.
+Backdate `deletion_scheduled_at` by 31 days with `sinwy_rw` (state the app
+can't reach in time), run `bun run db:purge-organizations`: the org and its
+logo file are gone; a second run changes nothing. If time allows, repeat
+with an org that has a real sandbox subscription and check Polar shows it
+revoked.
+
+### Log (2026-10-25, `feat(backend, web): keep organizations 30 days after owner account deletion, then purge`)
+- Shipped:
+  - `scheduleOwnedOrganizationsForDeletion` in `beforeDelete`: revokes every
+    owned org's billable subscriptions (a failure schedules nothing and lands
+    on the goodbye error page), then one transaction sets
+    `deletion_scheduled_at`, `inactive`, `plan`/`subscription_id` null,
+    cancels pending invitations and clears the orgs from sessions.
+  - `writeSubscription` refuses every write to a scheduled org with
+    `scheduled-for-deletion`; the projection revokes the subscription if it
+    is billable (active, trialing, past_due, paused) and logs an error. A
+    failed revoke throws, so the webhook is retried.
+  - `resolveMembership` returns null for a scheduled org, so `requireMember`
+    answers 404 and the checkout guard refuses ("Not a member"), even for an
+    owner still present mid-deletion. Invitation create and accept hooks call
+    `refuseScheduledOrganization` (403, `ORGANIZATION_INACTIVE`).
+  - `purgeScheduledOrganizations` (`organizations/purge.ts`): unschedules
+    scheduled orgs that still have an owner, revokes and schedules ownerless
+    unscheduled ones, then deletes ownerless orgs scheduled 30+ days ago in
+    batches of 100, plus their logo file. Both self-heal branches skip rows
+    younger than 1 hour (`IN_FLIGHT_MS`): better-auth creates the org and its
+    owner member in separate writes, and an account deletion runs between
+    `beforeDelete` and the user delete.
+  - Job runner `lib/jobs.ts`: `runJob` holds
+    `pg_try_advisory_xact_lock(hashtext(name))` in a transaction for the run
+    (released even if the process dies), `startJobs` runs each job at startup
+    and on its interval. `index.ts` registers the purge hourly;
+    `bun run db:purge-organizations` runs it once under the same lock.
+  - `ORGANIZATION_RETENTION_DAYS = 30` in shared. `OrganizationSummary`
+    swaps `scheduledForDeletion` for `deletesAt` (purge date, computed by the
+    backend). The switcher badge and Account → Organizations say "Scheduled
+    for deletion" and "This organization will be deleted on <date>".
+  - Danger zone and the confirmation email describe the 30-day window.
+- Differs from plan:
+  - The Polar customer delete is not ours any more. better-auth runs plugin
+    database hooks before the app's, so the plugin's delete (no options)
+    always came first and ours got a 404. Polar clears `external_id` on
+    delete, and an already deleted customer can't be anonymized afterwards
+    (sandbox: 404 by id and by external id). So `polarCore.buildRequest` now
+    adds `anonymize=true` to every `DELETE /v1/customers/external/…`, and
+    `cleanupDeletedUser` only deletes the avatar.
+  - `OrganizationSummary` carries `deletesAt`, not `deletionScheduledAt`, so
+    the UI never recomputes the retention.
+  - Checkout's explicit refusal is `resolveMembership` hiding the org, not a
+    separate check.
+  - No schema change: `deletion_scheduled_at` already existed and nothing
+    needed an index yet.
+- Checked in the running app (e2e, two `org-with-staff` runs):
+  - Danger zone copy, the confirmation email, and the goodbye page after the
+    link.
+  - DB: org scheduled with `inactive`, `plan` and `subscription_id` null.
+    Member and profile rows kept. 0 sessions have it active. An admin's
+    pending invitation became `canceled`; the owner's own invitations were
+    removed by the `inviter_id` cascade, as planned.
+  - Staff: disabled switcher entry with the date tooltip, the destructive
+    row in Account → Organizations, and the dashboard URL redirecting to
+    `/account`. API: onboarding read and profile write 404, set-active 403,
+    invite 403.
+  - Purge: nothing before backdating; after a 31-day backdate the org, its
+    rows and its logo file were gone; a second run changed nothing.
+  - The owner's real sandbox customer is gone by id and by external id, with
+    no "customer delete failed" log.
+  - Not checked: a real sandbox subscription revoked by account deletion
+    (seeded subscriptions exist only in the DB), that Polar actually
+    anonymized the customer (deleted customers can't be read), and accepting
+    an invitation to a scheduled org in the browser (unit-tested).

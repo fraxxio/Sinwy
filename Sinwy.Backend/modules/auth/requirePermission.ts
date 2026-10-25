@@ -28,13 +28,16 @@ export const ORGANIZATION_PARAM = "organizationId";
 export const organizationPath = (suffix: string) =>
 	`/api/organizations/:${ORGANIZATION_PARAM}/${suffix}`;
 
-/** null when the user is not a member of the organization. */
+/**
+ * null when the user is not a member of the organization, or it is scheduled
+ * for deletion: from then on nobody reads, writes or pays for it.
+ */
 export const resolveMembership = async (
 	userId: string,
 	organizationId: string,
 ): Promise<Membership | null> => {
 	const found = await findMembership(userId, organizationId);
-	if (!found) return null;
+	if (!found || found.deletionScheduledAt) return null;
 
 	const roles = parseMemberRoles(found.role);
 	if (roles.length === 0)
@@ -60,7 +63,7 @@ export const resolveMembership = async (
 /**
  * Scopes the request to one organization (route param first, then the
  * session's active organization) and requires the caller to be a member.
- * Non-member → 404. Resolved once per request, so guards can be stacked.
+ * Non-member or scheduled for deletion → 404. Resolved once per request, so guards can be stacked.
  */
 export const requireMember: Middleware = async (ctx, next) => {
 	if (ctx.get("membership")) return next();

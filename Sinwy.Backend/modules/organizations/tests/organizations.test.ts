@@ -570,7 +570,9 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 			suspended: false,
 			plan: null,
 			isOwner: true,
-			scheduledForDeletion: true,
+			deletesAt: new Date(
+				scheduledAt.getTime() + 30 * 24 * 60 * 60 * 1000,
+			).toISOString(),
 			onboardingCompletedAt: completedAt.toISOString(),
 		},
 		{
@@ -581,7 +583,7 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 			suspended: false,
 			plan: "professional",
 			isOwner: false,
-			scheduledForDeletion: false,
+			deletesAt: null,
 			onboardingCompletedAt: null,
 		},
 	]);

@@ -95,14 +95,12 @@ function OrganizationRow({
 					<Badge variant="secondary">
 						{organization.isOwner ? "Owner" : "Member"}
 					</Badge>
-					{organization.scheduledForDeletion ? (
-						<Badge variant="destructive">Scheduled for deletion</Badge>
-					) : open ? (
+					{open ? (
 						<Badge variant="outline">
 							{organization.plan ? getPlanName(organization.plan) : "Active"}
 						</Badge>
 					) : (
-						<Badge variant="outline">
+						<Badge variant={organization.deletesAt ? "destructive" : "outline"}>
 							{closedOrganizationBadge(organization)}
 						</Badge>
 					)}
@@ -111,7 +109,7 @@ function OrganizationRow({
 					<span className="text-xs text-muted-foreground">
 						{closedOrganizationReason(organization)}
 						{!link &&
-							!organization.scheduledForDeletion &&
+							!organization.deletesAt &&
 							(organization.suspended
 								? ". Ask the owner to resume it."
 								: ". Ask the owner to renew it.")}

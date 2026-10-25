@@ -1,6 +1,8 @@
 import db from "@db";
 import { memberHasRole } from "@db/memberRole";
+import { session } from "@db/schema/authSchema";
 import {
+	invitation,
 	member,
 	organization,
 	organizationProfile,
@@ -12,8 +14,11 @@ import {
 	eq,
 	exists,
 	inArray,
+	isNotNull,
 	isNull,
 	lt,
+	lte,
+	not,
 	or,
 	sql,
 } from "drizzle-orm";
@@ -62,7 +67,8 @@ export type SubscriptionWrite =
 	| { result: "applied" }
 	| { result: "unknown-organization" }
 	| { result: "outdated" }
-	| { result: "bound-elsewhere"; boundSubscriptionId: string };
+	| { result: "bound-elsewhere"; boundSubscriptionId: string }
+	| { result: "scheduled-for-deletion" };
 
 const writeSubscription = (
 	organizationId: string,
@@ -76,11 +82,15 @@ const writeSubscription = (
 	db.transaction(async (tx): Promise<SubscriptionWrite> => {
 		// locked first, so a refusal is explained by the state that caused it
 		const [row] = await tx
-			.select({ subscriptionId: organization.subscriptionId })
+			.select({
+				subscriptionId: organization.subscriptionId,
+				deletionScheduledAt: organization.deletionScheduledAt,
+			})
 			.from(organization)
 			.where(eq(organization.id, organizationId))
 			.for("update");
 		if (!row) return { result: "unknown-organization" };
+		if (row.deletionScheduledAt) return { result: "scheduled-for-deletion" };
 
 		const updated = await tx
 			.update(organization)
@@ -206,6 +216,100 @@ export const findSoleOwnedOrganizations = (userId: string) =>
 			),
 		)
 		.orderBy(organization.name);
+
+const hasOwner = exists(
+	db
+		.select({ id: member.id })
+		.from(member)
+		.where(
+			and(eq(member.organizationId, organization.id), memberHasRole("owner")),
+		),
+);
+
+/**
+ * Takes the organizations out of service until they are purged: no plan, no
+ * subscription, no pending invitation, and no session keeps them active.
+ */
+export const scheduleOrganizationsForDeletion = (
+	ids: string[],
+	scheduledAt: Date,
+) =>
+	db.transaction(async (tx) => {
+		await tx
+			.update(organization)
+			.set({
+				deletionScheduledAt: scheduledAt,
+				status: "inactive",
+				plan: null,
+				subscriptionId: null,
+			})
+			.where(inArray(organization.id, ids));
+		await tx
+			.update(invitation)
+			.set({ status: "canceled" })
+			.where(
+				and(
+					inArray(invitation.organizationId, ids),
+					eq(invitation.status, "pending"),
+				),
+			);
+		await tx
+			.update(session)
+			.set({ activeOrganizationId: null })
+			.where(inArray(session.activeOrganizationId, ids));
+	});
+
+export const findDeletionScheduledAt = async (organizationId: string) => {
+	const [row] = await db
+		.select({ deletionScheduledAt: organization.deletionScheduledAt })
+		.from(organization)
+		.where(eq(organization.id, organizationId));
+	return row?.deletionScheduledAt ?? null;
+};
+
+/** Created before `createdBefore` and left without an owner, yet never scheduled. */
+export const findOwnerlessUnscheduledOrganizations = (createdBefore: Date) =>
+	db
+		.select({ id: organization.id })
+		.from(organization)
+		.where(
+			and(
+				isNull(organization.deletionScheduledAt),
+				lt(organization.createdAt, createdBefore),
+				not(hasOwner),
+			),
+		);
+
+/** Clears the schedule of organizations that still have an owner; returns their ids. */
+export const unscheduleOwnedOrganizations = (scheduledBefore: Date) =>
+	db
+		.update(organization)
+		.set({ deletionScheduledAt: null })
+		.where(
+			and(
+				isNotNull(organization.deletionScheduledAt),
+				lt(organization.deletionScheduledAt, scheduledBefore),
+				hasOwner,
+			),
+		)
+		.returning({ id: organization.id });
+
+/** Ownerless organizations scheduled at or before `scheduledBefore`, oldest first. */
+export const findExpiredOrganizations = (
+	scheduledBefore: Date,
+	limit: number,
+) =>
+	db
+		.select({ id: organization.id, logo: organization.logo })
+		.from(organization)
+		.where(
+			and(
+				lte(organization.deletionScheduledAt, scheduledBefore),
+				not(hasOwner),
+			),
+		)
+		.orderBy(asc(organization.deletionScheduledAt), asc(organization.id))
+		.limit(limit);
 
 /** FK cascades remove members, invitations and the profile. */
 export const deleteOrganizations = (ids: string[]) =>

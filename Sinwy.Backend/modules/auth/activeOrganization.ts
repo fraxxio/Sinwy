@@ -1,4 +1,7 @@
-import { isOrganizationPublic } from "@organizationsModule";
+import {
+	isOrganizationPublic,
+	isScheduledForDeletion,
+} from "@organizationsModule";
 import { AUTH_ERROR_CODES } from "@sinwy/shared";
 import { APIError } from "better-auth/api";
 import { z } from "zod";
@@ -42,6 +45,15 @@ export const refuseUnavailableOrganization = async (
 	if (org && !isOrganizationPublic(org))
 		throw new APIError("FORBIDDEN", {
 			message: "This organization isn't available",
+			code: AUTH_ERROR_CODES.ORGANIZATION_INACTIVE,
+		});
+};
+
+/** Nobody joins an organization once its owner's account is deleted. */
+export const refuseScheduledOrganization = async (organizationId: string) => {
+	if (await isScheduledForDeletion(organizationId))
+		throw new APIError("FORBIDDEN", {
+			message: "This organization is scheduled for deletion",
 			code: AUTH_ERROR_CODES.ORGANIZATION_INACTIVE,
 		});
 };

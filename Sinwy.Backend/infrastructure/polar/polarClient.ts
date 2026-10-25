@@ -16,5 +16,20 @@ const options = {
 
 export const polarClient = createPolar(options);
 
-/** The better-auth plugin takes a core client and calls standalone SDK functions on it. */
+/**
+ * The better-auth plugin takes a core client and calls standalone SDK
+ * functions on it. Its customer delete on user deletion takes no options, so
+ * every customer delete sent through this client is anonymized.
+ */
 export const polarCore = createPolarCore(options);
+const buildRequest = polarCore.buildRequest.bind(polarCore);
+polarCore.buildRequest = (method, url, pathParams, queryParams, body) =>
+	buildRequest(
+		method,
+		url,
+		pathParams,
+		method === "DELETE" && url === "/v1/customers/external/{external_id}"
+			? { ...queryParams, anonymize: true }
+			: queryParams,
+		body,
+	);

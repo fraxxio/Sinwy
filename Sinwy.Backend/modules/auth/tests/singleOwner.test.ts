@@ -135,6 +135,42 @@ test("a pending owner invitation can't be accepted", async () => {
 	expect(await roleOf(invitee.userId)).toBeUndefined();
 });
 
+test("an org scheduled for deletion takes no new invitations and lets none be accepted", async () => {
+	const invitee = await createUserWithSession();
+	await db.insert(invitation).values({
+		id: "invitation_staff",
+		organizationId: orgId,
+		email: `${invitee.userId}@test.dev`,
+		role: "staff",
+		status: "pending",
+		expiresAt: new Date(Date.now() + 86_400_000),
+		createdAt: new Date(),
+		inviterId: ownerId,
+	});
+	await db
+		.update(organization)
+		.set({ deletionScheduledAt: new Date() })
+		.where(eq(organization.id, orgId));
+
+	const invited = await post("invite-member", ownerCookie, {
+		email: "next@test.dev",
+		role: "staff",
+		organizationId: orgId,
+	});
+	const accepted = await post("accept-invitation", invitee.cookie, {
+		invitationId: "invitation_staff",
+	});
+
+	expect(invited.status).toBe(403);
+	expect(accepted.status).toBe(403);
+	expect(
+		(await db.select({ id: invitation.id }).from(invitation)).map(
+			(row) => row.id,
+		),
+	).toEqual(["invitation_staff"]);
+	expect(await roleOf(invitee.userId)).toBeUndefined();
+});
+
 test("owner can't leave their organization", async () => {
 	expect(
 		(await post("leave", ownerCookie, { organizationId: orgId })).status,

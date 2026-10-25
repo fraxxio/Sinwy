@@ -13,7 +13,7 @@ const org = (
 	plan: "starter",
 	isOwner: true,
 	suspended: false,
-	scheduledForDeletion: false,
+	deletesAt: null,
 	onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
 	...overrides,
 });
@@ -68,7 +68,7 @@ it.each([
 	],
 	[
 		"an open org over one scheduled for deletion",
-		[org("a"), org("b", { scheduledForDeletion: true })],
+		[org("a"), org("b", { deletesAt: "2026-11-24T12:00:00.000Z" })],
 		"b",
 		dashboard("a"),
 	],
@@ -104,7 +104,7 @@ it.each([
 	],
 	[
 		"the account for an owner whose never-paid org is scheduled for deletion",
-		[neverPaid("a", { scheduledForDeletion: true })],
+		[neverPaid("a", { deletesAt: "2026-11-24T12:00:00.000Z" })],
 		null,
 		account,
 	],

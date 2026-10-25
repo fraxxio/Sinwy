@@ -100,6 +100,17 @@ test("owner of a suspended org → rejected, it resumes instead", async () => {
 	);
 });
 
+test("an org scheduled for deletion → treated as not a member, even by its owner", async () => {
+	await db
+		.update(organization)
+		.set({ deletionScheduledAt: new Date() })
+		.where(eq(organization.id, orgId));
+
+	await expect(ensureCheckoutAllowed(ownerId, orgId)).rejects.toThrow(
+		"Not a member of this organization",
+	);
+});
+
 test("owner of an inactive org Polar already bills → rejected and activated", async () => {
 	listSpy.mockImplementation(
 		polarPages([

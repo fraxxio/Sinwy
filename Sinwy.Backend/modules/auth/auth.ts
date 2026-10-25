@@ -8,7 +8,7 @@ import {
 import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
-import { deleteSoleOwnedOrganizations } from "@organizationsModule";
+import { scheduleOwnedOrganizationsForDeletion } from "@organizationsModule";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import {
 	ac,
@@ -26,7 +26,10 @@ import {
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
-import { refuseUnavailableOrganization } from "./activeOrganization";
+import {
+	refuseScheduledOrganization,
+	refuseUnavailableOrganization,
+} from "./activeOrganization";
 import { cleanupDeletedUser } from "./deletedUserCleanup";
 import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
@@ -116,7 +119,7 @@ export const auth = betterAuth({
 			// only reached from the emailed link, so a failure must land on a page, not JSON
 			beforeDelete: async (user) => {
 				try {
-					await deleteSoleOwnedOrganizations(user.id);
+					await scheduleOwnedOrganizationsForDeletion(user.id);
 				} catch (error) {
 					if (!(error instanceof APIError)) throw error;
 					throw new APIError("FOUND", undefined, {
@@ -209,10 +212,14 @@ export const auth = betterAuth({
 			// the plugin already keeps the only owner from leaving, being removed
 			// or demoted; these keep a second owner from ever appearing
 			organizationHooks: {
-				beforeCreateInvitation: async ({ invitation }) =>
-					refuseOwnerRole(invitation.role),
-				beforeAcceptInvitation: async ({ invitation }) =>
-					refuseOwnerRole(invitation.role),
+				beforeCreateInvitation: async ({ invitation }) => {
+					refuseOwnerRole(invitation.role);
+					await refuseScheduledOrganization(invitation.organizationId);
+				},
+				beforeAcceptInvitation: async ({ invitation }) => {
+					refuseOwnerRole(invitation.role);
+					await refuseScheduledOrganization(invitation.organizationId);
+				},
 				beforeUpdateMemberRole: async ({ member, newRole }) =>
 					refuseOwnerRole(member.role, newRole),
 				// the plugin's own delete knows nothing of billing
@@ -253,6 +260,7 @@ export const auth = betterAuth({
 		}),
 		polar({
 			client: polarCore,
+			// also deletes the customer on user delete, anonymized by `polarCore`
 			createCustomerOnSignUp: true,
 			use: [
 				checkout({

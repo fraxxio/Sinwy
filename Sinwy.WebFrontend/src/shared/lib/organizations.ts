@@ -2,6 +2,7 @@ import type { OrganizationSummary } from "@sinwy/shared";
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { linkOptions } from "@tanstack/react-router";
 import { api } from "#/shared/lib/api";
+import { formatDay } from "#/shared/lib/date";
 
 const organizationsKey = ["organizations", "list"] as const;
 
@@ -38,8 +39,8 @@ export const isNeverPaid = (organization: OrganizationSummary) =>
 
 /** The only organizations anyone can open; the backend refuses the rest. */
 export const isOrganizationOpen = (
-	organization: Pick<OrganizationSummary, "status" | "scheduledForDeletion">,
-) => organization.status === "active" && !organization.scheduledForDeletion;
+	organization: Pick<OrganizationSummary, "status" | "deletesAt">,
+) => organization.status === "active" && organization.deletesAt === null;
 
 /**
  * Where an organization that can't be opened still leads: its owner to the
@@ -47,7 +48,7 @@ export const isOrganizationOpen = (
  * to go, and nobody does once it is scheduled for deletion.
  */
 export const reactivationLink = (organization: OrganizationSummary) =>
-	organization.isOwner && !organization.scheduledForDeletion
+	organization.isOwner && organization.deletesAt === null
 		? linkOptions({
 				to: "/organizations/$id/plan",
 				params: { id: organization.id },
@@ -57,15 +58,20 @@ export const reactivationLink = (organization: OrganizationSummary) =>
 
 /** Why an organization can't be opened, for whoever is turned away from it. */
 export const closedOrganizationReason = (
-	organization: Pick<OrganizationSummary, "scheduledForDeletion" | "suspended">,
+	organization: Pick<OrganizationSummary, "deletesAt" | "suspended">,
 ) =>
-	organization.scheduledForDeletion
-		? "This organization is scheduled for deletion"
+	organization.deletesAt
+		? `This organization will be deleted on ${formatDay(organization.deletesAt)}`
 		: organization.suspended
 			? "This organization is suspended"
 			: "This organization has no active plan";
 
-/** Badge for an organization that can't be opened; scheduled deletion has its own. */
+/** Badge for an organization that can't be opened. */
 export const closedOrganizationBadge = (
-	organization: Pick<OrganizationSummary, "suspended">,
-) => (organization.suspended ? "Suspended" : "Inactive");
+	organization: Pick<OrganizationSummary, "deletesAt" | "suspended">,
+) =>
+	organization.deletesAt
+		? "Scheduled for deletion"
+		: organization.suspended
+			? "Suspended"
+			: "Inactive";

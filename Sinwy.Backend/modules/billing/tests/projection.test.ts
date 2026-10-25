@@ -216,6 +216,45 @@ test("second active subscription does not take over the bound one", async () => 
 	});
 });
 
+test("an org scheduled for deletion refuses every subscription; billable ones are revoked", async () => {
+	await db
+		.update(organization)
+		.set({ deletionScheduledAt: new Date() })
+		.where(eq(organization.id, orgId));
+	const revokeSpy = spyOn(
+		polarClient.subscriptions,
+		"revoke",
+	).mockResolvedValue({} as never);
+	try {
+		expect(await project({ id: "sub_raced" })).toBeNull();
+		expect(await project({ id: "sub_paused", status: "paused" })).toBeNull();
+		expect(await project({ id: "sub_ended", status: "canceled" })).toBeNull();
+
+		expect(revokeSpy.mock.calls).toEqual([["sub_raced"], ["sub_paused"]]);
+		expect(await getSubscriptionState(orgId)).toEqual(inactive);
+	} finally {
+		revokeSpy.mockRestore();
+	}
+});
+
+test("a failed revoke for an org scheduled for deletion throws, so the webhook is retried", async () => {
+	await db
+		.update(organization)
+		.set({ deletionScheduledAt: new Date() })
+		.where(eq(organization.id, orgId));
+	const revokeSpy = spyOn(
+		polarClient.subscriptions,
+		"revoke",
+	).mockRejectedValue(new Error("polar down"));
+	try {
+		await expect(
+			applySubscriptionEvent({ data: subscription({ id: "sub_raced" }) }),
+		).rejects.toThrow("polar down");
+	} finally {
+		revokeSpy.mockRestore();
+	}
+});
+
 test("a refused write says why, from the state it was refused against", async () => {
 	await project({ id: "sub_first" });
 

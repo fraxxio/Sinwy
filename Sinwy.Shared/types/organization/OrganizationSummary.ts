@@ -10,6 +10,7 @@ export type OrganizationSummary = {
 	suspended: boolean;
 	plan: PlanSlug | null;
 	isOwner: boolean;
-	scheduledForDeletion: boolean;
+	/** When it is purged, set once its owner's account is deleted; ISO date. */
+	deletesAt: string | null;
 	onboardingCompletedAt: string | null;
 };

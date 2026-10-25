@@ -3,7 +3,7 @@ import { session } from "@db/schema/authSchema";
 import { member, organization } from "@db/schema/organizationSchema";
 import { and, eq } from "drizzle-orm";
 
-/** Raw role column plus the organization's status and plan; null when the user is not a member. */
+/** Raw role column plus the organization's state; null when the user is not a member. */
 export const findMembership = async (
 	userId: string,
 	organizationId: string,
@@ -13,6 +13,7 @@ export const findMembership = async (
 			role: member.role,
 			status: organization.status,
 			plan: organization.plan,
+			deletionScheduledAt: organization.deletionScheduledAt,
 		})
 		.from(member)
 		.innerJoin(organization, eq(member.organizationId, organization.id))
