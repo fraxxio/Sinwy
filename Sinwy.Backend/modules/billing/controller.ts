@@ -45,6 +45,13 @@ const failPausePending = () =>
 		API_ERROR_CODES.SUSPENSION_PENDING,
 	);
 
+const failTransferPending = () =>
+	fail(
+		"An ownership transfer is pending; cancel it first",
+		409,
+		API_ERROR_CODES.TRANSFER_PENDING,
+	);
+
 const failLocked = () =>
 	fail("The subscription is being updated; try again in a moment", 409);
 
@@ -90,6 +97,8 @@ const failSubscriptionAction = (error: SubscriptionActionError) => {
 			);
 		case "locked":
 			return failLocked();
+		case "transfer-pending":
+			return failTransferPending();
 		case "payment-failed":
 			return fail(
 				"The payment for the new period failed; update your payment method on Polar and try again",
@@ -150,6 +159,8 @@ export const changePlanHandler: Handler = async (c) => {
 			);
 		case "locked":
 			return failLocked();
+		case "transfer-pending":
+			return failTransferPending();
 		case "rejected":
 		case "unavailable":
 			return failPolar(result.error);

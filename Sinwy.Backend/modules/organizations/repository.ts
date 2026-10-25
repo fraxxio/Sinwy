@@ -6,6 +6,7 @@ import {
 	member,
 	organization,
 	organizationProfile,
+	organizationTransfer,
 } from "@db/schema/organizationSchema";
 import type { PlanSlug } from "@sinwy/shared";
 import {
@@ -228,7 +229,8 @@ const hasOwner = exists(
 
 /**
  * Takes the organizations out of service until they are purged: no plan, no
- * subscription, no pending invitation, and no session keeps them active.
+ * subscription, no pending invitation or open transfer, and no session keeps
+ * them active.
  */
 export const scheduleOrganizationsForDeletion = (
 	ids: string[],
@@ -251,6 +253,15 @@ export const scheduleOrganizationsForDeletion = (
 				and(
 					inArray(invitation.organizationId, ids),
 					eq(invitation.status, "pending"),
+				),
+			);
+		await tx
+			.update(organizationTransfer)
+			.set({ status: "canceled", updatedAt: sql`now()` })
+			.where(
+				and(
+					inArray(organizationTransfer.organizationId, ids),
+					inArray(organizationTransfer.status, ["pending", "accepted"]),
 				),
 			);
 		await tx

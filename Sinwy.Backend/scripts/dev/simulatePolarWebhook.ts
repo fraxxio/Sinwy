@@ -25,6 +25,8 @@ export type PolarDeliveryOptions = {
 	organizationId: string;
 	subscriptionId?: string;
 	plan?: PlanSlug;
+	/** Marks it as bought on accepting this ownership transfer. */
+	transferId?: string;
 	timestamp?: Date;
 	webhookId?: string;
 	/** Sends the fixture's data under another event type. */
@@ -45,6 +47,7 @@ export const buildPolarDelivery = ({
 	organizationId,
 	subscriptionId = crypto.randomUUID(),
 	plan = "enterprise",
+	transferId,
 	timestamp = new Date(),
 	webhookId = `msg_${crypto.randomUUID()}`,
 	as,
@@ -60,7 +63,11 @@ export const buildPolarDelivery = ({
 			product_id: productIdFor(plan),
 			product: { ...payload.data.product, id: productIdFor(plan) },
 			modified_at: timestamp.toISOString(),
-			metadata: { ...payload.data.metadata, referenceId: organizationId },
+			metadata: {
+				...payload.data.metadata,
+				referenceId: organizationId,
+				...(transferId && { transferId }),
+			},
 		},
 	});
 
@@ -131,6 +138,7 @@ if (import.meta.main) {
 			org: { type: "string" },
 			"subscription-id": { type: "string" },
 			plan: { type: "string" },
+			"transfer-id": { type: "string" },
 			timestamp: { type: "string" },
 			"webhook-id": { type: "string" },
 			url: { type: "string", default: `http://localhost:${appConfig.PORT}` },
@@ -147,7 +155,7 @@ if (import.meta.main) {
 		(timestamp && Number.isNaN(timestamp.getTime()))
 	) {
 		console.error(
-			`Usage: bun run dev:simulate-polar-webhook --type <${Object.keys(polarFixtures).join("|")}> --org <organizationId> [--subscription-id <id>] [--plan <${PLAN_SLUGS.join("|")}>] [--timestamp <iso>] [--webhook-id <id>] [--url <backend url>]`,
+			`Usage: bun run dev:simulate-polar-webhook --type <${Object.keys(polarFixtures).join("|")}> --org <organizationId> [--subscription-id <id>] [--plan <${PLAN_SLUGS.join("|")}>] [--transfer-id <id>] [--timestamp <iso>] [--webhook-id <id>] [--url <backend url>]`,
 		);
 		process.exit(1);
 	}
@@ -159,6 +167,7 @@ if (import.meta.main) {
 			subscriptionId: values["subscription-id"],
 		}),
 		...(plan && { plan }),
+		...(values["transfer-id"] && { transferId: values["transfer-id"] }),
 		...(timestamp && { timestamp }),
 		...(values["webhook-id"] && { webhookId: values["webhook-id"] }),
 	});

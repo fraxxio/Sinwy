@@ -2,6 +2,7 @@ import type { OrganizationSummary } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Building2Icon } from "lucide-react";
+import { IncomingTransfers } from "#/modules/account-dashboard/components/IncomingTransfers";
 import { ContentBox } from "#/shared/components/ContentBox";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
@@ -60,6 +61,7 @@ function OrganizationsPage() {
 				description="Organizations you own or belong to."
 				action={organizations && createLink}
 			/>
+			<IncomingTransfers />
 			<ContentBox>
 				{isPending ? (
 					<Skeleton className="h-24" />

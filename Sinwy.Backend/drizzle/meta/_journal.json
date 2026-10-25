@@ -85,6 +85,13 @@
       "when": 1792777530163,
       "tag": "0011_unknown_azazel",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792947592429,
+      "tag": "0012_chilly_terror",
+      "breakpoints": true
     }
   ]
 }

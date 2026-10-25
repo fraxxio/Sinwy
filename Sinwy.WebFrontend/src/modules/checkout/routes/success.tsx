@@ -1,4 +1,8 @@
-import { FunnelStep, type OrganizationStatus } from "@sinwy/shared";
+import {
+	FunnelStep,
+	type OrganizationStatus,
+	type OrganizationSummary,
+} from "@sinwy/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -106,6 +110,7 @@ function Activation({
 	);
 	// unknown until the checkout resolves, so a renewal never flashes setup steps
 	const [firstTimeSetup, setFirstTimeSetup] = useState(false);
+	const [transfer, setTransfer] = useState(false);
 
 	useEffect(() => {
 		if (!checkoutId) return;
@@ -114,7 +119,7 @@ function Activation({
 		void (async () => {
 			// Polar carries the org id in the checkout metadata, resolve it
 			// server-side so the handoff survives a different tab/browser context.
-			const res = await api<{ organizationId: string }>(
+			const res = await api<{ organizationId: string; transfer: boolean }>(
 				`/organizations/checkout/${checkoutId}`,
 			);
 			if (cancelled) return;
@@ -126,6 +131,33 @@ function Activation({
 				return;
 			}
 			const orgId = res.data.organizationId;
+			if (res.data.transfer) {
+				setTransfer(true);
+				setPhase(Phase.Activating);
+				// the org is already active; done once the payment made the caller its owner
+				const owned = await pollUntil(
+					async () => {
+						const list = await api<OrganizationSummary[]>("/organizations");
+						return list.isSuccess
+							? (list.data.find((org) => org.id === orgId) ?? null)
+							: null;
+					},
+					(org) => org?.isOwner === true,
+					{ isCancelled: () => cancelled },
+				);
+				if (cancelled) return;
+				if (!owned) {
+					setPhase(Phase.TimedOut);
+					return;
+				}
+				// the cached member roles are the previous ones
+				await queryClient.invalidateQueries({ queryKey: ["organizations"] });
+				void navigate({
+					to: "/$organizationSlug",
+					params: { organizationSlug: owned.slug },
+				});
+				return;
+			}
 			// checked on setup, not status: the webhook may have activated it already
 			const { data: organization } =
 				await authClient.organization.getFullOrganization({
@@ -173,7 +205,7 @@ function Activation({
 		<PageShell showSteps={firstTimeSetup}>
 			<div className="space-y-3 text-center">
 				{activating ? (
-					<ActivationProgress phase={phase} />
+					<ActivationProgress phase={phase} transfer={transfer} />
 				) : phase === Phase.MissingCheckout ? (
 					<FailedState
 						icon={SearchXIcon}
@@ -221,7 +253,13 @@ function Activation({
 	);
 }
 
-function ActivationProgress({ phase }: { phase: Phase }) {
+function ActivationProgress({
+	phase,
+	transfer,
+}: {
+	phase: Phase;
+	transfer: boolean;
+}) {
 	// reassure during the long poll window instead of sitting silent for 60s
 	const [slow, setSlow] = useState(false);
 	useEffect(() => {
@@ -247,7 +285,7 @@ function ActivationProgress({ phase }: { phase: Phase }) {
 					Linking payment to your organization
 				</StepRow>
 				<StepRow state={resolving ? "pending" : "running"}>
-					Activating your organization
+					{transfer ? "Making you the owner" : "Activating your organization"}
 				</StepRow>
 			</ol>
 			{slow && (

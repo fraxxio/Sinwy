@@ -1,5 +1,9 @@
 import { user } from "@db/schema/userSchema";
-import { ORGANIZATION_STATUSES, PLAN_SLUGS } from "@sinwy/shared";
+import {
+	ORGANIZATION_STATUSES,
+	ORGANIZATION_TRANSFER_STATUSES,
+	PLAN_SLUGS,
+} from "@sinwy/shared";
 import { relations, sql } from "drizzle-orm";
 import {
 	check,
@@ -102,6 +106,42 @@ export const invitation = pgTable(
 	(table) => [
 		index("invitation_organizationId_idx").on(table.organizationId),
 		index("invitation_email_idx").on(table.email),
+	],
+);
+
+export const organizationTransfer = pgTable(
+	"organization_transfer",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		fromUserId: text("from_user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		toUserId: text("to_user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		status: text("status").notNull().default("pending"),
+		expiresAt: timestamp("expires_at").notNull(),
+		// the latest checkout opened on acceptance
+		checkoutId: text("checkout_id"),
+		oldSubscriptionId: text("old_subscription_id"),
+		newSubscriptionId: text("new_subscription_id"),
+		// the old subscription was revoked and its unused time refunded
+		settledAt: timestamp("settled_at"),
+		createdAt: timestamp("created_at").notNull().defaultNow(),
+		updatedAt: timestamp("updated_at").notNull().defaultNow(),
+	},
+	(table) => [
+		index("organization_transfer_toUserId_idx").on(table.toUserId),
+		uniqueIndex("organization_transfer_one_open_uidx")
+			.on(table.organizationId)
+			.where(sql`${table.status} IN ('pending', 'accepted')`),
+		check(
+			"organization_transfer_status_check",
+			oneOf("status", ORGANIZATION_TRANSFER_STATUSES),
+		),
 	],
 );
 

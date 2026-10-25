@@ -1,4 +1,7 @@
-import type { AccountDeletionPreviewDto } from "@sinwy/shared";
+import type {
+	AccountDeletionPreviewDto,
+	IncomingTransferDto,
+} from "@sinwy/shared";
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "#/shared/lib/api";
 import { authClient } from "#/shared/lib/auth/auth-client";
@@ -7,6 +10,7 @@ export const accountKeys = {
 	accounts: ["account", "accounts"],
 	sessions: ["account", "sessions"],
 	deletionPreview: ["account", "deletion-preview"],
+	incomingTransfers: ["account", "incoming-transfers"],
 } as const;
 
 export const accountsQuery = queryOptions({
@@ -43,3 +47,18 @@ export const hasCredentialAccount = (accounts: { providerId: string }[]) =>
 export const refreshSession = () => authClient.$store.notify("$sessionSignal");
 
 export type SessionUser = (typeof authClient.$Infer.Session)["user"];
+
+export const incomingTransfersQuery = queryOptions({
+	queryKey: accountKeys.incomingTransfers,
+	queryFn: async () => {
+		const res = await api<IncomingTransferDto[]>("/transfers/incoming");
+		if (!res.isSuccess) throw new Error(res.message);
+		return res.data;
+	},
+});
+
+export const acceptTransfer = (transferId: string) =>
+	api<{ url: string }>(`/transfers/${transferId}/accept`, { method: "POST" });
+
+export const declineTransfer = (transferId: string) =>
+	api<null>(`/transfers/${transferId}/decline`, { method: "POST" });

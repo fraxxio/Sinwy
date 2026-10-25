@@ -17,6 +17,7 @@ import {
 	profileSchema,
 	RESEND_COOLDOWN_SECONDS,
 } from "@sinwy/shared";
+import { cancelTransfersToMember } from "@transfersModule";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
@@ -196,6 +197,17 @@ export const auth = betterAuth({
 					message: "Read organization subscriptions through the organization",
 				});
 		}),
+		// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
+		after: createAuthMiddleware(async (ctx) => {
+			if (ctx.path !== "/organization/leave") return;
+			const body = z.object({ organizationId: z.string() }).safeParse(ctx.body);
+			const session = await getSessionFromCtx(ctx);
+			if (body.success && session)
+				await cancelTransfersToMember(
+					body.data.organizationId,
+					session.user.id,
+				);
+		}),
 	},
 	socialProviders: {
 		google: {
@@ -222,6 +234,8 @@ export const auth = betterAuth({
 				},
 				beforeUpdateMemberRole: async ({ member, newRole }) =>
 					refuseOwnerRole(member.role, newRole),
+				afterRemoveMember: ({ member }) =>
+					cancelTransfersToMember(member.organizationId, member.userId),
 				// the plugin's own delete knows nothing of billing
 				beforeDeleteOrganization: ({ organization }) =>
 					revokeOrganizationSubscription(organization.id),

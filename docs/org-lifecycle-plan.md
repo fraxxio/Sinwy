@@ -16,7 +16,7 @@ logs are in [org-lifecycle-log.md](org-lifecycle-log.md).
 | 1 | Inactive orgs are locked out | 0 | done | `feat(backend, web): lock inactive organizations out of the dashboard` |
 | 2 | Suspend with Polar pause | 1 | done | `feat(backend, web): suspend and resume organizations with Polar pause` |
 | 3 | Owner deletion and 30-day retention | 2 | done | `feat(backend, web): keep organizations 30 days after owner account deletion, then purge` |
-| 4 | Ownership transfer | 3 | todo | |
+| 4 | Ownership transfer | 3 | done | `feat(backend, web): transfer organization ownership to a member with a new checkout and prorated refund` |
 | 5 | Booking payments investigation | – | todo | |
 | 6 | Code review | 0–5 | todo | |
 
@@ -91,7 +91,9 @@ Polar sandbox (log: Phase 2):
 - The portal always allows cancel at period end, and
   `cancel_at_period_end: true` replaces a pending pause.
 - `allow_multiple_subscriptions` is **false** in the sandbox org (`sinwydev`).
-  Default 7 needs it on; ask before changing it (Phase 4).
+  Default 7 needs it on; not asked yet, ask before changing it.
+- Refund `amount` is net of tax; Polar refunds the matching tax itself. Use
+  the helpers in `modules/billing/refunds.ts` (log: Phase 4).
 - The sandbox webhook endpoint (`75e9e523…`) is disabled: no real deliveries,
   simulate them. Re-enabling it (ngrok) needs the user. The
   `subscription.paused` fixture is derived; capture real fixtures once it's on.
@@ -105,11 +107,17 @@ App state (log: Phases 1–3):
 - "Suspended" is derived (`isSuspended` = inactive and still bound).
   `revokeOrganizationSubscription` revokes paused subscriptions too.
 - Projection writes to a scheduled org return `scheduled-for-deletion` and
-  revoke the subscription. Phase 4's `completeTransfer` rebind must refuse
-  scheduled orgs the same way.
+  revoke the subscription; `completeTransfer` refuses them too.
 - Owner account deletion runs `scheduleOrganizationsForDeletion` (one
-  transaction); Phase 4 cancels pending transfers inside it. Invitations the
-  owner sent are cascade-deleted, not canceled.
+  transaction), which also cancels open transfers. Invitations the owner
+  sent are cascade-deleted, not canceled.
+- A subscription whose metadata carries `transferId` projects through
+  `projectTransferSubscription`; `completeTransfer` is the only write that
+  replaces a bound subscription. Unlike a plain checkout there is no Polar
+  reconcile for it: a missed transfer webhook leaves `/checkout/success`
+  waiting until Polar retries (log: Phase 4).
+- Better Auth's `/organization/leave` fires no `afterRemoveMember`; a
+  `hooks.after` covers it (log: Phase 4).
 - Jobs: add a `Job` to `startJobs` in `Sinwy.Backend/index.ts`; the name is
   the advisory lock key. Self-heal queries skip rows younger than 1 hour,
   because better-auth writes the org and its owner member separately.
@@ -118,9 +126,13 @@ App state (log: Phases 1–3):
 - Web helpers for the org list and closed-org rules live in
   `shared/lib/organizations.ts`. `AppShell`'s `banner` slot is free for
   notices.
-- Phase 4: transfer offers must refuse a pending pause and a suspended org.
 - e2e: file URLs use the `BETTER_AUTH_URL` origin (`localhost:3000` locally);
   `keyFromFileUrl` silently ignores any other origin.
+- e2e: `/checkout/success` activates a plain checkout from Polar on its own,
+  so its `subscription.active` needn't be simulated. Polar's card fields sit
+  in Stripe iframes: type through `run-code` with
+  `frameLocator('iframe[name^="__privateStripeFrame"]')` and
+  `pressSequentially` (log: Phase 4).
 
 Open, not caused by this plan:
 - The plan-change dialog shows USD catalog prices while Polar charges EUR.
@@ -131,102 +143,6 @@ Open, not caused by this plan:
   ERROR level, though it's a user-caused 403.
 
 ---
-
-## Phase 4: Ownership transfer
-
-**Goal:** the owner offers the org to a member; on acceptance the recipient
-pays through their own Polar customer and becomes the owner.
-
-**Files:** `Sinwy.Backend/modules/auth/singleOwner.ts` (`refuseOwnerRole`
-and its comment), `modules/auth/auth.ts` (organization hooks: add
-`afterRemoveMember`; `beforeDelete`),
-`modules/organizations/repository.ts` (`writeSubscription`/`changeableBy` for
-the `bound-elsewhere` bypass, `scheduleOrganizationsForDeletion` to cancel
-pending transfers), `modules/organizations/purge.ts` (pattern for an
-expiry job), `modules/billing/{service,projection,checkoutGuard}.ts`
-(`revokeOrganizationSubscription`, `projectSubscription`, plan change and
-suspend guards), `Sinwy.Backend/lib/jobs.ts` and `Sinwy.Backend/index.ts`
-(register the expiry job), `Sinwy.Backend/scripts/` (pattern:
-`backfillSubscriptionBindings.ts`), `scripts/dev/simulatePolarWebhook.ts`
-(carry `transferId`), `Sinwy.Backend/db/schema/organizationSchema.ts`,
-`Sinwy.Shared/types/organization/`,
-`Sinwy.WebFrontend/src/modules/account-dashboard/routes/_shell.organizations.tsx`,
-the org-dashboard settings and checkout success pages. Tests:
-`modules/auth/tests/singleOwner.test.ts`,
-`modules/billing/tests/projection.test.ts`.
-
-4a. Support script (ship first, in its own commit):
-- `Sinwy.Backend/scripts/transferOrganization.ts --org <id> --to <userId>`, dry
-  run unless `--apply`. The target must be a member.
-- In one transaction: demote the owner to admin first, then promote the target
-  (the one-owner index requires that order).
-- Revoke the old subscription and refund the unused time (same refund helper
-  as 4b). The org becomes inactive; the new owner renews through the plan page.
-
-4b. In-app transfer:
-- Polar's "Allow multiple subscriptions" is off in the sandbox (standing
-  notes); ask before turning it on.
-- Table `organization_transfer`: `id`, `organization_id`, `from_user_id`,
-  `to_user_id`, `status` (`pending`, `accepted`, `completed`, `declined`,
-  `canceled`, `expired`), `expires_at` (7 days), `checkout_id`,
-  `old_subscription_id`, timestamps. Partial unique index: one `pending` or
-  `accepted` per org.
-- Endpoints:
-  - owner: offer to a member (org active, no pending pause or cancel, not to
-    themselves), cancel the offer;
-  - recipient: list incoming offers, decline, accept.
-- Accept creates the checkout with `polarClient.checkouts.create` for the
-  org's current plan, with the recipient as external customer and metadata
-  `{ referenceId, transferId }`. It does not go through the plugin's
-  `/checkout`, whose guard refuses active orgs.
-- Webhook: an `active` subscription carrying `transferId` goes through
-  `completeTransfer` instead of the plain projection. In one transaction:
-  check the transfer is still `accepted`, the recipient is still a member and
-  the owner unchanged; swap roles (demote, then promote); rebind
-  `subscription_id` to the new subscription (the only allowed bypass of
-  `bound-elsewhere`); mark the transfer `completed`.
-- After the transaction: revoke the old subscription and refund the unused
-  share of its last order, prorated by time, via `POST /v1/refunds`
-  (`order_id`, `amount`, `reason`). A refund failure is logged at error level
-  for a manual refund; the transfer is not rolled back.
-- If the transfer is no longer `accepted` when the webhook arrives, revoke the
-  new subscription and refund it in full.
-- Cancel pending transfers when the recipient leaves or is removed
-  (`afterRemoveMember`), when the owner's account is deleted (Phase 3 flow),
-  and on expiry (purge job runner).
-- Block plan change, suspend and new offers while a transfer is pending.
-- Emails: offer to the recipient; completion to both users.
-- Update the `refuseOwnerRole` comment: ownership moves only through a
-  transfer.
-
-Frontend:
-- Settings: "Transfer ownership" (owner only) with a member picker, and the
-  pending state with Cancel.
-- Account → Organizations: incoming offers with Accept (→ checkout) and
-  Decline. The checkout success page waits until the recipient is owner.
-
-Tests that matter:
-- Role swap keeps exactly one owner at every step.
-- Webhook for a canceled or expired transfer revokes and fully refunds.
-- Old subscription revoked and refund amount correct at period start, middle
-  and last day.
-- Concurrent offers and double accept.
-
-Done when:
-- Offer → accept → checkout → new owner, old owner admin without billing
-  access, old subscription revoked and refunded. Checked in the running app.
-
-**Verify:** needs a real sandbox subscription, so start from `org-with-staff`
-and pay a real checkout as the owner. Owner offers the org to a staff member
-in Settings; the offer email arrives (`dev:last-email`). As the recipient:
-Account → Organizations → Accept → real sandbox checkout. The sandbox
-webhook endpoint is off, so the completing `subscription.active` (carrying
-`transferId`) must be simulated with the real new subscription id; extend
-`dev:simulate-polar-webhook` if it can't carry `transferId`. Then: `member`
-roles swapped with one owner, old owner sees no billing page, old
-subscription revoked and a prorated refund in Polar, completion emails to
-both. Also: decline, owner cancel, and the 4a script's dry run and
-`--apply`.
 
 ## Phase 5: Booking payments investigation
 
@@ -260,7 +176,8 @@ report only. Don't fix anything in this phase.**
 **Verify:** none; the report is the output. Read the log file for the
 phases' details here, since this phase reviews them.
 
-Scope: the full diff from the commit before Phase 0 to the last phase commit,
+Scope: the full diff from the commit before Phase 0 to the last phase commit
+(including `modules/transfers/` and `modules/billing/{transfer,refunds}.ts`),
 plus older code these changes rely on or touch (projection, checkout guard,
 account deletion, membership guards, switcher, post-login).
 

@@ -8,6 +8,7 @@ import {
 	purgeOrganizationsJob,
 	registerOrganizationRoutes,
 } from "@organizationsModule";
+import { expireTransfersJob, registerTransferRoutes } from "@transfersModule";
 import { registerUserRoutes } from "@userModule";
 
 const app = createApp();
@@ -15,11 +16,12 @@ const app = createApp();
 registerAuthRoutes(app);
 registerOrganizationRoutes(app);
 registerBillingRoutes(app);
+registerTransferRoutes(app);
 registerUserRoutes(app);
 registerFileRoutes(app);
 
 const server = app.listen(appConfig.PORT);
 
-startJobs([purgeOrganizationsJob]);
+startJobs([purgeOrganizationsJob, expireTransfersJob]);
 
 console.log(`Listening on ${server.url}, port ${server.port}`);

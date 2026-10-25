@@ -12,6 +12,7 @@ import {
 	suspendSubscription,
 } from "@organizationsModule";
 import type { OrganizationStatus } from "@sinwy/shared";
+import { projectTransferSubscription } from "./transfer";
 
 type Subscription = PolarModels.Subscription;
 
@@ -44,7 +45,7 @@ const writeFor = (
 	return deactivateSubscription(organizationId, subscription.id, observedAt);
 };
 
-const planOf = (subscription: Subscription) => {
+export const planOf = (subscription: Subscription) => {
 	const plan = planFor(subscription.product_id);
 	if (!plan)
 		billingLogger.error("Subscription product maps to no plan", {
@@ -87,7 +88,7 @@ const revokeForDeletedOrganization = async (context: {
  * applied state is ignored. Returns the status written, or null when the
  * organization was left as is.
  */
-export const projectSubscription = async (
+export const projectOwnSubscription = async (
 	subscription: Subscription,
 ): Promise<OrganizationStatus | null> => {
 	const observedAt = new Date(
@@ -147,6 +148,20 @@ export const projectSubscription = async (
 			return null;
 		}
 	}
+};
+
+/**
+ * Every path that applies Polar state comes through here. A subscription
+ * bought on a transfer's acceptance carries its `transferId` and completes the
+ * transfer instead; see `projectTransferSubscription`.
+ */
+export const projectSubscription = (
+	subscription: Subscription,
+): Promise<OrganizationStatus | null> => {
+	const transferId = subscription.metadata["transferId"];
+	return typeof transferId === "string"
+		? projectTransferSubscription(subscription, transferId)
+		: projectOwnSubscription(subscription);
 };
 
 /** Webhook entry point. Late retries and reordered events lose to the newer state. */

@@ -23,6 +23,7 @@ import {
 	SUBSCRIPTION_BILLING_STATUSES,
 	type SubscriptionBillingDto,
 } from "@sinwy/shared";
+import { hasOpenTransfer } from "@transfersModule";
 import { APIError } from "better-auth/api";
 import { knownValue, toPolarFailure } from "./polar";
 import {
@@ -55,7 +56,10 @@ export const getCheckoutOrganization = async (
 	if (!checkout || checkout.external_customer_id !== userId) return null;
 	const referenceId = checkout.metadata["referenceId"];
 	return typeof referenceId === "string"
-		? { organizationId: referenceId }
+		? {
+				organizationId: referenceId,
+				transfer: typeof checkout.metadata["transferId"] === "string",
+			}
 		: null;
 };
 
@@ -141,6 +145,7 @@ type ChangePlanResult =
 				| "same-plan"
 				| "canceled"
 				| "locked"
+				| "transfer-pending"
 				| PolarFailure;
 	  };
 
@@ -186,6 +191,9 @@ export const changeOrganizationPlan = async (
 	if (isSuspended(state)) return { ok: false, error: "suspended" };
 	if (!state.subscriptionId) return { ok: false, error: "inactive" };
 	if (state.plan === plan) return { ok: false, error: "same-plan" };
+	// the recipient checks out on the plan the offer was made on
+	if (await hasOpenTransfer(membership.organizationId))
+		return { ok: false, error: "transfer-pending" };
 
 	// Polar would switch the plan of a subscription about to pause
 	const current = await readSubscription(
@@ -247,6 +255,7 @@ export type SubscriptionActionError =
 	| "cancel-pending"
 	| "locked"
 	| "payment-failed"
+	| "transfer-pending"
 	| PolarFailure;
 
 type SubscriptionActionResult =
@@ -258,6 +267,8 @@ type SubscriptionAction = {
 	body: PolarModels.SubscriptionUpdate;
 	/** Why Polar's current state rules the action out, or null when it doesn't. */
 	refuse: (subscription: Subscription) => SubscriptionActionError | null;
+	/** A pause would cut short the subscription the transfer is about to replace. */
+	refusedDuringTransfer?: boolean;
 };
 
 // ended, or a status no action applies to
@@ -271,6 +282,7 @@ const refuseUnlessLive = (subscription: Subscription) =>
 const SUSPEND: SubscriptionAction = {
 	name: "suspend",
 	body: { pause_at_period_end: true },
+	refusedDuringTransfer: true,
 	refuse: (subscription) => {
 		const unlive = refuseUnlessLive(subscription);
 		if (unlive) return unlive;
@@ -316,6 +328,8 @@ const runSubscriptionAction = async (
 	const state = await getSubscriptionState(organizationId);
 	if (!state) return { ok: false, error: "not-found" };
 	if (!state.subscriptionId) return { ok: false, error: "inactive" };
+	if (action.refusedDuringTransfer && (await hasOpenTransfer(organizationId)))
+		return { ok: false, error: "transfer-pending" };
 
 	const read = await readSubscription(organizationId, state.subscriptionId);
 	if (!read.ok) return read;

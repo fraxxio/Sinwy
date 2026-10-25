@@ -76,6 +76,18 @@ for (const type of Object.keys(polarFixtures) as PolarEventType[]) {
 	});
 }
 
+test("--transfer-id lands in the subscription metadata next to referenceId", () => {
+	const delivery = buildPolarDelivery({
+		type: "subscription.active",
+		organizationId: orgId,
+		transferId: "transfer_1",
+	});
+	expect(JSON.parse(delivery.body).data.metadata).toMatchObject({
+		referenceId: orgId,
+		transferId: "transfer_1",
+	});
+});
+
 test("subscription.active through the endpoint → org active on the requested plan", async () => {
 	expect(await send("subscription.active", { plan: "starter" })).toMatchObject({
 		status: 200,
