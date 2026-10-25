@@ -89,7 +89,7 @@ Polar can't reach `localhost`, so webhook testing needs a public HTTPS tunnel. W
 
 ## AI Agents
 
-Agents work against the local stack: the DB through `psql`, the browser through `bunx playwright-cli`, Polar sandbox and docs through the MCP servers in `.mcp.json`, and the dev toolkit (`bun run dev:*`). The plan and the reasoning behind it are in [docs/ai-agent-tooling.md](docs/ai-agent-tooling.md).
+Agents work against the local stack: the DB through `psql`, the browser through `bunx playwright-cli`, Polar sandbox and docs through the MCP servers in `.mcp.json`, and the dev toolkit (`bun run dev:*`).
 
 ### One-time setup
 

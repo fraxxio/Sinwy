@@ -13,7 +13,13 @@ import {
 const upstreamSkills = new Set(["playwright-cli"]);
 
 const allowedEntries = new Set(["SKILL.md", "scripts", "references", "assets"]);
-const allowedKeys = new Set(["name", "description"]);
+// disable-model-invocation is the one harness key allowed: it keeps a user-only
+// skill out of the agent's skill list, and other harnesses ignore it.
+const allowedKeys = new Set([
+	"name",
+	"description",
+	"disable-model-invocation",
+]);
 
 const harnessOnlyPatterns = [
 	{ pattern: /~\/\.claude\b/, label: "a ~/.claude path" },
@@ -29,6 +35,7 @@ const frontmatterSchema = z.object({
 			"use lowercase letters, digits and single hyphens",
 		),
 	description: z.string().trim().min(1).max(1024),
+	"disable-model-invocation": z.boolean().optional(),
 });
 
 const parseFrontmatter = (content: string) => {
@@ -66,7 +73,7 @@ const checkFormat = async (root: string, name: string) => {
 		const extraKeys = Object.keys(data).filter((key) => !allowedKeys.has(key));
 		if (extraKeys.length > 0) {
 			errors.push(
-				`frontmatter may only have name and description; move ${extraKeys.join(", ")} to the harness adapter`,
+				`frontmatter may only have name, description and disable-model-invocation; move ${extraKeys.join(", ")} to the harness adapter`,
 			);
 		}
 	}
