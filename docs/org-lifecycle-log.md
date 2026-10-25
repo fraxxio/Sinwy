@@ -750,3 +750,46 @@ both. Also: decline, owner cancel, and the 4a script's dry run and
   - Found: unlike a plain checkout, a transfer has no reconcile from Polar,
     so a missed transfer webhook leaves the success page on "Making you the
     owner" until it times out. Polar retries webhooks; not fixed here.
+
+## Phase 5: Booking payments investigation
+
+**Goal:** decide which provider takes booking payments for an org's customers
+and can refund them. Research only; no code.
+
+**Files:** none; output goes to `docs/booking-payments-decision.md`.
+**Verify:** none.
+
+Early finding: Polar can't. It is merchant of record for our own products and
+pays out only to us, with no connected accounts for each business.
+
+- Compare Stripe Connect (direct charges, Refunds API, application fees),
+  Mollie Connect and Adyen for Platforms on: countries, onboarding for small
+  businesses, refunds API, who carries refund and chargeback liability, fees,
+  and what happens when the business's balance can't cover a refund.
+- Cover the two lifecycle rules: an inactive org's owner chooses to refund
+  upcoming paid bookings or handle them off-platform; an owner's account
+  deletion refunds upcoming paid bookings automatically. With direct charges,
+  refunds come out of the business's own balance, so automatic refunds after
+  the owner is gone can fail.
+- Write the result to `docs/booking-payments-decision.md` and list follow-up
+  tickets for the two refund behaviours. They're built once bookings exist.
+
+### Log (2026-10-25, `docs: decide on Stripe Connect direct charges for booking payments`)
+- Shipped: `docs/booking-payments-decision.md`. Stripe Connect direct charges
+  on Accounts v2 (`losses_collector: stripe`, `fees_collector: stripe`,
+  `dashboard: full`); Mollie Connect for Platforms as the fallback; Adyen
+  ruled out (sales-led, unpublished minimum, platform liable for negative
+  balances). Five follow-up tickets, two of them for the refund rules.
+- Differs from plan: nothing.
+- Findings the bookings work must keep: a Stripe card refund the balance
+  can't cover stays `pending`, then fails with `insufficient_funds`; other
+  methods fail at once. Mollie queues the refund instead. A business can
+  disconnect the platform from its Stripe or Mollie dashboard, which ends
+  Sinwy's refund access. So automatic refunds on owner deletion run inside the
+  deletion flow, not in the purge, and a failed refund emails the customer.
+  Blocking deletion when the balance is short would conflict with D13, so it
+  was left to the product owner.
+- Checked in the running app: nothing (research only). Figures come from the
+  providers' public docs and pricing pages (EUR, Ireland). Mollie's refund
+  and chargeback fees and Adyen's minimum aren't published; the Adyen figure
+  is from third-party reviews.
