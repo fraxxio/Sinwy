@@ -10,10 +10,7 @@ import {
 	type SubscriptionAction,
 	subscriptionQuery,
 } from "#/modules/account-dashboard/lib/billing-queries";
-import {
-	cancellationBlocker,
-	suspensionBlocker,
-} from "#/modules/account-dashboard/lib/subscription-status";
+import { PLAN_END_BLOCKER_MESSAGES } from "#/modules/account-dashboard/lib/subscription-status";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import {
 	AlertDialog,
@@ -37,7 +34,6 @@ type PlanEnd = {
 	undo: SubscriptionAction;
 	isPending: (billing: SubscriptionBillingDto) => boolean;
 	endsOn: (billing: SubscriptionBillingDto) => string;
-	blocker: typeof suspensionBlocker;
 	title: string;
 	description: string;
 	pendingTitle: string;
@@ -55,7 +51,6 @@ const PLAN_ENDS = {
 		undo: "unsuspend",
 		isPending: (billing) => billing.pauseAtPeriodEnd,
 		endsOn: (billing) => billing.currentPeriodEnd,
-		blocker: suspensionBlocker,
 		title: "Suspend plan",
 		description:
 			"Take every organization you own offline at the end of the paid period, then resume whenever you're ready, without a new checkout.",
@@ -72,7 +67,6 @@ const PLAN_ENDS = {
 		undo: "uncancel",
 		isPending: (billing) => billing.cancelAtPeriodEnd,
 		endsOn: (billing) => billing.endsAt ?? billing.currentPeriodEnd,
-		blocker: cancellationBlocker,
 		title: "Cancel plan",
 		description:
 			"End your plan at the end of the paid period. Every organization you own goes offline then, and coming back takes a new checkout.",
@@ -143,7 +137,7 @@ export function PlanEndSection({ kind }: { kind: keyof typeof PLAN_ENDS }) {
 			</SettingsSection>
 		);
 
-	const blocker = data ? config.blocker(data) : null;
+	const blocker = data?.blockers[kind] ?? null;
 	const affected = data?.activeOrganizations ?? [];
 
 	return (
@@ -209,7 +203,11 @@ export function PlanEndSection({ kind }: { kind: keyof typeof PLAN_ENDS }) {
 				</AlertDialog>
 			}
 		>
-			{blocker && <p className="text-muted-foreground text-sm">{blocker}</p>}
+			{blocker && (
+				<p className="text-muted-foreground text-sm">
+					{PLAN_END_BLOCKER_MESSAGES[blocker]}
+				</p>
+			)}
 		</SettingsSection>
 	);
 }

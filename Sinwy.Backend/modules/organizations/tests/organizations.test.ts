@@ -578,6 +578,23 @@ test("draft whose owner has a free slot: completing takes it", async () => {
 	expect(await isActive(id, cookie)).toBe(true);
 });
 
+test("draft: an admin completing → 409 ORGANIZATION_INACTIVE and the owner's free slot stays free", async () => {
+	const owner = await createUserWithSession();
+	const { id } = await createOrg("Acme", owner.cookie);
+	await givePlan(owner.userId, "starter");
+	const admin = await createUserWithSession();
+	await joinAsAdmin(id, admin.userId);
+
+	const res = await complete(id, admin.cookie);
+	expect(res.status).toBe(409);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.ORGANIZATION_INACTIVE);
+	expect(await isActive(id, owner.cookie)).toBe(false);
+	const onboarding = await unwrap<{ completedAt: string | null }>(
+		await get(`/api/organizations/${id}/onboarding`, owner.cookie),
+	);
+	expect(onboarding.completedAt).toBeNull();
+});
+
 test("draft at the cap: completing → 409 ORGANIZATION_LIMIT_REACHED and nothing is marked done", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	await givePlan(userId, "starter");

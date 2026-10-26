@@ -1,14 +1,6 @@
 import db from "@db";
 import { memberHasRole } from "@db/memberRole";
 import {
-	countHeldSlots,
-	lockPlan,
-	organizationAccess,
-	ownedBy,
-	slotLimit,
-} from "@db/organizationAccess";
-import { session } from "@db/schema/authSchema";
-import {
 	invitation,
 	member,
 	organization,
@@ -29,6 +21,8 @@ import {
 	not,
 	sql,
 } from "drizzle-orm";
+import { clearFromSessions, organizationAccess, ownedBy } from "./access";
+import { countHeldSlots, slotLimit } from "./slots";
 
 export const isSlugTaken = async (slug: string) => {
 	const [row] = await db
@@ -38,9 +32,38 @@ export const isSlugTaken = async (slug: string) => {
 	return row !== undefined;
 };
 
+/** A new organization with its creator as owner. */
+export const insertOrganizationWithOwner = (
+	values: { name: string; slug: string; industry: string },
+	userId: string,
+) =>
+	db.transaction(async (tx) => {
+		const createdAt = new Date();
+		const [org] = await tx
+			.insert(organization)
+			.values({ id: crypto.randomUUID(), ...values, createdAt })
+			.returning({
+				id: organization.id,
+				name: organization.name,
+				slug: organization.slug,
+				industry: organization.industry,
+			});
+		if (!org) throw new Error("Organization insert returned no row");
+		await tx.insert(member).values({
+			id: crypto.randomUUID(),
+			organizationId: org.id,
+			userId,
+			role: "owner",
+			createdAt,
+		});
+		return org;
+	});
+
 export const findOrganizationAccess = async (organizationId: string) => {
 	const [row] = await db
 		.select({
+			id: organization.id,
+			name: organization.name,
 			...organizationAccess,
 			onboardingCompletedAt: organization.onboardingCompletedAt,
 			ownerUserId: sql<string | null>`(${db
@@ -56,60 +79,6 @@ export const findOrganizationAccess = async (organizationId: string) => {
 		.from(organization)
 		.where(eq(organization.id, organizationId));
 	return row ?? null;
-};
-
-export type SlotHold =
-	| { result: "held" }
-	| { result: "not-found" }
-	| { result: "no-plan" }
-	| { result: "limit-reached"; limit: number };
-
-/**
- * Gives an organization the owner owns one of their slots. The owner's plan
- * row is locked first, so concurrent activations count one after another.
- */
-export const holdSlot = (userId: string, organizationId: string) =>
-	db.transaction(async (tx): Promise<SlotHold> => {
-		const plan = await lockPlan(tx, userId);
-		const [org] = await tx
-			.select({ slotHeldAt: organization.slotHeldAt })
-			.from(organization)
-			.where(
-				and(
-					eq(organization.id, organizationId),
-					isNull(organization.deletionScheduledAt),
-					ownedBy(userId),
-				),
-			)
-			.for("update");
-		if (!org) return { result: "not-found" };
-		if (org.slotHeldAt) return { result: "held" };
-		if (!plan) return { result: "no-plan" };
-
-		const limit = slotLimit(plan);
-		if ((await countHeldSlots(tx, userId)) >= limit)
-			return { result: "limit-reached", limit };
-		await tx
-			.update(organization)
-			.set({ slotHeldAt: new Date() })
-			.where(eq(organization.id, organizationId));
-		return { result: "held" };
-	});
-
-/** false when the user doesn't own the organization or it is scheduled for deletion. */
-export const releaseSlot = async (userId: string, organizationId: string) => {
-	const released = await db
-		.update(organization)
-		.set({ slotHeldAt: null })
-		.where(
-			and(
-				eq(organization.id, organizationId),
-				isNull(organization.deletionScheduledAt),
-				ownedBy(userId),
-			),
-		)
-		.returning({ id: organization.id });
-	return released.length > 0;
 };
 
 export const countOwnedHeldSlots = (userId: string) =>
@@ -232,10 +201,7 @@ export const scheduleOrganizationsForDeletion = (
 					inArray(organizationTransfer.status, ["pending", "accepted"]),
 				),
 			);
-		await tx
-			.update(session)
-			.set({ activeOrganizationId: null })
-			.where(inArray(session.activeOrganizationId, ids));
+		await clearFromSessions(tx, ids);
 	});
 
 export const findDeletionScheduledAt = async (organizationId: string) => {
@@ -330,6 +296,34 @@ export const findUnpaidOwnedOrganization = async (userId: string) => {
 		)
 		.orderBy(asc(organization.createdAt))
 		.limit(1);
+	return row?.organizationId ?? null;
+};
+
+/** The user's raw role column and the organization's access; null when not a member. */
+export const findMembershipAccess = async (
+	userId: string,
+	ref: { id: string } | { slug: string },
+) => {
+	const [row] = await db
+		.select({ role: member.role, ...organizationAccess })
+		.from(member)
+		.innerJoin(organization, eq(member.organizationId, organization.id))
+		.where(
+			and(
+				eq(member.userId, userId),
+				"id" in ref
+					? eq(organization.id, ref.id)
+					: eq(organization.slug, ref.slug),
+			),
+		);
+	return row ?? null;
+};
+
+export const findInvitationOrganizationId = async (invitationId: string) => {
+	const [row] = await db
+		.select({ organizationId: invitation.organizationId })
+		.from(invitation)
+		.where(eq(invitation.id, invitationId));
 	return row?.organizationId ?? null;
 };
 

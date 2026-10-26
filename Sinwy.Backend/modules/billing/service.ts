@@ -8,16 +8,20 @@ import {
 	polarFailureOf,
 	productIdFor,
 } from "@backend/infrastructure/polar";
-import { slotLimit, slotsOverLimit } from "@db/organizationAccess";
 import { createLogger } from "@logger";
-import { getOrganizationState } from "@organizationsModule";
+import {
+	getOrganizationState,
+	slotLimit,
+	slotsOverLimit,
+} from "@organizationsModule";
 import {
 	type AccountSubscriptionDto,
 	BILLING_INTERVALS,
+	isUpgrade,
 	type OrganizationStatus,
 	type PendingPlanChangeDto,
 	PLAN_ORGANIZATION_LIMITS,
-	PLAN_SLUGS,
+	type PlanEndBlocker,
 	type PlanSlug,
 	SUBSCRIPTION_BILLING_STATUSES,
 	type SubscriptionBillingDto,
@@ -147,7 +151,21 @@ const toSubscriptionDto = async (
 	billing: subscription && toBillingDto(subscription),
 	pendingChange:
 		subscription && (await toPendingChangeDto(userId, state, subscription)),
+	blockers: {
+		suspend: planEndBlocker(state, subscription, SUSPEND),
+		cancel: planEndBlocker(state, subscription, CANCEL),
+	},
 });
+
+/** What the action's own refusal would say now, so the page and the route agree. */
+const planEndBlocker = (
+	state: PlanState,
+	subscription: Subscription | null,
+	action: SubscriptionAction<PlanEndBlocker>,
+) => {
+	if (!state.subscriptionId) return "inactive";
+	return subscription ? action.refuse(subscription) : "unavailable";
+};
 
 /** A Polar outage only costs the billing details, never the projection. */
 const fetchSubscription = (subscriptionId: string) =>
@@ -218,10 +236,6 @@ const isLocked = (error: unknown) =>
 	error instanceof PolarApiErrors.SubscriptionsUpdate409Error &&
 	error.error.error === "SubscriptionLocked";
 
-/** Relies on PLAN_SLUGS being ordered cheapest first. */
-const isDowngrade = (from: PlanSlug, to: PlanSlug) =>
-	PLAN_SLUGS.indexOf(to) < PLAN_SLUGS.indexOf(from);
-
 type Releases =
 	| { ok: true; releases: string[] }
 	| { ok: false; error: "picks-required" | "invalid-picks" };
@@ -286,7 +300,7 @@ export const changeAccountPlan = async (
 		return { ok: false, error: "cancel-pending" };
 
 	const productId = productIdFor(plan);
-	const downgrade = isDowngrade(state.plan, plan);
+	const downgrade = isUpgrade(plan, state.plan);
 	let releases: string[] = [];
 	if (downgrade) {
 		const picks = await downgradeReleases(userId, plan, keep);
@@ -423,22 +437,24 @@ type SubscriptionActionResult =
 	| { ok: true; data: AccountSubscriptionDto }
 	| { ok: false; error: SubscriptionActionError };
 
-type SubscriptionAction = {
+type SubscriptionAction<
+	Refusal extends SubscriptionActionError = SubscriptionActionError,
+> = {
 	name: string;
 	body: PolarModels.SubscriptionUpdate;
 	/** Why Polar's current state rules the action out, or null when it doesn't. */
-	refuse: (subscription: Subscription) => SubscriptionActionError | null;
+	refuse: (subscription: Subscription) => Refusal | null;
 };
 
 // ended, or a status no action applies to
-const refuseUnlessLive = (subscription: Subscription) =>
+const refuseUnlessLive = (subscription: Subscription): PlanEndBlocker | null =>
 	subscription.status === "paused"
 		? "suspended"
 		: isEntitled(subscription)
 			? null
 			: "inactive";
 
-const SUSPEND: SubscriptionAction = {
+const SUSPEND: SubscriptionAction<PlanEndBlocker> = {
 	name: "suspend",
 	body: { pause_at_period_end: true },
 	refuse: (subscription) => {
@@ -463,7 +479,7 @@ const UNSUSPEND: SubscriptionAction = {
 		(subscription.pause_at_period_end ? null : "pause-not-pending"),
 };
 
-const CANCEL: SubscriptionAction = {
+const CANCEL: SubscriptionAction<PlanEndBlocker> = {
 	name: "cancel",
 	body: { cancel_at_period_end: true },
 	refuse: (subscription) => {

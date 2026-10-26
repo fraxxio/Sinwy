@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
+import { type PolarModels, productIdFor } from "@backend/infrastructure/polar";
 import createApp from "@backend/lib/app";
 import {
 	createUserWithSession,
@@ -7,14 +8,16 @@ import {
 	insertOrganization,
 	joinOrganization,
 } from "@backend/test/helpers";
+import { applySubscriptionEvent } from "@billingModule";
 import db from "@db";
+import { session } from "@db/schema/authSchema";
 import { organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
 import { API_ERROR_CODES, type ApiResponse } from "@sinwy/shared";
 import type { Server } from "bun";
 import { eq, isNotNull } from "drizzle-orm";
 import { registerOrganizationRoutes } from "../routes";
-import { getOrganizationState } from "../service";
+import { countHeldSlots, getOrganizationState } from "../service";
 
 let server: Server<never>;
 let base: URL;
@@ -81,6 +84,30 @@ test("activate takes a slot on the owner's plan; deactivate frees it for another
 	expect(await statusOf(second)).toBe("active");
 });
 
+test("deactivate takes the org out of the sessions that have it open, leaving others alone", async () => {
+	await givePlan(userId, "professional");
+	const closed = await ownedOrg("Closed");
+	const kept = await ownedOrg("Kept");
+	expect((await slot("activate", closed)).status).toBe(200);
+	expect((await slot("activate", kept)).status).toBe(200);
+	const inClosed = await createUserWithSession({
+		activeOrganizationId: closed,
+	});
+	const inKept = await createUserWithSession({ activeOrganizationId: kept });
+	const activeOrganizationOf = async (id: string) => {
+		const [row] = await db
+			.select({ activeOrganizationId: session.activeOrganizationId })
+			.from(session)
+			.where(eq(session.userId, id));
+		return row?.activeOrganizationId;
+	};
+
+	expect((await slot("deactivate", closed)).status).toBe(200);
+
+	expect(await activeOrganizationOf(inClosed.userId)).toBeNull();
+	expect(await activeOrganizationOf(inKept.userId)).toBe(kept);
+});
+
 test("activating an org that already holds a slot is a no-op success", async () => {
 	await givePlan(userId, "starter");
 	const orgId = await ownedOrg("Once");
@@ -115,6 +142,30 @@ test("two concurrent activations at the cap: exactly one wins", async () => {
 		.from(organization)
 		.where(isNotNull(organization.slotHeldAt));
 	expect(held).toHaveLength(1);
+});
+
+test("a lower cap landing during an activation: the cap holds either way", async () => {
+	await givePlan(userId, "professional");
+	const first = await ownedOrg("First");
+	const second = await ownedOrg("Second");
+	expect((await slot("activate", first)).status).toBe(200);
+
+	await Promise.all([
+		applySubscriptionEvent({
+			data: {
+				id: `sub_${userId}`,
+				status: "active",
+				product_id: productIdFor("starter"),
+				customer: { external_id: userId },
+				metadata: {},
+				created_at: new Date().toISOString(),
+				modified_at: new Date().toISOString(),
+			} as PolarModels.Subscription,
+		}),
+		slot("activate", second),
+	]);
+
+	expect(await countHeldSlots(userId)).toBe(1);
 });
 
 test("without a plan that grants access → 409 PLAN_REQUIRED; a paused plan counts as none", async () => {

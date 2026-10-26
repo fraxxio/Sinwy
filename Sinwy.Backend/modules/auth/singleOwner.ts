@@ -2,9 +2,9 @@ import { parseMemberRoles } from "@sinwy/shared";
 import { APIError } from "better-auth/api";
 
 /**
- * An organization has exactly one owner, whose Polar customer pays for it.
- * Ownership moves only through a transfer, which swaps the roles together
- * with the subscription; never through invitations or role changes.
+ * An organization has exactly one owner, whose plan it runs on. Ownership
+ * moves only through a transfer, which swaps the roles and moves the slot;
+ * never through invitations or role changes.
  */
 export const refuseOwnerRole = (...roles: string[]) => {
 	if (roles.some((role) => parseMemberRoles(role).includes("owner")))

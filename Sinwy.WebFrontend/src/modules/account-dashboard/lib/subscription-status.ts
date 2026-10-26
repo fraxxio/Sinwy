@@ -1,5 +1,6 @@
 import type {
 	AccountSubscriptionDto,
+	PlanEndBlocker,
 	SubscriptionBillingDto,
 } from "@sinwy/shared";
 import { formatDay } from "#/shared/lib/date";
@@ -94,59 +95,20 @@ export function describeSubscription(
 	};
 }
 
-type BlockerInput = Pick<AccountSubscriptionDto, "billing" | "pendingChange">;
-
-const UNAVAILABLE = "Billing details are unavailable right now.";
-// any update to the subscription makes Polar drop a scheduled plan change
-const PLAN_CHANGE_SCHEDULED =
-	"A plan change is scheduled. Keep your current plan first.";
-
-/**
- * Why the owner can't schedule a suspension now, or null when they can. A
- * pending suspension is its own state, undone rather than scheduled.
- */
-export function suspensionBlocker({
-	billing,
-	pendingChange,
-}: BlockerInput): string | null {
-	if (!billing) return UNAVAILABLE;
-	if (billing.cancelAtPeriodEnd) return "Your plan is set to cancel.";
-	if (pendingChange) return PLAN_CHANGE_SCHEDULED;
-	switch (billing.subscriptionStatus) {
-		case "active":
-			return null;
-		// Polar only pauses an active subscription
-		case "trialing":
-			return "A subscription can't be suspended during its trial.";
-		case "past_due":
-		case "unpaid":
-			return "The last payment failed. Update your payment method on Polar first.";
-		default:
-			return "There's no active subscription to suspend.";
-	}
-}
-
-/**
- * Why the owner can't schedule a cancellation now, or null when they can. A
- * pending cancellation is its own state, undone rather than scheduled.
- */
-export function cancellationBlocker({
-	billing,
-	pendingChange,
-}: BlockerInput): string | null {
-	if (!billing) return UNAVAILABLE;
-	if (billing.pauseAtPeriodEnd)
-		return "Your plan is set to suspend. Undo that first.";
-	if (pendingChange) return PLAN_CHANGE_SCHEDULED;
-	switch (billing.subscriptionStatus) {
-		case "active":
-		case "trialing":
-		case "past_due":
-			return null;
-		default:
-			return "There's no active subscription to cancel.";
-	}
-}
+/** Why the plan can't be suspended or canceled now; the backend decides which applies. */
+export const PLAN_END_BLOCKER_MESSAGES: Record<PlanEndBlocker, string> = {
+	unavailable: "Billing details are unavailable right now.",
+	inactive: "There's no active subscription.",
+	suspended: "Your plan is suspended.",
+	trialing: "A subscription can't be suspended during its trial.",
+	"past-due":
+		"The last payment failed. Update your payment method on Polar first.",
+	"pause-pending": "Your plan is set to suspend. Undo that first.",
+	"cancel-pending": "Your plan is set to cancel. Undo that first.",
+	// any update to the subscription makes Polar drop a scheduled plan change
+	"plan-change-pending":
+		"A plan change is scheduled. Keep your current plan first.",
+};
 
 /** "$48.00 / month", "$120.00 / 3 months" */
 export const formatPrice = (

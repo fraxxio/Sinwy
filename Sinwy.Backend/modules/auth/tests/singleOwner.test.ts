@@ -40,6 +40,7 @@ beforeEach(async () => {
 	orgId = await insertOrganization("Solo Co");
 	({ userId: ownerId, cookie: ownerCookie } = await createUserWithSession());
 	await joinOrganization(orgId, ownerId, "owner");
+	await activateOrganization(orgId);
 });
 
 const post = (path: string, cookie: string, body: unknown) =>
@@ -178,7 +179,6 @@ test("the database refuses a second owner", async () => {
 });
 
 test("deleting the organization through Better Auth frees its slot and never asks Polar", async () => {
-	await activateOrganization(orgId);
 	const listSpy = spyOn(polarClient.subscriptions, "iterList");
 	const revokeSpy = spyOn(polarClient.subscriptions, "revoke");
 

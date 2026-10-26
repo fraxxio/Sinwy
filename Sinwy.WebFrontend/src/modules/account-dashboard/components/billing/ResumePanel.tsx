@@ -33,8 +33,8 @@ class ResumeError extends Error {
 
 // the plan's state moved on, so a fresh read knows better
 const STALE_CODES: readonly number[] = [
-	API_ERROR_CODES.ORGANIZATION_NOT_SUSPENDED,
-	API_ERROR_CODES.ORGANIZATION_INACTIVE,
+	API_ERROR_CODES.PLAN_NOT_SUSPENDED,
+	API_ERROR_CODES.PLAN_REQUIRED,
 ];
 
 export function ResumePanel({

@@ -64,7 +64,19 @@ export type AccountSubscriptionDto = {
 	billing: SubscriptionBillingDto | null;
 	/** null when no downgrade is scheduled, or Polar could not be reached. */
 	pendingChange: PendingPlanChangeDto | null;
+	/** Why scheduling a suspension or a cancellation is refused now; null when it isn't. */
+	blockers: { suspend: PlanEndBlocker | null; cancel: PlanEndBlocker | null };
 };
+
+export type PlanEndBlocker =
+	| "unavailable"
+	| "inactive"
+	| "suspended"
+	| "trialing"
+	| "past-due"
+	| "pause-pending"
+	| "cancel-pending"
+	| "plan-change-pending";
 
 export const changePlanBody = z.object({
 	plan: z.enum(PLAN_SLUGS),

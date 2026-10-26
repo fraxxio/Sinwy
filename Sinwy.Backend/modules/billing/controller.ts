@@ -26,18 +26,18 @@ const failPolar = (failure: PolarFailure) =>
 		? fail("The billing provider refused this request", 422)
 		: fail("The billing provider is unavailable; try again later", 502);
 
-const failInactive = () =>
+const failNoPlan = () =>
 	fail(
 		"You have no active plan; start a checkout instead",
 		409,
-		API_ERROR_CODES.ORGANIZATION_INACTIVE,
+		API_ERROR_CODES.PLAN_REQUIRED,
 	);
 
-const failSuspended = () =>
+const failPlanSuspended = () =>
 	fail(
 		"Your plan is suspended; resume it first",
 		409,
-		API_ERROR_CODES.ORGANIZATION_SUSPENDED,
+		API_ERROR_CODES.PLAN_SUSPENDED,
 	);
 
 const failPausePending = () =>
@@ -60,14 +60,14 @@ const failCancelPending = () =>
 const failSubscriptionAction = (error: SubscriptionActionError) => {
 	switch (error) {
 		case "inactive":
-			return failInactive();
+			return failNoPlan();
 		case "suspended":
-			return failSuspended();
+			return failPlanSuspended();
 		case "not-suspended":
 			return fail(
 				"Your plan isn't suspended",
 				409,
-				API_ERROR_CODES.ORGANIZATION_NOT_SUSPENDED,
+				API_ERROR_CODES.PLAN_NOT_SUSPENDED,
 			);
 		case "trialing":
 			return fail(
@@ -145,9 +145,9 @@ export const changePlanHandler: Handler = async (c) => {
 
 	switch (result.error) {
 		case "inactive":
-			return failInactive();
+			return failNoPlan();
 		case "suspended":
-			return failSuspended();
+			return failPlanSuspended();
 		case "pause-pending":
 			return failPausePending();
 		case "cancel-pending":
@@ -184,7 +184,7 @@ export const cancelPlanChangeHandler: Handler = async (c) => {
 
 	switch (result.error) {
 		case "inactive":
-			return failInactive();
+			return failNoPlan();
 		case "not-pending":
 			return fail(
 				"No plan change is scheduled",

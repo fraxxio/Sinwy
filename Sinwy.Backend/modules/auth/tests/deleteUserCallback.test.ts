@@ -3,6 +3,7 @@ import { polarClient } from "@backend/infrastructure/polar";
 import { storageClient } from "@backend/infrastructure/storage";
 import createApp from "@backend/lib/app";
 import {
+	activateOrganization,
 	createUserWithSession,
 	insertOrganization,
 	joinOrganization,
@@ -12,7 +13,10 @@ import {
 import appConfig from "@config";
 import db from "@db";
 import { verification } from "@db/schema/authSchema";
-import { organization } from "@db/schema/organizationSchema";
+import {
+	organization,
+	organizationTransfer,
+} from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
@@ -172,4 +176,56 @@ test("Polar revoke failure: redirects to the goodbye error page, schedules and d
 	expect(await userExists(userId)).toBe(true);
 	expect(await deletionScheduledAt(orgId)).toBeNull();
 	expect(customerDeletes()).toEqual([]);
+});
+
+test("owner of a draft with no plan: nothing to revoke, the draft scheduled, user gone", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const draftId = await insertOrganization("Draft Co");
+	await joinOrganization(draftId, userId, "owner");
+
+	const res = await clickDeleteLink(cookie, await issueDeleteToken(userId));
+
+	expect(res.status).toBe(302);
+	expect(res.headers.get("location")).toBe("/auth/goodbye");
+	expect(revokeSpy).not.toHaveBeenCalled();
+	expect(await deletionScheduledAt(draftId)).toBeInstanceOf(Date);
+	expect(await userExists(userId)).toBe(false);
+});
+
+test("recipient of an accepted transfer: the transfer goes with them, the org stays its owner's and keeps its slot", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const { userId: ownerId } = await createUserWithSession();
+	const orgId = await insertOrganization("Offered Co");
+	await joinOrganization(orgId, ownerId, "owner");
+	await joinOrganization(orgId, userId, "admin");
+	await activateOrganization(orgId, "professional");
+	await db.insert(organizationTransfer).values({
+		id: "transfer_accepted",
+		organizationId: orgId,
+		fromUserId: ownerId,
+		toUserId: userId,
+		status: "accepted",
+		expiresAt: new Date(Date.now() + 86_400_000),
+	});
+
+	const res = await clickDeleteLink(cookie, await issueDeleteToken(userId));
+
+	expect(res.status).toBe(302);
+	expect(await userExists(userId)).toBe(false);
+	expect(revokeSpy).not.toHaveBeenCalled();
+	expect(
+		await db
+			.select({ id: organizationTransfer.id })
+			.from(organizationTransfer)
+			.where(eq(organizationTransfer.organizationId, orgId)),
+	).toEqual([]);
+	const [org] = await db
+		.select({
+			slotHeldAt: organization.slotHeldAt,
+			deletionScheduledAt: organization.deletionScheduledAt,
+		})
+		.from(organization)
+		.where(eq(organization.id, orgId));
+	expect(org?.slotHeldAt).toBeInstanceOf(Date);
+	expect(org?.deletionScheduledAt).toBeNull();
 });

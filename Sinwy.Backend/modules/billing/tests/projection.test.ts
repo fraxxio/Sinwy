@@ -200,6 +200,31 @@ test("losing the plan takes the user's orgs out of sessions, leaving other orgs'
 	expect(await activeOrganizationOf(elsewhere.userId)).toBe(otherOrgId);
 });
 
+test("a lower cap takes the released org out of sessions, leaving the kept one's alone", async () => {
+	const laterOrgId = await insertOrganization("Later Co");
+	await joinOrganization(laterOrgId, userId, "owner");
+	await holdSlot(orgId, new Date("2026-01-01T00:00:00Z"));
+	await holdSlot(laterOrgId, new Date("2026-02-01T00:00:00Z"));
+	const inKept = await createUserWithSession({ activeOrganizationId: orgId });
+	const inReleased = await createUserWithSession({
+		activeOrganizationId: laterOrgId,
+	});
+	const activeOrganizationOf = async (id: string) => {
+		const [row] = await db
+			.select({ activeOrganizationId: session.activeOrganizationId })
+			.from(session)
+			.where(eq(session.userId, id));
+		return row?.activeOrganizationId;
+	};
+
+	await project();
+	await project({ product_id: productIdFor("starter") });
+
+	expect((await getOrganizationState(laterOrgId))?.status).toBe("inactive");
+	expect(await activeOrganizationOf(inReleased.userId)).toBeNull();
+	expect(await activeOrganizationOf(inKept.userId)).toBe(orgId);
+});
+
 test("stale revocation of an old subscription leaves the new one alone", async () => {
 	await project({ id: "sub_old" });
 	await project({ id: "sub_old", status: "canceled" });

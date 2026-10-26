@@ -38,7 +38,7 @@ model ones come from
 
 - **Nobody opens an inactive org's dashboard.** The read-only lapsed dashboard
   and its banner go away. In the switcher, the owner's link to an inactive org
-  goes to Account → Billing (Account → Organizations to activate it); for
+  goes to Account → Organizations, to activate it or sort out the plan; for
   everyone else the entry is disabled.
 - **One plan per user** (D1, D2). The subscription belongs to the user, not to
   an organization. One invoice per period, in one billing name. Polar's "Allow
@@ -63,7 +63,9 @@ model ones come from
   organization is free and only frees its slot.
 - **Cancel, lapse and past due apply to every owned organization together**
   (D9). Cancel and suspend warn with the list of organizations affected.
-- **One trial per user**, on the first plan (D10).
+- **One trial per user**, on the first plan (D10). Polar's "Prevent trial
+  abuse" is on in the sandbox and production, so signing up again after
+  deleting the account doesn't bring a second trial.
 - **Only an existing member can receive a transfer.** The old owner stays on as
   admin. The transfer uses one of the recipient's slots and frees the old
   owner's (D11): a recipient with no plan buys one at acceptance; a recipient
@@ -188,15 +190,18 @@ App state (log: Phases 1–4):
   cascade-deleted, not canceled.
 - Better Auth's `/organization/leave` fires no `afterRemoveMember`; a
   `hooks.after` covers it (log: Phase 4).
-- Ownership swaps go through `swapOwner` (locks both member rows, demotes,
-  then promotes; the one-owner index needs that order).
+- Ownership swaps go through `handOver` (its `swapOwner` locks both member
+  rows, demotes, then promotes; the one-owner index needs that order).
 - Jobs: add a `Job` to `startJobs` in `Sinwy.Backend/index.ts`; the name is
   the advisory lock key. Self-heal queries skip rows younger than 1 hour,
   because better-auth writes the org and its owner member separately.
 - An org's status is derived, never stored: spread `organizationAccess`
-  (`db/organizationAccess.ts`) into the query and pass the row to
+  (`modules/organizations/access.ts`) into the query and pass the row to
   `organizationStatusOf` / `isOrganizationPublic`. `Membership.plan` is the
   owner's plan while the org is active.
+- Every slot and ownership write lives in `modules/organizations/slots.ts`;
+  billing calls `fitSlotsToCap` under its plan row lock, transfers call
+  `lockHandover` then `handOver`.
 - Anything that hands out a slot locks plan rows first with `lockPlan`, in
   user-id order, then org rows, and counts with `countHeldSlots`; that lock is what keeps two
   activations from passing the cap (log: Phase 6). Creation, a draft's
@@ -275,8 +280,8 @@ Open, not caused by this plan:
 
 Code review (log: Phase 11):
 - Findings are in [org-lifecycle-review.md](org-lifecycle-review.md) (M1–M3,
-  L1–L9), not fixed yet. Phase 12 waits for their fixes, and no phase
-  plans those fixes yet.
+  L1–L9). M1–M3 are fixed; L1–L9 are not, and no phase plans them yet.
+  Phase 12 waits for the fixes.
 
 ---
 
@@ -293,7 +298,8 @@ plan's Decisions and Defaults,
 [org-billing-model-decision.md](org-billing-model-decision.md), the log and
 [org-lifecycle-review.md](org-lifecycle-review.md) (its "Checked and sound"
 list maps the rules to code). Code for the "Enforced in" lines:
-`Sinwy.Backend/db/organizationAccess.ts` (status, slots, cap);
+`Sinwy.Backend/modules/organizations/access.ts` (status) and `slots.ts`
+(slots, cap, handover);
 `Sinwy.Backend/modules/organizations/` (create, wizard, activate,
 deactivate, deletion schedule, purge); `modules/billing/` (projection,
 checkout guard, plan change, suspend, cancel, resume);

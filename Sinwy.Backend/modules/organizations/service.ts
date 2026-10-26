@@ -1,9 +1,9 @@
-import { auth, type Membership } from "@authModule";
+import type { Membership } from "@authModule";
 import {
 	type OrganizationProfileInput,
 	uniqueSlug,
 } from "@backend/modules/organizations/utils";
-import type { OrganizationAccess } from "@db/organizationAccess";
+import db from "@db";
 import {
 	type AccountDeletionPreviewDto,
 	EMPTY_ORGANIZATION_PROFILE,
@@ -20,10 +20,13 @@ import {
 	parseMemberRoles,
 	toPlanSlug,
 } from "@sinwy/shared";
+import { clearFromSessions, type OrganizationAccess } from "./access";
 import {
 	countOwnedHeldSlots,
 	findDeletionScheduledAt,
+	findInvitationOrganizationId,
 	findMemberOrganizations,
+	findMembershipAccess,
 	findOnboardingCompletedAt,
 	findOrganizationAccess,
 	findOwnedOrganizationIds,
@@ -32,14 +35,13 @@ import {
 	findUnfinishedOnboardingOrganization,
 	findUnpaidOwnedOrganization,
 	hasFreeSlot,
-	holdSlot,
+	insertOrganizationWithOwner,
 	isSlugTaken,
 	markOnboardingCompleted,
-	releaseSlot,
-	type SlotHold,
 	scheduleOrganizationsForDeletion,
 	upsertProfile,
 } from "./repository";
+import { holdSlot, releaseSlot, type SlotHold } from "./slots";
 
 export const createOrganization = async (
 	userId: string,
@@ -47,12 +49,10 @@ export const createOrganization = async (
 	industry: OrganizationIndustry,
 ): Promise<OrganizationDto> => {
 	const slug = await uniqueSlug(name, isSlugTaken);
-	// server-side system action: no session headers + explicit userId bypasses
-	// allowUserToCreateOrganization: false; creator becomes owner
-	const org = await auth.api.createOrganization({
-		body: { name, slug, userId, industry },
-	});
-	if (!org) throw new Error("Organization creation failed");
+	const org = await insertOrganizationWithOwner(
+		{ name, slug, industry },
+		userId,
+	);
 	// a new organization, not a freed slot, so it takes one when it can;
 	// otherwise it stays a draft
 	const hold = await holdSlot(userId, org.id);
@@ -136,6 +136,14 @@ export const listOrganizations = async (
 	});
 };
 
+/** The user's raw role column and the organization's access; null when not a member. */
+export const getMembershipAccess = findMembershipAccess;
+
+export const getInvitationOrganizationId = findInvitationOrganizationId;
+
+/** The organization's name, owner and access; null for an unknown one. */
+export const getOrganizationAccess = findOrganizationAccess;
+
 export type OrganizationState = {
 	status: OrganizationStatus;
 	slotHeld: boolean;
@@ -161,6 +169,10 @@ export const getOrganizationState = async (
 
 export const listOwnedOrganizationIds = async (userId: string) =>
 	(await findOwnedOrganizationIds(userId)).map((row) => row.id);
+
+/** Takes every organization the user owns out of the sessions that have it open. */
+export const closeOwnedOrganizations = async (userId: string) =>
+	clearFromSessions(db, await listOwnedOrganizationIds(userId));
 
 /** Owned organizations holding a slot, not scheduled for deletion. */
 export const countHeldSlots = countOwnedHeldSlots;
@@ -241,7 +253,8 @@ export const saveOrganizationProfile = async (
 
 /**
  * Finishing a draft's wizard takes one of its owner's free slots (Default 10);
- * without a plan or at the cap it stays a draft.
+ * without a plan or at the cap it stays a draft. Only the owner fills their
+ * slot (D7), so an admin can't finish a draft.
  */
 export const completeOrganizationOnboarding = async (
 	membership: Membership,
@@ -252,6 +265,8 @@ export const completeOrganizationOnboarding = async (
 
 	const { organizationId } = membership;
 	if (target.draft) {
+		if (!membership.roles.includes("owner"))
+			return { ok: false, error: "inactive" };
 		const hold = await holdSlot(target.ownerUserId, organizationId);
 		if (hold.result !== "held") return { ok: false, error: hold.result };
 	}

@@ -9,9 +9,8 @@ import {
 } from "@backend/test/helpers";
 import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
-import { getOrganizationState } from "@organizationsModule";
+import { getOrganizationState, moveOwnership } from "@organizationsModule";
 import { asc, eq } from "drizzle-orm";
-import { moveOwnership } from "../repository";
 import { transferOwnershipBySupport } from "../service";
 
 let orgId: string;

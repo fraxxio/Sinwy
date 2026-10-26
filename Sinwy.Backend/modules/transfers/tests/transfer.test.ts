@@ -300,6 +300,24 @@ test("accept with a full plan → needs-slot, the offer stays open; after an upg
 	expect(await countHeldSlots(staffId)).toBe(2);
 });
 
+test("accept with a suspended plan → suspended, the offer stays open; after resuming it completes", async () => {
+	await givePlan(staffId, null, { status: "paused" });
+	const id = await offered();
+
+	expect(await acceptIncomingTransfer(staffId, id)).toEqual({
+		ok: false,
+		error: "suspended",
+	});
+	expect((await transferRow(id))?.status).toBe("pending");
+	expect(await ownersOf(orgId)).toEqual([ownerId]);
+
+	await givePlan(staffId, "starter");
+	expect(await acceptIncomingTransfer(staffId, id)).toEqual({
+		ok: true,
+		data: { status: "completed" },
+	});
+});
+
 test("a recipient who fills their slot between accept and the plan landing ends up upgrading, not over the cap", async () => {
 	const theirs = await insertOrganization("Their Co");
 	await joinOrganization(theirs, staffId, "owner");
@@ -377,6 +395,32 @@ test("two recipients' acceptances racing for the last slot: exactly one org move
 	expect(results.filter((r) => r.ok)).toHaveLength(1);
 	expect(results.find((r) => !r.ok)).toMatchObject({ error: "needs-slot" });
 	expect(await countHeldSlots(staffId)).toBe(1);
+});
+
+test("a lower cap landing on the recipient during their acceptance: the cap holds either way", async () => {
+	await givePlan(staffId, "professional");
+	const theirs = await insertOrganization("Their Co");
+	await joinOrganization(theirs, staffId, "owner");
+	await holdSlot(theirs);
+	const id = await offered();
+
+	const [accepted] = await Promise.all([
+		acceptIncomingTransfer(staffId, id),
+		applySubscriptionEvent({
+			data: {
+				id: `sub_${staffId}`,
+				status: "active",
+				product_id: productIdFor("starter"),
+				customer: { external_id: staffId },
+				metadata: {},
+				created_at: new Date().toISOString(),
+				modified_at: new Date().toISOString(),
+			} as PolarModels.Subscription,
+		}),
+	]);
+
+	expect(await countHeldSlots(staffId)).toBe(1);
+	expect(await countHeldSlots(ownerId)).toBe(accepted.ok ? 0 : 1);
 });
 
 test("accept: only the recipient, and not once expired", async () => {

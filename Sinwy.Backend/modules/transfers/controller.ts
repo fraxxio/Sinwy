@@ -54,6 +54,12 @@ const failAccept = (error: AcceptError) => {
 				409,
 				API_ERROR_CODES.RECIPIENT_NEEDS_PLAN,
 			);
+		case "suspended":
+			return fail(
+				"Your plan is suspended; resume it to take over this organization",
+				409,
+				API_ERROR_CODES.PLAN_SUSPENDED,
+			);
 	}
 };
 

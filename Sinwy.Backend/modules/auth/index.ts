@@ -1,4 +1,3 @@
-export { clearActiveOrganization } from "./activeOrganization";
 export { auth } from "./auth";
 export { requireAuth, sessionFrom } from "./middleware";
 export { requireFeature } from "./requireFeature";

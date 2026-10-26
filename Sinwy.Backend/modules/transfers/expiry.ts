@@ -4,7 +4,7 @@ import { expireTransfers } from "./repository";
 
 const expiryLogger = createLogger("transfers:expiry");
 
-/** A payment for an expired transfer that lands later is refunded in full. */
+/** A plan bought for a transfer that expired first is kept, and nothing moves (Default 11). */
 export const expireTransfersJob: Job<number> = {
 	name: "expire-organization-transfers",
 	intervalMs: 15 * 60 * 1000,

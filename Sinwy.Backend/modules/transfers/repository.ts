@@ -1,89 +1,14 @@
 import db from "@db";
-import { memberHasRole } from "@db/memberRole";
-import {
-	countHeldSlots,
-	lockPlan,
-	organizationAccess,
-	slotLimit,
-} from "@db/organizationAccess";
 import {
 	member,
 	organization,
 	organizationTransfer,
 } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
+import { handOver, lockHandover } from "@organizationsModule";
 import type { OpenTransferStatus } from "@sinwy/shared";
 import { and, asc, eq, exists, gt, inArray, lte, not, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-export type OwnerSwap =
-	| { result: "swapped" }
-	| { result: "owner-changed" }
-	| { result: "not-a-member" };
-
-/**
- * Demotes `fromUserId` to admin, then promotes `toUserId` to owner, in that
- * order: the one-owner index never sees two owners. Both rows are locked
- * first, so the checks hold until the transaction commits.
- */
-export const swapOwner = async (
-	tx: Tx,
-	organizationId: string,
-	fromUserId: string,
-	toUserId: string,
-): Promise<OwnerSwap> => {
-	const rows = await tx
-		.select({
-			userId: member.userId,
-			isOwner: memberHasRole("owner").mapWith(Boolean),
-		})
-		.from(member)
-		.where(
-			and(
-				eq(member.organizationId, organizationId),
-				inArray(member.userId, [fromUserId, toUserId]),
-			),
-		)
-		.for("update");
-	const from = rows.find((row) => row.userId === fromUserId);
-	const to = rows.find((row) => row.userId === toUserId);
-	if (!from?.isOwner) return { result: "owner-changed" };
-	if (!to || fromUserId === toUserId) return { result: "not-a-member" };
-
-	await tx
-		.update(member)
-		.set({ role: "admin" })
-		.where(
-			and(
-				eq(member.organizationId, organizationId),
-				eq(member.userId, fromUserId),
-			),
-		);
-	await tx
-		.update(member)
-		.set({ role: "owner" })
-		.where(
-			and(
-				eq(member.organizationId, organizationId),
-				eq(member.userId, toUserId),
-			),
-		);
-	return { result: "swapped" };
-};
-
-export const findOrganizationForTransfer = async (organizationId: string) => {
-	const [row] = await db
-		.select({
-			id: organization.id,
-			name: organization.name,
-			...organizationAccess,
-		})
-		.from(organization)
-		.where(eq(organization.id, organizationId));
-	return row ?? null;
-};
 
 export const findMembers = (organizationId: string) =>
 	db
@@ -96,70 +21,6 @@ export const findMembers = (organizationId: string) =>
 		.from(member)
 		.innerJoin(user, eq(member.userId, user.id))
 		.where(eq(member.organizationId, organizationId));
-
-/**
- * Locks what a handover changes, in the order every slot write takes it: both
- * owners' plan rows by id, then the organization. Says whether the recipient
- * has a plan that grants access, and a free slot on it.
- */
-const lockForHandover = async (
-	tx: Tx,
-	organizationId: string,
-	fromUserId: string,
-	toUserId: string,
-) => {
-	let recipientPlan: string | null = null;
-	for (const userId of [fromUserId, toUserId].sort()) {
-		const plan = await lockPlan(tx, userId);
-		if (userId === toUserId) recipientPlan = plan;
-	}
-	const [org] = await tx
-		.select({ deletionScheduledAt: organization.deletionScheduledAt })
-		.from(organization)
-		.where(eq(organization.id, organizationId))
-		.for("update");
-	const recipientHasSlot =
-		recipientPlan !== null &&
-		(await countHeldSlots(tx, toUserId)) < slotLimit(recipientPlan);
-	return {
-		org: org ?? null,
-		recipientHasPlan: recipientPlan !== null,
-		recipientHasSlot,
-	};
-};
-
-/** The old owner's slot is freed; the organization holds one of the new owner's, or none. */
-const moveSlot = (tx: Tx, organizationId: string, toRecipient: boolean) =>
-	tx
-		.update(organization)
-		.set({ slotHeldAt: toRecipient ? new Date() : null })
-		.where(eq(organization.id, organizationId));
-
-export type SupportHandover =
-	| { result: "swapped"; slotHeld: boolean }
-	| { result: "owner-changed" }
-	| { result: "not-a-member" }
-	| { result: "not-found" };
-
-/** Support path: roles swap, and the organization keeps a slot only if the recipient has one free. */
-export const moveOwnership = (
-	organizationId: string,
-	fromUserId: string,
-	toUserId: string,
-) =>
-	db.transaction(async (tx): Promise<SupportHandover> => {
-		const { org, recipientHasSlot } = await lockForHandover(
-			tx,
-			organizationId,
-			fromUserId,
-			toUserId,
-		);
-		if (!org) return { result: "not-found" };
-		const swap = await swapOwner(tx, organizationId, fromUserId, toUserId);
-		if (swap.result !== "swapped") return swap;
-		await moveSlot(tx, organizationId, recipientHasSlot);
-		return { result: "swapped", slotHeld: recipientHasSlot };
-	});
 
 export type TransferRow = typeof organizationTransfer.$inferSelect;
 
@@ -322,6 +183,7 @@ export type TransferCompletion =
 	| { result: "not-open" }
 	| { result: "needs-plan" }
 	| { result: "needs-slot" }
+	| { result: "suspended" }
 	| { result: "refused"; reason: string };
 
 /**
@@ -329,7 +191,7 @@ export type TransferCompletion =
  * the organization moves from the old owner's slot to one of the recipient's.
  * Refused, leaving the offer open, while the recipient has no plan that grants
  * access or no free slot; a recipient without a plan leaves it `accepted`,
- * waiting on their checkout. A transfer whose recipient left or whose owner
+ * waiting on their checkout, and one whose plan is suspended must resume it. A transfer whose recipient left or whose owner
  * changed is canceled instead. `acceptedOnly` completes only a transfer
  * already waiting on a checkout.
  */
@@ -345,12 +207,13 @@ export const completeTransfer = (
 			.where(eq(organizationTransfer.id, transferId));
 		if (!unlocked) return { result: "not-open" };
 
-		const { org, recipientHasPlan, recipientHasSlot } = await lockForHandover(
-			tx,
-			unlocked.organizationId,
-			unlocked.fromUserId,
-			unlocked.toUserId,
-		);
+		const { org, recipientHasPlan, recipientHasSlot, recipientSuspended } =
+			await lockHandover(
+				tx,
+				unlocked.organizationId,
+				unlocked.fromUserId,
+				unlocked.toUserId,
+			);
 		const [transfer] = await tx
 			.select()
 			.from(organizationTransfer)
@@ -368,6 +231,7 @@ export const completeTransfer = (
 			transfer.expiresAt <= now
 		)
 			return { result: "not-open" };
+		if (recipientSuspended) return { result: "suspended" };
 		if (!recipientHasPlan) {
 			await tx
 				.update(organizationTransfer)
@@ -377,11 +241,12 @@ export const completeTransfer = (
 		}
 		if (!recipientHasSlot) return { result: "needs-slot" };
 
-		const swap = await swapOwner(
+		const swap = await handOver(
 			tx,
 			transfer.organizationId,
 			transfer.fromUserId,
 			transfer.toUserId,
+			true,
 		);
 		if (swap.result !== "swapped") {
 			await tx
@@ -390,7 +255,6 @@ export const completeTransfer = (
 				.where(eq(organizationTransfer.id, transferId));
 			return { result: "refused", reason: swap.result };
 		}
-		await moveSlot(tx, transfer.organizationId, true);
 		const [completed] = await tx
 			.update(organizationTransfer)
 			.set({ status: "completed", updatedAt: sql`now()` })

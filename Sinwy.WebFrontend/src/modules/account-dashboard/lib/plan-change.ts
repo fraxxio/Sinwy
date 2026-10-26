@@ -1,18 +1,18 @@
 import {
 	type Feature,
+	isUpgrade,
 	PLAN_FEATURES,
 	PLAN_ORGANIZATION_LIMITS,
-	PLAN_SLUGS,
 	type PlanSlug,
 } from "@sinwy/shared";
 import { formatDay } from "#/shared/lib/date";
 
 export type PlanChangeDirection = "upgrade" | "downgrade";
 
-/** Relies on PLAN_SLUGS being ordered cheapest first. */
 export function describePlanChange(from: PlanSlug, to: PlanSlug) {
-	const direction: PlanChangeDirection =
-		PLAN_SLUGS.indexOf(to) > PLAN_SLUGS.indexOf(from) ? "upgrade" : "downgrade";
+	const direction: PlanChangeDirection = isUpgrade(from, to)
+		? "upgrade"
+		: "downgrade";
 	const missingFrom = (plan: PlanSlug) => (feature: Feature) =>
 		!PLAN_FEATURES[plan].includes(feature);
 

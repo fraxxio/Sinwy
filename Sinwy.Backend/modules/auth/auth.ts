@@ -31,6 +31,7 @@ import {
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
 import {
+	refuseOrganizationEndpoint,
 	refuseScheduledOrganization,
 	refuseUnavailableOrganization,
 } from "./activeOrganization";
@@ -225,11 +226,13 @@ export const auth = betterAuth({
 					},
 				};
 			}
-			// the plugin has no beforeSetActive hook
-			if (ctx.path === "/organization/set-active") {
+			if (ctx.path.startsWith("/organization/")) {
 				const session = await getSessionFromCtx(ctx);
-				if (session)
+				// the plugin has no beforeSetActive hook
+				if (session && ctx.path === "/organization/set-active")
 					await refuseUnavailableOrganization(session.session, ctx.body);
+				else if (session)
+					await refuseOrganizationEndpoint(ctx.path, session.session, ctx);
 			}
 			if (
 				ctx.path === "/customer/subscriptions/list" &&
@@ -332,7 +335,7 @@ export const auth = betterAuth({
 					secret: appConfig.POLAR_WEBHOOK_SECRET,
 					// `updated` fires on every change (plan change, cancel, renewal);
 					// all events converge on the same projection. Wrapped because
-					// billing imports auth: a bare reference is read mid-cycle.
+					// billing's routes import auth: a bare reference is read mid-cycle.
 					onSubscriptionUpdated: (event) => applySubscriptionEvent(event),
 					onSubscriptionActive: (event) => applySubscriptionEvent(event),
 					onSubscriptionRevoked: (event) => applySubscriptionEvent(event),

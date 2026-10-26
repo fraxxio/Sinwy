@@ -4,10 +4,14 @@ export {
 } from "./purge";
 export { registerOrganizationRoutes } from "./routes";
 export {
+	closeOwnedOrganizations,
 	completeOrganizationOnboarding,
 	countHeldSlots,
 	createOrganization,
 	getAccountDeletionPreview,
+	getInvitationOrganizationId,
+	getMembershipAccess,
+	getOrganizationAccess,
 	getOrganizationOnboarding,
 	getOrganizationState,
 	getUnfinishedOnboardingOrganizationId,
@@ -23,3 +27,13 @@ export {
 	saveOrganizationProfile,
 	scheduleOwnedOrganizationsForDeletion,
 } from "./service";
+export {
+	fitSlotsToCap,
+	type HeldSlot,
+	handOver,
+	listHeldSlots,
+	lockHandover,
+	moveOwnership,
+	slotLimit,
+	slotsOverLimit,
+} from "./slots";

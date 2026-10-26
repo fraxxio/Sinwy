@@ -320,6 +320,7 @@ test("GET subscription: no plan → no plan, no slots, no billing", async () => 
 		activeOrganizations: [],
 		billing: null,
 		pendingChange: null,
+		blockers: { suspend: "inactive", cancel: "inactive" },
 	});
 	expect(get).not.toHaveBeenCalled();
 });
@@ -354,6 +355,47 @@ test("GET subscription: a plan → its cap, the slots in use and live billing de
 			resumesAt: null,
 		},
 		pendingChange: null,
+		blockers: { suspend: "cancel-pending", cancel: "cancel-pending" },
+	});
+});
+
+test.each([
+	["active", {}, { suspend: null, cancel: null }],
+	["trialing", { status: "trialing" }, { suspend: "trialing", cancel: null }],
+	["past due", { status: "past_due" }, { suspend: "past-due", cancel: null }],
+	[
+		"set to suspend",
+		{ pause_at_period_end: true },
+		{ suspend: "pause-pending", cancel: "pause-pending" },
+	],
+] as const)("GET subscription: %s → the blockers the suspend and cancel routes would answer", async (_, overrides, blockers) => {
+	const { organizationId, cookie } = await seedOrg();
+	await activateOrganization(organizationId, "professional");
+	stub(polarClient.subscriptions, "get").mockResolvedValue(
+		subscription(organizationId, overrides),
+	);
+
+	const dto = await unwrap<AccountSubscriptionDto>(
+		await request("/api/account/subscription", cookie),
+	);
+
+	expect(dto.blockers).toEqual(blockers);
+});
+
+test("GET subscription: Polar down → blockers say billing is unavailable", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	await activateOrganization(organizationId, "professional");
+	stub(polarClient.subscriptions, "get").mockRejectedValue(
+		new Error("polar down"),
+	);
+
+	const dto = await unwrap<AccountSubscriptionDto>(
+		await request("/api/account/subscription", cookie),
+	);
+
+	expect(dto.blockers).toEqual({
+		suspend: "unavailable",
+		cancel: "unavailable",
 	});
 });
 
@@ -481,7 +523,7 @@ test("POST plan: invalid body → 400, no plan → 409, same plan → 400", asyn
 	});
 	expect(inactive.status).toBe(409);
 	expect(((await inactive.json()) as ApiResponse).code).toBe(
-		API_ERROR_CODES.ORGANIZATION_INACTIVE,
+		API_ERROR_CODES.PLAN_REQUIRED,
 	);
 
 	await activateOrganization(organizationId, "enterprise");
@@ -633,7 +675,7 @@ test("POST plan: suspended org → 409 with its own code, Polar not asked", asyn
 	const res = await changePlan(cookie, { plan: "enterprise" });
 
 	expect(res.status).toBe(409);
-	expect(await codeOf(res)).toBe(API_ERROR_CODES.ORGANIZATION_SUSPENDED);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.PLAN_SUSPENDED);
 	expect(get).not.toHaveBeenCalled();
 	expect(update).not.toHaveBeenCalled();
 });
@@ -1006,7 +1048,7 @@ test.each([
 		{ pending_update: pendingStarter },
 		API_ERROR_CODES.PLAN_CHANGE_PENDING,
 	],
-	["ended", { status: "canceled" }, API_ERROR_CODES.ORGANIZATION_INACTIVE],
+	["ended", { status: "canceled" }, API_ERROR_CODES.PLAN_REQUIRED],
 ] as const)("suspend: subscription %s → 409 with its own code, Polar not updated", async (_, overrides, code) => {
 	const { organizationId, cookie } = await seedOrg();
 	await activateOrganization(organizationId, "professional");
@@ -1032,7 +1074,7 @@ test("suspend: already paused, webhook missed → 409 suspended, and the org is 
 
 	const res = await act(cookie, "suspend");
 
-	expect(await codeOf(res)).toBe(API_ERROR_CODES.ORGANIZATION_SUSPENDED);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.PLAN_SUSPENDED);
 	expect(update).not.toHaveBeenCalled();
 	expect(await getSubscriptionState(organizationId)).toEqual(
 		suspended(organizationId),
@@ -1052,7 +1094,7 @@ test("suspend, unsuspend, resume, cancel, uncancel: org with no subscription →
 	] as const) {
 		const res = await act(cookie, action);
 		expect(res.status).toBe(409);
-		expect(await codeOf(res)).toBe(API_ERROR_CODES.ORGANIZATION_INACTIVE);
+		expect(await codeOf(res)).toBe(API_ERROR_CODES.PLAN_REQUIRED);
 	}
 	expect(get).not.toHaveBeenCalled();
 });
@@ -1125,7 +1167,7 @@ test.each([
 	[
 		"the pause already in effect",
 		{ status: "paused" },
-		API_ERROR_CODES.ORGANIZATION_SUSPENDED,
+		API_ERROR_CODES.PLAN_SUSPENDED,
 	],
 ] as const)("unsuspend: %s → 409 with its own code, Polar not updated", async (_, overrides, code) => {
 	const { organizationId, cookie } = await seedOrg();
@@ -1179,7 +1221,7 @@ test("resume: not paused → 409 not suspended; ended → 409 inactive and the b
 	const update = stub(polarClient.subscriptions, "update");
 
 	expect(await codeOf(await act(cookie, "resume"))).toBe(
-		API_ERROR_CODES.ORGANIZATION_NOT_SUSPENDED,
+		API_ERROR_CODES.PLAN_NOT_SUSPENDED,
 	);
 
 	await suspendInDb(organizationId);
@@ -1190,7 +1232,7 @@ test("resume: not paused → 409 not suspended; ended → 409 inactive and the b
 		}),
 	);
 	expect(await codeOf(await act(cookie, "resume"))).toBe(
-		API_ERROR_CODES.ORGANIZATION_INACTIVE,
+		API_ERROR_CODES.PLAN_REQUIRED,
 	);
 	expect(update).not.toHaveBeenCalled();
 	expect(await getSubscriptionState(organizationId)).toEqual({
@@ -1358,8 +1400,8 @@ test.each([
 		{ pending_update: pendingStarter },
 		API_ERROR_CODES.PLAN_CHANGE_PENDING,
 	],
-	["paused", { status: "paused" }, API_ERROR_CODES.ORGANIZATION_SUSPENDED],
-	["ended", { status: "canceled" }, API_ERROR_CODES.ORGANIZATION_INACTIVE],
+	["paused", { status: "paused" }, API_ERROR_CODES.PLAN_SUSPENDED],
+	["ended", { status: "canceled" }, API_ERROR_CODES.PLAN_REQUIRED],
 ] as const)("cancel: subscription %s → 409 with its own code, Polar not updated", async (_, overrides, code) => {
 	const { organizationId, cookie } = await seedOrg();
 	await activateOrganization(organizationId, "professional");

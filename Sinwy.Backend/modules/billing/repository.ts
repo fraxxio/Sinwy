@@ -1,11 +1,11 @@
 import db from "@db";
+import { user, userSubscription } from "@db/schema/userSchema";
 import {
+	fitSlotsToCap,
 	type HeldSlot,
 	listHeldSlots,
-	releaseSlotsOverLimit,
 	slotLimit,
-} from "@db/organizationAccess";
-import { user, userSubscription } from "@db/schema/userSchema";
+} from "@organizationsModule";
 import type { PlanSlug } from "@sinwy/shared";
 import { eq, sql } from "drizzle-orm";
 
@@ -89,7 +89,7 @@ const settleSlots = async (
 	const limit = slotLimit(values.plan);
 	if (!values.plan) return { picked: [], unpicked: [], limit };
 	return {
-		...(await releaseSlotsOverLimit(tx, userId, limit, releaseFirst)),
+		...(await fitSlotsToCap(tx, userId, limit, releaseFirst)),
 		limit,
 	};
 };

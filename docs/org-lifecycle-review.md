@@ -3,8 +3,8 @@
 Phase 11 of [org-lifecycle-plan.md](org-lifecycle-plan.md). Scope: the diff
 from `245b7bd` (before Phase 0) to `a30ac99` (Phase 10), plus the older code it
 relies on: projection, checkout guard, account deletion, membership guards,
-switcher, post-login. Nothing here is fixed; each finding suggests a direction
-only.
+switcher, post-login. Each finding suggests a direction only. M1–M3 and
+L1–L9 are fixed since (each says how).
 
 Verification: findings marked *reproduced* were run as throwaway tests against
 the test database (`bun test`, deleted afterwards). The rest point to the
@@ -48,6 +48,11 @@ take an `organizationId`: refuse every call for a scheduled org, and refuse
 writes for an inactive one, with the same `ORGANIZATION_INACTIVE` code. Cover
 it with a table-driven test over the plugin's endpoints.
 
+**Fixed.** `refuseOrganizationEndpoint` (`modules/auth/activeOrganization.ts`)
+runs in `hooks.before` for every organization-scoped plugin endpoint, reading
+the organization from the same input the plugin reads. Covered by
+`modules/auth/tests/organizationEndpoints.test.ts`.
+
 ### M2. An admin finishing a draft's setup takes one of the owner's slots
 
 `Sinwy.Backend/modules/organizations/routes.ts:29-36`,
@@ -74,6 +79,9 @@ of their own.
 **Fix direction.** Take the slot in the wizard only when the caller is the
 owner; an admin's completion of a draft answers 409 like at the cap, or
 leaves the draft for the owner to activate.
+
+**Fixed.** An admin's completion of a draft answers 409
+`ORGANIZATION_INACTIVE` and takes no slot; covered in `organizations.test.ts`.
 
 ### M3. Slot rules and table writes are spread across modules with circular imports
 
@@ -109,12 +117,22 @@ with these picks" under its lock). Let the projection publish "plan changed"
 and "plan bought for transfer X" to listeners registered at startup, rather
 than importing transfers and auth.
 
+**Fixed.** Every slot and ownership write is in
+`modules/organizations/slots.ts` (with the status fragment in `access.ts`),
+which also clears the sessions of orgs that lose their slot. Billing calls
+`fitSlotsToCap`; transfers call `lockHandover` and `handOver`. Membership
+lookups and organization creation moved into organizations too, so no service
+imports auth any more and the services have no import cycle. No listeners
+were needed: billing → transfers was one-way once the auth edges were gone.
+Routes and controllers still import auth's middleware, which is why the
+webhook handlers stay wrapped.
+
 ## Low
 
 ### L1. A suspended recipient who accepts through the API is left `accepted` with no way to pay
 
-`Sinwy.Backend/db/organizationAccess.ts:69-76`,
-`Sinwy.Backend/modules/transfers/repository.ts:371-377`,
+`Sinwy.Backend/modules/organizations/slots.ts:16-23`,
+`Sinwy.Backend/modules/transfers/repository.ts:232-238`,
 `Sinwy.Backend/modules/billing/checkoutGuard.ts:24-26`
 
 `lockPlan` returns null for a paused plan, so `completeTransfer` treats a
@@ -128,18 +146,25 @@ resumes and accepts again. **Fix direction:** tell "no plan" from "paused"
 in `lockForHandover` and refuse acceptance while the recipient's plan is
 paused.
 
+**Fixed.** `lockHandover` reports a suspended recipient, and acceptance
+answers 409 `PLAN_SUSPENDED` with the offer left `pending`; covered in
+`transfer.test.ts`.
+
 ### L2. Deactivating an org leaves it active in members' sessions
 
 `Sinwy.Backend/modules/organizations/service.ts:182`,
-`Sinwy.Backend/modules/organizations/repository.ts:100-113`,
-compare `Sinwy.Backend/modules/billing/projection.ts:103-104`
+`Sinwy.Backend/modules/organizations/slots.ts:137-150`,
+compare `Sinwy.Backend/modules/organizations/slots.ts:79-96`
 
-When the projection takes slots away, it calls `clearActiveOrganization` for
+When the projection takes slots away, `fitSlotsToCap` clears the sessions of
 each org. Deactivate (`releaseSlot`) doesn't, so sessions keep pointing at the
 now-inactive org. Requests that fall back to the session's org still resolve
 it, with reads answered and writes refused, and the shell turns members away
 only once it refetches the summary. **Fix direction:** clear the sessions in
 deactivate, as every other path that makes an org inactive does.
+
+**Fixed.** `releaseSlot` clears the sessions in the same transaction; covered
+in `slots.test.ts`.
 
 ### L3. Account deletion copy describes per-organization subscriptions and leaves out the plan
 
@@ -156,6 +181,12 @@ failure leaves the account in place without its plan. **Fix direction:**
 state the plan's revocation and the lack of a refund in both places. Consider
 revoking last, once scheduling has succeeded.
 
+**Fixed.** Both say the plan ends at once with no refund, for every user, and
+no longer speak of per-organization subscriptions. The revoke stays first:
+it calls Polar and is the step likely to fail, and failing first leaves
+nothing changed, while scheduling first would take the orgs offline for an
+account that stays.
+
 ### L4. The one-trial rule resets when a user deletes their account and signs up again
 
 `Sinwy.Backend/db/schema/userSchema.ts` (`user_subscription.user_id … onDelete: "cascade"`),
@@ -167,6 +198,10 @@ gets `allowTrial: true`. Whether Polar's own trial-abuse protection catches
 it wasn't checked. **Fix direction:** if D10 should survive account deletion,
 keep a hash of the verified email for trials, or rely on Polar's setting and
 record that.
+
+**Fixed.** Polar's "Prevent trial abuse" (normalized email and card
+fingerprint) is on in the sandbox and production, recorded with D10 in the
+plan's Decisions.
 
 ### L5. Frontend repeats the backend's plan rules
 
@@ -183,6 +218,11 @@ direction:** return the available actions (or their blocker codes) in
 `AccountSubscriptionDto`. Put a `planRank` or `isUpgrade` helper in
 `@sinwy/shared`.
 
+**Fixed.** `AccountSubscriptionDto.blockers` carries the codes the `SUSPEND`
+and `CANCEL` refusals give for Polar's current state; the frontend only maps
+them to messages, and its blocker tests are gone. `isUpgrade` in
+`@sinwy/shared` replaces the three tier-order comparisons.
+
 ### L6. Dead refund code from the per-organization model, with tests
 
 `Sinwy.Backend/modules/billing/refunds.ts:20-66, 92-113`,
@@ -192,6 +232,9 @@ direction:** return the available actions (or their blocker codes) in
 transfer refund. Nothing outside the tests calls them now; only `refundInFull`
 is used (second plan). Their tests add coverage for code that can't run.
 **Fix direction:** delete them and their tests.
+
+**Fixed.** Deleted; `refundInFull`'s tests keep the skipped-order and
+refused-refund cases.
 
 ### L7. Stale comments and decision text
 
@@ -210,6 +253,9 @@ is used (second plan). Their tests add coverage for code that can't run.
 **Fix direction:** correct the comments. Phase 12 marks the decision as
 differing, or the decision is reworded.
 
+**Fixed.** Both comments corrected, and the Decision reworded to Account →
+Organizations.
+
 ### L8. Account plan errors reuse organization error codes
 
 `Sinwy.Backend/modules/billing/controller.ts:29-41`
@@ -221,14 +267,16 @@ code. Phase 12 §13 lists codes per rule, which makes this visible. **Fix
 direction:** add `PLAN_REQUIRED` (it already exists) and a `PLAN_SUSPENDED`
 code for the account routes.
 
+**Fixed.** The account routes answer `PLAN_REQUIRED`, `PLAN_SUSPENDED` and
+`PLAN_NOT_SUSPENDED` (renamed from `ORGANIZATION_NOT_SUSPENDED`, which only
+they used).
+
 ### L9. High-risk paths without a test
 
 - Projection releasing slots (`billing/repository.ts:74-95`) racing an
   activation or a transfer completion. Only activation against activation
   (`slots.test.ts:106`) and accept against accept (`transfer.test.ts:357`)
   run concurrently. The lock order is reasoned, not tested.
-- Better Auth's organization endpoints on inactive and scheduled orgs (M1).
-- An admin completing a draft (M2).
 - A suspended recipient accepting (L1).
 - Account deletion while the user is the recipient of an `accepted` transfer,
   or owns a draft.
@@ -236,6 +284,12 @@ code for the account routes.
 Lower-value tests sit next to these: the dead refund helpers (L6), and
 `subscription-status.test.ts`'s blocker cases, which pin rules the backend
 already tests (L5).
+
+**Fixed.** Races of a lower cap against an activation (`slots.test.ts`) and
+against an acceptance (`transfer.test.ts`), the suspended recipient (L1), and
+account deletion as the recipient of an `accepted` transfer and as the owner
+of a draft (`deleteUserCallback.test.ts`). The low-value tests went with L5
+and L6.
 
 ## Checked and sound
 

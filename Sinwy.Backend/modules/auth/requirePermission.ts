@@ -1,7 +1,11 @@
 import { fail } from "@backend/lib/app/respond";
 import type { IReqContext, Middleware } from "@backend/lib/app/types";
 import { createLogger } from "@logger";
-import { organizationPlanOf, organizationStatusOf } from "@organizationsModule";
+import {
+	getMembershipAccess,
+	organizationPlanOf,
+	organizationStatusOf,
+} from "@organizationsModule";
 import {
 	hasPermission,
 	type OrganizationStatus,
@@ -11,7 +15,6 @@ import {
 	parseMemberRoles,
 } from "@sinwy/shared";
 import { sessionFrom } from "./middleware";
-import { findMembership } from "./repository";
 
 const permissionLogger = createLogger("auth:permission");
 
@@ -36,7 +39,7 @@ export const resolveMembership = async (
 	userId: string,
 	organizationId: string,
 ): Promise<Membership | null> => {
-	const found = await findMembership(userId, organizationId);
+	const found = await getMembershipAccess(userId, { id: organizationId });
 	if (!found || found.deletionScheduledAt) return null;
 
 	const roles = parseMemberRoles(found.role);

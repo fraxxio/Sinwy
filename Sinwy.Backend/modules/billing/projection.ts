@@ -1,4 +1,3 @@
-import { clearActiveOrganization } from "@authModule";
 import { emailClient } from "@backend/infrastructure/email";
 import {
 	describePolarError,
@@ -8,7 +7,7 @@ import {
 } from "@backend/infrastructure/polar";
 import appConfig from "@config";
 import { createLogger } from "@logger";
-import { listOwnedOrganizationIds } from "@organizationsModule";
+import { closeOwnedOrganizations } from "@organizationsModule";
 import { ENTITLED_SUBSCRIPTION_STATUSES } from "@sinwy/shared";
 import { completeTransferOnPlan } from "@transfersModule";
 import { OrganizationsDeactivatedEmail } from "./emails/planEmails";
@@ -47,12 +46,6 @@ export const planOf = (subscription: Subscription) => {
 
 export type PlanProjection = "entitled" | "not-entitled";
 
-/** Takes every organization the user owns out of the sessions that have it open. */
-const closeOwnedOrganizations = async (userId: string) => {
-	for (const organizationId of await listOwnedOrganizationIds(userId))
-		await clearActiveOrganization(organizationId);
-};
-
 /**
  * Two checkouts raced past the guard (e.g. two tabs). The user keeps the plan
  * already bound; the other is revoked and refunded in full. Throws when Polar
@@ -88,9 +81,9 @@ const write = (subscription: Subscription, userId: string, observedAt: Date) =>
 	});
 
 /**
- * Organizations that lost their slot leave the sessions that have them open.
- * The owner hears about the ones their own picks didn't name (Default 9).
- * Failures are logged: the slots are already settled.
+ * The owner hears about the organizations that lost their slot without their
+ * own picks naming them (Default 9). Failures are logged: the slots are
+ * already settled.
  */
 const announceReleasedSlots = async (
 	userId: string,
@@ -100,8 +93,6 @@ const announceReleasedSlots = async (
 	if (picked.length + unpicked.length === 0) return;
 	billingLogger.info("Organizations lost their slot to a lower cap", context);
 	try {
-		for (const { id } of [...picked, ...unpicked])
-			await clearActiveOrganization(id);
 		const contact = unpicked.length > 0 && (await findUserContact(userId));
 		if (!contact) return;
 		await emailClient.send({

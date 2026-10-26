@@ -1,8 +1,14 @@
-import { type Membership, resolveMembership } from "@authModule";
+import type { Membership } from "@authModule";
 import { emailClient } from "@backend/infrastructure/email";
 import appConfig from "@config";
 import { createLogger } from "@logger";
-import { isSuspended, organizationStatusOf } from "@organizationsModule";
+import {
+	getMembershipAccess,
+	getOrganizationAccess,
+	isSuspended,
+	moveOwnership,
+	organizationStatusOf,
+} from "@organizationsModule";
 import {
 	type AcceptTransferDto,
 	type IncomingTransferDto,
@@ -26,11 +32,9 @@ import {
 	findIncomingTransfers,
 	findMembers,
 	findOpenTransfer,
-	findOrganizationForTransfer,
 	findTransfer,
 	findUserContacts,
 	insertTransfer,
-	moveOwnership,
 	type TransferRow,
 } from "./repository";
 
@@ -65,7 +69,7 @@ export const transferOwnershipBySupport = async ({
 	toUserId: string;
 	apply: boolean;
 }): Promise<SupportTransferResult> => {
-	const org = await findOrganizationForTransfer(organizationId);
+	const org = await getOrganizationAccess(organizationId);
 	if (!org) return { ok: false, error: "Unknown organization" };
 	if (org.deletionScheduledAt)
 		return { ok: false, error: "The organization is scheduled for deletion" };
@@ -137,7 +141,7 @@ export type OfferError =
 
 /** Only an active organization can be offered; a suspended one resumes first. */
 const findOfferBlocker = async (organizationId: string) => {
-	const org = await findOrganizationForTransfer(organizationId);
+	const org = await getOrganizationAccess(organizationId);
 	if (!org) return "not-found" as const;
 	if (isSuspended(org)) return "suspended" as const;
 	if (organizationStatusOf(org) !== "active") return "inactive" as const;
@@ -172,7 +176,7 @@ export const offerTransfer = async (
 	});
 	if (!row) return { ok: false, error: "transfer-pending" };
 
-	const org = await findOrganizationForTransfer(organizationId);
+	const org = await getOrganizationAccess(organizationId);
 	await sendLogged(
 		() =>
 			emailClient.send({
@@ -226,13 +230,14 @@ export const declineIncomingTransfer = async (
 	transferId: string,
 ) => (await declineTransfer(transferId, userId)).length > 0;
 
-export type AcceptError = "not-found" | "expired" | "needs-slot";
+export type AcceptError = "not-found" | "expired" | "needs-slot" | "suspended";
 
 /**
  * The recipient accepts. With a free slot the organization becomes theirs at
  * once. Without a plan the transfer is `accepted` and completes when the plan
  * from their checkout lands (`completeTransferOnPlan`). With a full plan it is
- * refused, the offer staying open, until they upgrade.
+ * refused, the offer staying open, until they upgrade; with a suspended one,
+ * until they resume it.
  */
 export const acceptIncomingTransfer = async (
 	userId: string,
@@ -247,7 +252,10 @@ export const acceptIncomingTransfer = async (
 	)
 		return { ok: false, error: "not-found" };
 	if (transfer.expiresAt <= now) return { ok: false, error: "expired" };
-	if (!(await resolveMembership(userId, transfer.organizationId)))
+	const recipient = await getMembershipAccess(userId, {
+		id: transfer.organizationId,
+	});
+	if (!recipient || recipient.deletionScheduledAt)
 		return { ok: false, error: "not-found" };
 
 	const completion = await finishTransfer(transferId, now);
@@ -257,7 +265,8 @@ export const acceptIncomingTransfer = async (
 		case "needs-plan":
 			return { ok: true, data: { status: "accepted" } };
 		case "needs-slot":
-			return { ok: false, error: "needs-slot" };
+		case "suspended":
+			return { ok: false, error: completion };
 		case "not-open":
 			return { ok: false, error: "not-found" };
 	}
@@ -344,7 +353,7 @@ export const cancelTransfersToMember = async (
 
 const sendCompletionEmails = async (transfer: TransferRow) => {
 	const [org, contacts] = await Promise.all([
-		findOrganizationForTransfer(transfer.organizationId),
+		getOrganizationAccess(transfer.organizationId),
 		findUserContacts([transfer.fromUserId, transfer.toUserId]),
 	]);
 	const from = contacts.find((contact) => contact.id === transfer.fromUserId);
