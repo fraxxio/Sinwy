@@ -27,7 +27,7 @@ logs are in [org-lifecycle-log.md](org-lifecycle-log.md).
 | 8 | Plan changes and the organization cap | 7 | done | `feat(backend, web): schedule downgrades for the period end with organization picks` |
 | 9 | Account-wide suspend, cancel and lapse | 7 | done | `feat(backend, web): suspend and cancel the account plan with the organizations affected and a past-due warning` |
 | 10 | Transfer on the account plan | 8 | done | `feat(backend, web): take over an organization with a free slot, a new plan or an upgrade at acceptance` |
-| 11 | Code review | 0–10 | todo | |
+| 11 | Code review | 0–10 | done | `docs: review the organization lifecycle and account billing work` |
 | 12 | Organization and billing rules map | 11 and its fixes | todo | |
 
 ## Decisions
@@ -273,59 +273,12 @@ Open, not caused by this plan:
 - drizzle-kit `generate` needs a TTY when one table drops and adds columns
   (rename prompt); generate the drops and the adds as two migrations.
 
+Code review (log: Phase 11):
+- Findings are in [org-lifecycle-review.md](org-lifecycle-review.md) (M1–M3,
+  L1–L9), not fixed yet. Phase 12 waits for their fixes, and no phase
+  plans those fixes yet.
+
 ---
-
-## Phase 11: Code review
-
-**Goal:** an independent pass over everything this plan changed, to find bugs
-and weak spots before the work is considered done. **Investigate, verify and
-report only. Don't fix anything in this phase.**
-
-**Verify:** none; the report is the output. Read the log file for the
-phases' details here, since this phase reviews them.
-
-Scope: the full diff from the commit before Phase 0 to the last phase commit
-(including `modules/transfers/`, `modules/billing/` and the account billing
-pages), plus older code these changes rely on or touch (projection, checkout
-guard, account deletion, membership guards, switcher, post-login). Phase 10
-added coupling worth a look: the `/checkout` hook in `modules/auth/auth.ts`
-(`transferId` → metadata and success URL), billing's projection calling
-`completeTransferOnPlan` in `modules/transfers/`, the two-call upgrade in
-`account-dashboard/components/AcceptTransferDialog.tsx`, and the transfer
-branch of `checkout/routes/success.tsx`.
-
-Check for:
-- **Bugs**, new or left over: races (webhooks against user actions, two server
-  instances, double submits, two activations past the cap), wrong state
-  transitions, money paths that can double-charge, skip a refund or leave a
-  subscription billing a deleted account, missing authorization, and data
-  that can be lost before the 30 days are up.
-- **Test honesty and correctness:** tests that pass for the wrong reason
-  (asserting on mocks rather than behaviour, no assertion on the outcome,
-  fixtures that don't match real Polar payloads), and risky paths with no test.
-- **Test value:** flag tests that only exercise low-risk, low-importance code
-  for the sake of coverage, and the high-risk behaviour that has no test
-  instead.
-- **Code style:** the rules in `CLAUDE.md` (module boundaries, Zod DTOs,
-  Drizzle types never exposed, functional services, comment rules, Biome).
-- **Tech debt** that makes the system unreliable, hard to reason about, or hard
-  to migrate as the app grows: state spread across tables that can disagree,
-  logic duplicated between frontend and backend, the job runner, hidden
-  coupling between modules, leftovers of the per-organization billing model,
-  and schema choices that will be costly to change.
-
-Every finding must be verified: reproduce it, point to the exact lines, or
-show the failing input. Drop anything that doesn't hold up.
-
-Output: `docs/org-lifecycle-review.md`, findings grouped by severity
-(**Critical**, **High**, **Medium**, **Low**). Each finding has:
-- a title and `file:line`,
-- what is wrong and how it was verified,
-- the concrete failure scenario and why it matters,
-- a suggested direction for the fix (not the fix itself).
-
-End the report with a short list of what was checked and found sound, so the
-reader knows the coverage. Commit the report with the plan and log updates.
 
 ## Phase 12: Organization and billing rules map
 
@@ -338,7 +291,18 @@ fixes are committed. Documentation only; no code changes.
 `CLAUDE.md` (one pointer line). Sources: the code (the source of truth), this
 plan's Decisions and Defaults,
 [org-billing-model-decision.md](org-billing-model-decision.md), the log and
-the review report.
+[org-lifecycle-review.md](org-lifecycle-review.md) (its "Checked and sound"
+list maps the rules to code). Code for the "Enforced in" lines:
+`Sinwy.Backend/db/organizationAccess.ts` (status, slots, cap);
+`Sinwy.Backend/modules/organizations/` (create, wizard, activate,
+deactivate, deletion schedule, purge); `modules/billing/` (projection,
+checkout guard, plan change, suspend, cancel, resume);
+`modules/transfers/`; `modules/auth/` (`auth.ts` hooks, `requirePermission.ts`,
+`activeOrganization.ts`, `singleOwner.ts`); errors in
+`Sinwy.Shared/types/api/ApiResponse.ts` and `types/auth/Auth.ts`. Web:
+`src/shared/lib/organizations.ts`, `src/modules/auth/lib/post-login.ts`,
+`src/modules/account-dashboard/lib/`. Tests to sample sit next to each
+module in `tests/`.
 
 Format: like `docs/user-flow-map.md`. Numbered sections, each a short
 `text` tree of conditions → outcomes, cross-referenced as `[n]`. Describe
