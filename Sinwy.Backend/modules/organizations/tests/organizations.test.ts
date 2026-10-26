@@ -4,12 +4,20 @@ import createApp from "@backend/lib/app";
 import {
 	activateOrganization,
 	createUserWithSession,
+	givePlan,
+	holdSlot,
+	insertOrganization,
 	joinOrganization,
 } from "@backend/test/helpers";
 import db from "@db";
 import { member, organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
-import { API_ERROR_CODES, type ApiResponse } from "@sinwy/shared";
+import {
+	API_ERROR_CODES,
+	type ApiResponse,
+	type OrganizationSummary,
+	PLAN_FEATURES,
+} from "@sinwy/shared";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import { registerOrganizationRoutes } from "../routes";
@@ -112,6 +120,30 @@ test("valid request → 201 with exactly { id, name, slug, status, plan, industr
 	expect(org.status).toBe("inactive");
 	expect(org.plan).toBeNull();
 	expect(org.industry).toBe("beauty");
+});
+
+test("a new org takes a free slot on the owner's plan; at the cap it stays a draft", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await givePlan(userId, "starter");
+
+	const first = await createOrg("First", cookie);
+	expect({ status: first.status, plan: first.plan }).toEqual({
+		status: "active",
+		plan: "starter",
+	});
+
+	const second = await createOrg("Second", cookie);
+	expect({ status: second.status, plan: second.plan }).toEqual({
+		status: "inactive",
+		plan: null,
+	});
+	const list = await unwrap<OrganizationSummary[]>(
+		await get("/api/organizations", cookie),
+	);
+	expect(list.map(({ id, draft }) => ({ id, draft }))).toEqual([
+		{ id: first.id, draft: false },
+		{ id: second.id, draft: true },
+	]);
 });
 
 test("industry is persisted", async () => {
@@ -504,24 +536,253 @@ test("POST onboarding/complete: admin → 200", async () => {
 	).toBe(200);
 });
 
-// pay → then onboard: the wizard never runs for an unpaid organization, so the
-// API refuses too instead of leaving that ordering to the frontend guard
-test("PUT profile & complete on an unpaid organization → 409", async () => {
+const complete = (id: string, cookie: string) =>
+	post(`/api/organizations/${id}/onboarding/complete`, {}, cookie);
+
+const codeOf = async (res: Response) =>
+	((await res.json()) as ApiResponse).code;
+
+const isActive = async (id: string, cookie: string) => {
+	const list = await unwrap<OrganizationSummary[]>(
+		await get("/api/organizations", cookie),
+	);
+	return list.find((org) => org.id === id)?.status === "active";
+};
+
+// setup can start before there is a slot for it (D5)
+test("draft without a plan: the profile saves, completing → 409 PLAN_REQUIRED and it stays a draft", async () => {
 	const { cookie } = await createUserWithSession();
 	const { id } = await createOrg("Acme", cookie);
 
-	const saved = await saveProfile(id, cookie);
-	expect(saved.status).toBe(409);
-	expect(((await saved.json()) as ApiResponse).code).toBe(
-		API_ERROR_CODES.ORGANIZATION_INACTIVE,
-	);
-	expect(
-		(await post(`/api/organizations/${id}/onboarding/complete`, {}, cookie))
-			.status,
-	).toBe(409);
+	expect((await saveProfile(id, cookie)).status).toBe(200);
+	const res = await complete(id, cookie);
+	expect(res.status).toBe(409);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.PLAN_REQUIRED);
 
 	const onboarding = await unwrap<{ completedAt: string | null }>(
 		await get(`/api/organizations/${id}/onboarding`, cookie),
 	);
 	expect(onboarding.completedAt).toBeNull();
+	expect(await isActive(id, cookie)).toBe(false);
+});
+
+test("draft whose owner has a free slot: completing takes it", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const { id } = await createOrg("Acme", cookie);
+	await givePlan(userId, "starter");
+
+	const done = await unwrap<{ completedAt: string }>(
+		await complete(id, cookie),
+	);
+	expect(done.completedAt).toBeString();
+	expect(await isActive(id, cookie)).toBe(true);
+});
+
+test("draft: an admin completing → 409 ORGANIZATION_INACTIVE and the owner's free slot stays free", async () => {
+	const owner = await createUserWithSession();
+	const { id } = await createOrg("Acme", owner.cookie);
+	await givePlan(owner.userId, "starter");
+	const admin = await createUserWithSession();
+	await joinAsAdmin(id, admin.userId);
+
+	const res = await complete(id, admin.cookie);
+	expect(res.status).toBe(409);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.ORGANIZATION_INACTIVE);
+	expect(await isActive(id, owner.cookie)).toBe(false);
+	const onboarding = await unwrap<{ completedAt: string | null }>(
+		await get(`/api/organizations/${id}/onboarding`, owner.cookie),
+	);
+	expect(onboarding.completedAt).toBeNull();
+});
+
+test("draft at the cap: completing → 409 ORGANIZATION_LIMIT_REACHED and nothing is marked done", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await givePlan(userId, "starter");
+	await createOrg("Active", cookie);
+	const { id } = await createOrg("Draft", cookie);
+
+	const res = await complete(id, cookie);
+	expect(res.status).toBe(409);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.ORGANIZATION_LIMIT_REACHED);
+	const onboarding = await unwrap<{ completedAt: string | null }>(
+		await get(`/api/organizations/${id}/onboarding`, cookie),
+	);
+	expect(onboarding.completedAt).toBeNull();
+});
+
+test("inactive after finishing setup: profile and complete → 409 ORGANIZATION_INACTIVE", async () => {
+	const { cookie } = await createUserWithSession();
+	const { id } = await createOrg("Acme", cookie);
+	await db
+		.update(organization)
+		.set({ onboardingCompletedAt: new Date() })
+		.where(eq(organization.id, id));
+
+	const saved = await saveProfile(id, cookie);
+	expect(saved.status).toBe(409);
+	expect(await codeOf(saved)).toBe(API_ERROR_CODES.ORGANIZATION_INACTIVE);
+	expect((await complete(id, cookie)).status).toBe(409);
+});
+
+test("GET /api/organizations: only the caller's organizations, with their role and state", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const other = await createUserWithSession();
+	const owned = await insertOrganization("Owned");
+	const joined = await insertOrganization("Joined");
+	const foreign = await insertOrganization("Foreign");
+	await joinOrganization(owned, userId, "owner");
+	await joinOrganization(joined, userId, "admin");
+	await joinOrganization(joined, other.userId, "owner");
+	await joinOrganization(foreign, other.userId, "owner");
+	await activateOrganization(joined, "professional");
+	await db
+		.update(organization)
+		.set({ createdAt: new Date("2026-02-01T00:00:00Z") })
+		.where(eq(organization.id, joined));
+	const scheduledAt = new Date();
+	const completedAt = new Date("2026-01-01T00:00:00Z");
+	await db
+		.update(organization)
+		.set({
+			createdAt: new Date("2026-01-15T00:00:00Z"),
+			deletionScheduledAt: scheduledAt,
+			onboardingCompletedAt: completedAt,
+		})
+		.where(eq(organization.id, owned));
+
+	const list = await unwrap<OrganizationSummary[]>(
+		await get("/api/organizations", cookie),
+	);
+
+	expect(list).toEqual([
+		{
+			id: owned,
+			name: "Owned",
+			slug: owned,
+			status: "inactive",
+			suspended: false,
+			draft: false,
+			plan: null,
+			features: [],
+			isOwner: true,
+			paymentFailed: false,
+			deletesAt: new Date(
+				scheduledAt.getTime() + 30 * 24 * 60 * 60 * 1000,
+			).toISOString(),
+			onboardingCompletedAt: completedAt.toISOString(),
+		},
+		{
+			id: joined,
+			name: "Joined",
+			slug: joined,
+			status: "active",
+			suspended: false,
+			draft: false,
+			plan: "professional",
+			features: PLAN_FEATURES.professional,
+			isOwner: false,
+			paymentFailed: false,
+			deletesAt: null,
+			onboardingCompletedAt: null,
+		},
+	]);
+});
+
+// D15: billing is the owner's; staff still get the tier's features
+test("GET /api/organizations: admins see the tier name, staff only its features", async () => {
+	const admin = await createUserWithSession();
+	const staff = await createUserWithSession();
+	const orgId = await insertOrganization("Acme");
+	await activateOrganization(orgId, "professional");
+	await joinAsAdmin(orgId, admin.userId);
+	await joinAsStaff(orgId, staff.userId);
+	const viewOf = async (cookie: string) => {
+		const [org] = await unwrap<OrganizationSummary[]>(
+			await get("/api/organizations", cookie),
+		);
+		return { plan: org?.plan, features: org?.features };
+	};
+
+	expect(await viewOf(admin.cookie)).toEqual({
+		plan: "professional",
+		features: PLAN_FEATURES.professional,
+	});
+	expect(await viewOf(staff.cookie)).toEqual({
+		plan: null,
+		features: PLAN_FEATURES.professional,
+	});
+});
+
+test("GET /api/organizations: a past-due plan is flagged to the owner only, and the org stays active", async () => {
+	const owner = await createUserWithSession();
+	const admin = await createUserWithSession();
+	const orgId = await insertOrganization("Acme");
+	await joinOrganization(orgId, owner.userId, "owner");
+	await joinAsAdmin(orgId, admin.userId);
+	await givePlan(owner.userId, "professional", { status: "past_due" });
+	await holdSlot(orgId);
+	const viewOf = async (cookie: string) => {
+		const [org] = await unwrap<OrganizationSummary[]>(
+			await get("/api/organizations", cookie),
+		);
+		return { status: org?.status, paymentFailed: org?.paymentFailed };
+	};
+
+	expect(await viewOf(owner.cookie)).toEqual({
+		status: "active",
+		paymentFailed: true,
+	});
+	expect(await viewOf(admin.cookie)).toEqual({
+		status: "active",
+		paymentFailed: false,
+	});
+});
+
+test("GET /api/organizations: an org holding a slot while its owner's plan is paused is suspended", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const suspended = await insertOrganization("Suspended");
+	const lapsed = await insertOrganization("Lapsed");
+	await joinOrganization(suspended, userId, "owner");
+	await joinOrganization(lapsed, userId, "owner");
+	await givePlan(userId, null, { status: "paused" });
+	await holdSlot(suspended);
+
+	const list = await unwrap<OrganizationSummary[]>(
+		await get("/api/organizations", cookie),
+	);
+
+	expect(
+		list.map(({ id, status, suspended }) => ({ id, status, suspended })),
+	).toEqual([
+		{ id: suspended, status: "inactive", suspended: true },
+		{ id: lapsed, status: "inactive", suspended: false },
+	]);
+});
+
+test("an org holding a slot is inactive while its owner's plan is paused, lapsed or missing, and active again once it grants access", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const orgId = await insertOrganization("Slotted");
+	await joinOrganization(orgId, userId, "owner");
+	await holdSlot(orgId);
+	const state = async () => {
+		const [org] = await unwrap<OrganizationSummary[]>(
+			await get("/api/organizations", cookie),
+		);
+		return { status: org?.status, plan: org?.plan };
+	};
+
+	expect(await state()).toEqual({ status: "inactive", plan: null });
+	await givePlan(userId, null, { status: "paused" });
+	expect(await state()).toEqual({ status: "inactive", plan: null });
+	await givePlan(userId, null, { status: "canceled", subscriptionId: null });
+	expect(await state()).toEqual({ status: "inactive", plan: null });
+	await givePlan(userId, "professional");
+	expect(await state()).toEqual({ status: "active", plan: "professional" });
+});
+
+test("GET /api/organizations: no organizations → empty list, no session → 401", async () => {
+	const { cookie } = await createUserWithSession();
+
+	expect(await unwrap(await get("/api/organizations", cookie))).toEqual([]);
+	expect((await get("/api/organizations")).status).toBe(401);
 });

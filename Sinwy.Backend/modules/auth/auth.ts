@@ -1,14 +1,14 @@
 import { emailClient } from "@backend/infrastructure/email";
-import { polarClient, productIdFor } from "@backend/infrastructure/polar";
+import { polarCore, productIdFor } from "@backend/infrastructure/polar";
 import {
 	applySubscriptionEvent,
 	ensureCheckoutAllowed,
-	revokeOrganizationSubscription,
+	revokeAccountSubscriptions,
 } from "@billingModule";
 import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
-import { deleteSoleOwnedOrganizations } from "@organizationsModule";
+import { scheduleOwnedOrganizationsForDeletion } from "@organizationsModule";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import {
 	ac,
@@ -17,6 +17,10 @@ import {
 	profileSchema,
 	RESEND_COOLDOWN_SECONDS,
 } from "@sinwy/shared";
+import {
+	cancelTransfersToMember,
+	findTransferAwaitingCheckout,
+} from "@transfersModule";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
@@ -26,6 +30,11 @@ import {
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
+import {
+	refuseOrganizationEndpoint,
+	refuseScheduledOrganization,
+	refuseUnavailableOrganization,
+} from "./activeOrganization";
 import { cleanupDeletedUser } from "./deletedUserCleanup";
 import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
@@ -44,13 +53,39 @@ const validName = (name: unknown) => {
 	return result.data.name;
 };
 
-// The plugin forwards the rest of the body to Polar (metadata spread over
-// referenceId, raw product ids, trials, discounts, redirect URLs)
+// The plugin forwards the rest of the body to Polar (metadata, raw product
+// ids, trials, discounts, redirect URLs). The plan is the user's own, so no
+// reference_id either.
 const checkoutBodySchema = z.strictObject({
 	slug: z.enum(PLAN_SLUGS),
-	referenceId: z.string().min(1),
 	redirect: z.boolean().optional(),
+	transferId: z.string().min(1).optional(),
 });
+
+const checkoutSuccessUrl = (query: string) =>
+	new URL(
+		`/checkout/success?checkout_id={CHECKOUT_ID}${query}`,
+		appConfig.WEB_APP_URL,
+	).toString();
+
+/**
+ * A plan bought to take over an organization names the transfer in its
+ * metadata, which Polar copies onto the subscription; the projection then
+ * completes the transfer.
+ */
+const transferCheckoutFields = async (userId: string, transferId: string) => {
+	const transfer = await findTransferAwaitingCheckout(userId, transferId);
+	if (!transfer)
+		throw new APIError("BAD_REQUEST", {
+			message: "This offer is no longer open",
+		});
+	return {
+		metadata: { transferId },
+		success_url: checkoutSuccessUrl(
+			`&organization=${encodeURIComponent(transfer.organizationId)}`,
+		),
+	};
+};
 
 export const auth = betterAuth({
 	baseURL: appConfig.BETTER_AUTH_URL,
@@ -115,7 +150,7 @@ export const auth = betterAuth({
 			// only reached from the emailed link, so a failure must land on a page, not JSON
 			beforeDelete: async (user) => {
 				try {
-					await deleteSoleOwnedOrganizations(user.id);
+					await revokeAccountSubscriptions(user.id);
 				} catch (error) {
 					if (!(error instanceof APIError)) throw error;
 					throw new APIError("FOUND", undefined, {
@@ -125,6 +160,7 @@ export const auth = betterAuth({
 						).toString(),
 					});
 				}
+				await scheduleOwnedOrganizationsForDeletion(user.id);
 			},
 			afterDelete: async (user) => {
 				await cleanupDeletedUser(user);
@@ -164,9 +200,8 @@ export const auth = betterAuth({
 		},
 	},
 	hooks: {
-		// The polar plugin trusts referenceId with no membership check. Checkout
-		// is guarded here; the org-scoped subscription read is ours instead
-		// (GET /api/organizations/:organizationId/subscription).
+		// The polar plugin trusts referenceId with no membership check, so it is
+		// refused here; the subscription read is ours (GET /api/account/subscription).
 		before: createAuthMiddleware(async (ctx) => {
 			if (ctx.path === "/checkout") {
 				const body = checkoutBodySchema.safeParse(ctx.body);
@@ -176,15 +211,48 @@ export const auth = betterAuth({
 					});
 				const session = await getSessionFromCtx(ctx);
 				if (!session) throw new APIError("UNAUTHORIZED");
-				await ensureCheckoutAllowed(session.user.id, body.data.referenceId);
+				const { transferId, ...rest } = body.data;
+				const { allowTrial } = await ensureCheckoutAllowed(session.user.id);
+				return {
+					context: {
+						body: {
+							...rest,
+							...(transferId
+								? await transferCheckoutFields(session.user.id, transferId)
+								: {}),
+							// one trial per user: the plugin passes allow_trial on to Polar
+							...(!allowTrial && { allow_trial: false }),
+						},
+					},
+				};
+			}
+			if (ctx.path.startsWith("/organization/")) {
+				const session = await getSessionFromCtx(ctx);
+				// the plugin has no beforeSetActive hook
+				if (session && ctx.path === "/organization/set-active")
+					await refuseUnavailableOrganization(session.session, ctx.body);
+				else if (session)
+					await refuseOrganizationEndpoint(ctx.path, session.session, ctx);
 			}
 			if (
 				ctx.path === "/customer/subscriptions/list" &&
-				ctx.query?.["referenceId"]
+				ctx.query?.["reference_id"]
 			)
 				throw new APIError("FORBIDDEN", {
-					message: "Read organization subscriptions through the organization",
+					message: "Read your subscription through your account",
 				});
+			return undefined;
+		}),
+		// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
+		after: createAuthMiddleware(async (ctx) => {
+			if (ctx.path !== "/organization/leave") return;
+			const body = z.object({ organizationId: z.string() }).safeParse(ctx.body);
+			const session = await getSessionFromCtx(ctx);
+			if (body.success && session)
+				await cancelTransfersToMember(
+					body.data.organizationId,
+					session.user.id,
+				);
 		}),
 	},
 	socialProviders: {
@@ -202,29 +270,22 @@ export const auth = betterAuth({
 			// the plugin already keeps the only owner from leaving, being removed
 			// or demoted; these keep a second owner from ever appearing
 			organizationHooks: {
-				beforeCreateInvitation: async ({ invitation }) =>
-					refuseOwnerRole(invitation.role),
-				beforeAcceptInvitation: async ({ invitation }) =>
-					refuseOwnerRole(invitation.role),
+				beforeCreateInvitation: async ({ invitation }) => {
+					refuseOwnerRole(invitation.role);
+					await refuseScheduledOrganization(invitation.organizationId);
+				},
+				beforeAcceptInvitation: async ({ invitation }) => {
+					refuseOwnerRole(invitation.role);
+					await refuseScheduledOrganization(invitation.organizationId);
+				},
 				beforeUpdateMemberRole: async ({ member, newRole }) =>
 					refuseOwnerRole(member.role, newRole),
-				// the plugin's own delete knows nothing of billing
-				beforeDeleteOrganization: ({ organization }) =>
-					revokeOrganizationSubscription(organization.id),
+				afterRemoveMember: ({ member }) =>
+					cancelTransfersToMember(member.organizationId, member.userId),
 			},
 			schema: {
 				organization: {
 					additionalFields: {
-						status: {
-							type: "string",
-							defaultValue: "inactive",
-							input: false,
-						},
-						plan: {
-							type: "string",
-							required: false,
-							input: false,
-						},
 						industry: {
 							type: "string",
 							defaultValue: "other",
@@ -235,12 +296,23 @@ export const auth = betterAuth({
 							required: false,
 							input: false,
 						},
+						deletionScheduledAt: {
+							type: "date",
+							required: false,
+							input: false,
+						},
+						slotHeldAt: {
+							type: "date",
+							required: false,
+							input: false,
+						},
 					},
 				},
 			},
 		}),
 		polar({
-			client: polarClient,
+			client: polarCore,
+			// also deletes the customer on user delete, anonymized by `polarCore`
 			createCustomerOnSignUp: true,
 			use: [
 				checkout({
@@ -248,10 +320,7 @@ export const auth = betterAuth({
 						productId: productIdFor(slug),
 						slug,
 					})),
-					successUrl: new URL(
-						"/checkout/success?checkout_id={CHECKOUT_ID}",
-						appConfig.WEB_APP_URL,
-					).toString(),
+					successUrl: checkoutSuccessUrl(""),
 					authenticatedUsersOnly: true,
 				}),
 				// the portal spans all of a user's organizations, so return to the
@@ -266,7 +335,7 @@ export const auth = betterAuth({
 					secret: appConfig.POLAR_WEBHOOK_SECRET,
 					// `updated` fires on every change (plan change, cancel, renewal);
 					// all events converge on the same projection. Wrapped because
-					// billing imports auth: a bare reference is read mid-cycle.
+					// billing's routes import auth: a bare reference is read mid-cycle.
 					onSubscriptionUpdated: (event) => applySubscriptionEvent(event),
 					onSubscriptionActive: (event) => applySubscriptionEvent(event),
 					onSubscriptionRevoked: (event) => applySubscriptionEvent(event),

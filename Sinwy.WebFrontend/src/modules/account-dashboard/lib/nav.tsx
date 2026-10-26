@@ -6,6 +6,7 @@ import {
 	CreditCardIcon,
 	LayoutDashboardIcon,
 	Settings2Icon,
+	WalletIcon,
 } from "lucide-react";
 import type { SidebarNavItem } from "#/shared/components/shell/SidebarNav";
 
@@ -30,6 +31,11 @@ export const accountNav: SidebarNavItem[] = [
 		title: "Organizations",
 		icon: <Building2Icon />,
 		link: linkOptions({ to: "/account/organizations" }),
+	},
+	{
+		title: "Billing",
+		icon: <WalletIcon />,
+		link: linkOptions({ to: "/account/billing" }),
 	},
 	{
 		title: "Notifications",

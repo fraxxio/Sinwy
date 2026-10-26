@@ -35,7 +35,8 @@
 		"db:generate": "cd Sinwy.Backend && bunx drizzle-kit generate",
 		"db:ui": "cd Sinwy.Backend && bunx drizzle-kit studio",
 		"db:agent:setup": "cd Sinwy.Backend && bun run scripts/setupAgentDb.ts",
-		"db:backfill-subscriptions": "bun run Sinwy.Backend/scripts/backfillSubscriptionBindings.ts",
+		"db:purge-organizations": "bun run Sinwy.Backend/scripts/purgeOrganizations.ts",
+		"db:transfer-organization": "bun run Sinwy.Backend/scripts/transferOrganization.ts",
 		"dev:login-as": "bun run Sinwy.Backend/scripts/dev/loginAs.ts",
 		"dev:last-email": "bun run Sinwy.Backend/scripts/dev/lastEmail.ts",
 		"dev:capture-polar-fixture": "bun run Sinwy.Backend/scripts/dev/capturePolarFixture.ts",
@@ -44,8 +45,8 @@
 		"auth:schema:generate": "bunx --bun auth@latest generate --config Sinwy.Backend/modules/auth/auth.ts"
 	},
 	"dependencies": {
-		"better-auth": "^1.6.11",
-		"zod": "^4.4.3"
+		"better-auth": "^1.7.12",
+		"zod": "^4.6.7"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.4.15",

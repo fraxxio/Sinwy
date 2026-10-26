@@ -45,6 +45,8 @@ Checked before; don't investigate them again.
 
 - Web log and console: TanStack devtools logs `Cannot read properties of null (reading 'append')` during SSR, and Vite echoes console errors with a `[vite] (client) [console.error]` prefix. Both are dev-only; `log-errors.sh` and `console-errors.sh` hide them.
 - `playwright-cli` keeps one named session alive at a time, and `playwright-cli list` can hang. When it reports "not open", reopen with `open` and `state-load`.
+- `page.ts` can't target a named `playwright-cli` session; switch users with `close`, `open` and `state-load`.
+- File URLs (avatars, logos) use the `BETTER_AUTH_URL` origin (`localhost:3000` locally); `keyFromFileUrl` silently ignores any other origin.
 
 ## Known Polar sandbox behaviour
 
@@ -52,6 +54,10 @@ Checked before; don't investigate them again.
 - A pause at period end only takes effect at the period end. To get there, set the subscription's `current_billing_period_end` to a couple of minutes from now through the Polar API, then simulate the period-end webhooks with the real subscription id.
 - Resume answers `active` with a new period at once; Polar charges asynchronously and the paid `subscription_cycle` order arrives 15 minutes later. A failed charge arrives later as a `past_due` webhook.
 - The sandbox webhook endpoint is disabled, so real deliveries don't reach the app; simulate them.
+- To reach a period end (renewal, pause, cancel, a scheduled downgrade), PATCH `current_billing_period_end` a minute ahead; Polar applies it within seconds, and a load of Account → Billing projects the new state without a webhook.
+- Portal plan switching and pause are off in the sandbox; the portal always allows cancel at period end.
+- An out-of-band plan change is simulated as `subscription.active --plan <slug>` (the `subscription.updated` fixture is a cancellation). There is no `past_due` fixture: set `user_subscription.status` with `psql service=sinwy_rw`.
+- Polar's card fields sit in Stripe iframes: type through `run-code` with `frameLocator('iframe[name^="__privateStripeFrame"]')` and `pressSequentially`; the card inputs (`number`, `expiry`, `cvc`) are in the frame whose `src` contains `elements-inner-accessory`.
 
 ## Treat the toolkit as a stand-in
 

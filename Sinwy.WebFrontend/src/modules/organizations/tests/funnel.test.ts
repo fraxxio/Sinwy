@@ -1,9 +1,6 @@
 import { expect, it } from "bun:test";
-import {
-	activeOrganizationDestination,
-	hasCompletedSetup,
-	isLapsed,
-} from "../lib/funnel";
+import { hasCompletedSetup } from "#/shared/lib/organizations";
+import { activeOrganizationDestination } from "../lib/funnel";
 
 const organization = { id: "org-1", slug: "acme" };
 const completedAt = new Date("2026-01-01");
@@ -30,23 +27,4 @@ it("treats an organization as set up once onboarding is complete, whatever its s
 	expect(hasCompletedSetup({ onboardingCompletedAt: completedAt })).toBe(true);
 	expect(hasCompletedSetup({ onboardingCompletedAt: null })).toBe(false);
 	expect(hasCompletedSetup({})).toBe(false);
-});
-
-it("counts an inactive organization that finished onboarding as lapsed", () => {
-	expect(
-		isLapsed({ status: "inactive", onboardingCompletedAt: completedAt }),
-	).toBe(true);
-});
-
-it("does not count an organization that never finished onboarding as lapsed", () => {
-	expect(isLapsed({ status: "inactive", onboardingCompletedAt: null })).toBe(
-		false,
-	);
-	expect(isLapsed({ status: "inactive" })).toBe(false);
-});
-
-it("does not count an active organization as lapsed", () => {
-	expect(
-		isLapsed({ status: "active", onboardingCompletedAt: completedAt }),
-	).toBe(false);
 });

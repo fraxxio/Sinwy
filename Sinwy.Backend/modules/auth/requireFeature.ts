@@ -4,9 +4,9 @@ import { API_ERROR_CODES, type Feature, hasFeature } from "@sinwy/shared";
 import { membershipFrom, requireMember } from "./requirePermission";
 
 /**
- * `requireMember` plus a plan check: the organization's plan lacks the
- * feature → 402. Reads the projected plan only; never asks Polar.
- * An inactive organization has no plan, so it fails here too.
+ * `requireMember` plus a plan check: the owner's plan lacks the feature →
+ * 402. Reads the projected plan only; never asks Polar. An inactive
+ * organization has no plan, so it fails here too.
  */
 export const requireFeature =
 	(feature: Feature): Middleware =>

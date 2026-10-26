@@ -7,9 +7,13 @@ import {
 } from "@backend/modules/organizations/utils";
 import { API_ERROR_CODES } from "@sinwy/shared";
 import {
+	activateOrganization,
 	completeOrganizationOnboarding,
 	createOrganization,
+	deactivateOrganization,
 	getOrganizationOnboarding,
+	listOrganizations,
+	type SlotResult,
 	saveOrganizationProfile,
 } from "./service";
 
@@ -23,6 +27,25 @@ const respondWriteError = (error: "not-found" | "inactive") => {
 			);
 		case "not-found":
 			return fail("Not found", 404);
+	}
+};
+
+const respondSlotError = (error: SlotResult) => {
+	switch (error) {
+		case "not-found":
+			return fail("Not found", 404);
+		case "no-plan":
+			return fail(
+				"You need an active plan to activate an organization",
+				409,
+				API_ERROR_CODES.PLAN_REQUIRED,
+			);
+		case "limit-reached":
+			return fail(
+				"Your plan has no free organization slot; deactivate one or upgrade",
+				409,
+				API_ERROR_CODES.ORGANIZATION_LIMIT_REACHED,
+			);
 	}
 };
 
@@ -40,6 +63,11 @@ export const createOrganizationHandler: Handler = async (c) => {
 		body.data.industry,
 	);
 	return ok(org, 201, "Organization created");
+};
+
+export const listOrganizationsHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+	return ok(await listOrganizations(user.id));
 };
 
 export const getOrganizationOnboardingHandler: Handler = async (c) => {
@@ -63,7 +91,26 @@ export const saveOrganizationProfileHandler: Handler = async (c) => {
 
 export const completeOrganizationOnboardingHandler: Handler = async (c) => {
 	const result = await completeOrganizationOnboarding(membershipFrom(c));
-	if (!result.ok) return respondWriteError(result.error);
+	if (result.ok) return ok(result.data);
 
-	return ok(result.data);
+	return result.error === "inactive"
+		? respondWriteError(result.error)
+		: respondSlotError(result.error);
+};
+
+export const activateOrganizationHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+	const { organizationId } = c.req.params as { organizationId: string };
+	const result = await activateOrganization(user.id, organizationId);
+	return result.ok
+		? ok(null, 200, "Organization activated")
+		: respondSlotError(result.error);
+};
+
+export const deactivateOrganizationHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+	const { organizationId } = c.req.params as { organizationId: string };
+	return (await deactivateOrganization(user.id, organizationId))
+		? ok(null, 200, "Organization deactivated")
+		: fail("Not found", 404);
 };

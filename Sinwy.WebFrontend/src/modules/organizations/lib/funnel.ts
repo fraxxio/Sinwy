@@ -1,4 +1,5 @@
 import { FunnelStep } from "@sinwy/shared";
+import { hasCompletedSetup } from "#/shared/lib/organizations";
 
 /**
  * How each funnel step presents itself. `Pay` runs on Polar, so it maps to the
@@ -6,20 +7,9 @@ import { FunnelStep } from "@sinwy/shared";
  */
 export const FUNNEL_STEPS = {
 	[FunnelStep.Create]: { label: "Create", to: "/organizations/new" },
-	[FunnelStep.Plan]: { label: "Plan", to: "/organizations/$id/plan" },
+	[FunnelStep.Plan]: { label: "Plan", to: "/account/billing" },
 	[FunnelStep.Pay]: { label: "Pay", to: "/checkout/success" },
 } as const satisfies Record<FunnelStep, { label: string; to: string }>;
-
-/** Finished setup once, so the first-time funnel no longer applies, whatever its billing status. */
-export const hasCompletedSetup = (organization: {
-	onboardingCompletedAt?: Date | null;
-}) => Boolean(organization.onboardingCompletedAt);
-
-/** Inactive after finishing setup: it belongs in the read-only dashboard, not the first-time funnel. */
-export const isLapsed = (organization: {
-	status: string;
-	onboardingCompletedAt?: Date | null;
-}) => organization.status !== "active" && hasCompletedSetup(organization);
 
 /** Where an active organization goes next: onboarding until it is complete, then the dashboard. */
 export function activeOrganizationDestination(organization: {

@@ -8,6 +8,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
+import {
+	invalidateSubscription,
+	subscriptionQuery,
+} from "#/modules/account-dashboard/lib/billing-queries";
 import { FunnelProgress } from "#/modules/organizations/components/FunnelProgress";
 import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { FieldError } from "#/shared/components/ui/field";
@@ -15,6 +19,7 @@ import { Skeleton } from "#/shared/components/ui/skeleton";
 import { api } from "#/shared/lib/api";
 import { protectedRoute } from "#/shared/lib/auth/protected-route";
 import { useAppForm } from "#/shared/lib/form";
+import { invalidateOrganizations } from "#/shared/lib/organizations";
 import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/organizations/new")({
@@ -99,11 +104,26 @@ function NewOrganizationPage() {
 				setServerError(response.message);
 				return;
 			}
-			await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
-			await navigate({
-				to: "/organizations/$id/plan",
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: postLoginFlagsKey }),
+				invalidateOrganizations(queryClient),
+				invalidateSubscription(queryClient),
+			]);
+			const onboarding = {
+				to: "/organizations/$id/onboarding",
 				params: { id: response.data.id },
-			});
+			} as const;
+			if (response.data.status === "active") return navigate(onboarding);
+			// a draft: without a plan the funnel goes on to choosing one; with
+			// one, the wizard explains why it stays a draft
+			const subscription = await queryClient
+				.fetchQuery(subscriptionQuery)
+				.catch(() => null);
+			await navigate(
+				subscription && subscription.plan === null && !subscription.suspended
+					? { to: "/account/billing" }
+					: onboarding,
+			);
 		},
 	});
 

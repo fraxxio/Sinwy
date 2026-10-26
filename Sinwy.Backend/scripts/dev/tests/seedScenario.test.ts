@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
-import { polarClient } from "@backend/infrastructure/polar";
 import createApp from "@backend/lib/app";
+import { polarCoreRequests, stubPolarCore } from "@backend/test/helpers";
 import { registerBillingRoutes } from "@billingModule";
 import db from "@db";
 import { account } from "@db/schema/authSchema";
@@ -10,8 +10,11 @@ import {
 	organization,
 	organizationProfile,
 } from "@db/schema/organizationSchema";
-import { user } from "@db/schema/userSchema";
-import { registerOrganizationRoutes } from "@organizationsModule";
+import { user, userSubscription } from "@db/schema/userSchema";
+import {
+	getOrganizationState,
+	registerOrganizationRoutes,
+} from "@organizationsModule";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import { loginAs } from "../loginAs";
@@ -19,8 +22,9 @@ import { type Scenario, seedScenario } from "../seedScenario";
 
 let server: Server<never>;
 let base: URL;
-const spies: ReturnType<typeof spyOn>[] = [];
-let createCustomerSpy: ReturnType<typeof spyOn>;
+let polarSpy: ReturnType<typeof stubPolarCore>;
+const customersCreated = () =>
+	polarCoreRequests(polarSpy, "POST /v1/customers/").length;
 
 beforeAll(() => {
 	const app = createApp();
@@ -31,29 +35,18 @@ beforeAll(() => {
 	base = server.url;
 
 	// sign-up asks Polar for a customer; answer like the sandbox does for a new email
-	createCustomerSpy = spyOn(polarClient.customers, "create").mockResolvedValue(
-		{} as never,
-	);
-	spies.push(
-		createCustomerSpy,
-		spyOn(polarClient.customers, "list").mockResolvedValue({
-			result: { items: [], pagination: {} },
-		} as never),
-		spyOn(polarClient.customers, "updateExternal").mockResolvedValue(
-			{} as never,
-		),
-	);
+	polarSpy = stubPolarCore();
 });
 
 afterAll(() => {
-	for (const spy of spies) spy.mockRestore();
+	polarSpy.mockRestore();
 	server.stop(true);
 });
 
 beforeEach(async () => {
 	await db.delete(organization);
 	await db.delete(user);
-	createCustomerSpy.mockClear();
+	polarSpy.mockClear();
 });
 
 const seedAny = (scenario: Scenario) =>
@@ -73,13 +66,20 @@ const seed = async (scenario: Exclude<Scenario, "user">) => {
 const orgRow = async (id: string) => {
 	const [row] = await db
 		.select({
-			status: organization.status,
-			subscriptionStatusAt: organization.subscriptionStatusAt,
+			slotHeldAt: organization.slotHeldAt,
 			onboardingCompletedAt: organization.onboardingCompletedAt,
 		})
 		.from(organization)
 		.where(eq(organization.id, id));
-	return row;
+	return row && { status: (await getOrganizationState(id))?.status, ...row };
+};
+
+const planOf = async (userId: string) => {
+	const [row] = await db
+		.select({ plan: userSubscription.plan })
+		.from(userSubscription)
+		.where(eq(userSubscription.userId, userId));
+	return row?.plan ?? null;
 };
 
 const roles = (organizationId: string) =>
@@ -124,24 +124,27 @@ test("owner-with-org: a verified owner with a credential account and an unpaid o
 		.from(account)
 		.where(eq(account.userId, owner.userId));
 	expect(credential?.providerId).toBe("credential");
-	expect(createCustomerSpy).toHaveBeenCalledTimes(1);
+	expect(customersCreated()).toBe(1);
 
 	expect(await orgRow(result.organization.id)).toEqual({
 		status: "inactive",
-		subscriptionStatusAt: null,
+		slotHeldAt: null,
 		onboardingCompletedAt: null,
 	});
+	expect(await planOf(owner.userId)).toBeNull();
 	expect(await roles(result.organization.id)).toEqual([
 		{ userId: owner.userId, role: "owner" },
 	]);
 });
 
-test("subscribed-org: active through the webhook, onboarding done", async () => {
+test("subscribed-org: the owner on Starter through the webhook, the org on its slot, onboarding done", async () => {
 	const result = await seed("subscribed-org");
+	const [owner] = result.users;
 
 	const row = await orgRow(result.organization.id);
 	expect(row?.status).toBe("active");
-	expect(row?.subscriptionStatusAt).toBeInstanceOf(Date);
+	expect(row?.slotHeldAt).toBeInstanceOf(Date);
+	expect(await planOf(owner?.userId ?? "")).toBe("starter");
 	expect(row?.onboardingCompletedAt).toBeInstanceOf(Date);
 	const [profile] = await db
 		.select({ country: organizationProfile.country })
@@ -157,7 +160,7 @@ test("org-with-staff: staff members, and every printed email works with login-as
 	expect(
 		(await roles(result.organization.id)).map((m) => m.role).sort(),
 	).toEqual(["owner", "staff", "staff"]);
-	expect(createCustomerSpy).toHaveBeenCalledTimes(3);
+	expect(customersCreated()).toBe(3);
 
 	for (const { email, userId } of result.users) {
 		expect((await loginAs({ email })).userId).toBe(userId);

@@ -1,19 +1,11 @@
-import {
-	afterAll,
-	afterEach,
-	beforeAll,
-	beforeEach,
-	expect,
-	spyOn,
-	test,
-} from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { polarClient } from "@backend/infrastructure/polar";
 import createApp from "@backend/lib/app";
 import {
+	activateOrganization,
 	createUserWithSession,
 	insertOrganization,
 	joinOrganization,
-	polarPages,
 } from "@backend/test/helpers";
 import db from "@db";
 import {
@@ -48,6 +40,7 @@ beforeEach(async () => {
 	orgId = await insertOrganization("Solo Co");
 	({ userId: ownerId, cookie: ownerCookie } = await createUserWithSession());
 	await joinOrganization(orgId, ownerId, "owner");
+	await activateOrganization(orgId);
 });
 
 const post = (path: string, cookie: string, body: unknown) =>
@@ -135,6 +128,42 @@ test("a pending owner invitation can't be accepted", async () => {
 	expect(await roleOf(invitee.userId)).toBeUndefined();
 });
 
+test("an org scheduled for deletion takes no new invitations and lets none be accepted", async () => {
+	const invitee = await createUserWithSession();
+	await db.insert(invitation).values({
+		id: "invitation_staff",
+		organizationId: orgId,
+		email: `${invitee.userId}@test.dev`,
+		role: "staff",
+		status: "pending",
+		expiresAt: new Date(Date.now() + 86_400_000),
+		createdAt: new Date(),
+		inviterId: ownerId,
+	});
+	await db
+		.update(organization)
+		.set({ deletionScheduledAt: new Date() })
+		.where(eq(organization.id, orgId));
+
+	const invited = await post("invite-member", ownerCookie, {
+		email: "next@test.dev",
+		role: "staff",
+		organizationId: orgId,
+	});
+	const accepted = await post("accept-invitation", invitee.cookie, {
+		invitationId: "invitation_staff",
+	});
+
+	expect(invited.status).toBe(403);
+	expect(accepted.status).toBe(403);
+	expect(
+		(await db.select({ id: invitation.id }).from(invitation)).map(
+			(row) => row.id,
+		),
+	).toEqual(["invitation_staff"]);
+	expect(await roleOf(invitee.userId)).toBeUndefined();
+});
+
 test("owner can't leave their organization", async () => {
 	expect(
 		(await post("leave", ownerCookie, { organizationId: orgId })).status,
@@ -149,47 +178,21 @@ test("the database refuses a second owner", async () => {
 	).rejects.toThrow();
 });
 
-let listSpy: ReturnType<typeof spyOn> | undefined;
-let revokeSpy: ReturnType<typeof spyOn> | undefined;
-
-afterEach(() => {
-	listSpy?.mockRestore();
-	revokeSpy?.mockRestore();
-});
-
-const polarSubscription = (id: string) => {
-	listSpy = spyOn(polarClient.subscriptions, "list").mockResolvedValue(
-		polarPages([{ id, status: "active" }]),
-	);
-	revokeSpy = spyOn(polarClient.subscriptions, "revoke").mockResolvedValue(
-		{} as never,
-	);
-};
-
-const orgExists = async () =>
-	(
-		await db
-			.select({ id: organization.id })
-			.from(organization)
-			.where(eq(organization.id, orgId))
-	).length > 0;
-
-test("deleting the organization through Better Auth revokes its subscription first", async () => {
-	polarSubscription("sub_solo");
+test("deleting the organization through Better Auth frees its slot and never asks Polar", async () => {
+	const listSpy = spyOn(polarClient.subscriptions, "iterList");
+	const revokeSpy = spyOn(polarClient.subscriptions, "revoke");
 
 	const res = await post("delete", ownerCookie, { organizationId: orgId });
 
 	expect(res.status).toBe(200);
-	expect(revokeSpy).toHaveBeenCalledWith({ id: "sub_solo" });
-	expect(await orgExists()).toBe(false);
-});
-
-test("a failed revoke keeps the organization", async () => {
-	polarSubscription("sub_solo");
-	revokeSpy?.mockRejectedValue(new Error("polar down"));
-
-	const res = await post("delete", ownerCookie, { organizationId: orgId });
-
-	expect(res.status).toBe(500);
-	expect(await orgExists()).toBe(true);
+	expect(
+		await db
+			.select({ id: organization.id })
+			.from(organization)
+			.where(eq(organization.id, orgId)),
+	).toEqual([]);
+	expect(listSpy).not.toHaveBeenCalled();
+	expect(revokeSpy).not.toHaveBeenCalled();
+	listSpy.mockRestore();
+	revokeSpy.mockRestore();
 });

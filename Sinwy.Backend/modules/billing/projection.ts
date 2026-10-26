@@ -1,73 +1,187 @@
+import { emailClient } from "@backend/infrastructure/email";
 import {
 	describePolarError,
+	type PolarModels,
 	planFor,
 	polarClient,
 } from "@backend/infrastructure/polar";
+import appConfig from "@config";
 import { createLogger } from "@logger";
+import { closeOwnedOrganizations } from "@organizationsModule";
+import { ENTITLED_SUBSCRIPTION_STATUSES } from "@sinwy/shared";
+import { completeTransferOnPlan } from "@transfersModule";
+import { OrganizationsDeactivatedEmail } from "./emails/planEmails";
+import { refundInFull } from "./refunds";
 import {
-	activateSubscription,
-	deactivateSubscription,
-} from "@organizationsModule";
-import type { Subscription } from "@polar-sh/sdk/models/components/subscription";
-import type { OrganizationStatus } from "@sinwy/shared";
+	findUserContact,
+	findUserSubscription,
+	type SlotsReleased,
+	writeUserSubscription,
+} from "./repository";
+
+type Subscription = PolarModels.Subscription;
 
 const billingLogger = createLogger("billing:projection");
 
-// past_due keeps access: Polar's dunning retries are the grace period
-const ENTITLED_STATUSES: readonly string[] = ["active", "trialing", "past_due"];
+const SECOND_PLAN_COMMENT = "A second plan for an account that already has one";
 
-const planOf = (subscription: Subscription) => {
-	const plan = planFor(subscription.productId);
+export const isEntitled = (subscription: Subscription) =>
+	(ENTITLED_SUBSCRIPTION_STATUSES as readonly string[]).includes(
+		subscription.status,
+	);
+
+/** Grants access now, or could charge later: a paused one resumes with a charge. */
+export const isBillable = (subscription: Subscription) =>
+	isEntitled(subscription) || subscription.status === "paused";
+
+export const planOf = (subscription: Subscription) => {
+	const plan = planFor(subscription.product_id);
 	if (!plan)
 		billingLogger.error("Subscription product maps to no plan", {
 			subscriptionId: subscription.id,
-			productId: subscription.productId,
+			productId: subscription.product_id,
 		});
 	return plan;
 };
 
+export type PlanProjection = "entitled" | "not-entitled";
+
 /**
- * Projects a Polar subscription onto its organization (`status`, `plan`,
- * `subscription_id`). State is derived from the subscription object only,
- * so re-delivery and overlapping events converge on the same result.
- * State is ordered by Polar's own modification time, whichever path
- * (webhook, reconcile, plan change) delivers it; anything not newer than the
- * applied state is ignored. Returns the status written, or null when the
- * organization was left as is.
+ * Two checkouts raced past the guard (e.g. two tabs). The user keeps the plan
+ * already bound; the other is revoked and refunded in full. Throws when Polar
+ * refuses the revoke, so the webhook is retried.
+ */
+const revokeSecondPlan = async (subscription: Subscription, userId: string) => {
+	const context = { userId, subscriptionId: subscription.id };
+	billingLogger.warn("Revoking a second plan for the same user", context);
+	try {
+		await polarClient.subscriptions.revoke(subscription.id);
+	} catch (error) {
+		billingLogger.error("Revoke failed; revoke it in Polar", {
+			...context,
+			...describePolarError(error),
+		});
+		throw error;
+	}
+	await refundInFull(subscription.id, SECOND_PLAN_COMMENT);
+};
+
+/** The plan Polar switches to when the period ends; null without one. */
+export const pendingPlanOf = (subscription: Subscription) => {
+	const productId = subscription.pending_update?.product_id;
+	return productId ? planFor(productId) : null;
+};
+
+const write = (subscription: Subscription, userId: string, observedAt: Date) =>
+	writeUserSubscription(userId, subscription.id, observedAt, {
+		plan: isEntitled(subscription) ? planOf(subscription) : null,
+		pendingPlan: pendingPlanOf(subscription),
+		status: subscription.status,
+		bound: isBillable(subscription),
+	});
+
+/**
+ * The owner hears about the organizations that lost their slot without their
+ * own picks naming them (Default 9). Failures are logged: the slots are
+ * already settled.
+ */
+const announceReleasedSlots = async (
+	userId: string,
+	{ picked, unpicked, limit }: SlotsReleased,
+) => {
+	const context = { userId, picked: picked.length, unpicked: unpicked.length };
+	if (picked.length + unpicked.length === 0) return;
+	billingLogger.info("Organizations lost their slot to a lower cap", context);
+	try {
+		const contact = unpicked.length > 0 && (await findUserContact(userId));
+		if (!contact) return;
+		await emailClient.send({
+			to: contact.email,
+			template: OrganizationsDeactivatedEmail,
+			props: {
+				organizationNames: unpicked.map(({ name }) => name),
+				organizationLimit: limit,
+				manageUrl: new URL(
+					"/account/organizations",
+					appConfig.WEB_APP_URL,
+				).toString(),
+			},
+		});
+	} catch (error) {
+		billingLogger.error("Announcing released slots failed", {
+			...context,
+			error,
+		});
+	}
+};
+
+/**
+ * A plan bought at a transfer's acceptance carries the transfer in its
+ * checkout metadata. Tried on every delivery of an entitled state, so a retry
+ * finishes what a failed one didn't.
+ */
+const completeTransferBoughtFor = async (
+	subscription: Subscription,
+	userId: string,
+) => {
+	const transferId = subscription.metadata?.["transferId"];
+	if (typeof transferId === "string" && isEntitled(subscription))
+		await completeTransferOnPlan(userId, transferId);
+};
+
+/**
+ * Projects a Polar subscription onto its user, found by the customer's
+ * `external_id`. A paused subscription stays bound, so it can resume; only an
+ * ended one releases it. State is derived from the subscription object only,
+ * so re-delivery and overlapping events converge on the same result, and it
+ * is ordered by Polar's own modification time whichever path (webhook,
+ * reconcile, plan change) delivers it. Returns what was applied, or null when
+ * the user was left as is.
  */
 export const projectSubscription = async (
 	subscription: Subscription,
-): Promise<OrganizationStatus | null> => {
-	const observedAt = subscription.modifiedAt ?? subscription.createdAt;
-	const organizationId = subscription.metadata["referenceId"];
-	if (typeof organizationId !== "string") {
-		billingLogger.warn("Subscription carries no referenceId", {
+): Promise<PlanProjection | null> => {
+	const userId = subscription.customer.external_id;
+	if (!userId) {
+		billingLogger.warn("Subscription's customer has no external id", {
 			subscriptionId: subscription.id,
 		});
 		return null;
 	}
-
-	const entitled = ENTITLED_STATUSES.includes(subscription.status);
-	const write = entitled
-		? await activateSubscription(
-				organizationId,
-				subscription.id,
-				planOf(subscription),
-				observedAt,
-			)
-		: await deactivateSubscription(organizationId, subscription.id, observedAt);
-
+	const observedAt = new Date(
+		subscription.modified_at ?? subscription.created_at,
+	);
 	const context = {
-		organizationId,
+		userId,
 		subscriptionId: subscription.id,
 		subscriptionStatus: subscription.status,
 	};
-	switch (write.result) {
+
+	let written = await write(subscription, userId, observedAt);
+	if (written.result === "bound-elsewhere" && isBillable(subscription)) {
+		// the bound one may have ended without its webhook landing
+		const bound = await polarClient.subscriptions.get(
+			written.boundSubscriptionId,
+		);
+		if (isBillable(bound)) {
+			await revokeSecondPlan(subscription, userId);
+			return null;
+		}
+		await projectSubscription(bound);
+		written = await write(subscription, userId, observedAt);
+	}
+
+	switch (written.result) {
 		case "applied":
-			billingLogger.info("Organization projected from subscription", context);
-			return entitled ? "active" : "inactive";
-		case "unknown-organization":
-			billingLogger.warn("Subscription references an unknown org", context);
+			billingLogger.info("Plan projected from subscription", context);
+			await announceReleasedSlots(userId, written);
+			await completeTransferBoughtFor(subscription, userId);
+			if (isEntitled(subscription)) return "entitled";
+			await closeOwnedOrganizations(userId);
+			return "not-entitled";
+		case "unknown-user":
+			// a deleted user's Polar customer is deleted too, which cancels its subscriptions
+			billingLogger.warn("Subscription for an unknown user", context);
 			return null;
 		case "outdated":
 			// routine: redeliveries, and every billing page load re-projects
@@ -75,25 +189,14 @@ export const projectSubscription = async (
 				"Ignored subscription state not newer than the applied one",
 				{ ...context, observedAt: observedAt.toISOString() },
 			);
+			await completeTransferBoughtFor(subscription, userId);
 			return null;
-		case "bound-elsewhere": {
-			const bound = {
+		case "bound-elsewhere":
+			billingLogger.warn("Ignored a subscription the user no longer uses", {
 				...context,
-				boundSubscriptionId: write.boundSubscriptionId,
-			};
-			if (entitled)
-				// two checkouts raced (e.g. two tabs): the org keeps the first one
-				billingLogger.error(
-					"Second active subscription for an organization; refund it in Polar",
-					bound,
-				);
-			else
-				billingLogger.warn(
-					"Ignored a subscription the org no longer uses",
-					bound,
-				);
+				boundSubscriptionId: written.boundSubscriptionId,
+			});
 			return null;
-		}
 	}
 };
 
@@ -102,36 +205,44 @@ export const applySubscriptionEvent = async (event: { data: Subscription }) => {
 	await projectSubscription(event.data);
 };
 
-/**
- * Subscriptions of the organization that still grant access, across pages.
- * Polar's `active` filter leaves out past_due, hence the filter here.
- */
-export const listEntitledSubscriptions = async (organizationId: string) => {
-	const entitled: Subscription[] = [];
-	const pages = await polarClient.subscriptions.list({
-		metadata: { referenceId: organizationId },
+const listSubscriptions = async (
+	userId: string,
+	keep: (subscription: Subscription) => boolean,
+) => {
+	const kept: Subscription[] = [];
+	const subscriptions = polarClient.subscriptions.iterList({
+		external_customer_id: userId,
 		limit: 100,
 	});
-	for await (const page of pages)
-		entitled.push(
-			...page.result.items.filter((subscription) =>
-				ENTITLED_STATUSES.includes(subscription.status),
-			),
-		);
-	return entitled;
+	for await (const subscription of subscriptions)
+		if (keep(subscription)) kept.push(subscription);
+	return kept;
 };
 
 /**
- * Backstop for a webhook that never landed: an inactive organization asks
- * Polar for an entitled subscription and activates on positive evidence only.
- * Never deactivates, since a failed lookup must not lock out a paying org.
- * Returns whether the organization is now active.
+ * The user's subscriptions that still grant access, across pages. Polar's
+ * `active` filter leaves out past_due, hence the filter here.
  */
-export const reconcileInactiveOrganization = async (organizationId: string) => {
-	const subscriptions = await listEntitledSubscriptions(organizationId).catch(
+export const listEntitledSubscriptions = (userId: string) =>
+	listSubscriptions(userId, isEntitled);
+
+/** The entitled ones plus paused ones, which charge again when they resume. */
+export const listBillableSubscriptions = (userId: string) =>
+	listSubscriptions(userId, isBillable);
+
+/**
+ * Backstop for a webhook that never landed: a user without an entitled plan
+ * asks Polar for one and takes it on positive evidence only, so a paused
+ * subscription never counts. Never takes a plan away, since a failed lookup
+ * must not lock out a paying user. Returns whether the user has a plan that
+ * grants access.
+ */
+export const reconcileUserPlan = async (userId: string) => {
+	if ((await findUserSubscription(userId))?.plan) return true;
+	const subscriptions = await listEntitledSubscriptions(userId).catch(
 		(error: unknown) => {
 			billingLogger.warn("Polar subscription lookup failed", {
-				organizationId,
+				userId,
 				...describePolarError(error),
 			});
 			return [];
@@ -141,11 +252,10 @@ export const reconcileInactiveOrganization = async (organizationId: string) => {
 	const [subscription] = subscriptions;
 	if (!subscription) return false;
 
-	const activated = (await projectSubscription(subscription)) === "active";
-	if (activated)
-		billingLogger.info("Activated from Polar after a missed webhook", {
-			organizationId,
+	if ((await projectSubscription(subscription)) === "entitled")
+		billingLogger.info("Plan taken from Polar after a missed webhook", {
+			userId,
 			subscriptionId: subscription.id,
 		});
-	return activated;
+	return Boolean((await findUserSubscription(userId))?.plan);
 };

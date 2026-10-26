@@ -1,8 +1,5 @@
-import {
-	type OrganizationSummary,
-	toOrganizationStatus,
-	toPlanSlug,
-} from "@sinwy/shared";
+import type { OrganizationSummary } from "@sinwy/shared";
+import { useQuery } from "@tanstack/react-query";
 import { Link, linkOptions } from "@tanstack/react-router";
 import {
 	Building2Icon,
@@ -27,7 +24,19 @@ import {
 	SidebarMenuItem,
 	useSidebar,
 } from "#/shared/components/ui/sidebar";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "#/shared/components/ui/tooltip";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import {
+	closedOrganizationBadge,
+	closedOrganizationReason,
+	isOrganizationOpen,
+	organizationsQuery,
+	reactivationLink,
+} from "#/shared/lib/organizations";
 
 const personalAccountLink = linkOptions({ to: "/account" });
 
@@ -38,15 +47,7 @@ export function OrganizationSwitcher({
 }) {
 	const { isMobile } = useSidebar();
 	const { data: session } = authClient.useSession();
-	const { data, isPending } = authClient.useListOrganizations();
-
-	const organizations: OrganizationSummary[] = (data ?? []).map((org) => ({
-		id: org.id,
-		name: org.name,
-		slug: org.slug,
-		status: toOrganizationStatus(org.status),
-		plan: toPlanSlug(org.plan ?? null),
-	}));
+	const { data: organizations = [], isPending } = useQuery(organizationsQuery);
 	const activeOrganization = organizations.find(
 		(org) => org.slug === activeOrganizationSlug,
 	);
@@ -94,26 +95,7 @@ export function OrganizationSwitcher({
 										Organizations
 									</DropdownMenuLabel>
 									{organizations.map((org) => (
-										<DropdownMenuItem
-											key={org.id}
-											className="gap-2 p-2"
-											render={
-												<Link
-													to="/$organizationSlug"
-													params={{ organizationSlug: org.slug }}
-												/>
-											}
-										>
-											<div className="flex size-6 items-center justify-center rounded-md border">
-												<Building2Icon className="size-4" />
-											</div>
-											{org.name}
-											{org.status === "inactive" && (
-												<Badge variant="outline" className="ml-auto">
-													Inactive
-												</Badge>
-											)}
-										</DropdownMenuItem>
+										<OrganizationItem key={org.id} organization={org} />
 									))}
 								</DropdownMenuGroup>
 								<DropdownMenuSeparator />
@@ -145,5 +127,67 @@ export function OrganizationSwitcher({
 				</DropdownMenu>
 			</SidebarMenuItem>
 		</SidebarMenu>
+	);
+}
+
+/**
+ * An organization that can't be opened leads its owner to the plan page and
+ * is disabled for everyone else, with the reason on hover.
+ */
+function OrganizationItem({
+	organization,
+}: {
+	organization: OrganizationSummary;
+}) {
+	const open = isOrganizationOpen(organization);
+	const content = (
+		<>
+			<div className="flex size-6 items-center justify-center rounded-md border">
+				<Building2Icon className="size-4" />
+			</div>
+			{organization.name}
+			{!open && (
+				<Badge variant="outline" className="ml-auto">
+					{closedOrganizationBadge(organization)}
+				</Badge>
+			)}
+		</>
+	);
+
+	if (open)
+		return (
+			<DropdownMenuItem
+				className="gap-2 p-2"
+				render={
+					<Link
+						to="/$organizationSlug"
+						params={{ organizationSlug: organization.slug }}
+					/>
+				}
+			>
+				{content}
+			</DropdownMenuItem>
+		);
+
+	const link = reactivationLink(organization);
+	if (link)
+		return (
+			<DropdownMenuItem className="gap-2 p-2" render={<Link {...link} />}>
+				{content}
+			</DropdownMenuItem>
+		);
+
+	// a disabled item takes no pointer events, so the wrapper carries the hover
+	return (
+		<Tooltip>
+			<TooltipTrigger render={<div />}>
+				<DropdownMenuItem disabled className="gap-2 p-2">
+					{content}
+				</DropdownMenuItem>
+			</TooltipTrigger>
+			<TooltipContent side="right">
+				{closedOrganizationReason(organization)}
+			</TooltipContent>
+		</Tooltip>
 	);
 }

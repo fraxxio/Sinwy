@@ -1,5 +1,6 @@
+import { oneOf } from "@db/oneOf";
 import { user } from "@db/schema/userSchema";
-import { ORGANIZATION_STATUSES, PLAN_SLUGS } from "@sinwy/shared";
+import { ORGANIZATION_TRANSFER_STATUSES } from "@sinwy/shared";
 import { relations, sql } from "drizzle-orm";
 import {
 	check,
@@ -11,37 +12,22 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-// built from the shared lists, so renaming a value needs a data migration
-const oneOf = (column: string, values: readonly string[]) =>
-	sql.raw(`"${column}" IN (${values.map((value) => `'${value}'`).join(", ")})`);
-
 export const organization = pgTable(
 	"organization",
 	{
 		id: text("id").primaryKey(),
 		name: text("name").notNull(),
 		slug: text("slug").notNull().unique(),
-		status: text("status").notNull().default("inactive"),
-		// projection of the Polar subscription backing the org; null while inactive
-		plan: text("plan"),
-		subscriptionId: text("subscription_id").unique(),
-		// time of the Polar state behind the projection; older state must not overwrite it
-		subscriptionStatusAt: timestamp("subscription_status_at"),
+		// set while the org holds one of its owner's slots; active only if their plan grants access too
+		slotHeldAt: timestamp("slot_held_at"),
 		industry: text("industry").notNull().default("other"),
 		onboardingCompletedAt: timestamp("onboarding_completed_at"),
+		deletionScheduledAt: timestamp("deletion_scheduled_at"),
 		logo: text("logo"),
 		createdAt: timestamp("created_at").notNull(),
 		metadata: text("metadata"),
 	},
-	(table) => [
-		uniqueIndex("organization_slug_uidx").on(table.slug),
-		check("organization_status_check", oneOf("status", ORGANIZATION_STATUSES)),
-		check("organization_plan_check", oneOf("plan", PLAN_SLUGS)),
-		check(
-			"organization_plan_only_when_active_check",
-			sql`${table.plan} IS NULL OR ${table.status} = 'active'`,
-		),
-	],
+	(table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
 );
 
 export const organizationProfile = pgTable("organization_profile", {
@@ -101,6 +87,36 @@ export const invitation = pgTable(
 	(table) => [
 		index("invitation_organizationId_idx").on(table.organizationId),
 		index("invitation_email_idx").on(table.email),
+	],
+);
+
+export const organizationTransfer = pgTable(
+	"organization_transfer",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		fromUserId: text("from_user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		toUserId: text("to_user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		status: text("status").notNull().default("pending"),
+		expiresAt: timestamp("expires_at").notNull(),
+		createdAt: timestamp("created_at").notNull().defaultNow(),
+		updatedAt: timestamp("updated_at").notNull().defaultNow(),
+	},
+	(table) => [
+		index("organization_transfer_toUserId_idx").on(table.toUserId),
+		uniqueIndex("organization_transfer_one_open_uidx")
+			.on(table.organizationId)
+			.where(sql`${table.status} IN ('pending', 'accepted')`),
+		check(
+			"organization_transfer_status_check",
+			oneOf("status", ORGANIZATION_TRANSFER_STATUSES),
+		),
 	],
 );
 

@@ -1,7 +1,15 @@
-import { polarClient } from "@polar-sh/better-auth";
+import { polarClient } from "@polar-sh/better-auth/client";
 import { ac, orgAccessRoles } from "@sinwy/shared";
 import { organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
+
+// @polar-sh/better-auth 2.1 types its only client action (checkoutEmbed, which
+// we don't use) against a BetterFetch that better-auth 1.7 rejects; the server
+// endpoints still type through $InferServerPlugin
+const polar = polarClient() as Omit<
+	ReturnType<typeof polarClient>,
+	"getActions"
+>;
 
 export const authClient = createAuthClient({
 	plugins: [
@@ -16,18 +24,22 @@ export const authClient = createAuthClient({
 			schema: {
 				organization: {
 					additionalFields: {
-						status: { type: "string", input: false, required: true },
-						plan: { type: "string", input: false, required: false },
 						industry: { type: "string", required: true },
 						onboardingCompletedAt: {
 							type: "date",
 							input: false,
 							required: false,
 						},
+						deletionScheduledAt: {
+							type: "date",
+							input: false,
+							required: false,
+						},
+						slotHeldAt: { type: "date", input: false, required: false },
 					},
 				},
 			},
 		}),
-		polarClient(),
+		polar,
 	],
 });

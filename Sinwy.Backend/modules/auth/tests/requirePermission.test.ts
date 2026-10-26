@@ -1,6 +1,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import type { Middleware } from "@backend/lib/app/types";
 import {
+	activateOrganization,
 	createUserWithSession,
 	fakeCtx,
 	insertOrganization,
@@ -10,6 +11,7 @@ import db from "@db";
 import { organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
 import type { Permission } from "@sinwy/shared";
+import { eq } from "drizzle-orm";
 import { auth } from "../auth";
 import { requireAuth } from "../middleware";
 import {
@@ -78,6 +80,18 @@ test("requireMember: any role passes and the membership carries the org status a
 		status: "inactive",
 		plan: null,
 	});
+});
+
+test("requireMember: an org scheduled for deletion → 404 for every member", async () => {
+	const { organizationId, cookie } = await seedMember("owner");
+	await activateOrganization(organizationId);
+	await db
+		.update(organization)
+		.set({ deletionScheduledAt: new Date() })
+		.where(eq(organization.id, organizationId));
+	const { res } = await runMember({ params: { organizationId }, cookie });
+	expect(res.status).toBe(404);
+	expect(nextCalls).toBe(0);
 });
 
 test("requireMember: unknown role still passes, with no roles", async () => {

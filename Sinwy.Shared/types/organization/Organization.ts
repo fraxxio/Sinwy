@@ -4,6 +4,9 @@ export const ORGANIZATION_STATUSES = ["active", "inactive"] as const;
 
 export type OrganizationStatus = (typeof ORGANIZATION_STATUSES)[number];
 
+/** Days an organization is kept after its owner's account is deleted, then purged. */
+export const ORGANIZATION_RETENTION_DAYS = 30;
+
 /** Lenient like `toPlanSlug`: an unknown status fails closed to "inactive" instead of breaking every page. */
 export function toOrganizationStatus(value: string): OrganizationStatus {
 	return ORGANIZATION_STATUSES.find((s) => s === value) ?? "inactive";

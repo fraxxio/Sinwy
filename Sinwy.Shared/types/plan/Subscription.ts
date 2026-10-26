@@ -1,7 +1,5 @@
 import { z } from "zod";
-import type { OrganizationStatus } from "../organization/Organization";
 import { PLAN_SLUGS, type PlanSlug } from "./Plan";
-import type { Feature } from "./PlanFeatures";
 
 export const SUBSCRIPTION_BILLING_STATUSES = [
 	"incomplete",
@@ -11,10 +9,15 @@ export const SUBSCRIPTION_BILLING_STATUSES = [
 	"past_due",
 	"canceled",
 	"unpaid",
+	"paused",
 ] as const;
 
 export type SubscriptionBillingStatus =
 	(typeof SUBSCRIPTION_BILLING_STATUSES)[number];
+
+/** Statuses that grant access; past_due too, since Polar's dunning retries are the grace period. */
+export const ENTITLED_SUBSCRIPTION_STATUSES: readonly SubscriptionBillingStatus[] =
+	["active", "trialing", "past_due"];
 
 export const BILLING_INTERVALS = ["day", "week", "month", "year"] as const;
 
@@ -32,16 +35,53 @@ export type SubscriptionBillingDto = {
 	currentPeriodEnd: string;
 	cancelAtPeriodEnd: boolean;
 	endsAt: string | null;
+	/** Suspends on `currentPeriodEnd`; can still be undone. */
+	pauseAtPeriodEnd: boolean;
+	/** When Polar resumes a paused subscription by itself; null until resumed by hand. */
+	resumesAt: string | null;
 };
 
-export type OrganizationSubscriptionDto = {
-	status: OrganizationStatus;
+/** A downgrade Polar applies when the current period ends. */
+export type PendingPlanChangeDto = {
+	plan: PlanSlug;
+	/** ISO date. */
+	appliesAt: string;
+	/** Owned organizations that lose their slot when it applies. */
+	deactivates: { id: string; name: string }[];
+};
+
+/** The user's own plan, which every organization they own runs on. */
+export type AccountSubscriptionDto = {
+	/** null without a plan that grants access. */
 	plan: PlanSlug | null;
-	features: readonly Feature[];
+	/** Paused by its owner: it resumes without a new checkout. */
+	suspended: boolean;
+	/** Organizations the plan keeps active at once; 0 without a plan. */
+	organizationLimit: number;
+	/** Owned organizations holding a slot, not scheduled for deletion: the ones suspend, cancel or a lapse take offline. */
+	activeOrganizations: { id: string; name: string }[];
 	/** null when there is no subscription or Polar could not be reached. */
 	billing: SubscriptionBillingDto | null;
+	/** null when no downgrade is scheduled, or Polar could not be reached. */
+	pendingChange: PendingPlanChangeDto | null;
+	/** Why scheduling a suspension or a cancellation is refused now; null when it isn't. */
+	blockers: { suspend: PlanEndBlocker | null; cancel: PlanEndBlocker | null };
 };
 
-export const changePlanBody = z.object({ plan: z.enum(PLAN_SLUGS) });
+export type PlanEndBlocker =
+	| "unavailable"
+	| "inactive"
+	| "suspended"
+	| "trialing"
+	| "past-due"
+	| "pause-pending"
+	| "cancel-pending"
+	| "plan-change-pending";
+
+export const changePlanBody = z.object({
+	plan: z.enum(PLAN_SLUGS),
+	/** On a downgrade, the active organizations that keep their slot; the rest lose it when it applies. */
+	keep: z.array(z.string().min(1)).max(10).optional(),
+});
 
 export type ChangePlanBody = z.infer<typeof changePlanBody>;

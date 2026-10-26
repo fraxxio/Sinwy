@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
 import createApp from "@backend/lib/app";
+import { givePlan } from "@backend/test/helpers";
 import appConfig from "@config";
 import db from "@db";
 import { session } from "@db/schema/authSchema";
@@ -85,11 +86,13 @@ const createOrg = async (
 		role = "owner",
 		createdAt = new Date(),
 		onboardingCompletedAt = null,
+		subscriptionId = null,
 	}: {
 		status: "active" | "inactive";
 		role?: string;
 		createdAt?: Date;
 		onboardingCompletedAt?: Date | null;
+		subscriptionId?: string | null;
 	},
 ) => {
 	const id = `org_flags_${++seq}`;
@@ -97,10 +100,14 @@ const createOrg = async (
 		id,
 		name: id,
 		slug: id,
-		status,
 		createdAt,
 		onboardingCompletedAt,
+		slotHeldAt: status === "active" ? createdAt : null,
 	});
+	// the plan is the user's own, so it covers every org they own
+	if (status === "active") await givePlan(userId, "starter");
+	else if (subscriptionId)
+		await givePlan(userId, null, { status: "paused", subscriptionId });
 	await db.insert(member).values({
 		id: `member_${id}`,
 		organizationId: id,
@@ -144,6 +151,12 @@ test("owner of a lapsed organization → not prompted to pay", async () => {
 		status: "inactive",
 		onboardingCompletedAt: new Date(),
 	});
+	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
+});
+
+test("owner of an organization suspended before finishing setup → not prompted to pay", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, { status: "inactive", subscriptionId: "sub_paused" });
 	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
 });
 
@@ -202,14 +215,44 @@ test("non-owner member of an active org mid-setup → not prompted", async () =>
 	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
 });
 
-test("active org alongside an unpaid one → still surfaces the unpaid one", async () => {
+test("active org mid-setup alongside a draft → the active one's setup; with a plan, nothing is left to pay", async () => {
 	const { userId, cookie } = await createUserWithSession();
-	await createOrg(userId, { status: "active" });
-	// paying comes before finishing setup, even though both are pending
-	const unpaid = await createOrg(userId, { status: "inactive" });
+	const active = await createOrg(userId, { status: "active" });
+	await createOrg(userId, { status: "inactive" });
 	expect(await getFlags(cookie)).toEqual({
-		unfinishedOnboarding: { step: "select-plan", organizationId: unpaid },
+		unfinishedOnboarding: { step: "business-profile", organizationId: active },
 	});
+});
+
+// the draft's wizard takes the free slot (Default 10)
+test("draft whose owner has a plan with a free slot → resume at business-profile", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, {
+		status: "active",
+		onboardingCompletedAt: new Date(),
+	});
+	await givePlan(userId, "professional");
+	const draft = await createOrg(userId, { status: "inactive" });
+	expect(await getFlags(cookie)).toEqual({
+		unfinishedOnboarding: { step: "business-profile", organizationId: draft },
+	});
+});
+
+test("draft whose owner's plan is at the cap → not prompted", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, {
+		status: "active",
+		onboardingCompletedAt: new Date(),
+	});
+	await createOrg(userId, { status: "inactive" });
+	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
+});
+
+test("draft whose owner's plan is paused → not prompted", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	await createOrg(userId, { status: "inactive", subscriptionId: "sub_paused" });
+	await createOrg(userId, { status: "inactive" });
+	expect(await getFlags(cookie)).toEqual({ unfinishedOnboarding: null });
 });
 
 test("several unpaid organizations → resumes the oldest", async () => {

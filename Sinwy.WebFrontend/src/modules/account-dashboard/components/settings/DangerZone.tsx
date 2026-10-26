@@ -1,3 +1,4 @@
+import { ORGANIZATION_RETENTION_DAYS } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -91,7 +92,9 @@ export function DangerZone({ user }: { user: SessionUser }) {
 								<AlertDialogTitle>Delete your account?</AlertDialogTitle>
 								<AlertDialogDescription>
 									We'll email you a link to confirm. Everything tied to your
-									account is removed for good once you open it.
+									account is removed for good once you open it. Your plan, if
+									you have one, ends right away with no refund for the time
+									left.
 								</AlertDialogDescription>
 							</AlertDialogHeader>
 
@@ -105,18 +108,22 @@ export function DangerZone({ user }: { user: SessionUser }) {
 								orgs.length > 0 && (
 									<div className="grid gap-2 rounded-2xl bg-destructive/10 p-4 text-sm text-destructive">
 										<p className="font-medium">
-											You are the only owner of{" "}
+											You own{" "}
 											{orgs.length === 1
 												? "this organization"
 												: "these organizations"}
-											. {orgs.length === 1 ? "It" : "They"} will be deleted
-											along with any active subscription:
+											:
 										</p>
 										<ul className="list-inside list-disc">
 											{orgs.map((org) => (
 												<li key={org.id}>{org.name}</li>
 											))}
 										</ul>
+										<p>
+											Members lose access and public pages go offline right
+											away. {orgs.length === 1 ? "It is" : "They are"} deleted
+											for good after {ORGANIZATION_RETENTION_DAYS} days.
+										</p>
 									</div>
 								)
 							)}

@@ -1,4 +1,5 @@
 import {
+	type AccountSubscriptionDto,
 	EMPTY_ORGANIZATION_PROFILE,
 	ORGANIZATION_INDUSTRY_OPTIONS,
 	type OrganizationOnboardingDto,
@@ -13,6 +14,11 @@ import {
 } from "@tanstack/react-router";
 import { LockIcon } from "lucide-react";
 import {
+	freeSlots,
+	invalidateSubscription,
+	subscriptionQuery,
+} from "#/modules/account-dashboard/lib/billing-queries";
+import {
 	BusinessProfileForm,
 	type BusinessProfileValues,
 } from "#/modules/organizations/components/BusinessProfileForm";
@@ -26,6 +32,7 @@ import {
 	CardTitle,
 } from "#/shared/components/ui/card";
 import { Skeleton } from "#/shared/components/ui/skeleton";
+import { toast } from "#/shared/components/ui/toast";
 import { api } from "#/shared/lib/api";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import {
@@ -33,34 +40,53 @@ import {
 	requireMember,
 	requirePermission,
 } from "#/shared/lib/auth/protected-route";
+import {
+	invalidateOrganizations,
+	isOrganizationOpen,
+	organizationsQuery,
+	reactivationLink,
+} from "#/shared/lib/organizations";
+import { getPlanName } from "#/shared/lib/plans";
 import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/organizations/$id/onboarding")({
 	ssr: false,
 	beforeLoad: async ({ location, params, context, preload }) => {
 		const ctx = await requireAuth({ location });
+		const summary = await context.queryClient
+			.fetchQuery({ ...organizationsQuery, staleTime: 0 })
+			.then((list) => list.find((org) => org.id === params.id));
+		if (!summary) throw redirect({ to: "/" });
+		// fail closed: only an active org or its owner's draft is set up here
+		const draft = summary.draft && summary.isOwner;
+		if (!isOrganizationOpen(summary) && !draft)
+			throw redirect(reactivationLink(summary) ?? { to: "/account" });
+		// read, not set active: the backend refuses to open a draft
 		const { data: organization, error } =
-			await authClient.organization.setActive({ organizationId: params.id });
-		if (error || !organization) throw redirect({ to: "/" });
-		// fail closed: anything but a confirmed active org goes back to the funnel
-		if (organization.status !== "active")
-			throw redirect({
-				to: "/organizations/$id/plan",
-				params: { id: params.id },
+			await authClient.organization.getFullOrganization({
+				query: { organizationId: params.id, membersLimit: 1 },
 			});
+		if (error || !organization) throw redirect({ to: "/" });
 		const member = await requireMember(context.queryClient, organization.id);
 		requirePermission("settings:manage")({
 			context: { organization, member },
 			preload,
 		});
-		return { ...ctx, organization };
+		return { ...ctx, organization, draft };
 	},
-	loader: async ({ params }) => {
-		const res = await api<OrganizationOnboardingDto>(
-			`/organizations/${params.id}/onboarding`,
-		);
+	loader: async ({ params, context }) => {
+		const [res, subscription] = await Promise.all([
+			api<OrganizationOnboardingDto>(`/organizations/${params.id}/onboarding`),
+			// a draft's notice depends on the owner's plan and free slots
+			context.draft
+				? context.queryClient
+						.fetchQuery({ ...subscriptionQuery, staleTime: 0 })
+						.catch(() => null)
+				: null,
+		]);
 		return {
 			onboarding: res.isSuccess ? res.data : null,
+			subscription,
 			error: res.isSuccess ? null : res.message,
 		};
 	},
@@ -154,10 +180,41 @@ function OnboardingPending() {
 	);
 }
 
+/** Whether saving a draft's wizard activates it, and what to tell its owner. */
+function draftNotice(
+	organizationName: string,
+	subscription: AccountSubscriptionDto | null,
+) {
+	if (!subscription)
+		return {
+			activates: false,
+			text: `${organizationName} is a draft. We couldn't check your plan, so saving keeps it a draft; activate it from your organizations.`,
+		};
+	if (subscription.suspended)
+		return {
+			activates: false,
+			text: `${organizationName} stays a draft while your plan is suspended. Resume your plan on Billing, then activate it from your organizations.`,
+		};
+	if (subscription.plan === null)
+		return {
+			activates: false,
+			text: `${organizationName} stays a draft until you choose a plan on Billing.`,
+		};
+	if (freeSlots(subscription) === 0)
+		return {
+			activates: false,
+			text: `Your ${getPlanName(subscription.plan)} plan has no free organization slot, so ${organizationName} stays a draft until one is free. Deactivate another organization, or upgrade on Billing.`,
+		};
+	return {
+		activates: true,
+		text: `Saving activates ${organizationName} on your ${getPlanName(subscription.plan)} plan.`,
+	};
+}
+
 function OnboardingPage() {
 	const { id } = Route.useParams();
-	const { organization } = Route.useRouteContext();
-	const { onboarding, error } = Route.useLoaderData();
+	const { organization, draft } = Route.useRouteContext();
+	const { onboarding, subscription, error } = Route.useLoaderData();
 	const router = useRouter();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
@@ -176,7 +233,11 @@ function OnboardingPage() {
 					<Button variant="outline" onClick={() => void router.invalidate()}>
 						Try again
 					</Button>
-					<DashboardButton slug={organization.slug} label="Go to dashboard" />
+					{draft ? (
+						<OrganizationsButton />
+					) : (
+						<DashboardButton slug={organization.slug} label="Go to dashboard" />
+					)}
 				</div>
 			</PageShell>
 		);
@@ -190,6 +251,8 @@ function OnboardingPage() {
 			params: { organizationSlug: organization.slug },
 		});
 
+	const notice = draft ? draftNotice(organization.name, subscription) : null;
+
 	const save = async (values: BusinessProfileValues) => {
 		const saved = await api(`/organizations/${id}/profile`, {
 			method: "PUT",
@@ -197,13 +260,24 @@ function OnboardingPage() {
 		});
 		if (!saved.isSuccess) return saved.message;
 
+		// a draft without a free slot keeps its profile and stays a draft
+		if (notice && !notice.activates) {
+			toast.add({ type: "success", title: "Profile saved", timeout: 4_000 });
+			await navigate({ to: "/account/organizations" });
+			return null;
+		}
+
 		if (!completed) {
 			const done = await api(`/organizations/${id}/onboarding/complete`, {
 				method: "POST",
 			});
 			if (!done.isSuccess)
 				return `Your profile was saved, but the step couldn't be marked done (${done.message}). Submitting again is safe.`;
-			await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: postLoginFlagsKey }),
+				invalidateOrganizations(queryClient),
+				invalidateSubscription(queryClient),
+			]);
 		}
 
 		await goToDashboard();
@@ -216,9 +290,29 @@ function OnboardingPage() {
 			description={
 				completed
 					? `Update what customers see about ${organization.name}.`
-					: "Your organization is active. Tell customers who you are, and the rest of the setup builds on it."
+					: notice
+						? "Tell customers who you are, and the rest of the setup builds on it."
+						: "Your organization is active. Tell customers who you are, and the rest of the setup builds on it."
 			}
 		>
+			{notice && (
+				<div
+					role="status"
+					className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 p-4 text-sm"
+				>
+					<p>{notice.text}</p>
+					{!notice.activates && (
+						<Button
+							variant="outline"
+							size="sm"
+							nativeButton={false}
+							render={<Link to="/account/billing" />}
+						>
+							Go to Billing
+						</Button>
+					)}
+				</div>
+			)}
 			<ol className="space-y-3">
 				<li>
 					<Card>
@@ -237,18 +331,37 @@ function OnboardingPage() {
 						<CardContent>
 							<BusinessProfileForm
 								profile={profile}
-								submitLabel={completed ? "Save changes" : "Save and continue"}
+								submitLabel={
+									completed
+										? "Save changes"
+										: notice && !notice.activates
+											? "Save profile"
+											: "Save and continue"
+								}
 								pendingLabel="Saving…"
 								onSubmit={save}
 							>
-								<Button
-									type="button"
-									variant="ghost"
-									className="w-full"
-									onClick={() => void goToDashboard()}
-								>
-									{completed ? "Back to dashboard" : "I'll do this later"}
-								</Button>
+								{draft ? (
+									<Button
+										type="button"
+										variant="ghost"
+										className="w-full"
+										onClick={() =>
+											void navigate({ to: "/account/organizations" })
+										}
+									>
+										Back to organizations
+									</Button>
+								) : (
+									<Button
+										type="button"
+										variant="ghost"
+										className="w-full"
+										onClick={() => void goToDashboard()}
+									>
+										{completed ? "Back to dashboard" : "I'll do this later"}
+									</Button>
+								)}
 							</BusinessProfileForm>
 						</CardContent>
 					</Card>
@@ -277,6 +390,14 @@ function DashboardButton({ slug, label }: { slug: string; label: string }) {
 			}
 		>
 			{label}
+		</Button>
+	);
+}
+
+function OrganizationsButton() {
+	return (
+		<Button nativeButton={false} render={<Link to="/account/organizations" />}>
+			Go to organizations
 		</Button>
 	);
 }

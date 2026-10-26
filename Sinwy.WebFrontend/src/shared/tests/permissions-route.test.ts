@@ -26,7 +26,7 @@ beforeEach(() => {
 
 it("lets an owner through without raising a notice", () => {
 	expect(guard(routeArgs(["owner"]))).toBeUndefined();
-	expect(takeAccessDenied()).toBe(false);
+	expect(takeAccessDenied()).toBeNull();
 });
 
 it("redirects staff to the organization overview", () => {
@@ -37,7 +37,7 @@ it("redirects staff to the organization overview", () => {
 		to: "/$organizationSlug",
 		params: { organizationSlug: "acme" },
 	});
-	expect(takeAccessDenied()).toBe(true);
+	expect(takeAccessDenied()).toBe("You don't have access to that page");
 });
 
 it("passes on the union of several roles", () => {
@@ -52,5 +52,5 @@ it("stays silent when denying a preload", () => {
 	expect(isRedirect(thrownBy(() => guard(routeArgs(["staff"], true))))).toBe(
 		true,
 	);
-	expect(takeAccessDenied()).toBe(false);
+	expect(takeAccessDenied()).toBeNull();
 });

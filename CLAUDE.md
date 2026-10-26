@@ -32,6 +32,8 @@ Sinwy/
 └── docs/               # Architecture & roadmap docs
 ```
 
+`docs/org-rules-map.md` is the reference for organization and billing behaviour (states, slots, plans, transfers, deletion); update it with any change to those rules.
+
 `Sinwy.*` workspaces are declared in the root `package.json`. Shared code lives in `@sinwy/shared` (imported by the other projects as a workspace dep).
 
 ## Backend Architecture

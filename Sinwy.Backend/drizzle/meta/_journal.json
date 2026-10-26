@@ -78,6 +78,48 @@
       "when": 1792688268449,
       "tag": "0010_cool_firelord",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792777530163,
+      "tag": "0011_unknown_azazel",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792947592429,
+      "tag": "0012_chilly_terror",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792959157270,
+      "tag": "0013_account_plan",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792959157785,
+      "tag": "0014_organization_slot",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793035660582,
+      "tag": "0015_pending_downgrade",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793039774533,
+      "tag": "0016_drop_transfer_billing_columns",
+      "breakpoints": true
     }
   ]
 }
