@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { Membership } from "@authModule";
 import { readOutboxEmails } from "@backend/infrastructure/email";
-import { polarClient } from "@backend/infrastructure/polar";
+import {
+	type PolarModels,
+	polarClient,
+	productIdFor,
+} from "@backend/infrastructure/polar";
 import {
 	activateOrganization,
 	createUserWithSession,
@@ -10,17 +14,20 @@ import {
 	insertOrganization,
 	joinOrganization,
 } from "@backend/test/helpers";
+import { applySubscriptionEvent } from "@billingModule";
 import db from "@db";
 import {
 	member,
 	organization,
 	organizationTransfer,
 } from "@db/schema/organizationSchema";
+import { userSubscription } from "@db/schema/userSchema";
 import {
 	countHeldSlots,
 	getOrganizationState,
 	scheduleOwnedOrganizationsForDeletion,
 } from "@organizationsModule";
+import type { PlanSlug } from "@sinwy/shared";
 import { and, eq } from "drizzle-orm";
 import { expireTransfersJob } from "../expiry";
 import {
@@ -145,35 +152,134 @@ test("concurrent offers: exactly one goes through", async () => {
 	});
 });
 
-test("offer emails the recipient and shows up in their incoming list with the org's tier", async () => {
+test("offer emails the recipient and shows up in their incoming list, without the org's tier", async () => {
 	const id = await offered();
 	const [email] = (await readOutboxEmails())
 		.map(({ email }) => email)
 		.filter((e) => e.to === `${staffId}@test.dev`);
 	expect(email?.subject).toBe("You've been offered ownership of Handover Co");
-	expect(await listIncomingTransfers(staffId)).toMatchObject([
+	const incoming = await listIncomingTransfers(staffId);
+	expect(incoming).toMatchObject([
 		{
 			id,
 			status: "pending",
-			organization: { id: orgId, plan: "professional" },
+			organization: { id: orgId, name: "Handover Co" },
 		},
 	]);
+	expect(incoming[0]?.organization).not.toHaveProperty("plan");
 	expect(await listIncomingTransfers(ownerId)).toEqual([]);
 });
 
-test("accept without a plan → RECIPIENT_NEEDS_PLAN, nothing changes and the offer stays open", async () => {
+const planBoughtFor = (
+	transferId: string,
+	plan: PlanSlug,
+	overrides: Partial<PolarModels.Subscription> = {},
+) =>
+	applySubscriptionEvent({
+		data: {
+			id: `sub_bought_${transferId}`,
+			status: "active",
+			product_id: productIdFor(plan),
+			customer: { external_id: staffId },
+			metadata: { transferId },
+			created_at: new Date().toISOString(),
+			modified_at: new Date().toISOString(),
+			...overrides,
+		} as PolarModels.Subscription,
+	});
+
+const storedPlanOf = async (userId: string) => {
+	const [row] = await db
+		.select({ plan: userSubscription.plan })
+		.from(userSubscription)
+		.where(eq(userSubscription.userId, userId));
+	return row?.plan ?? null;
+};
+
+const emailTo = async (userId: string) =>
+	(await readOutboxEmails())
+		.map(({ email }) => email)
+		.filter((email) => email.to === `${userId}@test.dev`);
+
+test("accept without a plan → accepted, waiting on the checkout; nothing moves yet", async () => {
 	const id = await offered();
 
 	expect(await acceptIncomingTransfer(staffId, id)).toEqual({
-		ok: false,
-		error: "needs-plan",
+		ok: true,
+		data: { status: "accepted" },
 	});
 	expect(await roleOf(ownerId)).toBe("owner");
-	expect((await transferRow(id))?.status).toBe("pending");
+	expect((await transferRow(id))?.status).toBe("accepted");
 	expect((await getOrganizationState(orgId))?.status).toBe("active");
+	expect(await listIncomingTransfers(staffId)).toMatchObject([
+		{ id, status: "accepted" },
+	]);
+	// accepting again before paying changes nothing
+	expect(await acceptIncomingTransfer(staffId, id)).toEqual({
+		ok: true,
+		data: { status: "accepted" },
+	});
 });
 
-test("accept with a full plan → RECIPIENT_NEEDS_PLAN", async () => {
+test("the plan bought at acceptance completes the transfer when it lands; the old owner keeps their plan and gets the slot back", async () => {
+	const id = await offered();
+	await acceptIncomingTransfer(staffId, id);
+
+	await planBoughtFor(id, "starter");
+
+	expect((await transferRow(id))?.status).toBe("completed");
+	expect(await ownersOf(orgId)).toEqual([staffId]);
+	expect(await roleOf(ownerId)).toBe("admin");
+	expect(await getOrganizationState(orgId)).toMatchObject({
+		status: "active",
+		ownerPlan: "starter",
+		ownerUserId: staffId,
+	});
+	expect(await countHeldSlots(staffId)).toBe(1);
+	expect(await countHeldSlots(ownerId)).toBe(0);
+	expect(await storedPlanOf(ownerId)).toBe("professional");
+	const [oldOwnerEmail] = await emailTo(ownerId);
+	expect(oldOwnerEmail?.subject).toBe("Handover Co has a new owner");
+	expect(oldOwnerEmail?.html).toContain("free again");
+	expect(await emailTo(staffId)).toContainEqual(
+		expect.objectContaining({ subject: "You now own Handover Co" }),
+	);
+
+	// redeliveries find it done
+	await planBoughtFor(id, "starter");
+	expect(await countHeldSlots(staffId)).toBe(1);
+});
+
+test("a plan that lands after the transfer closed is kept, and nothing moves (Default 11)", async () => {
+	const id = await offered();
+	await acceptIncomingTransfer(staffId, id);
+	await cancelTransfer(membership);
+
+	await planBoughtFor(id, "starter");
+
+	expect(await storedPlanOf(staffId)).toBe("starter");
+	expect(await ownersOf(orgId)).toEqual([ownerId]);
+	expect((await transferRow(id))?.status).toBe("canceled");
+});
+
+test("a plan naming a transfer that isn't the user's, or isn't waiting on a checkout, completes nothing", async () => {
+	const accepted = await offered();
+	await acceptIncomingTransfer(staffId, accepted);
+	const outsider = (await createUserWithSession()).userId;
+	await planBoughtFor(accepted, "starter", {
+		id: "sub_outsider",
+		customer: { external_id: outsider } as PolarModels.Subscription["customer"],
+	});
+	expect((await transferRow(accepted))?.status).toBe("accepted");
+
+	await cancelTransfer(membership);
+	const pending = await offered();
+	await planBoughtFor(pending, "starter");
+	expect((await transferRow(pending))?.status).toBe("pending");
+	expect(await ownersOf(orgId)).toEqual([ownerId]);
+});
+
+test("accept with a full plan → needs-slot, the offer stays open; after an upgrade it completes", async () => {
 	await givePlan(staffId, "starter");
 	const theirs = await insertOrganization("Their Co");
 	await joinOrganization(theirs, staffId, "owner");
@@ -182,9 +288,46 @@ test("accept with a full plan → RECIPIENT_NEEDS_PLAN", async () => {
 
 	expect(await acceptIncomingTransfer(staffId, id)).toEqual({
 		ok: false,
-		error: "needs-plan",
+		error: "needs-slot",
 	});
 	expect((await transferRow(id))?.status).toBe("pending");
+
+	await givePlan(staffId, "professional");
+	expect(await acceptIncomingTransfer(staffId, id)).toEqual({
+		ok: true,
+		data: { status: "completed" },
+	});
+	expect(await countHeldSlots(staffId)).toBe(2);
+});
+
+test("a recipient who fills their slot between accept and the plan landing ends up upgrading, not over the cap", async () => {
+	const theirs = await insertOrganization("Their Co");
+	await joinOrganization(theirs, staffId, "owner");
+	const id = await offered();
+	await acceptIncomingTransfer(staffId, id);
+	// the plan reached the app first without completing the transfer (e.g. the
+	// billing page's reconcile), and they activated their own organization
+	const subscriptionId = `sub_bought_${id}`;
+	await givePlan(staffId, "starter", { subscriptionId });
+	await holdSlot(theirs);
+
+	await planBoughtFor(id, "starter");
+
+	expect((await transferRow(id))?.status).toBe("accepted");
+	expect(await countHeldSlots(staffId)).toBe(1);
+	expect(await ownersOf(orgId)).toEqual([ownerId]);
+	expect(await acceptIncomingTransfer(staffId, id)).toEqual({
+		ok: false,
+		error: "needs-slot",
+	});
+
+	await givePlan(staffId, "professional", { subscriptionId });
+	expect(await acceptIncomingTransfer(staffId, id)).toEqual({
+		ok: true,
+		data: { status: "completed" },
+	});
+	expect(await countHeldSlots(staffId)).toBe(2);
+	expect(await countHeldSlots(ownerId)).toBe(0);
 });
 
 test("accept with a free slot completes at once: roles swap, the slot moves, the old owner keeps their plan and gets the slot back", async () => {
@@ -193,7 +336,7 @@ test("accept with a free slot completes at once: roles swap, the slot moves, the
 
 	expect(await acceptIncomingTransfer(staffId, id)).toEqual({
 		ok: true,
-		data: null,
+		data: { status: "completed" },
 	});
 
 	expect(await roleOf(staffId)).toBe("owner");
@@ -232,7 +375,7 @@ test("two recipients' acceptances racing for the last slot: exactly one org move
 	]);
 
 	expect(results.filter((r) => r.ok)).toHaveLength(1);
-	expect(results.find((r) => !r.ok)).toMatchObject({ error: "needs-plan" });
+	expect(results.find((r) => !r.ok)).toMatchObject({ error: "needs-slot" });
 	expect(await countHeldSlots(staffId)).toBe(1);
 });
 

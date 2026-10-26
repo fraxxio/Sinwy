@@ -10,6 +10,7 @@ import appConfig from "@config";
 import { createLogger } from "@logger";
 import { listOwnedOrganizationIds } from "@organizationsModule";
 import { ENTITLED_SUBSCRIPTION_STATUSES } from "@sinwy/shared";
+import { completeTransferOnPlan } from "@transfersModule";
 import { OrganizationsDeactivatedEmail } from "./emails/planEmails";
 import { refundInFull } from "./refunds";
 import {
@@ -124,6 +125,20 @@ const announceReleasedSlots = async (
 };
 
 /**
+ * A plan bought at a transfer's acceptance carries the transfer in its
+ * checkout metadata. Tried on every delivery of an entitled state, so a retry
+ * finishes what a failed one didn't.
+ */
+const completeTransferBoughtFor = async (
+	subscription: Subscription,
+	userId: string,
+) => {
+	const transferId = subscription.metadata?.["transferId"];
+	if (typeof transferId === "string" && isEntitled(subscription))
+		await completeTransferOnPlan(userId, transferId);
+};
+
+/**
  * Projects a Polar subscription onto its user, found by the customer's
  * `external_id`. A paused subscription stays bound, so it can resume; only an
  * ended one releases it. State is derived from the subscription object only,
@@ -169,6 +184,7 @@ export const projectSubscription = async (
 		case "applied":
 			billingLogger.info("Plan projected from subscription", context);
 			await announceReleasedSlots(userId, written);
+			await completeTransferBoughtFor(subscription, userId);
 			if (isEntitled(subscription)) return "entitled";
 			await closeOwnedOrganizations(userId);
 			return "not-entitled";
@@ -182,6 +198,7 @@ export const projectSubscription = async (
 				"Ignored subscription state not newer than the applied one",
 				{ ...context, observedAt: observedAt.toISOString() },
 			);
+			await completeTransferBoughtFor(subscription, userId);
 			return null;
 		case "bound-elsewhere":
 			billingLogger.warn("Ignored a subscription the user no longer uses", {

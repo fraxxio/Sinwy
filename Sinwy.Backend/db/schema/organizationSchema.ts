@@ -105,12 +105,6 @@ export const organizationTransfer = pgTable(
 			.references(() => user.id, { onDelete: "cascade" }),
 		status: text("status").notNull().default("pending"),
 		expiresAt: timestamp("expires_at").notNull(),
-		// the latest checkout opened on acceptance
-		checkoutId: text("checkout_id"),
-		oldSubscriptionId: text("old_subscription_id"),
-		newSubscriptionId: text("new_subscription_id"),
-		// the old subscription was revoked and its unused time refunded
-		settledAt: timestamp("settled_at"),
 		createdAt: timestamp("created_at").notNull().defaultNow(),
 		updatedAt: timestamp("updated_at").notNull().defaultNow(),
 	},

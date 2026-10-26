@@ -1,7 +1,8 @@
 import type { IncomingTransferDto } from "@sinwy/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { AcceptTransferDialog } from "#/modules/account-dashboard/components/AcceptTransferDialog";
 import {
-	acceptTransfer,
 	accountKeys,
 	declineTransfer,
 	incomingTransfersQuery,
@@ -10,8 +11,6 @@ import { ContentBox } from "#/shared/components/ContentBox";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { formatDay } from "#/shared/lib/date";
-import { organizationsQuery } from "#/shared/lib/organizations";
-import { getPlanName } from "#/shared/lib/plans";
 
 /** Organizations offered to the caller; nothing renders while there are none. */
 export function IncomingTransfers() {
@@ -34,21 +33,7 @@ export function IncomingTransfers() {
 
 function IncomingTransferRow({ transfer }: { transfer: IncomingTransferDto }) {
 	const queryClient = useQueryClient();
-
-	const accept = useMutation({
-		mutationFn: async () => {
-			const res = await acceptTransfer(transfer.id);
-			if (!res.isSuccess) throw new Error(res.message);
-		},
-		onSettled: () => {
-			void queryClient.invalidateQueries({
-				queryKey: accountKeys.incomingTransfers,
-			});
-			void queryClient.invalidateQueries({
-				queryKey: organizationsQuery.queryKey,
-			});
-		},
-	});
+	const [accepting, setAccepting] = useState(false);
 
 	const decline = useMutation({
 		mutationFn: async () => {
@@ -61,8 +46,7 @@ function IncomingTransferRow({ transfer }: { transfer: IncomingTransferDto }) {
 			}),
 	});
 
-	const plan = transfer.organization.plan;
-	const busy = accept.isPending || accept.isSuccess || decline.isPending;
+	const busy = accepting || decline.isPending;
 
 	return (
 		<li className="grid gap-2 py-3 first:pt-0 last:pb-0">
@@ -70,10 +54,11 @@ function IncomingTransferRow({ transfer }: { transfer: IncomingTransferDto }) {
 				<div className="grid gap-0.5 text-sm">
 					<span className="font-medium">{transfer.organization.name}</span>
 					<span className="text-xs text-muted-foreground">
-						{transfer.from.name} offers you ownership
-						{plan ? ` on the ${getPlanName(plan)} plan` : ""}. You'll pay for it
-						with your own payment method. Open until{" "}
-						{formatDay(transfer.expiresAt)}.
+						{transfer.from.name} offers you ownership. As the owner it runs on
+						your plan and takes one of its organization slots.
+						{transfer.status === "accepted" &&
+							" You accepted; it moves to you once your plan's payment completes."}{" "}
+						Open until {formatDay(transfer.expiresAt)}.
 					</span>
 				</div>
 				<div className="flex shrink-0 gap-2">
@@ -85,13 +70,17 @@ function IncomingTransferRow({ transfer }: { transfer: IncomingTransferDto }) {
 					>
 						{decline.isPending ? "Declining…" : "Decline"}
 					</Button>
-					<Button size="sm" disabled={busy} onClick={() => accept.mutate()}>
-						{accept.isPending || accept.isSuccess ? "Accepting…" : "Accept"}
+					<Button size="sm" disabled={busy} onClick={() => setAccepting(true)}>
+						Accept
 					</Button>
 				</div>
 			</div>
-			{accept.isError && <FieldError>{accept.error.message}</FieldError>}
 			{decline.isError && <FieldError>{decline.error.message}</FieldError>}
+			<AcceptTransferDialog
+				transfer={transfer}
+				open={accepting}
+				onOpenChange={setAccepting}
+			/>
 		</li>
 	);
 }

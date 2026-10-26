@@ -26,7 +26,7 @@ logs are in [org-lifecycle-log.md](org-lifecycle-log.md).
 | 7 | Account billing page and onboarding | 6 | done | `feat(backend, web): move billing to Account → Billing with organization slots and drafts` |
 | 8 | Plan changes and the organization cap | 7 | done | `feat(backend, web): schedule downgrades for the period end with organization picks` |
 | 9 | Account-wide suspend, cancel and lapse | 7 | done | `feat(backend, web): suspend and cancel the account plan with the organizations affected and a past-due warning` |
-| 10 | Transfer on the account plan | 8 | todo | |
+| 10 | Transfer on the account plan | 8 | done | `feat(backend, web): take over an organization with a free slot, a new plan or an upgrade at acceptance` |
 | 11 | Code review | 0–10 | todo | |
 | 12 | Organization and billing rules map | 11 and its fixes | todo | |
 
@@ -197,8 +197,8 @@ App state (log: Phases 1–4):
   (`db/organizationAccess.ts`) into the query and pass the row to
   `organizationStatusOf` / `isOrganizationPublic`. `Membership.plan` is the
   owner's plan while the org is active.
-- Anything that hands out a slot (transfers in Phase 10) locks plan rows first with `lockPlan`, in user-id order, then org
-  rows, and counts with `countHeldSlots`; that lock is what keeps two
+- Anything that hands out a slot locks plan rows first with `lockPlan`, in
+  user-id order, then org rows, and counts with `countHeldSlots`; that lock is what keeps two
   activations from passing the cap (log: Phase 6). Creation, a draft's
   wizard completion and Activate all go through `holdSlot` (log: Phase 7).
 - The projection write (`writeUserSubscription`) settles slots under the
@@ -219,14 +219,18 @@ App state (log: Phases 1–4):
 - A draft is derived, not stored: no slot, setup unfinished, not scheduled
   (`isDraft`, the summary's `draft`). An org activated before finishing setup
   reads as a draft again once deactivated (log: Phase 7).
-- Transfers complete at once on accept (`completeTransfer`); the `accepted`
-  status and the transfer's checkout and subscription columns are unused
-  until Phase 10.
+- Transfer accept: free slot → completes; no plan → `accepted`, then the
+  plan checkout carries `metadata.transferId` (Polar copies it onto the
+  subscription, verified) and the projection completes it on any entitled
+  delivery; full → 409 until the dialog's upgrade. The incoming offer has
+  no tier (recipients can be staff, D15) (log: Phase 10).
 - `GET /api/account/subscription` reconciles a user without a plan from
   Polar, so a paid checkout projects when it is called; `/checkout/success`
-  polls it, then activates the owner's oldest draft. The checkout body is
-  strictly `{ slug, redirect }`, so nothing ties a checkout to an org
-  (log: Phases 6, 7).
+  polls it, then activates the owner's oldest draft, except after a
+  transfer checkout (`&organization=<id>`), which waits for ownership. The
+  checkout body is strictly `{ slug, redirect, transferId? }`; the hook
+  accepts a `transferId` only for the caller's `accepted` transfer
+  (log: Phases 6, 7, 10).
 - Better Auth's org row has no status or plan. Status, tier name (owner and
   admin only, D15), features and `draft` come from `GET /api/organizations`;
   the org shell builds its entitlements from that summary (log: Phase 7).
@@ -248,78 +252,28 @@ App state (log: Phases 1–4):
 - e2e: Polar's card fields sit
   in Stripe iframes: type through `run-code` with
   `frameLocator('iframe[name^="__privateStripeFrame"]')` and
-  `pressSequentially` (log: Phase 4).
+  `pressSequentially`; the card inputs (`number`, `expiry`, `cvc`) are in
+  the frame whose `src` contains `elements-inner-accessory` (log: Phases 4, 10).
 
 Open, not caused by this plan:
-- The plan-change dialog shows USD catalog prices while Polar charges EUR.
+- The plan-change and accept-transfer dialogs show USD catalog prices while
+  Polar charges EUR.
 - `invite-member` accepts `role: "member"`, which isn't an app role.
 - A set-active refusal thrown in `hooks.before` is logged by Better Auth at
   ERROR level, though it's a user-caused 403. So are the checkout refusals.
 - `/organizations/new` shows the Plan and Pay steps to a user who already
-  has a plan; the transfer section's copy is from the per-org model (Phase
-  10); Account → Organizations labels admins "Member" (log: Phase 7).
+  has a plan; Account → Organizations labels admins "Member" (log: Phase 7).
 - Resume charges on one click with no confirm dialog, unlike suspend and
   cancel; the "Choose a plan" intro on Billing speaks of one organization
   even when several wait (log: Phase 9).
+- A recipient with a pending downgrade can accept into a free slot; at the
+  period end the downgrade releases the latest-activated org, the
+  transferred one, and emails them (Default 9). Transfer completion through
+  a real webhook delivery is unchecked (log: Phase 10).
 - drizzle-kit `generate` needs a TTY when one table drops and adds columns
   (rename prompt); generate the drops and the adds as two migrations.
 
 ---
-
-## Phase 10: Transfer on the account plan
-
-**Goal:** a recipient without a plan buys one at acceptance, and a recipient
-whose plan is full upgrades at acceptance; then the organization moves to
-their slot.
-
-**Files:** `Sinwy.Backend/modules/transfers/{service,controller,routes,repository}.ts`,
-`modules/billing/{service,transfer,refunds}.ts` (delete what's left of the
-transfer checkout; `changeAccountPlan` is the upgrade path and must refuse
-while the user's transfer waits on a checkout), `modules/billing/projection.ts`
-(complete the transfer once the plan is entitled),
-`db/organizationAccess.ts` (`lockPlan`, `countHeldSlots`),
-`db/schema/organizationSchema.ts` (`organization_transfer`: drop
-`old_subscription_id`, `new_subscription_id`, `settled_at` if unused),
-`modules/transfers/emails/`. Web:
-`src/modules/account-dashboard/routes/_shell.organizations.tsx` (Accept
-dialog; `subscriptionQuery` and `freeSlots` from `lib/billing-queries.ts`
-tell which recipient state applies), `components/billing/ChangePlanDialog.tsx`
-(upgrade at acceptance), `src/modules/checkout/routes/success.tsx`. Tests:
-`modules/transfers/tests/transfer.test.ts`,
-`modules/billing/tests/billing.test.ts`.
-
-Backend:
-- Accept, by the recipient's state:
-  - free slot: complete at once (Phase 6 completion);
-  - no plan: a plan checkout (recipient picks the tier, trial rules as any
-    first plan) carrying `transferId` in metadata; the projection completes
-    the transfer once the plan is entitled;
-  - full: an upgrade to a tier with room (Phase 8 upgrade), then complete.
-- If the transfer is no longer `accepted` when the plan arrives, the
-  recipient keeps the plan (Default 11).
-- The old owner's plan doesn't change (D12); the completion email says the
-  slot is free.
-- Offers still refuse inactive, suspended and scheduled orgs.
-- Plan changes refuse while a transfer is accepted and waiting on this
-  user's checkout (moved here from Phase 8).
-
-Frontend:
-- Account → Organizations: Accept shows what happens (uses a free slot, buy a
-  plan, or upgrade to a named tier) before confirming.
-
-Tests that matter:
-- Each recipient state; a recipient who removes the slot (activates another
-  org) between accept and checkout ends up upgrading, not over the cap.
-- Old owner keeps their plan and gets the slot back.
-
-Done when:
-- Transfer to a staff member with no plan → plan checkout → owner; transfer
-  to one at the cap → upgrade → owner. Checked in the running app.
-
-**Verify:** `org-with-staff`, owner on a real sandbox plan. Offer to staff;
-as staff accept → real sandbox checkout; simulate the `subscription.active`
-with `--transfer-id`. Check roles, slots and both plans with `psql`. Repeat
-with a staff member who owns an active org on Starter.
 
 ## Phase 11: Code review
 
@@ -333,7 +287,12 @@ phases' details here, since this phase reviews them.
 Scope: the full diff from the commit before Phase 0 to the last phase commit
 (including `modules/transfers/`, `modules/billing/` and the account billing
 pages), plus older code these changes rely on or touch (projection, checkout
-guard, account deletion, membership guards, switcher, post-login).
+guard, account deletion, membership guards, switcher, post-login). Phase 10
+added coupling worth a look: the `/checkout` hook in `modules/auth/auth.ts`
+(`transferId` → metadata and success URL), billing's projection calling
+`completeTransferOnPlan` in `modules/transfers/`, the two-call upgrade in
+`account-dashboard/components/AcceptTransferDialog.tsx`, and the transfer
+branch of `checkout/routes/success.tsx`.
 
 Check for:
 - **Bugs**, new or left over: races (webhooks against user actions, two server

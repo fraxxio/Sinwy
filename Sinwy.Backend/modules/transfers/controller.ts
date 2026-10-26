@@ -48,9 +48,9 @@ const failAccept = (error: AcceptError) => {
 			return fail("This offer is no longer open", 404);
 		case "expired":
 			return fail("This offer has expired", 410);
-		case "needs-plan":
+		case "needs-slot":
 			return fail(
-				"You need a plan with a free organization slot to take over this organization",
+				"Your plan has no free organization slot; upgrade it to take over this organization",
 				409,
 				API_ERROR_CODES.RECIPIENT_NEEDS_PLAN,
 			);
@@ -91,9 +91,14 @@ export const acceptTransferHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
 	const { transferId } = c.req.params as { transferId: string };
 	const result = await acceptIncomingTransfer(user.id, transferId);
-	return result.ok
-		? ok(null, 200, "The organization is yours")
-		: failAccept(result.error);
+	if (!result.ok) return failAccept(result.error);
+	return ok(
+		result.data,
+		200,
+		result.data.status === "completed"
+			? "The organization is yours"
+			: "Choose a plan to take over the organization",
+	);
 };
 
 export const declineTransferHandler: Handler = async (c) => {

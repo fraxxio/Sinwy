@@ -1279,3 +1279,103 @@ and simulate `subscription.canceled`/`revoked`.
   "Choose a plan" intro is singular; the Change plan dialog's USD prices
   (already open); `page.ts` can't target named sessions and the simulator
   has no `past_due` fixture (toolkit).
+
+## Phase 10: Transfer on the account plan
+
+**Goal:** a recipient without a plan buys one at acceptance, and a recipient
+whose plan is full upgrades at acceptance; then the organization moves to
+their slot.
+
+**Files:** `Sinwy.Backend/modules/transfers/{service,controller,routes,repository}.ts`,
+`modules/billing/{service,transfer,refunds}.ts` (delete what's left of the
+transfer checkout; `changeAccountPlan` is the upgrade path and must refuse
+while the user's transfer waits on a checkout), `modules/billing/projection.ts`
+(complete the transfer once the plan is entitled),
+`db/organizationAccess.ts` (`lockPlan`, `countHeldSlots`),
+`db/schema/organizationSchema.ts` (`organization_transfer`: drop
+`old_subscription_id`, `new_subscription_id`, `settled_at` if unused),
+`modules/transfers/emails/`. Web:
+`src/modules/account-dashboard/routes/_shell.organizations.tsx` (Accept
+dialog; `subscriptionQuery` and `freeSlots` from `lib/billing-queries.ts`
+tell which recipient state applies), `components/billing/ChangePlanDialog.tsx`
+(upgrade at acceptance), `src/modules/checkout/routes/success.tsx`. Tests:
+`modules/transfers/tests/transfer.test.ts`,
+`modules/billing/tests/billing.test.ts`.
+
+Backend:
+- Accept, by the recipient's state:
+  - free slot: complete at once (Phase 6 completion);
+  - no plan: a plan checkout (recipient picks the tier, trial rules as any
+    first plan) carrying `transferId` in metadata; the projection completes
+    the transfer once the plan is entitled;
+  - full: an upgrade to a tier with room (Phase 8 upgrade), then complete.
+- If the transfer is no longer `accepted` when the plan arrives, the
+  recipient keeps the plan (Default 11).
+- The old owner's plan doesn't change (D12); the completion email says the
+  slot is free.
+- Offers still refuse inactive, suspended and scheduled orgs.
+- Plan changes refuse while a transfer is accepted and waiting on this
+  user's checkout (moved here from Phase 8).
+
+Frontend:
+- Account → Organizations: Accept shows what happens (uses a free slot, buy a
+  plan, or upgrade to a named tier) before confirming.
+
+Tests that matter:
+- Each recipient state; a recipient who removes the slot (activates another
+  org) between accept and checkout ends up upgrading, not over the cap.
+- Old owner keeps their plan and gets the slot back.
+
+Done when:
+- Transfer to a staff member with no plan → plan checkout → owner; transfer
+  to one at the cap → upgrade → owner. Checked in the running app.
+
+**Verify:** `org-with-staff`, owner on a real sandbox plan. Offer to staff;
+as staff accept → real sandbox checkout; simulate the `subscription.active`
+with `--transfer-id`. Check roles, slots and both plans with `psql`. Repeat
+with a staff member who owns an active org on Starter.
+
+### Log (2026-10-26, `feat(backend, web): take over an organization with a free slot, a new plan or an upgrade at acceptance`)
+- Shipped: accept by the recipient's state. A free slot completes at once.
+  Without a plan, accept answers `{ status: "accepted" }` and marks the
+  transfer `accepted`; the checkout hook takes an optional `transferId`
+  (only for the caller's `accepted`, unexpired transfer) and sends Polar
+  `metadata: { transferId }` and a success URL with `&organization=<id>`.
+  The projection completes the named transfer whenever an entitled state of
+  that subscription is delivered, applied or outdated (`completeTransferOnPlan`,
+  `acceptedOnly`); a transfer no longer `accepted` is left alone and the
+  plan kept (Default 11). A full plan answers 409 `RECIPIENT_NEEDS_PLAN`
+  ("no free slot; upgrade"). Web: Accept opens `AcceptTransferDialog`,
+  which shows the path first (free slot, plan picker → checkout, "Upgrade
+  to <tier> and accept", resume first, or Enterprise full), from
+  `acceptPathFor`; the success page's transfer branch waits for ownership
+  and never activates a draft. Dropped `checkout_id`, `old_subscription_id`,
+  `new_subscription_id` and `settled_at` (migration 0016). Emails and the
+  owner's Transfer section reworded for slots; the old owner's email links
+  Billing and says the slot is free.
+- Differs from plan:
+  - No refusal was added to `changeAccountPlan` for a user whose transfer
+    waits on a checkout: such a user has no plan, so it already refuses.
+  - The upgrade at acceptance is two calls from the dialog (change plan,
+    then accept), not part of the accept endpoint, so transfers don't import
+    billing (billing's projection already imports transfers).
+    `ChangePlanDialog` is unchanged.
+  - From the e2e report: the incoming offer no longer carries the owner's
+    tier (`IncomingTransferDto.organization.plan` removed), since the
+    recipient can be staff (D15); the new owner's email links to Account →
+    Organizations.
+- Checked in the running app (subagent, real sandbox, no webhook
+  simulated): A, recipient without a plan (owner
+  `webdevrokas+seed-c0085fee-owner@gmail.com` on real Starter
+  `af13b512-…`, staff `…-staff1@…`): offer from Settings, Accept dialog
+  with the plan picker, real Starter checkout; Polar copied
+  `metadata.transferId` onto subscription `7a234da8-…`, and the success
+  page's reconcile completed the transfer ("is yours", 1 of 1 active).
+  Roles swapped, slot moved, old owner's plan unchanged in the app and in
+  Polar, both emails. B, recipient at the cap (`seed-64bee1ea`, staff on
+  real Starter `6d7ff9aa-…` with their own active org): dialog offered
+  "Upgrade to Business and accept"; completed in 3 s, staff on
+  `professional` (Polar: Professional, no pending update), 2 of 2 slots,
+  old owner unchanged. No backend warnings; only known console noise.
+  Not checked: completion through a real webhook delivery (endpoint
+  disabled), the prorated charge on the next invoice, real Resend sends.

@@ -23,7 +23,11 @@ import { cn } from "#/shared/lib/utils";
 export const Route = createFileRoute("/checkout/success")({
 	// expired session → bounce to login (which returns here), not a blind 401 poll
 	...protectedRoute,
-	validateSearch: z.object({ checkout_id: z.string().optional() }),
+	validateSearch: z.object({
+		checkout_id: z.string().optional(),
+		// set when the plan was bought to take over this organization
+		organization: z.string().optional(),
+	}),
 	component: CheckoutSuccessPage,
 	pendingComponent: CheckoutSuccessPending,
 	pendingMs: 0,
@@ -82,11 +86,20 @@ function CheckoutSuccessPage() {
 const findFunnelDraft = (organizations: OrganizationSummary[]) =>
 	organizations.find((org) => org.isOwner && org.draft) ?? null;
 
+const fetchOrganizations = async () => {
+	const res = await api<OrganizationSummary[]>("/organizations");
+	return res.isSuccess ? res.data : null;
+};
+
 function Activation({ onRetry }: { onRetry: () => void }) {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
+	const { organization: transferredId } = Route.useSearch();
 	const [phase, setPhase] = useState<Phase>(Phase.Plan);
 	const [draft, setDraft] = useState<OrganizationSummary | null>(null);
+	const [transferred, setTransferred] = useState<OrganizationSummary | null>(
+		null,
+	);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -98,8 +111,13 @@ function Activation({ onRetry }: { onRetry: () => void }) {
 				setPhase(Phase.Unreachable);
 				return;
 			}
-			const funnelDraft = findFunnelDraft(list.data);
+			const target = transferredId
+				? (list.data.find((org) => org.id === transferredId) ?? null)
+				: null;
+			// a plan bought for a transfer never activates a draft
+			const funnelDraft = transferredId ? null : findFunnelDraft(list.data);
 			setDraft(funnelDraft);
+			setTransferred(target);
 
 			// the plan is projected from Polar's webhook, or reconciled on read
 			const subscription = await pollUntil(
@@ -113,6 +131,35 @@ function Activation({ onRetry }: { onRetry: () => void }) {
 				return;
 			}
 			queryClient.setQueryData(billingKeys.subscription, subscription);
+			if (transferredId) {
+				setPhase(Phase.Organization);
+				// the plan's projection completes the transfer
+				const owned = await pollUntil(
+					fetchOrganizations,
+					(organizations) =>
+						organizations.some(
+							(org) => org.id === transferredId && org.isOwner,
+						),
+					{ attempts: 5, isCancelled: () => cancelled },
+				);
+				if (cancelled) return;
+				await Promise.all([
+					queryClient.invalidateQueries({ queryKey: postLoginFlagsKey }),
+					invalidateOrganizations(queryClient),
+				]);
+				const name = target?.name ?? "The organization";
+				toast.add(
+					owned
+						? { type: "success", title: `${name} is yours`, timeout: 4_000 }
+						: {
+								type: "info",
+								title: "Your plan is active",
+								description: `${name} hasn't moved to you yet. Review the offer in your organizations.`,
+							},
+				);
+				void navigate({ to: "/account/organizations" });
+				return;
+			}
 			if (!funnelDraft) {
 				await queryClient.invalidateQueries({ queryKey: postLoginFlagsKey });
 				void navigate({ to: "/account/billing" });
@@ -148,7 +195,7 @@ function Activation({ onRetry }: { onRetry: () => void }) {
 		return () => {
 			cancelled = true;
 		};
-	}, [navigate, queryClient]);
+	}, [navigate, queryClient, transferredId]);
 
 	const activating = phase === Phase.Plan || phase === Phase.Organization;
 
@@ -156,7 +203,14 @@ function Activation({ onRetry }: { onRetry: () => void }) {
 		<PageShell showSteps={draft !== null}>
 			<div className="space-y-3 text-center">
 				{activating ? (
-					<ActivationProgress phase={phase} withOrganization={draft !== null} />
+					<ActivationProgress
+						phase={phase}
+						organizationStep={
+							transferredId
+								? `Transferring ${transferred?.name ?? "the organization"} to you`
+								: draft && "Activating your organization"
+						}
+					/>
 				) : phase === Phase.Unreachable ? (
 					<FailedState
 						icon={CloudOffIcon}
@@ -187,10 +241,10 @@ function Activation({ onRetry }: { onRetry: () => void }) {
 
 function ActivationProgress({
 	phase,
-	withOrganization,
+	organizationStep,
 }: {
 	phase: Phase;
-	withOrganization: boolean;
+	organizationStep: string | null;
 }) {
 	// reassure during the long poll window instead of sitting silent for 60s
 	const [slow, setSlow] = useState(false);
@@ -216,9 +270,9 @@ function ActivationProgress({
 				<StepRow state={planDone ? "done" : "running"}>
 					Activating your plan
 				</StepRow>
-				{withOrganization && (
+				{organizationStep && (
 					<StepRow state={planDone ? "running" : "pending"}>
-						Activating your organization
+						{organizationStep}
 					</StepRow>
 				)}
 			</ol>

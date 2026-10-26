@@ -17,7 +17,10 @@ import {
 	profileSchema,
 	RESEND_COOLDOWN_SECONDS,
 } from "@sinwy/shared";
-import { cancelTransfersToMember } from "@transfersModule";
+import {
+	cancelTransfersToMember,
+	findTransferAwaitingCheckout,
+} from "@transfersModule";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
@@ -55,7 +58,33 @@ const validName = (name: unknown) => {
 const checkoutBodySchema = z.strictObject({
 	slug: z.enum(PLAN_SLUGS),
 	redirect: z.boolean().optional(),
+	transferId: z.string().min(1).optional(),
 });
+
+const checkoutSuccessUrl = (query: string) =>
+	new URL(
+		`/checkout/success?checkout_id={CHECKOUT_ID}${query}`,
+		appConfig.WEB_APP_URL,
+	).toString();
+
+/**
+ * A plan bought to take over an organization names the transfer in its
+ * metadata, which Polar copies onto the subscription; the projection then
+ * completes the transfer.
+ */
+const transferCheckoutFields = async (userId: string, transferId: string) => {
+	const transfer = await findTransferAwaitingCheckout(userId, transferId);
+	if (!transfer)
+		throw new APIError("BAD_REQUEST", {
+			message: "This offer is no longer open",
+		});
+	return {
+		metadata: { transferId },
+		success_url: checkoutSuccessUrl(
+			`&organization=${encodeURIComponent(transfer.organizationId)}`,
+		),
+	};
+};
 
 export const auth = betterAuth({
 	baseURL: appConfig.BETTER_AUTH_URL,
@@ -181,11 +210,20 @@ export const auth = betterAuth({
 					});
 				const session = await getSessionFromCtx(ctx);
 				if (!session) throw new APIError("UNAUTHORIZED");
+				const { transferId, ...rest } = body.data;
 				const { allowTrial } = await ensureCheckoutAllowed(session.user.id);
-				// one trial per user: the plugin passes allow_trial on to Polar
-				return allowTrial
-					? undefined
-					: { context: { body: { ...body.data, allow_trial: false } } };
+				return {
+					context: {
+						body: {
+							...rest,
+							...(transferId
+								? await transferCheckoutFields(session.user.id, transferId)
+								: {}),
+							// one trial per user: the plugin passes allow_trial on to Polar
+							...(!allowTrial && { allow_trial: false }),
+						},
+					},
+				};
 			}
 			// the plugin has no beforeSetActive hook
 			if (ctx.path === "/organization/set-active") {
@@ -279,10 +317,7 @@ export const auth = betterAuth({
 						productId: productIdFor(slug),
 						slug,
 					})),
-					successUrl: new URL(
-						"/checkout/success?checkout_id={CHECKOUT_ID}",
-						appConfig.WEB_APP_URL,
-					).toString(),
+					successUrl: checkoutSuccessUrl(""),
 					authenticatedUsersOnly: true,
 				}),
 				// the portal spans all of a user's organizations, so return to the

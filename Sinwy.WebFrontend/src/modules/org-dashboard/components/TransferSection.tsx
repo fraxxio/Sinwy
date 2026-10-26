@@ -87,8 +87,8 @@ export function TransferSection({
 				title="Ownership transfer pending"
 				description={
 					pending.status === "accepted"
-						? `${pending.to.name} accepted and is checking out. ${organizationName} becomes theirs once the payment goes through.`
-						: `Offered to ${pending.to.name} (${pending.to.email}) until ${formatDay(pending.expiresAt)}. Plan changes and suspension wait until it's settled.`
+						? `${pending.to.name} accepted and is paying for a plan. ${organizationName} becomes theirs once the payment goes through.`
+						: `Offered to ${pending.to.name} (${pending.to.email}) until ${formatDay(pending.expiresAt)}.`
 				}
 				action={
 					<Button
@@ -116,7 +116,7 @@ export function TransferSection({
 		<SettingsSection
 			id="transfer"
 			title="Transfer ownership"
-			description={`Hand ${organizationName} to another member. They pay for its plan from then on; you stay on as an admin without billing access.`}
+			description={`Hand ${organizationName} to another member. It moves to their plan and frees its slot on yours; you stay on as an admin without billing access.`}
 			action={
 				<AlertDialog
 					open={open}
@@ -142,9 +142,10 @@ export function TransferSection({
 						<AlertDialogHeader>
 							<AlertDialogTitle>Transfer {organizationName}?</AlertDialogTitle>
 							<AlertDialogDescription>
-								The member has {TRANSFER_OFFER_DAYS} days to accept and check
-								out with their own payment method. When their payment goes
-								through, your subscription ends and the unused time is refunded.
+								The member has {TRANSFER_OFFER_DAYS} days to accept. Then{" "}
+								{organizationName} takes one of the slots on their plan, buying
+								or upgrading one if they have no free slot. Its slot on your
+								plan is freed; your plan itself doesn't change.
 							</AlertDialogDescription>
 						</AlertDialogHeader>
 						<Field className="gap-2">

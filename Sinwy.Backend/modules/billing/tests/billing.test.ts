@@ -28,7 +28,10 @@ import {
 	stubPolarCore,
 } from "@backend/test/helpers";
 import db from "@db";
-import { organization } from "@db/schema/organizationSchema";
+import {
+	organization,
+	organizationTransfer,
+} from "@db/schema/organizationSchema";
 import { user, userSubscription } from "@db/schema/userSchema";
 import {
 	getOrganizationState,
@@ -1762,6 +1765,72 @@ test("plugin checkout while the user has a plan → 400 PLAN_EXISTS, no checkout
 	expect(((await res.json()) as { code: string }).code).toBe(
 		AUTH_ERROR_CODES.PLAN_EXISTS,
 	);
+	expect(checkoutsCreated()).toHaveLength(0);
+});
+
+const seedTransferTo = async (
+	toUserId: string,
+	status: "pending" | "accepted",
+) => {
+	const organizationId = await insertOrganization("Handed Over Co");
+	const fromUserId = await activateOrganization(organizationId, "starter");
+	await joinOrganization(organizationId, toUserId, "staff");
+	const id = crypto.randomUUID();
+	await db.insert(organizationTransfer).values({
+		id,
+		organizationId,
+		fromUserId,
+		toUserId,
+		status,
+		expiresAt: new Date(Date.now() + 60_000),
+	});
+	return { id, organizationId };
+};
+
+test("plugin checkout for a transfer waiting on it → the transfer in the metadata, back to the success page for that org", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const transfer = await seedTransferTo(userId, "accepted");
+	polarCoreSpy = stubPolarCore({
+		"POST /v1/checkouts/": { url: "https://polar.test/checkout" },
+	});
+
+	const res = await checkout(cookie, {
+		slug: "starter",
+		transferId: transfer.id,
+	});
+
+	expect(res.status).toBe(200);
+	const [created] = checkoutsCreated() as Record<string, unknown>[];
+	expect(created).toMatchObject({
+		products: [productIdFor("starter")],
+		external_customer_id: userId,
+		metadata: { transferId: transfer.id },
+	});
+	expect(created).not.toHaveProperty("transferId");
+	expect(created).not.toHaveProperty("allow_trial");
+	const successUrl = new URL(String(created?.["success_url"]));
+	expect(successUrl.searchParams.get("organization")).toBe(
+		transfer.organizationId,
+	);
+	expect(successUrl.searchParams.get("checkout_id")).toBe("{CHECKOUT_ID}");
+});
+
+test("plugin checkout for a transfer not waiting on the caller's checkout → 400, Polar not called", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	const pending = await seedTransferTo(userId, "pending");
+	const someoneElses = await seedTransferTo(
+		(await createUserWithSession()).userId,
+		"accepted",
+	);
+	polarCoreSpy = stubPolarCore();
+
+	for (const transferId of [pending.id, someoneElses.id, "unknown"]) {
+		const res = await checkout(cookie, { slug: "starter", transferId });
+		expect(res.status).toBe(400);
+		expect(((await res.json()) as { message: string }).message).toBe(
+			"This offer is no longer open",
+		);
+	}
 	expect(checkoutsCreated()).toHaveLength(0);
 });
 

@@ -1,6 +1,8 @@
 import type {
+	AcceptTransferDto,
 	AccountDeletionPreviewDto,
 	IncomingTransferDto,
+	PlanSlug,
 } from "@sinwy/shared";
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "#/shared/lib/api";
@@ -58,7 +60,23 @@ export const incomingTransfersQuery = queryOptions({
 });
 
 export const acceptTransfer = (transferId: string) =>
-	api<null>(`/transfers/${transferId}/accept`, { method: "POST" });
+	api<AcceptTransferDto>(`/transfers/${transferId}/accept`, {
+		method: "POST",
+	});
+
+/**
+ * The plan checkout for an accepted transfer, which completes once the plan
+ * lands. On success the auth client navigates the tab to Polar.
+ */
+export const checkoutForTransfer = async (
+	slug: PlanSlug,
+	transferId: string,
+) => {
+	// the backend's checkout hook reads transferId; the plugin's body type doesn't list it
+	const body = { slug, transferId };
+	const { error } = await authClient.checkout(body);
+	if (error) throw new Error(error.message ?? "Checkout failed");
+};
 
 export const declineTransfer = (transferId: string) =>
 	api<null>(`/transfers/${transferId}/decline`, { method: "POST" });

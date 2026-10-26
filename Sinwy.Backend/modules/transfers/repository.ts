@@ -100,7 +100,7 @@ export const findMembers = (organizationId: string) =>
 /**
  * Locks what a handover changes, in the order every slot write takes it: both
  * owners' plan rows by id, then the organization. Says whether the recipient
- * has a plan that grants access and a free slot for it.
+ * has a plan that grants access, and a free slot on it.
  */
 const lockForHandover = async (
 	tx: Tx,
@@ -121,7 +121,11 @@ const lockForHandover = async (
 	const recipientHasSlot =
 		recipientPlan !== null &&
 		(await countHeldSlots(tx, toUserId)) < slotLimit(recipientPlan);
-	return { org: org ?? null, recipientHasSlot };
+	return {
+		org: org ?? null,
+		recipientHasPlan: recipientPlan !== null,
+		recipientHasSlot,
+	};
 };
 
 /** The old owner's slot is freed; the organization holds one of the new owner's, or none. */
@@ -185,6 +189,26 @@ export const findTransfer = async (id: string) => {
 	return row ?? null;
 };
 
+/** The recipient's transfer waiting on their plan checkout. */
+export const findAcceptedTransfer = async (
+	id: string,
+	toUserId: string,
+	now: Date,
+) => {
+	const [row] = await db
+		.select({ organizationId: organizationTransfer.organizationId })
+		.from(organizationTransfer)
+		.where(
+			and(
+				eq(organizationTransfer.id, id),
+				eq(organizationTransfer.toUserId, toUserId),
+				eq(organizationTransfer.status, "accepted"),
+				gt(organizationTransfer.expiresAt, now),
+			),
+		);
+	return row ?? null;
+};
+
 export const findOpenTransfer = async (organizationId: string) => {
 	const [row] = await db
 		.select({
@@ -213,7 +237,6 @@ export const findIncomingTransfers = (userId: string, now: Date) =>
 			expiresAt: organizationTransfer.expiresAt,
 			organizationId: organization.id,
 			organizationName: organization.name,
-			plan: organizationAccess.ownerPlan,
 			fromName: fromUser.name,
 			fromEmail: fromUser.email,
 		})
@@ -298,16 +321,23 @@ export type TransferCompletion =
 	| { result: "completed"; transfer: TransferRow }
 	| { result: "not-open" }
 	| { result: "needs-plan" }
+	| { result: "needs-slot" }
 	| { result: "refused"; reason: string };
 
 /**
  * Hands the organization to the recipient in one transaction: roles swap and
  * the organization moves from the old owner's slot to one of the recipient's.
  * Refused, leaving the offer open, while the recipient has no plan that grants
- * access or no free slot. A transfer whose recipient left or whose owner
- * changed is canceled instead.
+ * access or no free slot; a recipient without a plan leaves it `accepted`,
+ * waiting on their checkout. A transfer whose recipient left or whose owner
+ * changed is canceled instead. `acceptedOnly` completes only a transfer
+ * already waiting on a checkout.
  */
-export const completeTransfer = (transferId: string, now: Date) =>
+export const completeTransfer = (
+	transferId: string,
+	now: Date,
+	{ acceptedOnly = false } = {},
+) =>
 	db.transaction(async (tx): Promise<TransferCompletion> => {
 		const [unlocked] = await tx
 			.select()
@@ -315,7 +345,7 @@ export const completeTransfer = (transferId: string, now: Date) =>
 			.where(eq(organizationTransfer.id, transferId));
 		if (!unlocked) return { result: "not-open" };
 
-		const { org, recipientHasSlot } = await lockForHandover(
+		const { org, recipientHasPlan, recipientHasSlot } = await lockForHandover(
 			tx,
 			unlocked.organizationId,
 			unlocked.fromUserId,
@@ -324,7 +354,12 @@ export const completeTransfer = (transferId: string, now: Date) =>
 		const [transfer] = await tx
 			.select()
 			.from(organizationTransfer)
-			.where(and(eq(organizationTransfer.id, transferId), isOpen))
+			.where(
+				and(
+					eq(organizationTransfer.id, transferId),
+					acceptedOnly ? eq(organizationTransfer.status, "accepted") : isOpen,
+				),
+			)
 			.for("update");
 		if (
 			!org ||
@@ -333,7 +368,14 @@ export const completeTransfer = (transferId: string, now: Date) =>
 			transfer.expiresAt <= now
 		)
 			return { result: "not-open" };
-		if (!recipientHasSlot) return { result: "needs-plan" };
+		if (!recipientHasPlan) {
+			await tx
+				.update(organizationTransfer)
+				.set({ status: "accepted", updatedAt: sql`now()` })
+				.where(eq(organizationTransfer.id, transferId));
+			return { result: "needs-plan" };
+		}
+		if (!recipientHasSlot) return { result: "needs-slot" };
 
 		const swap = await swapOwner(
 			tx,

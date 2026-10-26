@@ -1,3 +1,8 @@
 export { expireTransfersJob } from "./expiry";
 export { registerTransferRoutes } from "./routes";
-export { cancelTransfersToMember, transferOwnershipBySupport } from "./service";
+export {
+	cancelTransfersToMember,
+	completeTransferOnPlan,
+	findTransferAwaitingCheckout,
+	transferOwnershipBySupport,
+} from "./service";

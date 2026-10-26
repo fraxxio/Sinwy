@@ -4,12 +4,12 @@ import appConfig from "@config";
 import { createLogger } from "@logger";
 import { isSuspended, organizationStatusOf } from "@organizationsModule";
 import {
+	type AcceptTransferDto,
 	type IncomingTransferDto,
 	type OpenTransferStatus,
 	type OrganizationTransferDto,
 	parseMemberRoles,
 	TRANSFER_OFFER_DAYS,
-	toPlanSlug,
 } from "@sinwy/shared";
 import {
 	TransferCompletedNewOwnerEmail,
@@ -22,6 +22,7 @@ import {
 	completeTransfer,
 	declineTransfer,
 	expireTransfers,
+	findAcceptedTransfer,
 	findIncomingTransfers,
 	findMembers,
 	findOpenTransfer,
@@ -215,11 +216,7 @@ export const listIncomingTransfers = async (
 		id: row.id,
 		status: toOpenStatus(row.status),
 		expiresAt: row.expiresAt.toISOString(),
-		organization: {
-			id: row.organizationId,
-			name: row.organizationName,
-			plan: toPlanSlug(row.plan),
-		},
+		organization: { id: row.organizationId, name: row.organizationName },
 		from: { name: row.fromName, email: row.fromEmail },
 	}));
 
@@ -229,18 +226,19 @@ export const declineIncomingTransfer = async (
 	transferId: string,
 ) => (await declineTransfer(transferId, userId)).length > 0;
 
-export type AcceptError = "not-found" | "expired" | "needs-plan";
+export type AcceptError = "not-found" | "expired" | "needs-slot";
 
 /**
- * The recipient accepts: the organization becomes theirs at once, on one of
- * their slots. Refused while they have no plan that grants access or no free
- * slot; the offer stays open meanwhile.
+ * The recipient accepts. With a free slot the organization becomes theirs at
+ * once. Without a plan the transfer is `accepted` and completes when the plan
+ * from their checkout lands (`completeTransferOnPlan`). With a full plan it is
+ * refused, the offer staying open, until they upgrade.
  */
 export const acceptIncomingTransfer = async (
 	userId: string,
 	transferId: string,
 	now = new Date(),
-): Promise<Result<null, AcceptError>> => {
+): Promise<Result<AcceptTransferDto, AcceptError>> => {
 	const transfer = await findTransfer(transferId);
 	if (
 		!transfer ||
@@ -252,26 +250,81 @@ export const acceptIncomingTransfer = async (
 	if (!(await resolveMembership(userId, transfer.organizationId)))
 		return { ok: false, error: "not-found" };
 
-	const completion = await completeTransfer(transferId, now);
+	const completion = await finishTransfer(transferId, now);
+	switch (completion) {
+		case "completed":
+			return { ok: true, data: { status: "completed" } };
+		case "needs-plan":
+			return { ok: true, data: { status: "accepted" } };
+		case "needs-slot":
+			return { ok: false, error: "needs-slot" };
+		case "not-open":
+			return { ok: false, error: "not-found" };
+	}
+};
+
+const finishTransfer = async (
+	transferId: string,
+	now: Date,
+	options?: { acceptedOnly: boolean },
+) => {
+	const completion = await completeTransfer(transferId, now, options);
 	switch (completion.result) {
 		case "completed":
 			transferLogger.info("Organization transferred", {
 				transferId,
-				organizationId: transfer.organizationId,
+				organizationId: completion.transfer.organizationId,
 			});
 			await sendCompletionEmails(completion.transfer);
-			return { ok: true, data: null };
-		case "needs-plan":
-			return { ok: false, error: "needs-plan" };
+			return "completed";
 		case "refused":
 			transferLogger.warn("Transfer refused on completion", {
 				transferId,
 				reason: completion.reason,
 			});
-			return { ok: false, error: "not-found" };
-		case "not-open":
-			return { ok: false, error: "not-found" };
+			return "not-open";
+		default:
+			return completion.result;
 	}
+};
+
+/**
+ * The organization a recipient's plan checkout is for, while their transfer
+ * waits on it; null otherwise.
+ */
+export const findTransferAwaitingCheckout = (
+	userId: string,
+	transferId: string,
+	now = new Date(),
+) => findAcceptedTransfer(transferId, userId, now);
+
+/**
+ * Called when a plan bought for a transfer grants access. A transfer no longer
+ * waiting is left alone, and the recipient keeps the plan (Default 11); one
+ * whose slot was taken in the meantime stays `accepted` until they upgrade.
+ */
+export const completeTransferOnPlan = async (
+	userId: string,
+	transferId: string,
+	now = new Date(),
+) => {
+	const transfer = await findTransfer(transferId);
+	if (!transfer || transfer.toUserId !== userId) {
+		transferLogger.warn("A plan names a transfer that isn't the user's", {
+			userId,
+			transferId,
+		});
+		return;
+	}
+	// every billing page load re-projects the plan
+	if (transfer.status !== "accepted") return;
+	const completion = await finishTransfer(transferId, now, {
+		acceptedOnly: true,
+	});
+	if (completion === "needs-slot")
+		transferLogger.info("A transfer's plan arrived with no free slot", {
+			transferId,
+		});
 };
 
 /** After a member leaves or is removed; a no-op while they are still a member. */
@@ -304,7 +357,13 @@ const sendCompletionEmails = async (transfer: TransferRow) => {
 				emailClient.send({
 					to: to.email,
 					template: TransferCompletedNewOwnerEmail,
-					props: { organizationName },
+					props: {
+						organizationName,
+						organizationsUrl: new URL(
+							"/account/organizations",
+							appConfig.WEB_APP_URL,
+						).toString(),
+					},
 				}),
 			context,
 		);
@@ -314,7 +373,14 @@ const sendCompletionEmails = async (transfer: TransferRow) => {
 				emailClient.send({
 					to: from.email,
 					template: TransferCompletedOldOwnerEmail,
-					props: { organizationName, toName: to?.name ?? "" },
+					props: {
+						organizationName,
+						toName: to?.name ?? "",
+						billingUrl: new URL(
+							"/account/billing",
+							appConfig.WEB_APP_URL,
+						).toString(),
+					},
 				}),
 			context,
 		);

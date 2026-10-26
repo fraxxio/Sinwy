@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { PlanSlug } from "../plan/Plan";
 
 export const ORGANIZATION_TRANSFER_STATUSES = [
 	"pending",
@@ -34,9 +33,13 @@ export type IncomingTransferDto = {
 	id: string;
 	status: OpenTransferStatus;
 	expiresAt: string;
-	organization: { id: string; name: string; plan: PlanSlug | null };
+	/** No tier: the recipient may be staff, who never see it (D15). */
+	organization: { id: string; name: string };
 	from: { name: string; email: string };
 };
+
+/** `accepted`: the recipient has no plan; the transfer completes once their checkout's plan lands. */
+export type AcceptTransferDto = { status: "completed" | "accepted" };
 
 export const offerTransferBody = z.object({ userId: z.string().min(1) });
 
