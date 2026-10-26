@@ -1,7 +1,7 @@
 import type { PlanSlug } from "@sinwy/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 import { CurrentPlanSection } from "#/modules/account-dashboard/components/billing/CurrentPlanSection";
 import { InvoicesSection } from "#/modules/account-dashboard/components/billing/InvoicesSection";
@@ -21,6 +21,7 @@ import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { usePageRestored } from "#/shared/hooks/use-page-restored";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { invalidateOrganizations } from "#/shared/lib/organizations";
 import { getPlanName } from "#/shared/lib/plans";
 
 export const Route = createFileRoute("/account/_shell/billing")({
@@ -33,8 +34,16 @@ export const Route = createFileRoute("/account/_shell/billing")({
 });
 
 function BillingPage() {
+	const queryClient = useQueryClient();
 	const { data, isPending, isError, isFetching, refetch } =
 		useQuery(subscriptionQuery);
+	// reading the plan applies Polar's latest state, which can move slots
+	const plan = data?.plan;
+	const activeOrganizations = data?.activeOrganizations;
+	useEffect(() => {
+		if (plan !== undefined && activeOrganizations !== undefined)
+			void invalidateOrganizations(queryClient);
+	}, [plan, activeOrganizations, queryClient]);
 
 	const header = (
 		<PageHeader

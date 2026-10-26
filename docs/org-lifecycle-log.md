@@ -1071,3 +1071,118 @@ redirect to Account → Billing.
   "Member"; `dev:seed-scenario` prints the draft creation response
   (`plan: null`) for `subscribed-org`; `console-errors.sh` doesn't hide the
   client-side `append` rejection.
+
+## Phase 8: Plan changes and the organization cap
+
+**Goal:** the owner upgrades at once and downgrades at period end, choosing
+which organizations stay active when the new cap is lower.
+
+**Files:** `Sinwy.Backend/modules/billing/{service,projection,controller,routes}.ts`
+(`changeAccountPlan` and `POST /api/account/subscription/plan` already act
+on the user's plan; add the downgrade picks and the pending state),
+`modules/organizations/{service,repository}.ts` (`holdSlot`, `releaseSlot`,
+`countHeldSlots`), `db/organizationAccess.ts` (`lockPlan`, `slotLimit`),
+`db/schema/userSchema.ts` (pending downgrade), `Sinwy.Backend/lib/jobs.ts`
+and `index.ts` if a job applies the downgrade, a new email under
+`modules/billing/`, `Sinwy.Shared/types/plan/Subscription.ts`
+(`AccountSubscriptionDto`, `changePlanBody`). Web:
+`src/modules/account-dashboard/components/billing/{ChangePlanDialog,CurrentPlanSection}.tsx`,
+`lib/{billing-queries,plan-change}.ts`, `routes/{_shell.billing,_shell.organizations}.tsx`.
+Tests: `modules/billing/tests/billing.test.ts`,
+`src/modules/account-dashboard/tests/plan-change.test.ts`.
+
+Backend:
+- Upgrade: `subscriptions.update` with the new product, prorated (Default 7).
+- Downgrade: the request carries the organizations to keep active, at most
+  the new cap. Check in the Polar docs whether a product change can be
+  scheduled for the period end. If not, store the pending downgrade on
+  `user_subscription` and apply it at `current_period_end` from a job, then
+  clear it. The owner can cancel a pending downgrade before then.
+- When the downgrade lands, unpicked orgs lose their slots in the same
+  transaction as the projection.
+- Any projected cap below the active count without picks: Default 9 (keep
+  the earliest-activated, email the owner).
+- Refuse plan changes while a pause or cancel is pending, or a transfer is
+  accepted and waiting on this user's checkout.
+- Turn off plan switching in the Polar customer portal (ask first; standing
+  notes).
+
+Frontend:
+- Change-plan dialog on Account → Billing. A downgrade below the active count
+  asks which organizations stay active and states the date it takes effect.
+  A pending downgrade shows on the page with Cancel.
+
+Tests that matter:
+- Downgrade with picks: the right orgs keep their slots at period end, not
+  before.
+- Out-of-band downgrade and resubscribe at a lower cap follow Default 9.
+- Upgrade then activate up to the new cap.
+
+Done when:
+- Professional with two active orgs → downgrade to Starter keeping the second
+  → both stay active until the period end (simulated) → only the second is
+  active. Upgrade back → activate the first. Checked in the running app.
+
+**Verify:** real sandbox Professional checkout, two activated orgs. The
+period end can't be waited for: simulate the `subscription.updated` (or run
+the job with the period end moved in the database) and check slots with
+`psql` and the switcher in the browser. Simulate an out-of-band Starter
+`subscription.updated` and check the email (`dev:last-email`).
+
+### Log (2026-10-26, `feat(backend, web): schedule downgrades for the period end with organization picks`)
+- Shipped: Polar holds a downgrade itself: `subscriptions.update` with
+  `proration_behavior: "next_period"` sets `pending_update`, and any later
+  update (an upgrade included) discards it; `{ pending_update: null }`
+  clears it. `POST /api/account/subscription/plan` takes `keep` (org ids).
+  Picks are needed only when more orgs are active than the new cap
+  (`DOWNGRADE_PICKS_REQUIRED`, 400 for picks that aren't active or exceed the
+  cap). The orgs not kept go in `user_subscription.downgrade_plan` /
+  `downgrade_releases`. `POST /api/account/subscription/plan/cancel` clears
+  it (`PLAN_CHANGE_NOT_PENDING`). `writeUserSubscription` settles slots in
+  its own transaction, after the row lock: a stored downgrade lasts while
+  Polar's pending plan matches it, applies its picks when the plan lands on
+  it, and is dropped otherwise. Then the held slots are fitted to the cap,
+  earliest-activated first (Default 9). The orgs forced out that way get
+  the "<name> is no longer active" email (`modules/billing/emails/`). Every
+  org that loses a slot is cleared from sessions. A lapsed or paused plan
+  keeps its slots (Default 8). `AccountSubscriptionDto.pendingChange`
+  (`plan`, `appliesAt`, `deactivates`) is built from Polar's live
+  `pending_update`. Plan changes now also refuse a pending cancel
+  (`CANCELLATION_PENDING`). Web: the change-plan dialog states the timing
+  (now for upgrades, the period end for downgrades) and asks which orgs to
+  keep. Billing shows the pending change with "Stay on <plan>".
+  Account → Organizations marks the orgs that will go inactive. The billing
+  page refreshes the org list when the plan or slot count it loads changes.
+- Differs from plan:
+  - No job and no stored period end: Polar schedules the product change,
+    and the app keeps only the picks.
+  - Picks are stored as the orgs to release, not the ones to keep, so an org
+    activated after scheduling falls under Default 9 (latest-activated loses
+    its slot, owner emailed) instead of disappearing silently.
+  - "Refuse while a transfer is accepted and waiting on this user's
+    checkout" is left to Phase 10, since `accepted` isn't used until then.
+  - Portal plan switching (D6) is still on in the sandbox: the Polar API
+    exposes no organization update, so it has to be turned off in the
+    dashboard (Settings → Customer portal), in sandbox and production.
+- Checked in the running app (subagent, real sandbox, subscription
+  `85c9e997-ad78-48e2-9bb0-b9ad62cab7d7`, owner
+  `webdevrokas+seed-78a3f580-owner@gmail.com`): real Professional checkout →
+  two active orgs → downgrade to Starter keeping the second. The dialog
+  asked for one pick and stated the date. Billing and Organizations showed
+  the pending change. Polar had `pending_update` = Starter, both slots held,
+  both orgs open in the switcher. "Stay on" cleared it in Polar and in the
+  DB, then it was scheduled again. Period end, real: PATCHing
+  `current_billing_period_end` a minute ahead made Polar apply the update
+  within seconds. The Billing load projected it, only the second org kept
+  its slot, no email. Upgrade back (real, prorated) → Activate the first →
+  two active. A simulated out-of-band Starter (as `subscription.active`) kept
+  the earlier-activated org, and the email named the other. No backend
+  warnings. Not checked: real webhook delivery of the landing, a Resend
+  send of the new email, the prorated upgrade on the next invoice, and the
+  billing page's org list refresh (fixed after the run, from its report: the
+  switcher stayed stale until reload).
+- Open from the run: the simulator's `subscription.updated` fixture is
+  `canceled`, so it can't model an out-of-band plan change (use
+  `subscription.active`). An org that lost its slot before finishing setup
+  reads "still a draft" (Phase 7 behaviour). Dialog prices are USD
+  constants (already open).

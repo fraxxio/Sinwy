@@ -1,9 +1,17 @@
-import type { AccountSubscriptionDto } from "@sinwy/shared";
-import { useQuery } from "@tanstack/react-query";
+import type {
+	AccountSubscriptionDto,
+	PendingPlanChangeDto,
+	PlanSlug,
+} from "@sinwy/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useEffect } from "react";
 import { ChangePlanDialog } from "#/modules/account-dashboard/components/billing/ChangePlanDialog";
-import { subscriptionQuery } from "#/modules/account-dashboard/lib/billing-queries";
+import {
+	billingKeys,
+	cancelPlanChange,
+	subscriptionQuery,
+} from "#/modules/account-dashboard/lib/billing-queries";
 import {
 	describeSubscription,
 	formatPrice,
@@ -14,6 +22,8 @@ import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { toast } from "#/shared/components/ui/toast";
+import { formatDay } from "#/shared/lib/date";
+import { invalidateOrganizations } from "#/shared/lib/organizations";
 import { getPlanName } from "#/shared/lib/plans";
 
 export function CurrentPlanSection({
@@ -100,6 +110,7 @@ export function CurrentPlanSection({
 			{plan && (
 				<ChangePlanDialog
 					current={plan}
+					scheduled={data?.pendingChange?.plan ?? null}
 					billing={data?.billing ?? null}
 					open={changePlanOpen && canChangePlan}
 					onOpenChange={onChangePlanOpenChange}
@@ -140,6 +151,9 @@ function PlanSummary({
 					</Link>
 				</p>
 			)}
+			{plan && subscription.pendingChange && (
+				<PendingChange current={plan} change={subscription.pendingChange} />
+			)}
 			{detail ? (
 				<p className="text-muted-foreground text-sm">{detail}</p>
 			) : (
@@ -148,6 +162,61 @@ function PlanSummary({
 					{retry}
 				</div>
 			)}
+		</div>
+	);
+}
+
+function PendingChange({
+	current,
+	change,
+}: {
+	current: PlanSlug;
+	change: PendingPlanChangeDto;
+}) {
+	const queryClient = useQueryClient();
+	const cancel = useMutation({
+		mutationFn: async () => {
+			const res = await cancelPlanChange();
+			if (!res.isSuccess) throw new Error(res.message);
+			return res.data;
+		},
+		onSuccess: (subscription) => {
+			queryClient.setQueryData(billingKeys.subscription, subscription);
+			void invalidateOrganizations(queryClient);
+			toast.add({
+				type: "success",
+				title: `You stay on ${getPlanName(current)}`,
+				timeout: 4_000,
+			});
+		},
+		onError: () =>
+			void queryClient.invalidateQueries({
+				queryKey: billingKeys.subscription,
+			}),
+	});
+	const names = change.deactivates.map(({ name }) => name).join(", ");
+
+	return (
+		<div className="my-1 grid gap-2 rounded-xl border border-dashed p-3 text-sm">
+			<p>
+				Switches to{" "}
+				<span className="font-medium">{getPlanName(change.plan)}</span> on{" "}
+				{formatDay(change.appliesAt)}.
+				{names &&
+					` ${names} ${change.deactivates.length === 1 ? "becomes" : "become"} inactive then.`}
+			</p>
+			<div className="flex flex-wrap items-center gap-3">
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					disabled={cancel.isPending}
+					onClick={() => cancel.mutate()}
+				>
+					{cancel.isPending ? "Canceling…" : `Stay on ${getPlanName(current)}`}
+				</Button>
+				{cancel.isError && <FieldError>{cancel.error.message}</FieldError>}
+			</div>
 		</div>
 	);
 }

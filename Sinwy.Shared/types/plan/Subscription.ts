@@ -41,6 +41,15 @@ export type SubscriptionBillingDto = {
 	resumesAt: string | null;
 };
 
+/** A downgrade Polar applies when the current period ends. */
+export type PendingPlanChangeDto = {
+	plan: PlanSlug;
+	/** ISO date. */
+	appliesAt: string;
+	/** Owned organizations that lose their slot when it applies. */
+	deactivates: { id: string; name: string }[];
+};
+
 /** The user's own plan, which every organization they own runs on. */
 export type AccountSubscriptionDto = {
 	/** null without a plan that grants access. */
@@ -53,8 +62,14 @@ export type AccountSubscriptionDto = {
 	activeOrganizations: number;
 	/** null when there is no subscription or Polar could not be reached. */
 	billing: SubscriptionBillingDto | null;
+	/** null when no downgrade is scheduled, or Polar could not be reached. */
+	pendingChange: PendingPlanChangeDto | null;
 };
 
-export const changePlanBody = z.object({ plan: z.enum(PLAN_SLUGS) });
+export const changePlanBody = z.object({
+	plan: z.enum(PLAN_SLUGS),
+	/** On a downgrade, the active organizations that keep their slot; the rest lose it when it applies. */
+	keep: z.array(z.string().min(1)).max(10).optional(),
+});
 
 export type ChangePlanBody = z.infer<typeof changePlanBody>;

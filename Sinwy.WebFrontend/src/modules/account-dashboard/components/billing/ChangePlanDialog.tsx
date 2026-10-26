@@ -4,7 +4,7 @@ import {
 	type PlanSlug,
 	type SubscriptionBillingDto,
 } from "@sinwy/shared";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
 	billingKeys,
@@ -13,7 +13,8 @@ import {
 } from "#/modules/account-dashboard/lib/billing-queries";
 import {
 	describePlanChange,
-	PRORATION_COPY,
+	describeTiming,
+	organizationsToKeep,
 } from "#/modules/account-dashboard/lib/plan-change";
 import { formatPrice } from "#/modules/account-dashboard/lib/subscription-status";
 import { Badge } from "#/shared/components/ui/badge";
@@ -29,7 +30,11 @@ import {
 } from "#/shared/components/ui/dialog";
 import { FieldError } from "#/shared/components/ui/field";
 import { toast } from "#/shared/components/ui/toast";
-import { invalidateOrganizations } from "#/shared/lib/organizations";
+import { formatDay } from "#/shared/lib/date";
+import {
+	invalidateOrganizations,
+	organizationsQuery,
+} from "#/shared/lib/organizations";
 import { FEATURE_NAMES, getPlanName, PLAN_PRICES } from "#/shared/lib/plans";
 import { pollUntil } from "#/shared/lib/poll-until";
 import { cn } from "#/shared/lib/utils";
@@ -37,20 +42,36 @@ import { cn } from "#/shared/lib/utils";
 const featureNames = (features: readonly Feature[]) =>
 	features.map((feature) => FEATURE_NAMES[feature]).join(", ");
 
+type PlanChange = { plan: PlanSlug; keep?: string[] | undefined };
+
 export function ChangePlanDialog({
 	current,
+	scheduled,
 	billing,
 	open,
 	onOpenChange,
 }: {
 	current: PlanSlug;
+	/** The plan a pending downgrade switches to. */
+	scheduled: PlanSlug | null;
 	/** From Polar; null when billing details are unavailable. */
-	billing: Pick<SubscriptionBillingDto, "interval" | "intervalCount"> | null;
+	billing: Pick<
+		SubscriptionBillingDto,
+		"interval" | "intervalCount" | "currentPeriodEnd"
+	> | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
 	const queryClient = useQueryClient();
 	const [target, setTarget] = useState<PlanSlug | null>(null);
+	const [keep, setKeep] = useState<string[]>([]);
+	const { data: organizations } = useQuery({
+		...organizationsQuery,
+		enabled: open,
+	});
+	const active =
+		organizations?.filter((org) => org.isOwner && org.status === "active") ??
+		[];
 	const subscriptionKey = billingKeys.subscription;
 	const mounted = useRef(true);
 	useEffect(() => {
@@ -61,10 +82,12 @@ export function ChangePlanDialog({
 	}, []);
 
 	const change = useMutation({
-		mutationFn: async (plan: PlanSlug) => {
-			const res = await changePlan({ plan });
+		mutationFn: async ({ plan, keep }: PlanChange) => {
+			const res = await changePlan({ plan, keep });
 			if (!res.isSuccess) throw new Error(res.message);
-			if (res.data.plan === plan) return res.data;
+			// a downgrade answers with Polar's pending update at once
+			if (res.data.plan === plan || res.data.pendingChange?.plan === plan)
+				return res.data;
 			// the response lags when a newer webhook already owns the projection
 			return (
 				(await pollUntil(
@@ -74,8 +97,11 @@ export function ChangePlanDialog({
 				)) ?? res.data
 			);
 		},
-		onSuccess: (subscription, plan) => {
-			if (subscription.plan === plan)
+		onSuccess: (subscription, { plan }) => {
+			if (
+				subscription.plan === plan ||
+				subscription.pendingChange?.plan === plan
+			)
 				queryClient.setQueryData(subscriptionKey, subscription);
 			else void queryClient.invalidateQueries({ queryKey: subscriptionKey });
 			void invalidateOrganizations(queryClient);
@@ -89,6 +115,7 @@ export function ChangePlanDialog({
 	const close = () => {
 		onOpenChange(false);
 		setTarget(null);
+		setKeep([]);
 		change.reset();
 	};
 
@@ -100,9 +127,11 @@ export function ChangePlanDialog({
 
 	// mutate's own callbacks skip an unmounted dialog, so leaving the page
 	// mid-switch never navigates back here
-	const submit = (plan: PlanSlug) =>
-		change.mutate(plan, {
+	const submit = (request: PlanChange) =>
+		change.mutate(request, {
 			onSuccess: (subscription) => {
+				const { plan } = request;
+				const pending = subscription.pendingChange;
 				toast.add(
 					subscription.plan === plan
 						? {
@@ -110,12 +139,18 @@ export function ChangePlanDialog({
 								title: `Switched to ${getPlanName(plan)}`,
 								timeout: 4_000,
 							}
-						: {
-								type: "info",
-								title: `Switching to ${getPlanName(plan)}`,
-								description:
-									"Polar accepted the change. It shows here once it's confirmed.",
-							},
+						: pending?.plan === plan
+							? {
+									type: "success",
+									title: `Switches to ${getPlanName(plan)} on ${formatDay(pending.appliesAt)}`,
+									timeout: 4_000,
+								}
+							: {
+									type: "info",
+									title: `Switching to ${getPlanName(plan)}`,
+									description:
+										"Polar accepted the change. It shows here once it's confirmed.",
+								},
 				);
 				close();
 			},
@@ -128,6 +163,17 @@ export function ChangePlanDialog({
 			? billing.interval
 			: null;
 	const selected = target && describePlanChange(current, target);
+	const periodEnd = billing?.currentPeriodEnd ?? null;
+	const keepCount =
+		target && selected?.direction === "downgrade"
+			? organizationsToKeep(active.length, target)
+			: null;
+	const toggleKeep = (id: string, checked: boolean) => {
+		setKeep((prev) =>
+			checked ? [...prev, id] : prev.filter((kept) => kept !== id),
+		);
+		change.reset();
+	};
 
 	return (
 		<Dialog open={open} onOpenChange={handleOpenChange}>
@@ -162,6 +208,7 @@ export function ChangePlanDialog({
 									disabled={isCurrent}
 									onChange={() => {
 										setTarget(slug);
+										setKeep([]);
 										change.reset();
 									}}
 								/>
@@ -171,6 +218,9 @@ export function ChangePlanDialog({
 											{getPlanName(slug)}
 											{isCurrent && (
 												<Badge variant="secondary">Current plan</Badge>
+											)}
+											{slug === scheduled && (
+												<Badge variant="outline">Scheduled</Badge>
 											)}
 										</span>
 										{period && (
@@ -202,14 +252,51 @@ export function ChangePlanDialog({
 
 				{selected && (
 					<div className="grid gap-1 text-muted-foreground">
-						<p>{PRORATION_COPY[selected.direction]}</p>
+						<p>{describeTiming(selected.direction, periodEnd)}</p>
 						{selected.lost.length > 0 && (
 							<p>
 								Your organizations lose access to {featureNames(selected.lost)}{" "}
-								right away.
+								then.
 							</p>
 						)}
 					</div>
+				)}
+
+				{target && keepCount !== null && (
+					<fieldset className="grid gap-2" disabled={change.isPending}>
+						<legend className="mb-2 font-medium">
+							Choose{" "}
+							{keepCount === 1 ? "the organization" : `up to ${keepCount}`} to
+							keep active
+						</legend>
+						<p className="text-muted-foreground">
+							{getPlanName(target)} keeps {keepCount}{" "}
+							{keepCount === 1 ? "organization" : "organizations"} active. The
+							others become inactive
+							{periodEnd ? ` on ${formatDay(periodEnd)}` : " at renewal"}; their
+							data is kept.
+						</p>
+						{active.map((org) => {
+							const checked = keep.includes(org.id);
+							return (
+								<label
+									key={org.id}
+									className="flex cursor-pointer items-center gap-3 rounded-xl border p-3 has-checked:border-primary has-disabled:cursor-not-allowed"
+								>
+									<input
+										type="checkbox"
+										className="accent-primary"
+										checked={checked}
+										disabled={!checked && keep.length >= keepCount}
+										onChange={(event) =>
+											toggleKeep(org.id, event.target.checked)
+										}
+									/>
+									{org.name}
+								</label>
+							);
+						})}
+					</fieldset>
 				)}
 
 				{change.isError && <FieldError>{change.error.message}</FieldError>}
@@ -223,8 +310,19 @@ export function ChangePlanDialog({
 					</DialogClose>
 					<Button
 						type="button"
-						disabled={!target || change.isPending}
-						onClick={() => target && submit(target)}
+						disabled={
+							!target ||
+							change.isPending ||
+							(selected?.direction === "downgrade" && !organizations) ||
+							(keepCount !== null && keep.length === 0)
+						}
+						onClick={() =>
+							target &&
+							submit({
+								plan: target,
+								keep: keepCount !== null ? keep : undefined,
+							})
+						}
 					>
 						{change.isPending
 							? "Switching…"

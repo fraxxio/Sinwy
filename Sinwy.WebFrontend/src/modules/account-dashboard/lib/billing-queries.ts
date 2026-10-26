@@ -43,6 +43,12 @@ export const changePlan = (body: ChangePlanBody) =>
 		body: JSON.stringify(body),
 	});
 
+/** Takes back a scheduled downgrade. */
+export const cancelPlanChange = () =>
+	api<AccountSubscriptionDto>("/account/subscription/plan/cancel", {
+		method: "POST",
+	});
+
 export type SubscriptionAction = "suspend" | "unsuspend" | "resume";
 
 export const runSubscriptionAction = (action: SubscriptionAction) =>

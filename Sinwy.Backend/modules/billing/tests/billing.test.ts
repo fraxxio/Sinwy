@@ -8,6 +8,7 @@ import {
 	test,
 } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
+import { readOutboxEmails } from "@backend/infrastructure/email";
 import {
 	PolarApiErrors,
 	type PolarModels,
@@ -29,7 +30,10 @@ import {
 import db from "@db";
 import { organization } from "@db/schema/organizationSchema";
 import { user, userSubscription } from "@db/schema/userSchema";
-import { getOrganizationState } from "@organizationsModule";
+import {
+	getOrganizationState,
+	registerOrganizationRoutes,
+} from "@organizationsModule";
 import {
 	PolarClientError,
 	PolarNetworkError,
@@ -45,6 +49,8 @@ import {
 } from "@sinwy/shared";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
+import { applySubscriptionEvent } from "../projection";
+import { findUserSubscription } from "../repository";
 import { registerBillingRoutes } from "../routes";
 import { revokeAccountSubscriptions } from "../service";
 
@@ -58,6 +64,7 @@ beforeAll(() => {
 	const app = createApp();
 	registerAuthRoutes(app);
 	registerBillingRoutes(app);
+	registerOrganizationRoutes(app);
 	server = app.listen(0);
 	base = server.url;
 });
@@ -180,6 +187,7 @@ const subscription = (
 		ends_at: null,
 		pause_at_period_end: false,
 		resumes_at: null,
+		pending_update: null,
 		...overrides,
 	}) as Subscription;
 
@@ -306,6 +314,7 @@ test("GET subscription: no plan → no plan, no slots, no billing", async () => 
 		organizationLimit: 0,
 		activeOrganizations: 0,
 		billing: null,
+		pendingChange: null,
 	});
 	expect(get).not.toHaveBeenCalled();
 });
@@ -339,6 +348,7 @@ test("GET subscription: a plan → its cap, the slots in use and live billing de
 			pauseAtPeriodEnd: false,
 			resumesAt: null,
 		},
+		pendingChange: null,
 	});
 });
 
@@ -637,6 +647,277 @@ test("POST plan: suspension pending → 409 with its own code, plan unchanged", 
 	expect(await codeOf(res)).toBe(API_ERROR_CODES.SUSPENSION_PENDING);
 	expect(update).not.toHaveBeenCalled();
 	expect((await getSubscriptionState(organizationId))?.plan).toBe("starter");
+});
+
+// downgrades and the organization cap
+
+const pendingStarter = {
+	id: "pending_1",
+	created_at: "2026-09-30T10:00:00Z",
+	modified_at: null,
+	applies_at: "2026-10-22T10:00:00Z",
+	product_id: productIdFor("starter"),
+	seats: null,
+	units: null,
+	discount_id: null,
+	discount_unset: false,
+};
+
+/** The caller owns Acme and Beta on Professional, Acme activated first. */
+const seedTwoActive = async () => {
+	const seeded = await seedOrg();
+	const first = seeded.organizationId;
+	await activateOrganization(first, "professional");
+	await holdSlot(first, new Date("2026-09-01T00:00:00Z"));
+	const second = await insertOrganization("Beta");
+	await joinOrganization(second, seeded.userId, "owner");
+	await holdSlot(second, new Date("2026-09-02T00:00:00Z"));
+	return { ...seeded, first, second };
+};
+
+const slotsHeld = (...organizationIds: string[]) =>
+	Promise.all(
+		organizationIds.map(
+			async (id) => (await getOrganizationState(id))?.slotHeld,
+		),
+	);
+
+const deactivationEmails = async (userId: string) =>
+	(await readOutboxEmails())
+		.map(({ email }) => email)
+		.filter(
+			(email) =>
+				email.to === `${userId}@test.dev` &&
+				email.subject.includes("no longer active"),
+		);
+
+/** Polar applies the pending update when the period ends. */
+const periodEnds = (organizationId: string, plan: PlanSlug) =>
+	applySubscriptionEvent({
+		data: subscription(organizationId, {
+			product_id: productIdFor(plan),
+			modified_at: "2026-10-22T10:00:01Z",
+			current_period_end: "2026-11-22T10:00:00Z",
+		}),
+	});
+
+/** Schedules Professional → Starter keeping `keep`, as Polar answers it. */
+const scheduleStarter = async (
+	cookie: string,
+	organizationId: string,
+	keep: string[],
+) => {
+	const get = stub(polarClient.subscriptions, "get").mockResolvedValue(
+		subscription(organizationId),
+	);
+	const update = stub(polarClient.subscriptions, "update").mockResolvedValue(
+		subscription(organizationId, {
+			pending_update: pendingStarter,
+			modified_at: "2026-09-30T10:00:00Z",
+		}),
+	);
+	const res = await changePlan(cookie, { plan: "starter", keep });
+	return { res, get, update };
+};
+
+test("POST plan: a downgrade below the active count needs picks among the active orgs, within the new cap; Polar not changed", async () => {
+	const { cookie, first, second } = await seedTwoActive();
+	stub(polarClient.subscriptions, "get").mockResolvedValue(subscription(first));
+	const update = stub(polarClient.subscriptions, "update");
+
+	const missing = await changePlan(cookie, { plan: "starter" });
+	expect(missing.status).toBe(409);
+	expect(await codeOf(missing)).toBe(API_ERROR_CODES.DOWNGRADE_PICKS_REQUIRED);
+	for (const keep of [[first, second], ["org_unknown"], [second, second]])
+		expect((await changePlan(cookie, { plan: "starter", keep })).status).toBe(
+			400,
+		);
+	expect(update).not.toHaveBeenCalled();
+	expect(await slotsHeld(first, second)).toEqual([true, true]);
+});
+
+test("POST plan: a downgrade with picks waits for the period end; both orgs stay active until then, then only the kept one, no email", async () => {
+	const { cookie, userId, first, second } = await seedTwoActive();
+
+	const { res, update } = await scheduleStarter(cookie, first, [second]);
+
+	expect(res.status).toBe(200);
+	expect(update).toHaveBeenCalledWith(`sub_${first}`, {
+		product_id: productIdFor("starter"),
+		proration_behavior: "next_period",
+	});
+	const dto = await unwrap<AccountSubscriptionDto>(res);
+	expect(dto.plan).toBe("professional");
+	expect(dto.pendingChange).toEqual({
+		plan: "starter",
+		appliesAt: "2026-10-22T10:00:00Z",
+		deactivates: [{ id: first, name: "Acme" }],
+	});
+	expect(await slotsHeld(first, second)).toEqual([true, true]);
+	expect((await getOrganizationState(first))?.status).toBe("active");
+
+	await periodEnds(first, "starter");
+
+	expect(await slotsHeld(first, second)).toEqual([false, true]);
+	expect(await getOrganizationState(second)).toMatchObject({
+		status: "active",
+		ownerPlan: "starter",
+	});
+	expect(await findUserSubscription(userId)).toMatchObject({
+		downgradePlan: null,
+		downgradeReleases: [],
+	});
+	expect(await deactivationEmails(userId)).toEqual([]);
+});
+
+test("POST plan/cancel: clears the pending downgrade in Polar; the period end changes nothing; a second cancel → 409", async () => {
+	const { cookie, userId, first, second } = await seedTwoActive();
+	const { get, update } = await scheduleStarter(cookie, first, [second]);
+	get.mockResolvedValue(
+		subscription(first, {
+			pending_update: pendingStarter,
+			modified_at: "2026-09-30T10:00:00Z",
+		}),
+	);
+	update.mockResolvedValue(
+		subscription(first, { modified_at: "2026-09-30T11:00:00Z" }),
+	);
+	const cancel = () =>
+		request("/api/account/subscription/plan/cancel", cookie, {
+			method: "POST",
+		});
+
+	const res = await cancel();
+
+	expect(res.status).toBe(200);
+	expect(update).toHaveBeenLastCalledWith(`sub_${first}`, {
+		pending_update: null,
+	});
+	expect((await unwrap<AccountSubscriptionDto>(res)).pendingChange).toBeNull();
+	expect((await findUserSubscription(userId))?.downgradePlan).toBeNull();
+
+	await periodEnds(first, "professional");
+	expect(await slotsHeld(first, second)).toEqual([true, true]);
+
+	get.mockResolvedValue(
+		subscription(first, { modified_at: "2026-10-22T10:00:01Z" }),
+	);
+	const again = await cancel();
+	expect(again.status).toBe(409);
+	expect(await codeOf(again)).toBe(API_ERROR_CODES.PLAN_CHANGE_NOT_PENDING);
+});
+
+test("POST plan: an upgrade discards a pending downgrade, so its picks never apply", async () => {
+	const { cookie, userId, first, second } = await seedTwoActive();
+	const { update } = await scheduleStarter(cookie, first, [second]);
+	update.mockResolvedValue(
+		subscription(first, {
+			product_id: productIdFor("enterprise"),
+			modified_at: "2026-09-30T11:00:00Z",
+		}),
+	);
+
+	const res = await changePlan(cookie, { plan: "enterprise" });
+
+	expect(res.status).toBe(200);
+	expect(update).toHaveBeenLastCalledWith(`sub_${first}`, {
+		product_id: productIdFor("enterprise"),
+		proration_behavior: "prorate",
+	});
+	expect((await unwrap<AccountSubscriptionDto>(res)).pendingChange).toBeNull();
+	expect((await findUserSubscription(userId))?.downgradePlan).toBeNull();
+	await periodEnds(first, "enterprise");
+	expect(await slotsHeld(first, second)).toEqual([true, true]);
+});
+
+test("POST plan: upgrade, then activate up to the new cap and no further", async () => {
+	const { organizationId, userId, cookie } = await seedOrg();
+	await activateOrganization(organizationId, "starter");
+	const [second, third] = [
+		await insertOrganization("Beta"),
+		await insertOrganization("Gamma"),
+	];
+	await joinOrganization(second, userId, "owner");
+	await joinOrganization(third, userId, "owner");
+	const activate = (id: string) =>
+		request(`/api/account/organizations/${id}/activate`, cookie, {
+			method: "POST",
+		});
+	expect((await activate(second)).status).toBe(409);
+
+	polarHasStarter(organizationId);
+	stub(polarClient.subscriptions, "update").mockResolvedValue(
+		subscription(organizationId, { modified_at: "2026-09-30T10:00:00Z" }),
+	);
+	expect((await changePlan(cookie, { plan: "professional" })).status).toBe(200);
+
+	expect((await activate(second)).status).toBe(200);
+	const full = await activate(third);
+	expect(full.status).toBe(409);
+	expect(await codeOf(full)).toBe(API_ERROR_CODES.ORGANIZATION_LIMIT_REACHED);
+	expect(await slotsHeld(organizationId, second, third)).toEqual([
+		true,
+		true,
+		false,
+	]);
+});
+
+test("POST plan: cancel pending → 409 with its own code, Polar not changed", async () => {
+	const { organizationId, cookie } = await seedOrg();
+	await activateOrganization(organizationId, "professional");
+	stub(polarClient.subscriptions, "get").mockResolvedValue(
+		subscription(organizationId, { cancel_at_period_end: true }),
+	);
+	const update = stub(polarClient.subscriptions, "update");
+
+	const res = await changePlan(cookie, { plan: "starter" });
+
+	expect(res.status).toBe(409);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.CANCELLATION_PENDING);
+	expect(update).not.toHaveBeenCalled();
+});
+
+test("projection: a downgrade applied outside the app keeps the earliest-activated orgs and emails the owner the rest (Default 9)", async () => {
+	const { userId, first, second } = await seedTwoActive();
+
+	await periodEnds(first, "starter");
+
+	expect(await slotsHeld(first, second)).toEqual([true, false]);
+	const [email, ...others] = await deactivationEmails(userId);
+	expect(others).toEqual([]);
+	expect(email?.subject).toBe("Beta is no longer active");
+	expect(email?.html).toContain("keeps 1 organization active");
+});
+
+test("projection: a new plan with a lower cap after a lapse follows Default 9; the lapse itself keeps both slots", async () => {
+	const { userId, first, second } = await seedTwoActive();
+
+	await applySubscriptionEvent({
+		data: subscription(first, {
+			status: "canceled",
+			modified_at: "2026-10-01T10:00:00Z",
+		}),
+	});
+	expect(await slotsHeld(first, second)).toEqual([true, true]);
+	expect((await getOrganizationState(first))?.status).toBe("inactive");
+
+	await applySubscriptionEvent({
+		data: subscription(first, {
+			id: "sub_new",
+			product_id: productIdFor("starter"),
+			created_at: "2026-10-05T10:00:00Z",
+			modified_at: "2026-10-05T10:00:00Z",
+		}),
+	});
+
+	expect(await slotsHeld(first, second)).toEqual([true, false]);
+	expect(await getOrganizationState(first)).toMatchObject({
+		status: "active",
+		ownerPlan: "starter",
+	});
+	expect((await deactivationEmails(userId)).map((e) => e.subject)).toEqual([
+		"Beta is no longer active",
+	]);
 });
 
 // POST /subscription/suspend, /unsuspend, /resume

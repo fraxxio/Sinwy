@@ -34,6 +34,7 @@ import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { toast } from "#/shared/components/ui/toast";
+import { formatDay } from "#/shared/lib/date";
 import {
 	closedOrganizationBadge,
 	closedOrganizationReason,
@@ -194,6 +195,11 @@ function OrganizationRow({
 	const link = reactivationLink(organization);
 	const options = link ? slotOptions(organization, subscription) : null;
 	const slotAction = useSlotAction(organization);
+	const pending = subscription?.pendingChange;
+	const deactivatesOn =
+		open &&
+		pending?.deactivates.some(({ id }) => id === organization.id) &&
+		pending.appliesAt;
 
 	return (
 		<li className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
@@ -213,6 +219,12 @@ function OrganizationRow({
 						</Badge>
 					)}
 				</div>
+				{deactivatesOn && (
+					<span className="text-xs text-muted-foreground">
+						Becomes inactive on {formatDay(deactivatesOn)}, when your plan
+						switches to {pending && getPlanName(pending.plan)}.
+					</span>
+				)}
 				{!open && (
 					<span className="text-xs text-muted-foreground">
 						{closedOrganizationReason(organization)}

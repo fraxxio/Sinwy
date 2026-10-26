@@ -33,6 +33,13 @@ export const userSubscription = pgTable(
 		// time of the Polar state behind the projection; older state must not overwrite it
 		subscriptionStatusAt: timestamp("subscription_status_at").notNull(),
 		trialUsedAt: timestamp("trial_used_at"),
+		// a downgrade the user scheduled in the app, while Polar holds it as pending
+		downgradePlan: text("downgrade_plan"),
+		// owned organizations that lose their slot when the downgrade applies
+		downgradeReleases: text("downgrade_releases")
+			.array()
+			.notNull()
+			.default(sql`'{}'::text[]`),
 		createdAt: timestamp("created_at").notNull().defaultNow(),
 		updatedAt: timestamp("updated_at")
 			.notNull()
@@ -41,6 +48,10 @@ export const userSubscription = pgTable(
 	},
 	(table) => [
 		check("user_subscription_plan_check", oneOf("plan", PLAN_SLUGS)),
+		check(
+			"user_subscription_downgrade_plan_check",
+			oneOf("downgrade_plan", PLAN_SLUGS),
+		),
 		check(
 			"user_subscription_plan_only_when_entitled_check",
 			sql`${table.plan} IS NULL OR ${oneOf("status", ENTITLED_SUBSCRIPTION_STATUSES)}`,

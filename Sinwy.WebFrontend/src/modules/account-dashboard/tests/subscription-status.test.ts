@@ -32,6 +32,7 @@ const subscription = (
 	organizationLimit: plan ? 2 : 0,
 	activeOrganizations: 1,
 	billing: { ...billing, ...overrides },
+	pendingChange: null,
 });
 
 const describeIn = (dto: AccountSubscriptionDto) =>

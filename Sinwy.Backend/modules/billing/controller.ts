@@ -9,6 +9,7 @@ import {
 	listAccountInvoices,
 } from "./invoices";
 import {
+	cancelPendingPlanChange,
 	changeAccountPlan,
 	getAccountSubscription,
 	getOrganizationStatus,
@@ -47,6 +48,13 @@ const failPausePending = () =>
 const failLocked = () =>
 	fail("The subscription is being updated; try again in a moment", 409);
 
+const failCancelPending = () =>
+	fail(
+		"The subscription is set to cancel; resume it from the Polar portal first",
+		409,
+		API_ERROR_CODES.CANCELLATION_PENDING,
+	);
+
 const failSubscriptionAction = (error: SubscriptionActionError) => {
 	switch (error) {
 		case "inactive":
@@ -80,11 +88,7 @@ const failSubscriptionAction = (error: SubscriptionActionError) => {
 				API_ERROR_CODES.SUSPENSION_NOT_PENDING,
 			);
 		case "cancel-pending":
-			return fail(
-				"The subscription is set to cancel; resume it from the Polar portal first",
-				409,
-				API_ERROR_CODES.CANCELLATION_PENDING,
-			);
+			return failCancelPending();
 		case "locked":
 			return failLocked();
 		case "payment-failed":
@@ -114,8 +118,16 @@ export const changePlanHandler: Handler = async (c) => {
 	const result = await changeAccountPlan(
 		sessionFrom(c).user.id,
 		body.data.plan,
+		body.data.keep,
 	);
-	if (result.ok) return ok(result.data, 200, "Plan changed");
+	if (result.ok)
+		return ok(
+			result.data,
+			200,
+			result.data.pendingChange?.plan === body.data.plan
+				? "Plan change scheduled"
+				: "Plan changed",
+		);
 
 	switch (result.error) {
 		case "inactive":
@@ -124,12 +136,46 @@ export const changePlanHandler: Handler = async (c) => {
 			return failSuspended();
 		case "pause-pending":
 			return failPausePending();
+		case "cancel-pending":
+			return failCancelPending();
 		case "same-plan":
 			return fail("You are already on this plan", 400);
+		case "picks-required":
+			return fail(
+				"More organizations are active than the new plan allows; choose which stay active",
+				409,
+				API_ERROR_CODES.DOWNGRADE_PICKS_REQUIRED,
+			);
+		case "invalid-picks":
+			return fail(
+				"Choose only your active organizations, no more than the new plan allows",
+				400,
+			);
 		case "canceled":
 			return fail(
 				"The subscription is canceled; renew it before changing plans",
 				409,
+			);
+		case "locked":
+			return failLocked();
+		case "rejected":
+		case "unavailable":
+			return failPolar(result.error);
+	}
+};
+
+export const cancelPlanChangeHandler: Handler = async (c) => {
+	const result = await cancelPendingPlanChange(sessionFrom(c).user.id);
+	if (result.ok) return ok(result.data, 200, "Plan change canceled");
+
+	switch (result.error) {
+		case "inactive":
+			return failInactive();
+		case "not-pending":
+			return fail(
+				"No plan change is scheduled",
+				409,
+				API_ERROR_CODES.PLAN_CHANGE_NOT_PENDING,
 			);
 		case "locked":
 			return failLocked();

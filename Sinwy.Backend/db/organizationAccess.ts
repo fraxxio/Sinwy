@@ -3,7 +3,17 @@ import { memberHasRole } from "@db/memberRole";
 import { member, organization } from "@db/schema/organizationSchema";
 import { userSubscription } from "@db/schema/userSchema";
 import { PLAN_ORGANIZATION_LIMITS, toPlanSlug } from "@sinwy/shared";
-import { and, count, eq, exists, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+	and,
+	asc,
+	count,
+	eq,
+	exists,
+	inArray,
+	isNotNull,
+	isNull,
+	sql,
+} from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -65,6 +75,13 @@ export const lockPlan = async (tx: Tx, userId: string) => {
 	return row?.plan ?? null;
 };
 
+const holdsSlot = (userId: string) =>
+	and(
+		isNotNull(organization.slotHeldAt),
+		isNull(organization.deletionScheduledAt),
+		ownedBy(userId),
+	);
+
 /** Slots in use: owned organizations holding one, not scheduled for deletion. */
 export const countHeldSlots = async (
 	executor: Tx | typeof db,
@@ -73,14 +90,53 @@ export const countHeldSlots = async (
 	const [row] = await executor
 		.select({ held: count() })
 		.from(organization)
-		.where(
-			and(
-				isNotNull(organization.slotHeldAt),
-				isNull(organization.deletionScheduledAt),
-				ownedBy(userId),
-			),
-		);
+		.where(holdsSlot(userId));
 	return row?.held ?? 0;
+};
+
+export type HeldSlot = { id: string; name: string };
+
+/** Owned organizations holding a slot, earliest-activated first. */
+export const listHeldSlots = (executor: Tx | typeof db, userId: string) =>
+	executor
+		.select({ id: organization.id, name: organization.name })
+		.from(organization)
+		.where(holdsSlot(userId))
+		.orderBy(asc(organization.slotHeldAt), asc(organization.id));
+
+/**
+ * Which held slots a cap of `limit` takes away: the user's own picks first,
+ * then, while still over the cap, the latest-activated ones (Default 9).
+ */
+export const slotsOverLimit = (
+	held: HeldSlot[],
+	limit: number,
+	releaseFirst: readonly string[],
+) => {
+	const picked = held.filter((slot) => releaseFirst.includes(slot.id));
+	const kept = held.filter((slot) => !releaseFirst.includes(slot.id));
+	return { picked, unpicked: kept.slice(limit) };
+};
+
+/**
+ * Brings the user's held slots within `limit`; the caller holds `lockPlan`.
+ * Returns what lost its slot: the user's picks, and the rest the cap forced.
+ */
+export const releaseSlotsOverLimit = async (
+	tx: Tx,
+	userId: string,
+	limit: number,
+	releaseFirst: readonly string[],
+) => {
+	const held = await listHeldSlots(tx, userId).for("update");
+	const released = slotsOverLimit(held, limit, releaseFirst);
+	const ids = [...released.picked, ...released.unpicked].map(({ id }) => id);
+	if (ids.length > 0)
+		await tx
+			.update(organization)
+			.set({ slotHeldAt: null })
+			.where(inArray(organization.id, ids));
+	return released;
 };
 
 /** Organizations the plan keeps active at once; none without a plan. */

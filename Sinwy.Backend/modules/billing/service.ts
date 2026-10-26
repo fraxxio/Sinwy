@@ -8,13 +8,16 @@ import {
 	polarFailureOf,
 	productIdFor,
 } from "@backend/infrastructure/polar";
+import { slotLimit, slotsOverLimit } from "@db/organizationAccess";
 import { createLogger } from "@logger";
 import { countHeldSlots, getOrganizationState } from "@organizationsModule";
 import {
 	type AccountSubscriptionDto,
 	BILLING_INTERVALS,
 	type OrganizationStatus,
+	type PendingPlanChangeDto,
 	PLAN_ORGANIZATION_LIMITS,
+	PLAN_SLUGS,
 	type PlanSlug,
 	SUBSCRIPTION_BILLING_STATUSES,
 	type SubscriptionBillingDto,
@@ -25,10 +28,16 @@ import { knownValue, toPolarFailure } from "./polar";
 import {
 	isEntitled,
 	listBillableSubscriptions,
+	pendingPlanOf,
 	projectSubscription,
 	reconcileUserPlan,
 } from "./projection";
-import { findUserSubscription } from "./repository";
+import {
+	clearDowngrade,
+	findUserSubscription,
+	listOwnedHeldSlots,
+	saveDowngrade,
+} from "./repository";
 
 type Subscription = PolarModels.Subscription;
 
@@ -86,15 +95,43 @@ export type PlanState = {
 	subscriptionId: string | null;
 	/** Paused, still bound: it resumes without a new checkout. */
 	suspended: boolean;
+	/** The downgrade scheduled in the app, and the organizations it deactivates. */
+	downgrade: { plan: PlanSlug; releases: string[] } | null;
 };
 
 /** The user's stored plan; no row reads as no plan. */
 const getPlanState = async (userId: string): Promise<PlanState> => {
 	const row = await findUserSubscription(userId);
+	const downgradePlan = toPlanSlug(row?.downgradePlan ?? null);
 	return {
 		plan: toPlanSlug(row?.plan ?? null),
 		subscriptionId: row?.subscriptionId ?? null,
 		suspended: row?.status === "paused" && row.subscriptionId !== null,
+		downgrade: downgradePlan
+			? { plan: downgradePlan, releases: row?.downgradeReleases ?? [] }
+			: null,
+	};
+};
+
+/** What the plan change Polar holds does to the user's slots once it applies. */
+const toPendingChangeDto = async (
+	userId: string,
+	state: PlanState,
+	subscription: Subscription,
+): Promise<PendingPlanChangeDto | null> => {
+	const plan = pendingPlanOf(subscription);
+	if (!plan || !subscription.pending_update) return null;
+	const releases =
+		state.downgrade?.plan === plan ? state.downgrade.releases : [];
+	const { picked, unpicked } = slotsOverLimit(
+		await listOwnedHeldSlots(userId),
+		slotLimit(plan),
+		releases,
+	);
+	return {
+		plan,
+		appliesAt: subscription.pending_update.applies_at,
+		deactivates: [...picked, ...unpicked],
 	};
 };
 
@@ -108,6 +145,8 @@ const toSubscriptionDto = async (
 	organizationLimit: state.plan ? PLAN_ORGANIZATION_LIMITS[state.plan] : 0,
 	activeOrganizations: await countHeldSlots(userId),
 	billing: subscription && toBillingDto(subscription),
+	pendingChange:
+		subscription && (await toPendingChangeDto(userId, state, subscription)),
 });
 
 /** A Polar outage only costs the billing details, never the projection. */
@@ -142,7 +181,10 @@ type ChangePlanResult =
 				| "inactive"
 				| "suspended"
 				| "pause-pending"
+				| "cancel-pending"
 				| "same-plan"
+				| "picks-required"
+				| "invalid-picks"
 				| "canceled"
 				| "locked"
 				| PolarFailure;
@@ -176,18 +218,63 @@ const isLocked = (error: unknown) =>
 	error instanceof PolarApiErrors.SubscriptionsUpdate409Error &&
 	error.error.error === "SubscriptionLocked";
 
+/** Relies on PLAN_SLUGS being ordered cheapest first. */
+const isDowngrade = (from: PlanSlug, to: PlanSlug) =>
+	PLAN_SLUGS.indexOf(to) < PLAN_SLUGS.indexOf(from);
+
+type Releases =
+	| { ok: true; releases: string[] }
+	| { ok: false; error: "picks-required" | "invalid-picks" };
+
+/**
+ * The active organizations a downgrade to `plan` deactivates: those the user
+ * didn't keep. Picks are needed only when more are active than the plan
+ * allows (D6).
+ */
+const downgradeReleases = async (
+	userId: string,
+	plan: PlanSlug,
+	keep: string[] | undefined,
+): Promise<Releases> => {
+	const held = (await listOwnedHeldSlots(userId)).map(({ id }) => id);
+	const limit = slotLimit(plan);
+	if (!keep)
+		return held.length > limit
+			? { ok: false, error: "picks-required" }
+			: { ok: true, releases: [] };
+	const kept = new Set(keep);
+	if (
+		kept.size !== keep.length ||
+		kept.size > limit ||
+		keep.some((id) => !held.includes(id))
+	)
+		return { ok: false, error: "invalid-picks" };
+	return { ok: true, releases: held.filter((id) => !kept.has(id)) };
+};
+
+type PlanUpdate = {
+	body: PolarModels.SubscriptionUpdate;
+	/** Polar's subscription already carries the change, e.g. after a double submit. */
+	carries: (subscription: Subscription) => boolean;
+};
+
 /**
  * Paid → paid plan change on the existing subscription. A checkout would
- * start a second subscription instead. "prorate" switches the plan now and
- * settles the difference on the next regular invoice.
+ * start a second subscription instead. An upgrade switches now, "prorate"
+ * settling the difference on the next regular invoice (Default 7). A
+ * downgrade waits for the period end, "next_period", and takes the slots of
+ * the organizations the user didn't keep then (D6). Any later update,
+ * an upgrade included, discards a pending one in Polar.
  */
 export const changeAccountPlan = async (
 	userId: string,
 	plan: PlanSlug,
+	keep?: string[],
 ): Promise<ChangePlanResult> => {
 	const state = await getPlanState(userId);
 	if (state.suspended) return { ok: false, error: "suspended" };
-	if (!state.subscriptionId) return { ok: false, error: "inactive" };
+	if (!state.subscriptionId || !state.plan)
+		return { ok: false, error: "inactive" };
 	if (state.plan === plan) return { ok: false, error: "same-plan" };
 
 	// Polar would switch the plan of a subscription about to pause
@@ -195,13 +282,33 @@ export const changeAccountPlan = async (
 	if (!current.ok) return current;
 	if (current.subscription.pause_at_period_end)
 		return { ok: false, error: "pause-pending" };
+	if (current.subscription.cancel_at_period_end)
+		return { ok: false, error: "cancel-pending" };
 
 	const productId = productIdFor(plan);
+	const downgrade = isDowngrade(state.plan, plan);
+	let releases: string[] = [];
+	if (downgrade) {
+		const picks = await downgradeReleases(userId, plan, keep);
+		if (!picks.ok) return picks;
+		releases = picks.releases;
+	}
+	const update: PlanUpdate = downgrade
+		? {
+				body: { product_id: productId, proration_behavior: "next_period" },
+				carries: (subscription) =>
+					subscription.pending_update?.product_id === productId,
+			}
+		: {
+				body: { product_id: productId, proration_behavior: "prorate" },
+				carries: (subscription) => subscription.product_id === productId,
+			};
+
 	let subscription: Subscription;
 	try {
 		subscription = await polarClient.subscriptions.update(
 			state.subscriptionId,
-			{ product_id: productId, proration_behavior: "prorate" },
+			update.body,
 		);
 	} catch (error) {
 		if (
@@ -211,12 +318,12 @@ export const changeAccountPlan = async (
 			return { ok: false, error: "canceled" };
 		if (isLocked(error)) return { ok: false, error: "locked" };
 		// a double submit, or a retry after our projection failed, finds Polar
-		// already on the product
+		// already carrying the change
 		const current =
 			polarFailureOf(error) === "rejected"
 				? await fetchSubscription(state.subscriptionId)
 				: null;
-		if (current?.product_id !== productId)
+		if (!current || !update.carries(current))
 			return {
 				ok: false,
 				error: toPolarFailure(error, "Polar plan change failed", {
@@ -227,8 +334,65 @@ export const changeAccountPlan = async (
 		subscription = current;
 	}
 
+	if (downgrade) await saveDowngrade(userId, plan, releases);
 	// the subscription.updated webhook lands the same state; applying it now
 	// saves the caller from polling
+	await projectSubscription(subscription);
+	return {
+		ok: true,
+		data: await toSubscriptionDto(
+			userId,
+			await getPlanState(userId),
+			subscription,
+		),
+	};
+};
+
+type CancelPlanChangeResult =
+	| { ok: true; data: AccountSubscriptionDto }
+	| {
+			ok: false;
+			error: "inactive" | "not-pending" | "locked" | PolarFailure;
+	  };
+
+/** Takes back a downgrade before the period ends; the plan stays as it is. */
+export const cancelPendingPlanChange = async (
+	userId: string,
+): Promise<CancelPlanChangeResult> => {
+	const state = await getPlanState(userId);
+	if (!state.subscriptionId) return { ok: false, error: "inactive" };
+
+	const read = await readSubscription(userId, state.subscriptionId);
+	if (!read.ok) return read;
+	if (!read.subscription.pending_update) {
+		await clearDowngrade(userId);
+		await projectSubscription(read.subscription);
+		return { ok: false, error: "not-pending" };
+	}
+
+	let subscription: Subscription;
+	try {
+		subscription = await polarClient.subscriptions.update(
+			read.subscription.id,
+			{ pending_update: null },
+		);
+	} catch (error) {
+		if (isLocked(error)) return { ok: false, error: "locked" };
+		const current =
+			polarFailureOf(error) === "rejected"
+				? await fetchSubscription(read.subscription.id)
+				: null;
+		if (!current || current.pending_update)
+			return {
+				ok: false,
+				error: toPolarFailure(error, "Polar plan change cancel failed", {
+					userId,
+				}),
+			};
+		subscription = current;
+	}
+
+	await clearDowngrade(userId);
 	await projectSubscription(subscription);
 	return {
 		ok: true,

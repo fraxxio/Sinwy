@@ -1,15 +1,23 @@
 import { clearActiveOrganization } from "@authModule";
+import { emailClient } from "@backend/infrastructure/email";
 import {
 	describePolarError,
 	type PolarModels,
 	planFor,
 	polarClient,
 } from "@backend/infrastructure/polar";
+import appConfig from "@config";
 import { createLogger } from "@logger";
 import { listOwnedOrganizationIds } from "@organizationsModule";
 import { ENTITLED_SUBSCRIPTION_STATUSES } from "@sinwy/shared";
+import { OrganizationsDeactivatedEmail } from "./emails/planEmails";
 import { refundInFull } from "./refunds";
-import { findUserSubscription, writeUserSubscription } from "./repository";
+import {
+	findUserContact,
+	findUserSubscription,
+	type SlotsReleased,
+	writeUserSubscription,
+} from "./repository";
 
 type Subscription = PolarModels.Subscription;
 
@@ -64,12 +72,56 @@ const revokeSecondPlan = async (subscription: Subscription, userId: string) => {
 	await refundInFull(subscription.id, SECOND_PLAN_COMMENT);
 };
 
+/** The plan Polar switches to when the period ends; null without one. */
+export const pendingPlanOf = (subscription: Subscription) => {
+	const productId = subscription.pending_update?.product_id;
+	return productId ? planFor(productId) : null;
+};
+
 const write = (subscription: Subscription, userId: string, observedAt: Date) =>
 	writeUserSubscription(userId, subscription.id, observedAt, {
 		plan: isEntitled(subscription) ? planOf(subscription) : null,
+		pendingPlan: pendingPlanOf(subscription),
 		status: subscription.status,
 		bound: isBillable(subscription),
 	});
+
+/**
+ * Organizations that lost their slot leave the sessions that have them open.
+ * The owner hears about the ones their own picks didn't name (Default 9).
+ * Failures are logged: the slots are already settled.
+ */
+const announceReleasedSlots = async (
+	userId: string,
+	{ picked, unpicked, limit }: SlotsReleased,
+) => {
+	const context = { userId, picked: picked.length, unpicked: unpicked.length };
+	if (picked.length + unpicked.length === 0) return;
+	billingLogger.info("Organizations lost their slot to a lower cap", context);
+	try {
+		for (const { id } of [...picked, ...unpicked])
+			await clearActiveOrganization(id);
+		const contact = unpicked.length > 0 && (await findUserContact(userId));
+		if (!contact) return;
+		await emailClient.send({
+			to: contact.email,
+			template: OrganizationsDeactivatedEmail,
+			props: {
+				organizationNames: unpicked.map(({ name }) => name),
+				organizationLimit: limit,
+				manageUrl: new URL(
+					"/account/organizations",
+					appConfig.WEB_APP_URL,
+				).toString(),
+			},
+		});
+	} catch (error) {
+		billingLogger.error("Announcing released slots failed", {
+			...context,
+			error,
+		});
+	}
+};
 
 /**
  * Projects a Polar subscription onto its user, found by the customer's
@@ -116,6 +168,7 @@ export const projectSubscription = async (
 	switch (written.result) {
 		case "applied":
 			billingLogger.info("Plan projected from subscription", context);
+			await announceReleasedSlots(userId, written);
 			if (isEntitled(subscription)) return "entitled";
 			await closeOwnedOrganizations(userId);
 			return "not-entitled";

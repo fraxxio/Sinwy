@@ -1,6 +1,7 @@
 import { organizationPath, requireAuth, requireMember } from "@authModule";
 import type { IApp, Middleware } from "@backend/lib/app/types";
 import {
+	cancelPlanChangeHandler,
 	changePlanHandler,
 	downloadInvoiceHandler,
 	getOrganizationStatusHandler,
@@ -29,6 +30,7 @@ export const registerBillingRoutes = (app: IApp) => {
 	});
 	for (const [path, handler] of [
 		["plan", changePlanHandler],
+		["plan/cancel", cancelPlanChangeHandler],
 		["suspend", suspendHandler],
 		["unsuspend", unsuspendHandler],
 		["resume", resumeHandler],
