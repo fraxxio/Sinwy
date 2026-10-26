@@ -38,86 +38,98 @@ Enter credentials (email+password | Google)
 ## 4. Post-login routing
 
 ```text
-├─ has an active organization (last active if still active, else newest) → org dashboard
-├─ none active, owns one whose setup never finished → Plan selection [5]
-└─ otherwise (lapsed, suspended or staff-only orgs, or no organization) → Customer Mode
-    ├─ Account → Organizations lists every org; owner renews or resumes from there [8]
+├─ an active organization (the session's if still active, else the newest) → org dashboard
+├─ none active, owns one not scheduled for deletion → Account → Organizations
+│   → activate it, choose or resume a plan, or upgrade [8]
+└─ otherwise (staff of inactive orgs only, or no organization) → Customer Mode
     └─ "create your business" CTA → Organization Creation flow [5]
 ```
 
+Outside the funnel screens, a toast prompts once per load: "Choose a plan"
+for an owner of a draft with no plan, else "Finish setup" for an unfinished
+organization [7].
+
 User can always switch:
 ```text
-├─ Customer Mode → select organization → Organization Mode
+├─ Customer Mode → select organization → Organization Mode (active ones only)
 └─ Organization Mode → leave org context → Customer Mode
 ```
+
+Rules: [org-rules-map.md](org-rules-map.md) §9.
 
 ## 5. Organization Creation
 
 ```text
 Trigger (empty dashboard | sidebar | onboarding CTA | settings)
 │
-→ enter organization name + industry
-→ POST /organizations (custom endpoint)
-→ organization created: status = inactive, user = owner
-→ Plan selection (Starter | Professional | Enterprise)
-→ Polar checkout (referenceId = organizationId)
-│
-├─ payment success → redirect to success page → go to [6. Activation]
-├─ payment failure → org stays inactive → retry checkout (same org)
-└─ user abandons → org stays inactive → resume from plan selection anytime
+→ /organizations/new: name + industry → organization created, user = owner
+├─ plan with a free slot → active → Organization Onboarding [7]
+├─ plan at its cap, or suspended → draft → Organization Onboarding [7]
+│   (the wizard says why it stays a draft)
+└─ no plan → draft → Account → Billing → choose a tier → Polar checkout
+    ├─ payment success → /checkout/success → [6. Activation]
+    └─ payment failure or abandoned → stays a draft; choose a plan again anytime
 ```
+
+Rules: [org-rules-map.md](org-rules-map.md) §4–§6.
 
 ## 6. Activation (success page)
 
 ```text
-Success page: "Activating your organization…" (poll org status ~2s)
-│   funnel steps shown only while setup was never finished (not on a renewal)
+/checkout/success: "Activating your organization…" (polls the account plan)
+│   funnel steps shown only when a draft waits for the plan
 │
-├─ status → active (webhook arrived)
-│   ├─ onboarding not completed → Organization Onboarding [7]
-│   └─ onboarding completed → Organization Dashboard
-└─ timeout → fallback message, keep org inactive, retry/poll later
+├─ plan landed
+│   ├─ a plan bought to take over an organization → waits for the transfer
+│   │   → Account → Organizations ("<org> is yours", or "hasn't moved yet")
+│   ├─ the owner has a draft → activates the oldest → Organization Onboarding [7]
+│   │   └─ refused (e.g. at the cap) → Account → Organizations with the reason
+│   └─ no draft → Account → Billing
+└─ timeout or unreachable → "payment received" fallback, retry
 ```
 
-## 7. Organization Onboarding (post-activation wizard)
+## 7. Organization Onboarding (setup wizard)
 
 ```text
+/organizations/:id/onboarding — active orgs, and the owner's drafts
 Step 1 — Business profile (tagline, description, contact, location)
 │
-├─ save → organization.onboardingCompletedAt set → Organization Dashboard
-└─ "I'll do this later" → Organization Dashboard, still marked unfinished
-    → resume prompt on later logins, page reachable again anytime
+├─ save
+│   ├─ active → marked done → Organization Dashboard
+│   ├─ draft with a free slot → activated, marked done → Organization Dashboard
+│   └─ draft without a plan or a slot → profile kept, stays a draft
+│       → Account → Organizations (the page's notice said why beforehand)
+├─ "I'll do this later" (active) → Organization Dashboard, still unfinished
+│   → prompted again on later visits, page reachable again anytime
+└─ "Back to organizations" (draft) → Account → Organizations
 ```
 
 Later steps (page template, plugins) land here as the page builder arrives.
 
-## 8. Subscription lifecycle (webhook-driven, anytime)
+Rules: [org-rules-map.md](org-rules-map.md) §4.
+
+## 8. Account billing and organizations (anytime)
 
 ```text
-├─ subscription active / trialing / past due → org status = active
-│   └─ owner changes plan (Settings → Billing, or "Upgrade plan" on a gated feature)
-│       → POST /organizations/:id/subscription/plan
-│       → Polar switches the plan now, prorated difference on the next invoice
-│       → plan + features updated in place, org stays active
-├─ canceled at period end (Polar portal) → still active, "Cancels on {date}"
-│   → plan change disabled until renewed in the portal
-├─ owner suspends (Settings → Billing → Suspend, not during a trial or failed payment)
-│   → POST /organizations/:id/subscription/suspend → Polar pauses at period end, no refund
-│   → still active, "Suspends on {date}", plan change disabled, Undo until then
-│       (POST …/subscription/unsuspend)
-│   → period end: subscription paused → org inactive, suspended, still bound to it
-│       → locked out like a lapsed org; a new checkout is refused
-│       ├─ owner → plan page shows Resume (switcher, Account → Organizations "Resume")
-│       │   → POST …/subscription/resume → Polar charges now, new period, no checkout
-│       │   → org active → dashboard; a failed charge → past due (still active, fix payment)
-│       │       or, if Polar keeps it paused, an error with a link to the Polar portal
-│       └─ staff → disabled in the switcher ("suspended"), sent to /account
-└─ subscription revoked / expired / canceled → org status = inactive (lapsed once onboarded)
-    → data kept, public pages unpublished, removed from every session
-    → nobody opens its dashboard; an open tab is sent out on its next load or write
-    │   ├─ owner → plan page (switcher, Account → Organizations)
-    │   │   → Plan selection (renew copy, no funnel steps)
-    │   │   → Polar checkout → [6. Activation] → Organization Dashboard
-    │   └─ staff → disabled in the switcher ("no active plan"), sent to /account
-    → login → another active org, else Customer Mode [4], no "finish setup" prompt
+Account → Billing (owner of the plan; never inside an organization)
+├─ no plan → tier cards → Polar checkout → [6]
+├─ plan → current tier, cap and active organizations, invoices, "Manage billing" (Polar portal)
+│   ├─ Change plan → dialog: upgrade now, or downgrade at period end with picks
+│   │   → pending change shown with "Stay on <tier>"
+│   ├─ Suspend → dialog lists the orgs going offline → "Suspends on {date}", Undo
+│   │   → period end: every org suspended → Resume panel (charges now)
+│   ├─ Cancel → dialog lists the orgs going offline → "Cancels on {date}", Undo
+│   │   → period end: every org inactive → tier cards again
+│   └─ payment failed → notice here, banner on each org dashboard (owner only)
+
+Account → Organizations
+├─ each org with its state: Open, Deactivate, Activate, Upgrade, Choose a plan, Resume plan
+├─ incoming ownership offers → Accept dialog (free slot, choose a plan, or upgrade) | Decline
+└─ inactive orgs of other owners → "Ask the owner to …"
+
+Organization settings (owner) → transfer ownership to a member, cancel the offer
+Organization dashboard of an inactive org → nobody gets in; owner → Account → Organizations,
+everyone else → Account with the reason
 ```
+
+Rules: [org-rules-map.md](org-rules-map.md) §6–§10.
