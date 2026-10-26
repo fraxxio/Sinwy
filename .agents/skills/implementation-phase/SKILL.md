@@ -43,4 +43,4 @@ The user names the plan file, and sometimes a phase. With no phase named, take t
 3. Update **Standing notes**: add what later phases must know (verified external behaviour, timings, gotchas, decisions made mid-phase), one or two lines each, pointing to the log for detail. Remove notes that no longer matter. Don't repeat what the code or `CLAUDE.md` already says.
 4. Rewrite the next phase's **Files** list from what you learned.
 5. Commit the code, the plan and the log together, with a single-line title in the repo's style (`feat(backend, web): …`, `fix(backend): …`, `docs: …`).
-6. Report to the user: what shipped, the verify exit code, the e2e report's findings and anything left unchecked.
+6. Report to the user: what shipped, the verify exit code, the e2e report's findings and anything left unchecked. If the user needs to perform any action to continue to next phase or is everything good and ready to move on to next phase.
