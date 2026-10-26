@@ -1,6 +1,7 @@
 import { organizationPath, requireAuth, requireMember } from "@authModule";
 import type { IApp, Middleware } from "@backend/lib/app/types";
 import {
+	cancelHandler,
 	cancelPlanChangeHandler,
 	changePlanHandler,
 	downloadInvoiceHandler,
@@ -9,6 +10,7 @@ import {
 	listInvoicesHandler,
 	resumeHandler,
 	suspendHandler,
+	uncancelHandler,
 	unsuspendHandler,
 } from "./controller";
 
@@ -34,6 +36,8 @@ export const registerBillingRoutes = (app: IApp) => {
 		["suspend", suspendHandler],
 		["unsuspend", unsuspendHandler],
 		["resume", resumeHandler],
+		["cancel", cancelHandler],
+		["uncancel", uncancelHandler],
 	] as const)
 		app.route(`/api/account/subscription/${path}`, handler, {
 			method: "POST",

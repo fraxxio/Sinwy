@@ -70,7 +70,7 @@ export function describeSubscription(
 		return {
 			label: `Cancels on ${date(billing.endsAt ?? billing.currentPeriodEnd)}`,
 			variant: "outline",
-			detail: "You keep access until then. Resume from the Polar portal.",
+			detail: "You keep access until then. Undo it below to keep it running.",
 		};
 
 	if (billing.pauseAtPeriodEnd)
@@ -94,15 +94,24 @@ export function describeSubscription(
 	};
 }
 
+type BlockerInput = Pick<AccountSubscriptionDto, "billing" | "pendingChange">;
+
+const UNAVAILABLE = "Billing details are unavailable right now.";
+// any update to the subscription makes Polar drop a scheduled plan change
+const PLAN_CHANGE_SCHEDULED =
+	"A plan change is scheduled. Keep your current plan first.";
+
 /**
  * Why the owner can't schedule a suspension now, or null when they can. A
  * pending suspension is its own state, undone rather than scheduled.
  */
-export function suspensionBlocker(
-	billing: SubscriptionBillingDto | null,
-): string | null {
-	if (!billing) return "Billing details are unavailable right now.";
-	if (billing.cancelAtPeriodEnd) return "The subscription is set to cancel.";
+export function suspensionBlocker({
+	billing,
+	pendingChange,
+}: BlockerInput): string | null {
+	if (!billing) return UNAVAILABLE;
+	if (billing.cancelAtPeriodEnd) return "Your plan is set to cancel.";
+	if (pendingChange) return PLAN_CHANGE_SCHEDULED;
 	switch (billing.subscriptionStatus) {
 		case "active":
 			return null;
@@ -114,6 +123,28 @@ export function suspensionBlocker(
 			return "The last payment failed. Update your payment method on Polar first.";
 		default:
 			return "There's no active subscription to suspend.";
+	}
+}
+
+/**
+ * Why the owner can't schedule a cancellation now, or null when they can. A
+ * pending cancellation is its own state, undone rather than scheduled.
+ */
+export function cancellationBlocker({
+	billing,
+	pendingChange,
+}: BlockerInput): string | null {
+	if (!billing) return UNAVAILABLE;
+	if (billing.pauseAtPeriodEnd)
+		return "Your plan is set to suspend. Undo that first.";
+	if (pendingChange) return PLAN_CHANGE_SCHEDULED;
+	switch (billing.subscriptionStatus) {
+		case "active":
+		case "trialing":
+		case "past_due":
+			return null;
+		default:
+			return "There's no active subscription to cancel.";
 	}
 }
 

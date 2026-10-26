@@ -6,8 +6,9 @@ import { z } from "zod";
 import { CurrentPlanSection } from "#/modules/account-dashboard/components/billing/CurrentPlanSection";
 import { InvoicesSection } from "#/modules/account-dashboard/components/billing/InvoicesSection";
 import { ManageBillingSection } from "#/modules/account-dashboard/components/billing/ManageBillingSection";
+import { PaymentFailedNotice } from "#/modules/account-dashboard/components/billing/PaymentFailedNotice";
+import { PlanEndSection } from "#/modules/account-dashboard/components/billing/PlanEndSection";
 import { ResumePanel } from "#/modules/account-dashboard/components/billing/ResumePanel";
-import { SuspendSection } from "#/modules/account-dashboard/components/billing/SuspendSection";
 import { subscriptionQuery } from "#/modules/account-dashboard/lib/billing-queries";
 import { PlanCards } from "#/modules/organizations/components/PlanCards";
 import {
@@ -39,7 +40,7 @@ function BillingPage() {
 		useQuery(subscriptionQuery);
 	// reading the plan applies Polar's latest state, which can move slots
 	const plan = data?.plan;
-	const activeOrganizations = data?.activeOrganizations;
+	const activeOrganizations = data?.activeOrganizations.length;
 	useEffect(() => {
 		if (plan !== undefined && activeOrganizations !== undefined)
 			void invalidateOrganizations(queryClient);
@@ -101,7 +102,12 @@ function BillingPage() {
 	return (
 		<>
 			{header}
-			<BillingDetails withPlan />
+			<div className="grid gap-6">
+				{data.billing?.subscriptionStatus === "past_due" && (
+					<PaymentFailedNotice />
+				)}
+				<BillingDetails withPlan />
+			</div>
 		</>
 	);
 }
@@ -137,7 +143,8 @@ function BillingDetails({ withPlan = false }: { withPlan?: boolean }) {
 			)}
 			<InvoicesSection page={page} onPageChange={setInvoicePage} />
 			<ManageBillingSection />
-			{withPlan && <SuspendSection />}
+			{withPlan && <PlanEndSection kind="suspend" />}
+			{withPlan && <PlanEndSection kind="cancel" />}
 		</ContentBox>
 	);
 }

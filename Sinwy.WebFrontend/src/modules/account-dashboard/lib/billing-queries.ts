@@ -49,7 +49,12 @@ export const cancelPlanChange = () =>
 		method: "POST",
 	});
 
-export type SubscriptionAction = "suspend" | "unsuspend" | "resume";
+export type SubscriptionAction =
+	| "suspend"
+	| "unsuspend"
+	| "resume"
+	| "cancel"
+	| "uncancel";
 
 export const runSubscriptionAction = (action: SubscriptionAction) =>
 	api<AccountSubscriptionDto>(`/account/subscription/${action}`, {
@@ -99,5 +104,5 @@ export const freeSlots = (
 ) =>
 	Math.max(
 		0,
-		subscription.organizationLimit - subscription.activeOrganizations,
+		subscription.organizationLimit - subscription.activeOrganizations.length,
 	);

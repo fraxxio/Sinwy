@@ -9,6 +9,7 @@ import {
 	listAccountInvoices,
 } from "./invoices";
 import {
+	cancelAccountPlan,
 	cancelPendingPlanChange,
 	changeAccountPlan,
 	getAccountSubscription,
@@ -16,6 +17,7 @@ import {
 	resumeAccountPlan,
 	type SubscriptionActionError,
 	suspendAccountPlan,
+	uncancelAccountPlan,
 	unsuspendAccountPlan,
 } from "./service";
 
@@ -50,7 +52,7 @@ const failLocked = () =>
 
 const failCancelPending = () =>
 	fail(
-		"The subscription is set to cancel; resume it from the Polar portal first",
+		"Your plan is set to cancel at the end of the period; undo that first",
 		409,
 		API_ERROR_CODES.CANCELLATION_PENDING,
 	);
@@ -89,6 +91,18 @@ const failSubscriptionAction = (error: SubscriptionActionError) => {
 			);
 		case "cancel-pending":
 			return failCancelPending();
+		case "cancel-not-pending":
+			return fail(
+				"Your plan isn't set to cancel",
+				409,
+				API_ERROR_CODES.CANCELLATION_NOT_PENDING,
+			);
+		case "plan-change-pending":
+			return fail(
+				"A plan change is scheduled; keep your current plan first",
+				409,
+				API_ERROR_CODES.PLAN_CHANGE_PENDING,
+			);
 		case "locked":
 			return failLocked();
 		case "payment-failed":
@@ -196,6 +210,20 @@ export const unsuspendHandler: Handler = async (c) => {
 	const result = await unsuspendAccountPlan(sessionFrom(c).user.id);
 	return result.ok
 		? ok(result.data, 200, "Suspension canceled")
+		: failSubscriptionAction(result.error);
+};
+
+export const cancelHandler: Handler = async (c) => {
+	const result = await cancelAccountPlan(sessionFrom(c).user.id);
+	return result.ok
+		? ok(result.data, 200, "Cancellation scheduled")
+		: failSubscriptionAction(result.error);
+};
+
+export const uncancelHandler: Handler = async (c) => {
+	const result = await uncancelAccountPlan(sessionFrom(c).user.id);
+	return result.ok
+		? ok(result.data, 200, "Cancellation undone")
 		: failSubscriptionAction(result.error);
 };
 

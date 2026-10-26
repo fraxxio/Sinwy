@@ -648,6 +648,7 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 			plan: null,
 			features: [],
 			isOwner: true,
+			paymentFailed: false,
 			deletesAt: new Date(
 				scheduledAt.getTime() + 30 * 24 * 60 * 60 * 1000,
 			).toISOString(),
@@ -663,6 +664,7 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 			plan: "professional",
 			features: PLAN_FEATURES.professional,
 			isOwner: false,
+			paymentFailed: false,
 			deletesAt: null,
 			onboardingCompletedAt: null,
 		},
@@ -691,6 +693,31 @@ test("GET /api/organizations: admins see the tier name, staff only its features"
 	expect(await viewOf(staff.cookie)).toEqual({
 		plan: null,
 		features: PLAN_FEATURES.professional,
+	});
+});
+
+test("GET /api/organizations: a past-due plan is flagged to the owner only, and the org stays active", async () => {
+	const owner = await createUserWithSession();
+	const admin = await createUserWithSession();
+	const orgId = await insertOrganization("Acme");
+	await joinOrganization(orgId, owner.userId, "owner");
+	await joinAsAdmin(orgId, admin.userId);
+	await givePlan(owner.userId, "professional", { status: "past_due" });
+	await holdSlot(orgId);
+	const viewOf = async (cookie: string) => {
+		const [org] = await unwrap<OrganizationSummary[]>(
+			await get("/api/organizations", cookie),
+		);
+		return { status: org?.status, paymentFailed: org?.paymentFailed };
+	};
+
+	expect(await viewOf(owner.cookie)).toEqual({
+		status: "active",
+		paymentFailed: true,
+	});
+	expect(await viewOf(admin.cookie)).toEqual({
+		status: "active",
+		paymentFailed: false,
 	});
 });
 

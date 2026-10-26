@@ -25,7 +25,7 @@ logs are in [org-lifecycle-log.md](org-lifecycle-log.md).
 | 6 | Account plan and organization slots | 4 | done | `feat(backend): move billing to one plan per user with organization slots` |
 | 7 | Account billing page and onboarding | 6 | done | `feat(backend, web): move billing to Account → Billing with organization slots and drafts` |
 | 8 | Plan changes and the organization cap | 7 | done | `feat(backend, web): schedule downgrades for the period end with organization picks` |
-| 9 | Account-wide suspend, cancel and lapse | 7 | todo | |
+| 9 | Account-wide suspend, cancel and lapse | 7 | done | `feat(backend, web): suspend and cancel the account plan with the organizations affected and a past-due warning` |
 | 10 | Transfer on the account plan | 8 | todo | |
 | 11 | Code review | 0–10 | todo | |
 | 12 | Organization and billing rules map | 11 and its fixes | todo | |
@@ -164,7 +164,8 @@ Polar sandbox (log: Phase 2):
 - A plan change can be scheduled: `proration_behavior: "next_period"` sets
   `pending_update`, any later update discards it, `pending_update: null`
   clears it. To reach a period end in e2e, PATCH `current_billing_period_end`
-  a minute ahead; Polar renews within seconds (log: Phase 8).
+  a minute ahead; Polar renews, pauses or cancels within seconds, and a
+  Billing page load projects it (log: Phases 8, 9).
 - Refund `amount` is net of tax; Polar refunds the matching tax itself. Use
   the helpers in `modules/billing/refunds.ts` (log: Phase 4).
 - The sandbox webhook endpoint (`75e9e523…`) is disabled: no real deliveries,
@@ -204,8 +205,17 @@ App state (log: Phases 1–4):
   plan lock: stored downgrade picks first, then any plan below the held
   count releases the latest-activated orgs and emails the owner (Default 9).
   A plan written as null (paused, lapsed) keeps every slot (log: Phase 8).
-- Suspend or cancel while a downgrade is pending is untested against Polar;
-  `cancel_at_period_end` and pause may interact with `pending_update`.
+- Suspend, cancel and plan changes exclude each other: suspend and cancel
+  refuse while a downgrade is pending (`PLAN_CHANGE_PENDING`), since any
+  update drops Polar's `pending_update`; each refuses while the other is
+  pending. Cancel and undo are `/api/account/subscription/{cancel,uncancel}`
+  (log: Phase 9).
+- `AccountSubscriptionDto.activeOrganizations` is the list of held slots
+  (`{ id, name }`), the orgs a suspend, cancel or lapse takes offline;
+  `freeSlots` counts it (log: Phase 9).
+- Past due: `OrganizationSummary.paymentFailed` (owner only, from the stored
+  status) drives the org shell's banner; Account → Billing's notice reads
+  Polar's live status (log: Phase 9).
 - A draft is derived, not stored: no slot, setup unfinished, not scheduled
   (`isDraft`, the summary's `draft`). An org activated before finishing setup
   reads as a draft again once deactivated (log: Phase 7).
@@ -231,7 +241,10 @@ App state (log: Phases 1–4):
 - e2e: file URLs use the `BETTER_AUTH_URL` origin (`localhost:3000` locally);
   `keyFromFileUrl` silently ignores any other origin.
 - e2e: the simulator's `subscription.updated` fixture is `canceled`; send
-  an out-of-band plan change as `subscription.active --plan <slug>`.
+  an out-of-band plan change as `subscription.active --plan <slug>`. It has
+  no `past_due` fixture: set `user_subscription.status` with `psql`.
+- e2e: `page.ts` can't target a named `playwright-cli` session; switch users
+  with close, open and `state-load` (log: Phase 9).
 - e2e: Polar's card fields sit
   in Stripe iframes: type through `run-code` with
   `frameLocator('iframe[name^="__privateStripeFrame"]')` and
@@ -245,55 +258,13 @@ Open, not caused by this plan:
 - `/organizations/new` shows the Plan and Pay steps to a user who already
   has a plan; the transfer section's copy is from the per-org model (Phase
   10); Account → Organizations labels admins "Member" (log: Phase 7).
+- Resume charges on one click with no confirm dialog, unlike suspend and
+  cancel; the "Choose a plan" intro on Billing speaks of one organization
+  even when several wait (log: Phase 9).
 - drizzle-kit `generate` needs a TTY when one table drops and adds columns
   (rename prompt); generate the drops and the adds as two migrations.
 
 ---
-
-## Phase 9: Account-wide suspend, cancel and lapse
-
-**Goal:** suspend, resume and cancel act on the user's plan, and the owner
-sees which organizations go offline before confirming.
-
-**Files:** `Sinwy.Backend/modules/billing/{service,controller,routes}.ts`
-(`suspendAccountPlan`, `unsuspendAccountPlan`, `resumeAccountPlan` and their
-`/api/account/subscription/*` routes already act on the account through
-`runSubscriptionAction`; add cancel and undo there, and the affected orgs to
-`toSubscriptionDto`), `db/organizationAccess.ts` (`listHeldSlots`),
-`Sinwy.Shared/types/plan/Subscription.ts` (`AccountSubscriptionDto`). Web:
-`src/modules/account-dashboard/routes/_shell.billing.tsx`,
-`components/billing/{SuspendSection,ResumePanel,CurrentPlanSection}.tsx`,
-`lib/{billing-queries,subscription-status}.ts` (`describeSubscription`,
-`suspensionBlocker`), and the org shell's `AppShell` `banner` for past due.
-Tests: `modules/billing/tests/billing.test.ts`,
-`src/modules/account-dashboard/tests/subscription-status.test.ts`.
-
-Backend:
-- `POST /api/account/subscription/{suspend,unsuspend,resume}` with the Phase 2
-  refusals (trialing, past due, pending pause or cancel) and responses.
-- `GET /api/account/subscription` lists the orgs that would go offline.
-- Cancel at period end from the app (`cancel_at_period_end: true`) with
-  undo; the portal's cancel ends the same way.
-
-Frontend:
-- Suspend and Cancel dialogs list the organizations affected and the date
-  (D9). Past due shows a payment warning on Account → Billing and in each
-  owned org's `AppShell` banner for the owner.
-
-Tests that matter:
-- Each refusal; resume after a failed charge reports `past_due`.
-- Suspend and cancel take every owned org offline at period end; resume
-  restores the same slots (Default 8).
-
-Done when:
-- Suspend → period end (simulated) → all owned orgs locked out → resume →
-  the same orgs active. Cancel with undo. Checked in the running app,
-  including a staff member's view of a suspended org.
-
-**Verify:** real sandbox subscription with two active orgs. Suspend in the
-browser, simulate `subscription.paused`, check both orgs locked for owner and
-staff, resume (real Polar call), check `active`. Cancel, undo, then cancel
-and simulate `subscription.canceled`/`revoked`.
 
 ## Phase 10: Transfer on the account plan
 
@@ -303,12 +274,19 @@ their slot.
 
 **Files:** `Sinwy.Backend/modules/transfers/{service,controller,routes,repository}.ts`,
 `modules/billing/{service,transfer,refunds}.ts` (delete what's left of the
-transfer checkout), `db/schema/organizationSchema.ts`
-(`organization_transfer`: drop `old_subscription_id`, `new_subscription_id`,
-`settled_at` if unused), `modules/transfers/emails/`,
-`src/modules/account-dashboard/routes/_shell.organizations.tsx`,
-`src/modules/checkout/routes/success.tsx`. Tests:
-`modules/transfers/tests/transfer.test.ts`.
+transfer checkout; `changeAccountPlan` is the upgrade path and must refuse
+while the user's transfer waits on a checkout), `modules/billing/projection.ts`
+(complete the transfer once the plan is entitled),
+`db/organizationAccess.ts` (`lockPlan`, `countHeldSlots`),
+`db/schema/organizationSchema.ts` (`organization_transfer`: drop
+`old_subscription_id`, `new_subscription_id`, `settled_at` if unused),
+`modules/transfers/emails/`. Web:
+`src/modules/account-dashboard/routes/_shell.organizations.tsx` (Accept
+dialog; `subscriptionQuery` and `freeSlots` from `lib/billing-queries.ts`
+tell which recipient state applies), `components/billing/ChangePlanDialog.tsx`
+(upgrade at acceptance), `src/modules/checkout/routes/success.tsx`. Tests:
+`modules/transfers/tests/transfer.test.ts`,
+`modules/billing/tests/billing.test.ts`.
 
 Backend:
 - Accept, by the recipient's state:

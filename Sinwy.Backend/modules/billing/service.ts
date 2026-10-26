@@ -10,7 +10,7 @@ import {
 } from "@backend/infrastructure/polar";
 import { slotLimit, slotsOverLimit } from "@db/organizationAccess";
 import { createLogger } from "@logger";
-import { countHeldSlots, getOrganizationState } from "@organizationsModule";
+import { getOrganizationState } from "@organizationsModule";
 import {
 	type AccountSubscriptionDto,
 	BILLING_INTERVALS,
@@ -143,7 +143,7 @@ const toSubscriptionDto = async (
 	plan: state.plan,
 	suspended: state.suspended,
 	organizationLimit: state.plan ? PLAN_ORGANIZATION_LIMITS[state.plan] : 0,
-	activeOrganizations: await countHeldSlots(userId),
+	activeOrganizations: await listOwnedHeldSlots(userId),
 	billing: subscription && toBillingDto(subscription),
 	pendingChange:
 		subscription && (await toPendingChangeDto(userId, state, subscription)),
@@ -413,6 +413,8 @@ export type SubscriptionActionError =
 	| "pause-pending"
 	| "pause-not-pending"
 	| "cancel-pending"
+	| "cancel-not-pending"
+	| "plan-change-pending"
 	| "locked"
 	| "payment-failed"
 	| PolarFailure;
@@ -447,6 +449,8 @@ const SUSPEND: SubscriptionAction = {
 		if (subscription.status === "past_due") return "past-due";
 		if (subscription.pause_at_period_end) return "pause-pending";
 		if (subscription.cancel_at_period_end) return "cancel-pending";
+		// any update makes Polar drop a scheduled plan change
+		if (subscription.pending_update) return "plan-change-pending";
 		return null;
 	},
 };
@@ -457,6 +461,27 @@ const UNSUSPEND: SubscriptionAction = {
 	refuse: (subscription) =>
 		refuseUnlessLive(subscription) ??
 		(subscription.pause_at_period_end ? null : "pause-not-pending"),
+};
+
+const CANCEL: SubscriptionAction = {
+	name: "cancel",
+	body: { cancel_at_period_end: true },
+	refuse: (subscription) => {
+		const unlive = refuseUnlessLive(subscription);
+		if (unlive) return unlive;
+		if (subscription.pause_at_period_end) return "pause-pending";
+		if (subscription.cancel_at_period_end) return "cancel-pending";
+		if (subscription.pending_update) return "plan-change-pending";
+		return null;
+	},
+};
+
+const UNCANCEL: SubscriptionAction = {
+	name: "uncancel",
+	body: { cancel_at_period_end: false },
+	refuse: (subscription) =>
+		refuseUnlessLive(subscription) ??
+		(subscription.cancel_at_period_end ? null : "cancel-not-pending"),
 };
 
 const RESUME: SubscriptionAction = {
@@ -471,7 +496,7 @@ const RESUME: SubscriptionAction = {
 };
 
 /**
- * Runs a pause or resume update on the user's bound subscription.
+ * Runs a pause, cancel or resume update on the user's bound subscription.
  * Polar's current state is projected first, so a missed webhook neither
  * decides the refusal nor lingers, and each refusal says why. When Polar
  * refuses anyway (a concurrent change), its new state explains the refusal.
@@ -546,6 +571,14 @@ export const suspendAccountPlan = (userId: string) =>
 /** Takes back a pause that hasn't taken effect yet. */
 export const unsuspendAccountPlan = (userId: string) =>
 	runSubscriptionAction(userId, UNSUSPEND);
+
+/** Ends the plan at the end of the paid period; the user's organizations stay active until then. No refund. */
+export const cancelAccountPlan = (userId: string) =>
+	runSubscriptionAction(userId, CANCEL);
+
+/** Takes back a cancellation that hasn't taken effect yet. */
+export const uncancelAccountPlan = (userId: string) =>
+	runSubscriptionAction(userId, UNCANCEL);
 
 /** Resumes a paused subscription: Polar starts a new period and charges for it now. */
 export const resumeAccountPlan = (userId: string) =>

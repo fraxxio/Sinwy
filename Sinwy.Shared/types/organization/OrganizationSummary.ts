@@ -16,6 +16,8 @@ export type OrganizationSummary = {
 	/** What the tier includes while active, for every member. */
 	features: readonly Feature[];
 	isOwner: boolean;
+	/** The owner's last payment failed and Polar is retrying it; only ever true for the owner. */
+	paymentFailed: boolean;
 	/** When it is purged, set once its owner's account is deleted; ISO date. */
 	deletesAt: string | null;
 	onboardingCompletedAt: string | null;

@@ -1,4 +1,5 @@
 import { AUTH_ERROR_CODES, type OrganizationSummary } from "@sinwy/shared";
+import { useQuery } from "@tanstack/react-query";
 import {
 	createFileRoute,
 	linkOptions,
@@ -6,6 +7,7 @@ import {
 	redirect,
 } from "@tanstack/react-router";
 import { OrganizationSidebar } from "#/modules/org-dashboard/components/OrganizationSidebar";
+import { PaymentFailedBanner } from "#/modules/org-dashboard/components/PaymentFailedBanner";
 import { AppShell } from "#/shared/components/shell/AppShell";
 import { raiseAccessDenied } from "#/shared/lib/auth/access-denied";
 import { authClient } from "#/shared/lib/auth/auth-client";
@@ -83,9 +85,14 @@ export const Route = createFileRoute("/$organizationSlug/_shell")({
 
 function OrganizationShell() {
 	const { organization } = Route.useRouteContext();
+	const { data: organizations } = useQuery(organizationsQuery);
+	const paymentFailed = organizations?.some(
+		(org) => org.id === organization.id && org.paymentFailed,
+	);
 
 	return (
 		<AppShell
+			banner={paymentFailed && <PaymentFailedBanner />}
 			sidebar={<OrganizationSidebar organizationSlug={organization.slug} />}
 			rootCrumb={{
 				label: organization.name,

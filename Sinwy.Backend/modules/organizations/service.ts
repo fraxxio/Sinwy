@@ -128,6 +128,8 @@ export const listOrganizations = async (
 			plan: hasPermission(roles, "settings:manage") ? plan : null,
 			features: featuresFor(plan),
 			isOwner: roles.includes("owner"),
+			paymentFailed:
+				roles.includes("owner") && row.ownerSubscriptionStatus === "past_due",
 			deletesAt: deletesAtOf(row.deletionScheduledAt),
 			onboardingCompletedAt: row.onboardingCompletedAt?.toISOString() ?? null,
 		};

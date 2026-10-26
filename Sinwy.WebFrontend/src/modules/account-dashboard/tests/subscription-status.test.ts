@@ -1,10 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import type {
 	AccountSubscriptionDto,
+	PendingPlanChangeDto,
 	PlanSlug,
 	SubscriptionBillingDto,
 } from "@sinwy/shared";
 import {
+	cancellationBlocker,
 	describeSubscription,
 	formatPrice,
 	suspensionBlocker,
@@ -30,7 +32,7 @@ const subscription = (
 	plan,
 	suspended: false,
 	organizationLimit: plan ? 2 : 0,
-	activeOrganizations: 1,
+	activeOrganizations: [{ id: "org-1", name: "Acme" }],
 	billing: { ...billing, ...overrides },
 	pendingChange: null,
 });
@@ -133,7 +135,7 @@ describe("describeSubscription", () => {
 		).toEqual({
 			label: "Cancels on Dec 1, 2026",
 			variant: "outline",
-			detail: "You keep access until then. Resume from the Polar portal.",
+			detail: "You keep access until then. Undo it below to keep it running.",
 		});
 	});
 
@@ -183,9 +185,15 @@ it("formats the price with its interval", () => {
 	);
 });
 
+const pendingChange: PendingPlanChangeDto = {
+	plan: "starter",
+	appliesAt: "2026-11-21T12:00:00Z",
+	deactivates: [],
+};
+
 describe("suspensionBlocker", () => {
 	it("lets an active subscription be suspended", () => {
-		expect(suspensionBlocker(billing)).toBeNull();
+		expect(suspensionBlocker(subscription())).toBeNull();
 	});
 
 	it.each([
@@ -194,10 +202,43 @@ describe("suspensionBlocker", () => {
 		["a pending cancellation", { cancelAtPeriodEnd: true }, "set to cancel"],
 		["an ended subscription", { subscriptionStatus: "canceled" }, "no active"],
 	] as const)("refuses %s", (_, overrides, reason) => {
-		expect(suspensionBlocker({ ...billing, ...overrides })).toContain(reason);
+		expect(suspensionBlocker(subscription(overrides))).toContain(reason);
+	});
+
+	it("refuses while a plan change is scheduled, since Polar would drop it", () => {
+		expect(suspensionBlocker({ ...subscription(), pendingChange })).toContain(
+			"plan change is scheduled",
+		);
 	});
 
 	it("refuses while billing details are unavailable", () => {
-		expect(suspensionBlocker(null)).toContain("unavailable");
+		expect(suspensionBlocker({ billing: null, pendingChange: null })).toContain(
+			"unavailable",
+		);
+	});
+});
+
+describe("cancellationBlocker", () => {
+	it.each([
+		"active",
+		"trialing",
+		"past_due",
+	] as const)("lets a %s subscription be canceled", (subscriptionStatus) => {
+		expect(
+			cancellationBlocker(subscription({ subscriptionStatus })),
+		).toBeNull();
+	});
+
+	it.each([
+		["a pending suspension", { pauseAtPeriodEnd: true }, "set to suspend"],
+		["an ended subscription", { subscriptionStatus: "canceled" }, "no active"],
+	] as const)("refuses %s", (_, overrides, reason) => {
+		expect(cancellationBlocker(subscription(overrides))).toContain(reason);
+	});
+
+	it("refuses while a plan change is scheduled", () => {
+		expect(cancellationBlocker({ ...subscription(), pendingChange })).toContain(
+			"plan change is scheduled",
+		);
 	});
 });

@@ -1186,3 +1186,96 @@ the job with the period end moved in the database) and check slots with
   `subscription.active`). An org that lost its slot before finishing setup
   reads "still a draft" (Phase 7 behaviour). Dialog prices are USD
   constants (already open).
+
+## Phase 9: Account-wide suspend, cancel and lapse
+
+**Goal:** suspend, resume and cancel act on the user's plan, and the owner
+sees which organizations go offline before confirming.
+
+**Files:** `Sinwy.Backend/modules/billing/{service,controller,routes}.ts`
+(`suspendAccountPlan`, `unsuspendAccountPlan`, `resumeAccountPlan` and their
+`/api/account/subscription/*` routes already act on the account through
+`runSubscriptionAction`; add cancel and undo there, and the affected orgs to
+`toSubscriptionDto`), `db/organizationAccess.ts` (`listHeldSlots`),
+`Sinwy.Shared/types/plan/Subscription.ts` (`AccountSubscriptionDto`). Web:
+`src/modules/account-dashboard/routes/_shell.billing.tsx`,
+`components/billing/{SuspendSection,ResumePanel,CurrentPlanSection}.tsx`,
+`lib/{billing-queries,subscription-status}.ts` (`describeSubscription`,
+`suspensionBlocker`), and the org shell's `AppShell` `banner` for past due.
+Tests: `modules/billing/tests/billing.test.ts`,
+`src/modules/account-dashboard/tests/subscription-status.test.ts`.
+
+Backend:
+- `POST /api/account/subscription/{suspend,unsuspend,resume}` with the Phase 2
+  refusals (trialing, past due, pending pause or cancel) and responses.
+- `GET /api/account/subscription` lists the orgs that would go offline.
+- Cancel at period end from the app (`cancel_at_period_end: true`) with
+  undo; the portal's cancel ends the same way.
+
+Frontend:
+- Suspend and Cancel dialogs list the organizations affected and the date
+  (D9). Past due shows a payment warning on Account → Billing and in each
+  owned org's `AppShell` banner for the owner.
+
+Tests that matter:
+- Each refusal; resume after a failed charge reports `past_due`.
+- Suspend and cancel take every owned org offline at period end; resume
+  restores the same slots (Default 8).
+
+Done when:
+- Suspend → period end (simulated) → all owned orgs locked out → resume →
+  the same orgs active. Cancel with undo. Checked in the running app,
+  including a staff member's view of a suspended org.
+
+**Verify:** real sandbox subscription with two active orgs. Suspend in the
+browser, simulate `subscription.paused`, check both orgs locked for owner and
+staff, resume (real Polar call), check `active`. Cancel, undo, then cancel
+and simulate `subscription.canceled`/`revoked`.
+
+### Log (2026-10-26, `feat(backend, web): suspend and cancel the account plan with the organizations affected and a past-due warning`)
+- Shipped: `POST /api/account/subscription/{cancel,uncancel}`
+  (`cancel_at_period_end` true/false through `runSubscriptionAction`, same
+  re-read-and-explain refusals as suspend). `activeOrganizations` in the
+  subscription DTO is now the list of held slots. Account → Billing: one
+  `PlanEndSection` for Suspend and Cancel, whose dialogs list the
+  organizations that go offline and the date, with Undo once scheduled;
+  a past-due notice with a portal button. Org shell: an owner-only
+  past-due banner from the new `OrganizationSummary.paymentFailed`. Copy
+  that sent a cancelling owner to the Polar portal now points to Undo.
+- Differs from plan:
+  - Suspend and cancel refuse while a downgrade is pending (new code
+    `PLAN_CHANGE_PENDING`), and the UI disables both with the reason.
+    Polar drops `pending_update` on any update, so either would have
+    silently discarded the downgrade (a resume would then charge the
+    higher tier). The plan change already refused the other way round.
+  - Cancel is allowed while trialing or past due; it is refused while
+    paused (resume first, or delete the account).
+  - The suspend/resume routes and their refusals already existed from
+    Phase 6; this phase added the cases above and the two-org tests
+    (suspend and cancel take both orgs offline at period end, slots kept;
+    resume brings back the same ones).
+  - Fixed from the e2e report: the slot summary on Account → Organizations
+    offered "Choose a plan" to a suspended owner; it now says "Resume plan".
+- Checked in the running app (subagent, real sandbox, subscription
+  `113bbe7f-7f57-4841-8ca2-8787336a60d9`, owner
+  `webdevrokas+seed-97fabf21-owner@gmail.com`, staff `…-staff1@…`): real
+  Professional checkout, two active orgs. Suspend dialog listed both and
+  Nov 26; Polar `pause_at_period_end`; Cancel and Change plan disabled
+  meanwhile. Period end for real (PATCH a minute ahead): Polar paused, the
+  Billing load projected it, both orgs locked for the owner (redirect to
+  Account → Organizations, "Suspended") and for staff ("This organization
+  is suspended" dialog, switcher entry disabled), slots kept. Resume (real
+  charge) → the same two orgs active for owner and staff. Cancel → Undo in
+  Polar both ways; downgrade pending → Suspend and Cancel disabled and 409
+  40917; cancel/suspend while the other is pending → 4095/4097. Cancel
+  again, real period end: Polar `canceled`, plan null, both slots kept,
+  "Choose a plan", owner and staff locked out. Simulated `paused` and
+  `revoked` on top applied the same state. Past due (DB-only): banner for
+  the owner on both dashboards, none for staff. No backend warnings, only
+  known console noise. Not checked: the Billing page's past-due notice
+  (needs a real failed charge; it reads Polar's live status), real webhook
+  delivery, the resume's `subscription_cycle` order.
+- Open from the run: Resume charges on one click without a confirm; the
+  "Choose a plan" intro is singular; the Change plan dialog's USD prices
+  (already open); `page.ts` can't target named sessions and the simulator
+  has no `past_due` fixture (toolkit).

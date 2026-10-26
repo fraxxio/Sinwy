@@ -58,8 +58,8 @@ export type AccountSubscriptionDto = {
 	suspended: boolean;
 	/** Organizations the plan keeps active at once; 0 without a plan. */
 	organizationLimit: number;
-	/** Owned organizations holding a slot, not scheduled for deletion. */
-	activeOrganizations: number;
+	/** Owned organizations holding a slot, not scheduled for deletion: the ones suspend, cancel or a lapse take offline. */
+	activeOrganizations: { id: string; name: string }[];
 	/** null when there is no subscription or Polar could not be reached. */
 	billing: SubscriptionBillingDto | null;
 	/** null when no downgrade is scheduled, or Polar could not be reached. */

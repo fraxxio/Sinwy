@@ -19,6 +19,7 @@ const org = (
 	plan: null,
 	features: [],
 	isOwner: true,
+	paymentFailed: false,
 	deletesAt: null,
 	onboardingCompletedAt: null,
 	...overrides,

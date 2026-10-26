@@ -53,10 +53,11 @@ export function CurrentPlanSection({
 	// Polar refuses plan changes on a subscription that is canceled or set to
 	// cancel; the backend refuses one set to suspend
 	const suspending = data?.billing?.pauseAtPeriodEnd === true;
+	const canceling = data?.billing?.cancelAtPeriodEnd === true;
 	const canChangePlan =
 		plan !== null &&
 		!suspending &&
-		!data?.billing?.cancelAtPeriodEnd &&
+		!canceling &&
 		data?.billing?.subscriptionStatus !== "canceled";
 	const cannotChangeReason = !data
 		? null
@@ -64,9 +65,11 @@ export function CurrentPlanSection({
 			? "There's no current plan to change from."
 			: suspending
 				? "Your plan is set to suspend. Undo that first."
-				: !canChangePlan
-					? "The subscription is canceled or set to cancel. Resume it from the Polar portal first."
-					: null;
+				: canceling
+					? "Your plan is set to cancel. Undo that first."
+					: !canChangePlan
+						? "The subscription is canceled."
+						: null;
 
 	// a deep link (e.g. from an upgrade prompt) asked for the dialog it can't open
 	useEffect(() => {
@@ -141,8 +144,8 @@ function PlanSummary({
 			{billing && <p className="text-sm">{formatPrice(billing)}</p>}
 			{plan && (
 				<p className="text-sm">
-					{subscription.activeOrganizations} of {subscription.organizationLimit}{" "}
-					organizations active.{" "}
+					{subscription.activeOrganizations.length} of{" "}
+					{subscription.organizationLimit} organizations active.{" "}
 					<Link
 						to="/account/organizations"
 						className="underline underline-offset-4"

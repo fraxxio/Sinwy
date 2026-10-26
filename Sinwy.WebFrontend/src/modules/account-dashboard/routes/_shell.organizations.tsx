@@ -121,7 +121,7 @@ function SlotUsage({ subscription }: { subscription: AccountSubscriptionDto }) {
 	const text = subscription.suspended
 		? "Your plan is suspended, so none of your organizations are online."
 		: subscription.plan
-			? `${subscription.activeOrganizations} of ${subscription.organizationLimit} organizations active on your ${getPlanName(subscription.plan)} plan.`
+			? `${subscription.activeOrganizations.length} of ${subscription.organizationLimit} organizations active on your ${getPlanName(subscription.plan)} plan.`
 			: "You have no plan, so none of your organizations are active.";
 
 	return (
@@ -133,7 +133,11 @@ function SlotUsage({ subscription }: { subscription: AccountSubscriptionDto }) {
 				nativeButton={false}
 				render={<Link to="/account/billing" />}
 			>
-				{subscription.plan ? "Manage plan" : "Choose a plan"}
+				{subscription.suspended
+					? "Resume plan"
+					: subscription.plan
+						? "Manage plan"
+						: "Choose a plan"}
 			</Button>
 		</div>
 	);
