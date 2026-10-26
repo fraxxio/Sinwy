@@ -157,10 +157,10 @@ Polar sandbox (log: Phase 2):
   `cancel_at_period_end: true` replaces a pending pause.
 - `allow_multiple_subscriptions` is **false** in the sandbox org (`sinwydev`)
   and stays off (D1). Production is a separate Polar org; check it there too.
-- Portal plan switching (D6) is still on in the sandbox
-  (`customer_portal_settings.subscription.update_plan: true`). The API has
-  no organization update; the user turns it off in the dashboard, in
-  sandbox and production (log: Phase 8).
+- Portal plan switching (D6) and pause are off in the sandbox
+  (`customer_portal_settings.subscription.update_plan` / `pause: false`;
+  dashboard: "Enable subscription plan changes"). The API can't change org
+  settings; production needs the same switch in its dashboard (log: Phase 8).
 - A plan change can be scheduled: `proration_behavior: "next_period"` sets
   `pending_update`, any later update discards it, `pending_update: null`
   clears it. To reach a period end in e2e, PATCH `current_billing_period_end`
