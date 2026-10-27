@@ -123,3 +123,54 @@ Finished phases of [polar-webhook-events-plan.md](polar-webhook-events-plan.md).
   - Backend log (pasted by the user): "Plan taken from Polar after a missed webhook" at 17:05:33.486, two "Subscription for an unknown user" warnings (status `canceled`) at 17:07:18.5 and 17:07:19.5, and no errors. The 17:04:12 Billing loads after the `plan`-only clear log "Ignored subscription state not newer than the applied one".
   - Not checked: real Resend delivery of the verification and deletion emails (console driver).
   - Seen on the way: Base UI logs a `nativeButton` console warning 191× on `/auth/goodbye`, because `goodbye.tsx` lines 43 and 63 render a `Link` through `Button` without `nativeButton={false}`. It is outside this plan.
+
+## Phase 4: Real pause and resume, paused/resumed fixtures
+
+**Goal:** A real pause makes the owner's orgs inactive and a real resume makes them active again. The simulator supports `subscription.resumed` from a captured fixture.
+
+**Files:**
+- `Sinwy.Backend/scripts/dev/simulatePolarWebhook.ts`: `polarFixtures` (line 12), the `as` option (line 34, drop `"subscription.resumed"` once the fixture exists) and `SENT_AFTER_AN_UPDATE` (line 38)
+- `Sinwy.Backend/scripts/dev/fixtures/polar/subscription.paused.json` (replace) and `subscription.resumed.json` (new), written by `bun run dev:capture-polar-fixture --type <type>`
+- `Sinwy.Backend/scripts/dev/tests/simulatePolarWebhook.test.ts`: the paused and resumed tests (lines 121–196) that send the active fixture `as: "subscription.resumed"`
+- `.agents/skills/e2e-test/references/simulate-polar-webhook.md`: the usage line (line 4), the two-delivery note (line 10), the derived-fixture note (line 17) and the recipe table (line 31)
+- `Sinwy.Backend/modules/billing/service.ts`: `RESUME` (line 503), which the Billing Resume button runs
+- Polar sandbox subscription `fb855687-…` (Standing notes), through the MCP `execute`
+
+**Steps:**
+- Run after the PATCHed period end (2026-10-27 17:43:42 UTC, Standing notes).
+- If the tunnel was down when the pause took effect, redeliver the `updated` and `paused` events once it's up. Capture works from the failed deliveries.
+- Resume in the app (Account → Billing → Resume), which charges the test card. Then capture `subscription.paused` and `subscription.resumed`.
+- The simulator sends `subscription.resumed` the way it sends `subscription.paused`: a `subscription.updated` first, with the same data.
+
+**Tests that matter:**
+- Simulated `subscription.resumed` restores the plan on the bound subscription.
+- An older `subscription.paused` sent after it changes nothing.
+
+**Done when:**
+- Real deliveries of `updated` + `paused` and `updated` + `resumed` + `order.created` all got 200, and the DB followed them.
+- Both fixtures are captured at 2026-10, with no `source: derived` left, and `bun run verify` passes.
+
+**Verify:** Real sandbox and a real tunnel. Start from the user whose pause was scheduled in phase 3.
+1. **Pause:** after the period end, `user_subscription` shows `status=paused`, `plan` null and `subscription_id` still set. The user's orgs are `inactive` and keep their slots, and Billing shows the plan as suspended.
+2. **Resume:** click Resume. Polar charges, the three deliveries get 200, the plan returns, the orgs are `active`, and Billing shows the active plan.
+
+Then, simulated: `--type subscription.resumed` on a seeded paused user gives the same end state.
+
+### Log (2026-10-27, `feat(tooling): capture the Polar paused and resumed fixtures from a real sandbox pause and resume`)
+- Shipped:
+  - `subscription.paused.json` re-captured from the real delivery (event `910b1874-…`) and `subscription.resumed.json` captured (event `5ef3b8ae-…`), both at 2026-10. No `source: derived` is left.
+  - The simulator's fixtures include `subscription.resumed`, sent after a `subscription.updated` like `paused`. The `as: "subscription.resumed"` option is gone.
+  - The tests send the real resumed fixture, alone and as Polar sends it. The older-paused-after-resume test now asserts the full state.
+  - The e2e skill's simulator reference is updated: usage, the two-delivery note and the resume recipe.
+- Differs from plan:
+  - Done-when expected three resume deliveries. Only `subscription.updated` and `subscription.resumed` arrive: `order.created` isn't on the endpoints' event list, which is what the Decisions want (five events). It isn't a missing delivery.
+  - The user owned no orgs. So org `c87f9887-…` (`phase4-pause`) was created for them through the API after the pause, and its `slot_held_at` was set by hand to stand for a slot held before it. It read `inactive` while paused and `active` after the resume.
+  - The subagent ran only the real part of Verify. The simulated line ran inline after the code change, because the Resume click can't be repeated and the resumed fixture came out of it.
+- Checked in the running app (real sandbox, ngrok, backend and frontend started by the agent):
+  - Pause: the PATCHed period end (17:43:42Z) applied at once. `subscription.updated` (17:43:43.7) and `subscription.paused` (17:43:44.8) both got 200. The first projected `paused`, `plan` null, `subscription_id` kept, and the second was `outdated`.
+    - The 17:40 PATCH's `subscription.updated` had failed with 404/400 while the backend was down. It succeeded on retry at 17:43:21 and projected `active`.
+  - Billing showed "Resume your plan / €9.00 / month" ("Your plan is suspended, so every organization you own is offline"), and Account → Organizations showed the org as Suspended.
+  - Resume (subagent, e2e skill) at 17:47:02Z: "Subscription resume applied" projected `active`, `plan=starter` from Polar's answer. `subscription.updated` (17:47:04.0) and `subscription.resumed` (17:47:05.1) got 200 and were both `outdated`.
+    - The org read `active`, and Billing showed "Starter, Active, 1 of 1 organizations active, Renews on Nov 27, 2026". No WARN/ERROR in the backend log.
+  - Simulated, on seeded owner `8pXzMUSTSr15GMic6mADLWeVy2N2dKt3` (subscription `500c251b-…`, org `d4ab104b-…`): `--type subscription.paused`, then `--type subscription.resumed --plan starter`. Every delivery got 200. The states were paused/inactive, then active/starter/bound/`active` with the slot kept, the same end state as the real run.
+  - Charge: Polar created the resume order `SINWYDEV-WSOEARWQFZ-0002` (`subscription_cycle`, €9.00) at 18:02:03Z, 15 min after the resume. It was `pending`, then `paid` within about 10 s, and Billing's invoice list shows it.

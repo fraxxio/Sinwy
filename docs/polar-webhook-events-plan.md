@@ -11,7 +11,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 1 | Paused and resumed handlers | – | done | `feat(backend): project Polar subscription paused and resumed webhooks on their own` |
 | 2 | Webhook endpoint configuration | 1 | done | `docs: enable the Polar sandbox webhook for the five handled events` |
 | 3 | Real-delivery pass and fixture recapture | 2 | done | `feat(tooling): re-record the Polar webhook fixtures from real 2026-10 sandbox deliveries` |
-| 4 | Real pause and resume, paused/resumed fixtures | 3, and the scheduled pause taking effect | todo | |
+| 4 | Real pause and resume, paused/resumed fixtures | 3, and the scheduled pause taking effect | done | `feat(tooling): capture the Polar paused and resumed fixtures from a real sandbox pause and resume` |
 | 5 | Code review | 4 | todo | |
 
 ## Decisions
@@ -49,55 +49,20 @@ Settled with the product owner. Ask before changing any of them.
 - Pause and resume in Polar:
   - The API can only pause at the period end (`pause_at_period_end`, optional `resumes_at`). `resume: true` resumes at once, starting a new period and charging for it.
   - There is no immediate pause anywhere, the dashboard included (the user checked the docs in phase 2).
-  - The e2e skill records a shortcut: PATCH the subscription's `current_billing_period_end` a minute ahead and Polar applies the period end within seconds. Phase 4 could use it instead of waiting for 2026-11-25; ask the user first.
-  - Pausing sends `subscription.updated`, then `subscription.paused`. Resuming sends `subscription.updated`, `subscription.resumed` and `order.created`.
+  - The e2e skill records a shortcut: PATCH the subscription's `current_billing_period_end` a minute ahead and Polar applies the period end within seconds. Phase 4 used it: the pause landed about 1 s after the PATCHed time.
+  - Pausing sends `subscription.updated`, then `subscription.paused`. Resuming sends `subscription.updated`, then `subscription.resumed` (both about 1 s apart). Polar also emits `order.created` on resume, but the endpoints don't subscribe to it, so it is never delivered (phase 4 log).
   - The app's Suspend (`SUSPEND` in `Sinwy.Backend/modules/billing/service.ts`) schedules `pause_at_period_end`.
-- Sandbox subscriptions since phase 3: 5 active, all belonging to local users.
-  - The phase 4 pause is scheduled: user `J7NGTd1scSZ6jRJ0h3ym6vWn94fDbc9X` (`webdevrokas+seed-ff222823-user@gmail.com`), subscription `fb855687-b03c-43f5-b714-800fb113d778`, `pause_at_period_end=true`, period end 2026-11-25 21:09 UTC. `user_subscription` records no scheduled pause; Billing reads it from Polar.
-- Suspend writes `user_subscription` from Polar's answer before the delivery lands, and the delivery is then `outdated` (a debug line, no change); expect the same of Resume. At checkout the `active` event has `modified_at: null`, so it is ordered by `created_at`, and Polar's extra `subscription.updated` right after projects again (phase 3 log).
+- Sandbox subscriptions since phase 4: 5 active, all belonging to local users. `fb855687-…` (user `J7NGTd1scSZ6jRJ0h3ym6vWn94fDbc9X`) was paused and resumed in phase 4 and now runs to 2026-11-27.
+- Suspend and Resume write `user_subscription` from Polar's answer before the deliveries land, and the deliveries are then `outdated` (a debug line, no change). At checkout the `active` event has `modified_at: null`, so it is ordered by `created_at`, and Polar's extra `subscription.updated` right after projects again (phase 3 log).
 - The reconcile heals only when the stored `subscription_status_at` is older than Polar's `modified_at`. Clearing `plan` alone isn't healed, and Billing then offers a checkout to a paying user (phase 3 log; for phase 5).
 - The real checkout works without the user: the subagent typed the 4242 card through the e2e skill's Stripe iframe recipe.
 - All five events are wired to `applySubscriptionEvent` (phase 1). An event whose `modified_at` equals the applied one is `outdated`, so Polar's update + paused/resumed pair projects once.
-- Until phase 4 records a resumed fixture, tests send `subscription.resumed` as the active fixture with `as: "subscription.resumed"` on `buildPolarDelivery`. The CLI has no way to send `subscription.paused` without its preceding update (see the phase 1 log).
+- With the tunnel up and the backend down, Polar's deliveries got 404 and then 400, and its retries (about 5 s, 15 s, 40 s, 45 s apart) succeeded once the backend was up (phase 4 log).
 - Fixtures (`Sinwy.Backend/scripts/dev/fixtures/polar/`):
-  - `active`, `updated` and `revoked` were captured at `apiVersion: 2026-10` in phase 3. Their shape matches 2026-04 except that `data.metadata.referenceId` is gone.
-  - `subscription.paused.json` is still at 2026-04 and derived, not captured (its `source` says so).
+  - All five are captured from real deliveries at `apiVersion: 2026-10`: `active`, `updated` and `revoked` in phase 3, `paused` and `resumed` in phase 4.
+  - The simulator sends `paused` and `resumed` as Polar does, each after a `subscription.updated` with the same data.
   - `subscription.updated.json` is a cancellation (status `canceled`), and the simulator tests rely on that.
   - `capturePolarFixture` takes the newest delivery of the type (any endpoint, failed ones included), so capture `subscription.updated` right after a revoke.
-
----
-
-## Phase 4: Real pause and resume, paused/resumed fixtures
-
-**Goal:** A real pause makes the owner's orgs inactive and a real resume makes them active again. The simulator supports `subscription.resumed` from a captured fixture.
-
-**Files:**
-- `Sinwy.Backend/scripts/dev/simulatePolarWebhook.ts`: `polarFixtures` (line 12), the `as` option (line 34, drop `"subscription.resumed"` once the fixture exists) and `SENT_AFTER_AN_UPDATE` (line 38)
-- `Sinwy.Backend/scripts/dev/fixtures/polar/subscription.paused.json` (replace) and `subscription.resumed.json` (new), written by `bun run dev:capture-polar-fixture --type <type>`
-- `Sinwy.Backend/scripts/dev/tests/simulatePolarWebhook.test.ts`: the paused and resumed tests (lines 121–196) that send the active fixture `as: "subscription.resumed"`
-- `.agents/skills/e2e-test/references/simulate-polar-webhook.md`: the usage line (line 4), the two-delivery note (line 10), the derived-fixture note (line 17) and the recipe table (line 31)
-- `Sinwy.Backend/modules/billing/service.ts`: `RESUME` (line 503), which the Billing Resume button runs
-- Polar sandbox subscription `fb855687-…` (Standing notes), through the MCP `execute`
-
-**Steps:**
-- Run on or after the scheduled period end (2026-11-25 21:09 UTC), or straight after phase 3 if an immediate pause exists.
-- If the tunnel was down when the pause took effect, redeliver the `updated` and `paused` events once it's up. Capture works from the failed deliveries.
-- Resume in the app (Account → Billing → Resume), which charges the test card. Then capture `subscription.paused` and `subscription.resumed`.
-- The simulator sends `subscription.resumed` the way it sends `subscription.paused`: a `subscription.updated` first, with the same data.
-
-**Tests that matter:**
-- Simulated `subscription.resumed` restores the plan on the bound subscription.
-- An older `subscription.paused` sent after it changes nothing.
-
-**Done when:**
-- Real deliveries of `updated` + `paused` and `updated` + `resumed` + `order.created` all got 200, and the DB followed them.
-- Both fixtures are captured at 2026-10, with no `source: derived` left, and `bun run verify` passes.
-
-**Verify:** Real sandbox and a real tunnel. Start from the user whose pause was scheduled in phase 3.
-1. **Pause:** after the period end, `user_subscription` shows `status=paused`, `plan` null and `subscription_id` still set. The user's orgs are `inactive` and keep their slots, and Billing shows the plan as suspended.
-2. **Resume:** click Resume. Polar charges, the three deliveries get 200, the plan returns, the orgs are `active`, and Billing shows the active plan.
-
-Then, simulated: `--type subscription.resumed` on a seeded paused user gives the same end state.
 
 ---
 
@@ -105,7 +70,13 @@ Then, simulated: `--type subscription.resumed` on a seeded paused user gives the
 
 **Goal:** The webhook handler change and the fixture-driven test changes have been reviewed for money and access regressions.
 
-**Files:** The diffs of phases 1–4. `Sinwy.Backend/modules/auth/auth.ts` `webhooks(...)`; `Sinwy.Backend/modules/billing/projection.ts`.
+**Files:**
+- The diffs of phases 1–4: `git diff 301d1db..HEAD -- Sinwy.Backend .agents`
+- `Sinwy.Backend/modules/auth/auth.ts`: `webhooks({...})` (line 334), the five handlers
+- `Sinwy.Backend/modules/billing/projection.ts`: `applySubscriptionEvent` (line 204), `reconcileUserPlan` (line 240)
+- `Sinwy.Backend/modules/billing/repository.ts`: `writeUserSubscription` (line 110), the `outdated` check behind the reconcile gap
+- `Sinwy.Backend/modules/billing/service.ts`: `SUSPEND` (line 457), `UNSUSPEND` (474), `RESUME` (503), which project Polar's answer before the webhook
+- `docs/org-rules-map.md`: §8 Suspend, resume… (line 266) and §12 Polar's part (line 454)
 
 **Steps:**
 - Check that no new path can grant access to a paused subscription, or take it from an entitled one, through reordered or redelivered events.
