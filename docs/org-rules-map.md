@@ -421,7 +421,9 @@ Owner account deletion (confirmed from an emailed link, D13)
    └─ Polar refuses → nothing changes; the goodbye page shows the error
 → every owned organization → Scheduled for deletion: its slot freed, pending
   invitations and open transfers canceled, out of every open session
-→ the Polar customer is deleted and anonymized (Default 2)
+→ the Polar customer is deleted and anonymized (Default 2); it keeps the
+  deleted user's id as its external id, which no new user gets, so its late
+  webhooks are ignored as an unknown user
 A member who isn't an owner deleting their account leaves the organizations
 untouched; their memberships and the offers to them go with them.
 
@@ -461,13 +463,23 @@ The app holds: which plan each user is on, slots, organizations and roles,
 transfers, and the organizations a downgrade deactivates.
 
 Polar is the source of truth for the plan
-├─ its webhooks (subscription active, updated, revoked) set the user's plan
+├─ its webhooks (subscription active, updated, revoked, paused, resumed) set
+│  the user's plan
 ├─ a repeated or older delivery never overrides newer state
 ├─ the app also asks Polar, to heal a missed webhook: on every Billing page
 │  load, before a checkout, before each plan action, on the checkout success
 │  page, and when an organization holding a slot looks lapsed
 │   └─ a failed lookup never takes a plan away
 └─ a product that maps to no tier → no plan, organizations inactive, logged
+
+Polar webhook endpoint (sandbox and production)
+├─ events: subscription active, updated, revoked, paused, resumed; all five
+│  are handled, nothing else is subscribed
+├─ API version 2026-10, format raw: the Better Auth plugin parses deliveries
+│  with 2026-10 models, so move only once it does
+└─ sandbox: points at the developer's ngrok tunnel and stays enabled;
+   deliveries land only while `bun run start:localproxy` runs, and Polar
+   disables the endpoint after 10 failed deliveries in a row → re-enable it
 
 Polar settings (dashboard only; the API can't change them)
 ├─ "Allow multiple subscriptions": off (D1)
@@ -575,6 +587,10 @@ Open, product or copy:
   `RECIPIENT_NEEDS_PLAN`, `ORGANIZATION_SUSPENDED`, 410, 404); the owner's
   own delete of an inactive organization; the purge repair leaving an
   organization without its slot; the account deletion copy.
+- The missed-webhook check takes Polar's state only when it is newer than the
+  stored one, so a plan cleared by hand while the stored time stays current
+  isn't healed: Billing offers a checkout, which the checkout guard refuses
+  [12].
 - Not checked in the running app: transfer completion through a real
-  webhook delivery (the sandbox endpoint is disabled), the Billing page's
-  past-due notice after a real failed charge.
+  webhook delivery, the Billing page's past-due notice after a real failed
+  charge.

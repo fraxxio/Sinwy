@@ -53,7 +53,7 @@ Checked before; don't investigate them again.
 - Suspend, undo and resume need a real sandbox subscription; a seeded or simulated one answers 422.
 - A pause at period end only takes effect at the period end. To get there, set the subscription's `current_billing_period_end` to a couple of minutes from now through the Polar API, then simulate the period-end webhooks with the real subscription id.
 - Resume answers `active` with a new period at once; Polar charges asynchronously and the paid `subscription_cycle` order arrives 15 minutes later. A failed charge arrives later as a `past_due` webhook.
-- The sandbox webhook endpoint is disabled, so real deliveries don't reach the app; simulate them.
+- The sandbox webhook endpoint is enabled and points at the user's ngrok tunnel, so real deliveries reach the app only while `bun run start:localproxy` runs; otherwise simulate them. Real sandbox actions with the tunnel down make failed deliveries, and after 10 in a row Polar disables the endpoint: ask the user to re-enable it.
 - To reach a period end (renewal, pause, cancel, a scheduled downgrade), PATCH `current_billing_period_end` a minute ahead; Polar applies it within seconds, and a load of Account → Billing projects the new state without a webhook.
 - Portal plan switching and pause are off in the sandbox; the portal always allows cancel at period end.
 - An out-of-band plan change is simulated as `subscription.active --plan <slug>` (the `subscription.updated` fixture is a cancellation). There is no `past_due` fixture: set `user_subscription.status` with `psql service=sinwy_rw`.

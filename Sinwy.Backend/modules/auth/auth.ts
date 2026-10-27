@@ -333,12 +333,14 @@ export const auth = betterAuth({
 				}),
 				webhooks({
 					secret: appConfig.POLAR_WEBHOOK_SECRET,
-					// `updated` fires on every change (plan change, cancel, renewal);
-					// all events converge on the same projection. Wrapped because
+					// `updated` fires on every change (plan change, cancel, renewal, pause,
+					// resume); all events converge on the same projection. Wrapped because
 					// billing's routes import auth: a bare reference is read mid-cycle.
 					onSubscriptionUpdated: (event) => applySubscriptionEvent(event),
 					onSubscriptionActive: (event) => applySubscriptionEvent(event),
 					onSubscriptionRevoked: (event) => applySubscriptionEvent(event),
+					onSubscriptionPaused: (event) => applySubscriptionEvent(event),
+					onSubscriptionResumed: (event) => applySubscriptionEvent(event),
 				}),
 			],
 		}),

@@ -11,7 +11,8 @@
 			"**",
 			"!**/routeTree.gen.ts",
 			"!**/drizzle/meta",
-			"!**/components.json"
+			"!**/components.json",
+			"!**/.claude/settings.local.json"
 		]
 	},
 	"formatter": {

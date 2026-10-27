@@ -6,6 +6,7 @@ import { Webhook } from "standardwebhooks";
 import { assertLocalDev } from "../assertLocalDev";
 import subscriptionActive from "./fixtures/polar/subscription.active.json";
 import subscriptionPaused from "./fixtures/polar/subscription.paused.json";
+import subscriptionResumed from "./fixtures/polar/subscription.resumed.json";
 import subscriptionRevoked from "./fixtures/polar/subscription.revoked.json";
 import subscriptionUpdated from "./fixtures/polar/subscription.updated.json";
 
@@ -14,6 +15,7 @@ export const polarFixtures = {
 	"subscription.updated": subscriptionUpdated,
 	"subscription.revoked": subscriptionRevoked,
 	"subscription.paused": subscriptionPaused,
+	"subscription.resumed": subscriptionResumed,
 };
 export type PolarEventType = keyof typeof polarFixtures;
 
@@ -35,7 +37,10 @@ export type PolarDeliveryOptions = {
 };
 
 // Polar sends these right after a subscription.updated with the same data
-const SENT_AFTER_AN_UPDATE: readonly PolarEventType[] = ["subscription.paused"];
+const SENT_AFTER_AN_UPDATE: readonly PolarEventType[] = [
+	"subscription.paused",
+	"subscription.resumed",
+];
 
 /**
  * A recorded sandbox event with only the ids, the customer's `external_id`,

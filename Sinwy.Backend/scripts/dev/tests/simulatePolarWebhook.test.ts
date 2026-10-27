@@ -118,7 +118,7 @@ test("subscription.updated through the endpoint applies to the bound subscriptio
 	});
 });
 
-test("subscription.paused alone → 200, ignored: the subscription.updated Polar sends with it projects", async () => {
+test("subscription.paused alone → plan paused, still bound, without the subscription.updated Polar sends first", async () => {
 	const subscriptionId = crypto.randomUUID();
 	await send("subscription.active", {
 		subscriptionId,
@@ -128,7 +128,74 @@ test("subscription.paused alone → 200, ignored: the subscription.updated Polar
 	expect(await send("subscription.paused", { subscriptionId })).toMatchObject({
 		status: 200,
 	});
-	expect(await storedPlan()).toBe("enterprise");
+	expect(await storedState()).toEqual({
+		status: "paused",
+		plan: null,
+		subscriptionId,
+	});
+});
+
+test("subscription.resumed alone → the plan is back on the bound subscription", async () => {
+	const subscriptionId = crypto.randomUUID();
+	await send("subscription.paused", {
+		subscriptionId,
+		timestamp: new Date(Date.now() - 60_000),
+	});
+
+	expect(await send("subscription.resumed", { subscriptionId })).toMatchObject({
+		status: 200,
+	});
+	expect(await storedState()).toEqual({
+		status: "active",
+		plan: "enterprise",
+		subscriptionId,
+	});
+});
+
+test("subscription.resumed as Polar sends it, after a subscription.updated → the plan is back", async () => {
+	const subscriptionId = crypto.randomUUID();
+	await send("subscription.paused", {
+		subscriptionId,
+		timestamp: new Date(Date.now() - 60_000),
+	});
+
+	const deliveries = buildPolarDeliveries({
+		type: "subscription.resumed",
+		userId,
+		subscriptionId,
+		plan: "starter",
+	});
+	expect(deliveries.map((delivery) => delivery.type)).toEqual([
+		"subscription.updated",
+		"subscription.resumed",
+	]);
+	for (const delivery of deliveries)
+		expect((await sendPolarDelivery(base, delivery)).status).toBe(200);
+
+	expect(await storedState()).toEqual({
+		status: "active",
+		plan: "starter",
+		subscriptionId,
+	});
+});
+
+test("an older subscription.paused redelivered after the resume → plan kept", async () => {
+	const subscriptionId = crypto.randomUUID();
+	const paused = buildPolarDelivery({
+		type: "subscription.paused",
+		userId,
+		subscriptionId,
+		timestamp: new Date(Date.now() - 60_000),
+	});
+	expect((await sendPolarDelivery(base, paused)).status).toBe(200);
+	await send("subscription.resumed", { subscriptionId });
+
+	expect((await sendPolarDelivery(base, paused)).status).toBe(200);
+	expect(await storedState()).toEqual({
+		status: "active",
+		plan: "enterprise",
+		subscriptionId,
+	});
 });
 
 test("subscription.paused as Polar sends it, after a subscription.updated → plan paused, still bound", async () => {
