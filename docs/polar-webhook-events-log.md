@@ -73,3 +73,53 @@ Finished phases of [polar-webhook-events-plan.md](polar-webhook-events-plan.md).
 - Production: the user confirmed the endpoint with the five events at 2026-10, Raw, enabled, its secret matching production's `POLAR_WEBHOOK_SECRET`, and portal pause and plan switching off.
 - Differs from plan: the tunnel domain is the user's ngrok domain, not `sinwydev.dev`. No immediate pause exists (the user checked the docs), so the phase 4 pause still waits for a period end. `biome.json` now excludes `**/.claude/settings.local.json`: the user's new allow rule for the Polar MCP put that file in Biome's scope (Biome reads only the repo `.gitignore`, the file is ignored globally) and broke `bun run verify`. The first revoke attempt was blocked by the auto-mode classifier until the user added that rule.
 - Checked in the running app: with the user's backend and ngrok running, Polar redelivered `subscription.revoked` event `9f503deb-…` (an unknown user); delivery `aad0dafc-…` got 200 `{"received":true}` within about 3 s, ngrok logged the same, and no `user` or `user_subscription` row changed. Not checked: the backend log of that request (the user started the backend without a log file the agent could read), and a real delivery for a local user (phase 3).
+
+## Phase 3: Real-delivery pass and fixture recapture
+
+**Goal:** These flows are confirmed against real sandbox deliveries: sign-up, checkout, portal, account deletion and the reconcile. The `active`, `updated` and `revoked` fixtures are re-recorded at 2026-10, and a pause is scheduled for phase 4.
+
+**Files:**
+- `Sinwy.Backend/scripts/dev/capturePolarFixture.ts` and its test `scripts/dev/tests/capturePolarFixture.test.ts`
+- `Sinwy.Backend/scripts/dev/fixtures/polar/subscription.{active,updated,revoked}.json`
+- `Sinwy.Backend/scripts/dev/simulatePolarWebhook.ts` (`buildPolarDelivery` overrides ids, product, `modified_at`, customer `external_id` and metadata; anything else comes from the fixture) and `scripts/dev/tests/simulatePolarWebhook.test.ts`
+- `Sinwy.Backend/modules/billing/projection.ts`: `reconcileUserPlan` (line 240, logs "Plan taken from Polar after a missed webhook")
+- `Sinwy.Backend/modules/billing/service.ts`: `revokeAccountSubscriptions`, `SUSPEND` (line 457)
+- Polar sandbox through the MCP `execute` (the user allowed it in `.claude/settings.local.json`): deliveries, customers, subscriptions
+
+**Steps:**
+- This phase needs the user: the tunnel must run for the whole session, and the checkout uses Polar's sandbox test card.
+- Order matters for capture. Do the checkout first and capture `subscription.active`. Do the account deletion last, then capture `subscription.updated` and `subscription.revoked` at once (see Standing notes).
+- Check the reconcile with real Polar: clear `plan` on a user with a live sandbox subscription through `sinwy_rw`, then load Account → Billing.
+- Schedule the phase 4 pause: in the app, log in as the user from Standing notes (period end 2026-11-25) and Suspend. Skip this if phase 2 found an immediate pause.
+- Diff the new fixtures against the old ones. Adjust the simulator or tests only where the 2026-10 shape changed a field they rely on. Record the notable shape differences in the log.
+
+**Tests that matter:**
+- The simulator suite passes on the re-recorded fixtures, especially the `updated` = cancellation expectations and the signature tests.
+
+**Done when:**
+- Each flow below gave the expected DB state with 200 deliveries.
+- The three fixtures show `apiVersion: 2026-10`, the pause is scheduled, and `bun run verify` passes.
+
+**Verify:** Real sandbox and a real tunnel; nothing is simulated.
+1. **Sign-up:** create an account in the app. A Polar customer appears with `external_id` = the user id.
+2. **Checkout:** buy a plan from Account → Billing. `subscription.active` is delivered with 200, `user_subscription` gets `plan` and `subscription_id`, and the org is `active`.
+3. **Portal:** "Manage in Polar" opens the sandbox portal and returns to `/auth/postlogin`.
+4. **Reconcile:** set `plan` to null via `sinwy_rw`, then load Billing. The plan is restored, and the log shows "Plan taken from Polar after a missed webhook".
+5. **Account deletion:** delete the account. The subscription is revoked in Polar, the `updated` and `revoked` deliveries get 200 (unknown user, ignored), and the customer is deleted and anonymized.
+
+### Log (2026-10-27, `feat(tooling): re-record the Polar webhook fixtures from real 2026-10 sandbox deliveries`)
+- Shipped: `subscription.active`, `.updated` and `.revoked` fixtures re-captured at 2026-10 from real deliveries (events `871ce3c6-…`, `c06631d7-…`, `022512a2-…`). Their shape matches 2026-04 except that `data.metadata.referenceId` is gone (the simulator replaces `metadata` anyway). `updated` is still a cancellation, so no simulator or test change was needed. The phase 4 pause is scheduled on `fb855687-…` (Suspend in the app at 17:06Z, `pause_at_period_end=true`, period end 2026-11-25 21:09 UTC).
+- Differs from plan:
+  - The real flows ran before `bun run verify`, because the fixtures come out of them.
+  - The checkout didn't need the user: the subagent typed the 4242 card through the Stripe iframes.
+  - The reconcile step as written can't pass. Clearing only `plan` leaves `subscription_status_at` equal to Polar's `modified_at`, so `writeUserSubscription` returns `outdated` and Billing shows "Choose a plan" to a paying user. It healed once `subscription_status_at` was also set older (17:02:32), which is what a missed webhook leaves. This is moved to phase 5 as a decision.
+  - The portal button is "Manage billing on Polar".
+- Checked in the running app (real sandbox, user's backend and ngrok, subagent with the e2e skill), all deliveries 200:
+  - Sign-up `webdevrokas+p3-1cdfa082@gmail.com` (user `Uia740bPLegnUp27WlizZfCSODOx6XQT`) created Polar customer `5e7fe1e3-…` with `external_id` = user id.
+  - Checkout (Starter): `subscription.active` delivered, `user_subscription` got `plan=starter` and `subscription_id=2fd5e4cc-…`, and the org `a5caba31-…` took its slot. The backend log shows the `active` delivery projected at 17:02:34.47. It carries `modified_at: null`, so the projection used `created_at` (17:02:32.436). Polar's extra `subscription.updated` (`modified_at` 17:02:33.759) projected again at 17:02:35.88, when the slot was taken.
+  - Portal: opened `sandbox.polar.sh/sinwydev/portal` with no email code; its back link is `localhost:3000/auth/postlogin`.
+  - Suspend on the seed user: "Subscription suspend applied" at 17:06:19.058. The `subscription.updated` delivery at 17:06:19.136 was ignored as not newer. Billing shows "Suspension scheduled" with Undo.
+  - Account deletion: the subscription is `canceled` in Polar (revoked), `updated` and `revoked` are delivered, and `GET /v1/customers/5e7fe1e3-…` is 404. The customer is anonymized (email `…@anonymized.polar.sh`, hashed name) but keeps `external_id` = the deleted user id (phase 5). The `user` and `user_subscription` rows are gone, and the org is scheduled for deletion with its slot released.
+  - Backend log (pasted by the user): "Plan taken from Polar after a missed webhook" at 17:05:33.486, two "Subscription for an unknown user" warnings (status `canceled`) at 17:07:18.5 and 17:07:19.5, and no errors. The 17:04:12 Billing loads after the `plan`-only clear log "Ignored subscription state not newer than the applied one".
+  - Not checked: real Resend delivery of the verification and deletion emails (console driver).
+  - Seen on the way: Base UI logs a `nativeButton` console warning 191× on `/auth/goodbye`, because `goodbye.tsx` lines 43 and 63 render a `Link` through `Button` without `nativeButton={false}`. It is outside this plan.
