@@ -470,6 +470,15 @@ Polar is the source of truth for the plan
 │   └─ a failed lookup never takes a plan away
 └─ a product that maps to no tier → no plan, organizations inactive, logged
 
+Polar webhook endpoint (sandbox and production)
+├─ events: subscription active, updated, revoked, paused, resumed; all five
+│  are handled, nothing else is subscribed
+├─ API version 2026-10, format raw: the Better Auth plugin parses deliveries
+│  with 2026-10 models, so move only once it does
+└─ sandbox: points at the developer's ngrok tunnel and stays enabled;
+   deliveries land only while `bun run start:localproxy` runs, and Polar
+   disables the endpoint after 10 failed deliveries in a row → re-enable it
+
 Polar settings (dashboard only; the API can't change them)
 ├─ "Allow multiple subscriptions": off (D1)
 ├─ portal plan switching: off (D6); portal pause: off (Default 3)

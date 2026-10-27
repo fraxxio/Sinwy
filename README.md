@@ -80,12 +80,14 @@ Polar can't reach `localhost`, so webhook testing needs a public HTTPS tunnel. W
        domain: <your-static-domain>.ngrok-free.dev
    ```
 
-3. Point the webhook URL in Polar's dashboard at `https://<your-static-domain>.ngrok-free.dev/api/auth/polar/webhooks` and put its signing secret in `POLAR_WEBHOOK_SECRET`.
+3. Point the webhook URL in Polar's dashboard at `https://<your-static-domain>.ngrok-free.dev/api/auth/polar/webhooks`, with format Raw, API version 2026-10 and the events `subscription.active`, `subscription.updated`, `subscription.revoked`, `subscription.paused` and `subscription.resumed`. Put its signing secret in `POLAR_WEBHOOK_SECRET`.
 4. Start the tunnel alongside the backend:
 
    ```bash
    bun start:localproxy
    ```
+
+5. Polar retries a failed delivery, and after 10 failed deliveries in a row it disables the endpoint and emails the organization. Re-enable it in the dashboard.
 
 ## AI Agents
 
