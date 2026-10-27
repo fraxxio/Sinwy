@@ -174,3 +174,38 @@ Then, simulated: `--type subscription.resumed` on a seeded paused user gives the
     - The org read `active`, and Billing showed "Starter, Active, 1 of 1 organizations active, Renews on Nov 27, 2026". No WARN/ERROR in the backend log.
   - Simulated, on seeded owner `8pXzMUSTSr15GMic6mADLWeVy2N2dKt3` (subscription `500c251b-…`, org `d4ab104b-…`): `--type subscription.paused`, then `--type subscription.resumed --plan starter`. Every delivery got 200. The states were paused/inactive, then active/starter/bound/`active` with the slot kept, the same end state as the real run.
   - Charge: Polar created the resume order `SINWYDEV-WSOEARWQFZ-0002` (`subscription_cycle`, €9.00) at 18:02:03Z, 15 min after the resume. It was `pending`, then `paid` within about 10 s, and Billing's invoice list shows it.
+
+## Phase 5: Code review
+
+**Goal:** The webhook handler change and the fixture-driven test changes have been reviewed for money and access regressions.
+
+**Files:**
+- The diffs of phases 1–4: `git diff 301d1db..HEAD -- Sinwy.Backend .agents`
+- `Sinwy.Backend/modules/auth/auth.ts`: `webhooks({...})` (line 334), the five handlers
+- `Sinwy.Backend/modules/billing/projection.ts`: `applySubscriptionEvent` (line 204), `reconcileUserPlan` (line 240)
+- `Sinwy.Backend/modules/billing/repository.ts`: `writeUserSubscription` (line 110), the `outdated` check behind the reconcile gap
+- `Sinwy.Backend/modules/billing/service.ts`: `SUSPEND` (line 457), `UNSUSPEND` (474), `RESUME` (503), which project Polar's answer before the webhook
+- `docs/org-rules-map.md`: §8 Suspend, resume… (line 266) and §12 Polar's part (line 454)
+
+**Steps:**
+- Check that no new path can grant access to a paused subscription, or take it from an entitled one, through reordered or redelivered events.
+- Decide on the reconcile gap from phase 3: a row with `plan` null but a current `subscription_status_at` isn't healed (`reconcileUserPlan` → `writeUserSubscription`, `repository.ts:166`).
+- Decide whether the deleted Polar customer may keep `external_id` = the deleted user's id (phase 3 log).
+- Check that `docs/org-rules-map.md` matches the final behaviour and the endpoint settings.
+
+**Tests that matter:** Whatever the review finds untested.
+
+**Done when:** Every finding is fixed or recorded as accepted, and `bun run verify` passes.
+
+**Verify:** None.
+
+### Log (2026-10-27, `docs: record the Polar webhook review and its accepted gaps`)
+- Shipped: a review only; no code change was needed.
+  - No new path grants a paused subscription access or takes access from an entitled one. `subscription.paused` and `.resumed` carry the same subscription as the `subscription.updated` Polar sends just before them, so their handlers reach no state `updated` couldn't already reach. `writeUserSubscription` applies only state strictly newer than `subscription_status_at`, so redeliveries, the pair's second event and older reordered events are `outdated`. Tests cover each: an older active after the pause, an older paused after the resume, the pair projecting once, revoked before an older active, and a late retry.
+  - A paused subscription stays bound, and the checkout guard counts it as billable. A suspended user can't buy a second plan, so the second-plan refund path isn't reachable from a pause.
+  - Reconcile gap: accepted. `plan` null with a current `subscription_status_at` comes only from a hand edit. The other source is a product that maps to no plan, and re-projecting can't heal that one anyway. A real missed webhook leaves an older timestamp, which heals. While `subscription_id` stays bound the checkout guard refuses a second purchase, so the user loses no money. Forcing fresh Polar reads to apply would race with a newer webhook (a revoke landing between the read and the write would grant the plan back), so the ordering stays. Recorded in `docs/org-rules-map.md` §14.
+  - Deleted Polar customer keeping `external_id`: accepted. Better Auth user ids are random and never reused, the app keeps no row for the deleted user, and late deliveries for that customer are ignored as an unknown user. Recorded in `docs/org-rules-map.md` §11.
+  - `docs/org-rules-map.md`: §8 and §12 match the code and the endpoint settings. §14 no longer says the sandbox endpoint is disabled.
+- Differs from plan: nothing. Tests: the review found no untested path for the new handlers.
+  - Also accepted: a raced second plan whose predecessor ended after the second plan's last `modified_at` is ordered behind the predecessor's end. That second plan stays unprojected until Polar modifies it again (its renewal). Reaching it takes a two-tab checkout and then a revoke of the first plan within seconds, before the second plan's webhooks land. It isn't in the map.
+- Checked in the running app: nothing. Verify was "None"; `bun run verify` exited 0.

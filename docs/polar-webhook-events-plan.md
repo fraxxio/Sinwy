@@ -12,7 +12,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 2 | Webhook endpoint configuration | 1 | done | `docs: enable the Polar sandbox webhook for the five handled events` |
 | 3 | Real-delivery pass and fixture recapture | 2 | done | `feat(tooling): re-record the Polar webhook fixtures from real 2026-10 sandbox deliveries` |
 | 4 | Real pause and resume, paused/resumed fixtures | 3, and the scheduled pause taking effect | done | `feat(tooling): capture the Polar paused and resumed fixtures from a real sandbox pause and resume` |
-| 5 | Code review | 4 | todo | |
+| 5 | Code review | 4 | done | `docs: record the Polar webhook review and its accepted gaps` |
 
 ## Decisions
 
@@ -54,7 +54,7 @@ Settled with the product owner. Ask before changing any of them.
   - The app's Suspend (`SUSPEND` in `Sinwy.Backend/modules/billing/service.ts`) schedules `pause_at_period_end`.
 - Sandbox subscriptions since phase 4: 5 active, all belonging to local users. `fb855687-…` (user `J7NGTd1scSZ6jRJ0h3ym6vWn94fDbc9X`) was paused and resumed in phase 4 and now runs to 2026-11-27.
 - Suspend and Resume write `user_subscription` from Polar's answer before the deliveries land, and the deliveries are then `outdated` (a debug line, no change). At checkout the `active` event has `modified_at: null`, so it is ordered by `created_at`, and Polar's extra `subscription.updated` right after projects again (phase 3 log).
-- The reconcile heals only when the stored `subscription_status_at` is older than Polar's `modified_at`. Clearing `plan` alone isn't healed, and Billing then offers a checkout to a paying user (phase 3 log; for phase 5).
+- The reconcile heals only when the stored `subscription_status_at` is older than Polar's `modified_at`. Clearing `plan` alone isn't healed, and Billing then offers a checkout to a paying user; accepted in phase 5 (org-rules-map §14).
 - The real checkout works without the user: the subagent typed the 4242 card through the e2e skill's Stripe iframe recipe.
 - All five events are wired to `applySubscriptionEvent` (phase 1). An event whose `modified_at` equals the applied one is `outdated`, so Polar's update + paused/resumed pair projects once.
 - With the tunnel up and the backend down, Polar's deliveries got 404 and then 400, and its retries (about 5 s, 15 s, 40 s, 45 s apart) succeeded once the backend was up (phase 4 log).
@@ -63,29 +63,3 @@ Settled with the product owner. Ask before changing any of them.
   - The simulator sends `paused` and `resumed` as Polar does, each after a `subscription.updated` with the same data.
   - `subscription.updated.json` is a cancellation (status `canceled`), and the simulator tests rely on that.
   - `capturePolarFixture` takes the newest delivery of the type (any endpoint, failed ones included), so capture `subscription.updated` right after a revoke.
-
----
-
-## Phase 5: Code review
-
-**Goal:** The webhook handler change and the fixture-driven test changes have been reviewed for money and access regressions.
-
-**Files:**
-- The diffs of phases 1–4: `git diff 301d1db..HEAD -- Sinwy.Backend .agents`
-- `Sinwy.Backend/modules/auth/auth.ts`: `webhooks({...})` (line 334), the five handlers
-- `Sinwy.Backend/modules/billing/projection.ts`: `applySubscriptionEvent` (line 204), `reconcileUserPlan` (line 240)
-- `Sinwy.Backend/modules/billing/repository.ts`: `writeUserSubscription` (line 110), the `outdated` check behind the reconcile gap
-- `Sinwy.Backend/modules/billing/service.ts`: `SUSPEND` (line 457), `UNSUSPEND` (474), `RESUME` (503), which project Polar's answer before the webhook
-- `docs/org-rules-map.md`: §8 Suspend, resume… (line 266) and §12 Polar's part (line 454)
-
-**Steps:**
-- Check that no new path can grant access to a paused subscription, or take it from an entitled one, through reordered or redelivered events.
-- Decide on the reconcile gap from phase 3: a row with `plan` null but a current `subscription_status_at` isn't healed (`reconcileUserPlan` → `writeUserSubscription`, `repository.ts:166`).
-- Decide whether the deleted Polar customer may keep `external_id` = the deleted user's id (phase 3 log).
-- Check that `docs/org-rules-map.md` matches the final behaviour and the endpoint settings.
-
-**Tests that matter:** Whatever the review finds untested.
-
-**Done when:** Every finding is fixed or recorded as accepted, and `bun run verify` passes.
-
-**Verify:** None.
