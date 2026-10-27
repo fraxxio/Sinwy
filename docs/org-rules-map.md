@@ -461,7 +461,8 @@ The app holds: which plan each user is on, slots, organizations and roles,
 transfers, and the organizations a downgrade deactivates.
 
 Polar is the source of truth for the plan
-├─ its webhooks (subscription active, updated, revoked) set the user's plan
+├─ its webhooks (subscription active, updated, revoked, paused, resumed) set
+│  the user's plan
 ├─ a repeated or older delivery never overrides newer state
 ├─ the app also asks Polar, to heal a missed webhook: on every Billing page
 │  load, before a checkout, before each plan action, on the checkout success

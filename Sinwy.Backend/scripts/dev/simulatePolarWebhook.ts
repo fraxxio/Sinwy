@@ -31,7 +31,7 @@ export type PolarDeliveryOptions = {
 	timestamp?: Date;
 	webhookId?: string;
 	/** Sends the fixture's data under another event type. */
-	as?: "subscription.updated";
+	as?: "subscription.updated" | "subscription.resumed";
 };
 
 // Polar sends these right after a subscription.updated with the same data

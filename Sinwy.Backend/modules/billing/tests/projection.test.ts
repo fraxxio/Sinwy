@@ -149,6 +149,19 @@ test("paused, then active again on the same subscription → the same org is act
 	expect(await orgStatus()).toBe("active");
 });
 
+test("Polar's update then paused, then update then resumed, with the same data → each projects once", async () => {
+	await project();
+	const paused = subscription({ status: "paused" });
+	expect(await projectSubscription(paused)).toBe("not-entitled");
+	expect(await projectSubscription(paused)).toBeNull();
+	expect(await orgStatus()).toBe("inactive");
+
+	const resumed = subscription();
+	expect(await projectSubscription(resumed)).toBe("entitled");
+	expect(await projectSubscription(resumed)).toBeNull();
+	expect(await orgStatus()).toBe("active");
+});
+
 test("an older active state arriving after the pause is ignored", async () => {
 	const olderActive = subscription();
 	await project({ status: "paused" });

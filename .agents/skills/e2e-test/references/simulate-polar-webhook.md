@@ -11,10 +11,10 @@ It prints JSON with `type`, `subscriptionId`, `timestamp`, `webhookId`, `status`
 
 ## The app's handling
 
-- `subscription.active`, `subscription.revoked` and `subscription.updated` all project the payload's subscription onto the user's `user_subscription` row. Status `active`, `trialing` or `past_due` sets `plan` from the product and binds `subscription_id`: every org the user owns that holds a slot is `active`. `paused` clears `plan` but keeps `subscription_id` bound: the plan is suspended and those orgs are `inactive`, keeping their slots. Any other status clears both.
+- `subscription.active`, `subscription.updated`, `subscription.revoked`, `subscription.paused` and `subscription.resumed` all project the payload's subscription onto the user's `user_subscription` row. Status `active`, `trialing` or `past_due` sets `plan` from the product and binds `subscription_id`: every org the user owns that holds a slot is `active`. `paused` clears `plan` but keeps `subscription_id` bound: the plan is suspended and those orgs are `inactive`, keeping their slots. Any other status clears both.
 - The recorded `subscription.updated` is a cancellation (status `canceled`), so it ends the plan like a revoke.
 - A second billable subscription for a user already bound to a live one is revoked and refunded in Polar, so with a simulated id that call fails and the webhook answers 500.
-- `subscription.paused` has no handler: the `subscription.updated` sent before it projects. The fixture is derived from a really paused sandbox subscription, not a captured delivery (its `source` says so).
+- `subscription.paused` projects on its own; after the `subscription.updated` Polar sends before it with the same data, it is ignored as not newer. The fixture is derived from a really paused sandbox subscription, not a captured delivery (its `source` says so).
 - An event applies only if its subscription's `modified_at` (the `--timestamp`) is newer than `user_subscription.subscription_status_at`. While a user is bound to a subscription, events for any other one don't apply, so revoke with the same `--subscription-id`.
 - The endpoint answers 200 even for events it ignores or for an unknown user. **A 200 doesn't mean anything changed.** Check the result:
   ```bash
