@@ -91,7 +91,8 @@ const transferCheckoutFields = async (userId: string, transferId: string) => {
 	};
 };
 
-// the polar plugin logs Polar's error text, whose body echoes what we sent
+// the polar plugin logs Polar's error text, whose body echoes what we sent; matches
+// the Polar SDK's wording, guarded by the "plugin checkout while Polar fails" billing test
 const POLAR_ERROR_BODY = /(Polar API returned [^:]*: \d+) - .*/s;
 const EMAIL_ADDRESS = /[^\s@"'<>]+@[^\s@"'<>]+\.[a-z]{2,}/gi;
 

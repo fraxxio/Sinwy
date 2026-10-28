@@ -1852,6 +1852,7 @@ test("plugin checkout while Polar fails → 500 with only the generic message", 
 		message: "Something went wrong. Try again in a moment.",
 	});
 	expect(checkoutsCreated()).toHaveLength(1);
+	// fails when the Polar SDK changes its error wording: update POLAR_ERROR_BODY in auth.ts
 	expect(logged).toContain("Polar API returned a server error: 500");
 	expect(logged).not.toContain("db shard 7 down");
 });
