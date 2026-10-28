@@ -3,7 +3,9 @@ import { polarCore, productIdFor } from "@backend/infrastructure/polar";
 import {
 	applySubscriptionEvent,
 	ensureCheckoutAllowed,
+	ensurePolarCustomer,
 	revokeAccountSubscriptions,
+	syncPolarCustomer,
 } from "@billingModule";
 import appConfig from "@config";
 import db from "@db";
@@ -185,6 +187,7 @@ export const auth = betterAuth({
 						data: { ...data, name: validName(data.name) },
 					});
 				},
+				after: (user) => syncPolarCustomer(user),
 			},
 		},
 	},
@@ -213,18 +216,26 @@ export const auth = betterAuth({
 				if (!session) throw new APIError("UNAUTHORIZED");
 				const { transferId, ...rest } = body.data;
 				const { allowTrial } = await ensureCheckoutAllowed(session.user.id);
+				const transferFields = transferId
+					? await transferCheckoutFields(session.user.id, transferId)
+					: {};
+				// Polar locks the checkout email only for an existing customer
+				await ensurePolarCustomer(session.user);
 				return {
 					context: {
 						body: {
 							...rest,
-							...(transferId
-								? await transferCheckoutFields(session.user.id, transferId)
-								: {}),
+							...transferFields,
 							// one trial per user: the plugin passes allow_trial on to Polar
 							...(!allowTrial && { allow_trial: false }),
 						},
 					},
 				};
+			}
+			if (ctx.path === "/customer/portal") {
+				const session = await getSessionFromCtx(ctx);
+				if (!session) throw new APIError("UNAUTHORIZED");
+				await ensurePolarCustomer(session.user);
 			}
 			if (ctx.path.startsWith("/organization/")) {
 				const session = await getSessionFromCtx(ctx);
@@ -312,8 +323,9 @@ export const auth = betterAuth({
 		}),
 		polar({
 			client: polarCore,
-			// also deletes the customer on user delete, anonymized by `polarCore`
-			createCustomerOnSignUp: true,
+			// the customer is ours: ensured before checkout and the portal, synced on
+			// user update, anonymized on user delete
+			createCustomerOnSignUp: false,
 			use: [
 				checkout({
 					products: PLAN_SLUGS.map((slug) => ({

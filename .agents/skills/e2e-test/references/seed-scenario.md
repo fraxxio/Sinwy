@@ -4,7 +4,7 @@
 bun run dev:seed-scenario <user|owner-with-org|subscribed-org|org-with-staff> [--staff <n>] [--url <backend url>]
 ```
 
-This creates fresh users and an org through the backend's HTTP API, the way the browser does. It posts the sign-up form, follows the emailed verification link and calls the org endpoints. The backend must be running and `SEED_EMAIL_BASE` must be set in `Sinwy.Backend/.env`. Users get plus-aliases of that address, because Polar rejects domains that can't receive mail.
+This creates fresh users and an org through the backend's HTTP API, the way the browser does. It posts the sign-up form, follows the emailed verification link and calls the org endpoints. The backend must be running and `SEED_EMAIL_BASE` must be set in `Sinwy.Backend/.env`. Users get plus-aliases of that address, because Polar rejects domains that can't receive mail when a checkout creates the customer.
 
 | Scenario | State |
 | --- | --- |

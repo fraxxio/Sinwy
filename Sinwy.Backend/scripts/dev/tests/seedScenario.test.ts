@@ -34,7 +34,7 @@ beforeAll(() => {
 	server = app.listen(0);
 	base = server.url;
 
-	// sign-up asks Polar for a customer; answer like the sandbox does for a new email
+	// verifying the email syncs the user to their Polar customer, if any
 	polarSpy = stubPolarCore();
 });
 
@@ -124,7 +124,7 @@ test("owner-with-org: a verified owner with a credential account and an unpaid o
 		.from(account)
 		.where(eq(account.userId, owner.userId));
 	expect(credential?.providerId).toBe("credential");
-	expect(customersCreated()).toBe(1);
+	expect(customersCreated()).toBe(0);
 
 	expect(await orgRow(result.organization.id)).toEqual({
 		status: "inactive",
@@ -160,7 +160,7 @@ test("org-with-staff: staff members, and every printed email works with login-as
 	expect(
 		(await roles(result.organization.id)).map((m) => m.role).sort(),
 	).toEqual(["owner", "staff", "staff"]);
-	expect(customersCreated()).toBe(3);
+	expect(customersCreated()).toBe(0);
 
 	for (const { email, userId } of result.users) {
 		expect((await loginAs({ email })).userId).toBe(userId);

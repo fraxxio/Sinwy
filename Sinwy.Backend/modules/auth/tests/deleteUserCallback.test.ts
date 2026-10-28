@@ -43,7 +43,7 @@ beforeAll(() => {
 	base = server.url;
 	listSpy = spyOn(polarClient.subscriptions, "iterList");
 	revokeSpy = spyOn(polarClient.subscriptions, "revoke");
-	// the polar plugin deletes the customer, through its own client
+	// the customer delete goes through the core client
 	polarCoreSpy = stubPolarCore();
 });
 
@@ -98,7 +98,7 @@ const deletionScheduledAt = async (id: string) => {
 	return row?.at;
 };
 
-/** The customer deletes the plugin sent, as `path?query`. */
+/** The customer deletes sent, as `path?query`. */
 const customerDeletes = () =>
 	polarCoreSpy.mock.calls
 		.map(([[url, init]]) => ({ url: new URL(url), method: init.method }))
@@ -152,6 +152,25 @@ test("admin of someone else's paid org: org and its subscription untouched, Pola
 	expect(await userExists(userId)).toBe(false);
 	expect(await deletionScheduledAt(orgId)).toBeNull();
 	expect(revokeSpy).not.toHaveBeenCalled();
+	expect(customerDeletes()).toEqual([
+		`/v1/customers/external/${userId}?anonymize=true`,
+	]);
+});
+
+test("a user who never had a Polar customer: its 404 doesn't stop the deletion", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	polarCoreSpy.mockRestore();
+	polarCoreSpy = stubPolarCore({
+		[`DELETE /v1/customers/external/${userId}`]: Response.json(
+			{ error: "ResourceNotFound", detail: "Not found" },
+			{ status: 404 },
+		),
+	});
+
+	const res = await clickDeleteLink(cookie, await issueDeleteToken(userId));
+
+	expect(res.headers.get("location")).toBe("/auth/goodbye");
+	expect(await userExists(userId)).toBe(false);
 	expect(customerDeletes()).toEqual([
 		`/v1/customers/external/${userId}?anonymize=true`,
 	]);

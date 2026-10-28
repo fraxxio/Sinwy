@@ -1,17 +1,22 @@
 import {
 	PolarClientError,
 	PolarNetworkError,
+	PolarRateLimitError,
 	PolarServerError,
 } from "@polar-sh/sdk";
 
-/** "rejected": Polar answered 4xx; "unavailable": 5xx, timeout or no connection. */
+/** "rejected": Polar answered 4xx; "unavailable": 5xx, 429, timeout or no connection. */
 export type PolarFailure = "rejected" | "unavailable";
 
 /** null for anything that is not a Polar failure, i.e. a bug on our side. */
 export const polarFailureOf = (error: unknown): PolarFailure | null => {
-	if (error instanceof PolarClientError) return "rejected";
-	if (error instanceof PolarServerError || error instanceof PolarNetworkError)
+	if (
+		error instanceof PolarServerError ||
+		error instanceof PolarNetworkError ||
+		error instanceof PolarRateLimitError
+	)
 		return "unavailable";
+	if (error instanceof PolarClientError) return "rejected";
 	return null;
 };
 

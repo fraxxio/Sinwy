@@ -1765,6 +1765,24 @@ const checkout = (cookie: string, body: Record<string, unknown>) =>
 const checkoutsCreated = () =>
 	polarCoreSpy ? polarCoreRequests(polarCoreSpy, "POST /v1/checkouts/") : [];
 
+/** Every core request sent, as `METHOD path`, oldest first. */
+const coreRoutes = () =>
+	(polarCoreSpy?.mock.calls ?? []).map(
+		([[url, init]]) => `${init.method} ${new URL(url).pathname}`,
+	);
+
+const polarDown = (userId: string) => ({
+	[`GET /v1/customers/external/${userId}`]: Response.json(
+		{ error: "InternalServerError" },
+		{ status: 502 },
+	),
+});
+
+const billingUnavailable = {
+	code: AUTH_ERROR_CODES.BILLING_UNAVAILABLE,
+	message: "Billing is unavailable right now. Try again in a moment.",
+};
+
 test("plugin checkout: a plan slug → a Polar checkout for the caller's own customer, no org reference, the product's trial", async () => {
 	const { userId, cookie } = await seedOrg();
 	polarCoreSpy = stubPolarCore({
@@ -1808,7 +1826,7 @@ test("plugin checkout while the user has a plan → 400 PLAN_EXISTS, no checkout
 		code: AUTH_ERROR_CODES.PLAN_EXISTS,
 		message: "You already have a plan; change or resume it instead",
 	});
-	expect(checkoutsCreated()).toHaveLength(0);
+	expect(polarCoreSpy).not.toHaveBeenCalled();
 });
 
 test("plugin checkout while Polar fails → 500 with only the generic message", async () => {
@@ -1828,6 +1846,96 @@ test("plugin checkout while Polar fails → 500 with only the generic message", 
 		message: "Something went wrong. Try again in a moment.",
 	});
 	expect(checkoutsCreated()).toHaveLength(1);
+});
+
+test("plugin checkout for a user with no Polar customer → the customer created under the account's email, then the checkout", async () => {
+	const { userId, cookie } = await seedOrg();
+	polarCoreSpy = stubPolarCore({
+		"POST /v1/checkouts/": { url: "https://polar.test/checkout" },
+	});
+
+	expect((await checkout(cookie, { slug: "starter" })).status).toBe(200);
+	expect(polarCoreRequests(polarCoreSpy, "POST /v1/customers/")).toEqual([
+		{ email: `${userId}@test.dev`, name: "Test User", external_id: userId },
+	]);
+	const routes = coreRoutes();
+	expect(routes.indexOf("POST /v1/customers/")).toBeLessThan(
+		routes.indexOf("POST /v1/checkouts/"),
+	);
+});
+
+test("plugin checkout while Polar can't ensure the customer → 503 BILLING_UNAVAILABLE, no checkout", async () => {
+	const { userId, cookie } = await seedOrg();
+	polarCoreSpy = stubPolarCore(polarDown(userId));
+
+	const res = await checkout(cookie, { slug: "starter" });
+
+	expect(res.status).toBe(503);
+	expect(await res.json()).toMatchObject(billingUnavailable);
+	expect(checkoutsCreated()).toHaveLength(0);
+});
+
+test("plugin checkout when another customer holds the account's email → 409 BILLING_ACCOUNT_REJECTED, no checkout", async () => {
+	const { userId, cookie } = await seedOrg();
+	polarCoreSpy = stubPolarCore({
+		"GET /v1/customers/": {
+			items: [
+				{
+					id: "cus_other",
+					type: "individual",
+					email: `${userId}@test.dev`,
+					external_id: "user_other",
+				},
+			],
+			pagination: { total_count: 1, max_page: 1 },
+		},
+	});
+
+	const res = await checkout(cookie, { slug: "starter" });
+
+	expect(res.status).toBe(409);
+	expect(await res.json()).toMatchObject({
+		code: AUTH_ERROR_CODES.BILLING_ACCOUNT_REJECTED,
+	});
+	expect(checkoutsCreated()).toHaveLength(0);
+});
+
+const openPortal = (cookie: string) =>
+	request("/api/auth/customer/portal", cookie, {
+		method: "POST",
+		body: { redirect: false },
+	});
+
+test("plugin portal for a user with no Polar customer → the customer created, then the portal session", async () => {
+	const { userId, cookie } = await seedOrg();
+	polarCoreSpy = stubPolarCore({
+		"POST /v1/customer-sessions/": {
+			customer_portal_url: "https://polar.test/portal",
+		},
+	});
+
+	const res = await openPortal(cookie);
+
+	expect(res.status).toBe(200);
+	expect(await res.json()).toMatchObject({ url: "https://polar.test/portal" });
+	expect(coreRoutes().slice(-2)).toEqual([
+		"POST /v1/customers/",
+		"POST /v1/customer-sessions/",
+	]);
+	expect(
+		polarCoreRequests(polarCoreSpy, "POST /v1/customer-sessions/"),
+	).toMatchObject([{ external_customer_id: userId }]);
+});
+
+test("plugin portal while Polar can't ensure the customer → 503 BILLING_UNAVAILABLE, no portal session", async () => {
+	const { userId, cookie } = await seedOrg();
+	polarCoreSpy = stubPolarCore(polarDown(userId));
+
+	const res = await openPortal(cookie);
+
+	expect(res.status).toBe(503);
+	expect(await res.json()).toMatchObject(billingUnavailable);
+	expect(coreRoutes()).not.toContain("POST /v1/customer-sessions/");
 });
 
 const seedTransferTo = async (
@@ -1893,7 +2001,7 @@ test("plugin checkout for a transfer not waiting on the caller's checkout → 40
 			"This offer is no longer open",
 		);
 	}
-	expect(checkoutsCreated()).toHaveLength(0);
+	expect(polarCoreSpy).not.toHaveBeenCalled();
 });
 
 test.each([
