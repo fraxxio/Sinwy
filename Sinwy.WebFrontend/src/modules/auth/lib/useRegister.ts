@@ -1,4 +1,5 @@
 import {
+	AUTH_ERROR_CODES,
 	passwordSchema,
 	RESEND_COOLDOWN_SECONDS,
 	userNameSchema,
@@ -8,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import z from "zod";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import { authErrorMessage } from "#/shared/lib/auth/auth-error";
-import { useAppForm } from "#/shared/lib/form";
+import { showFieldError, useAppForm } from "#/shared/lib/form";
 
 export const registerSchema = z
 	.object({
@@ -64,6 +65,10 @@ const useRegister = ({ source }: Props = {}) => {
 				...value,
 				callbackURL,
 			});
+			if (error?.code === AUTH_ERROR_CODES.EMAIL_DOMAIN_INVALID) {
+				showFieldError(form, "email", authErrorMessage(error));
+				return;
+			}
 			if (error) {
 				setServerError(authErrorMessage(error));
 				return;

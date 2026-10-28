@@ -1,3 +1,4 @@
+import { AUTH_ERROR_CODES } from "@sinwy/shared";
 import { revalidateLogic } from "@tanstack/react-form";
 import { useState } from "react";
 import { z } from "zod";
@@ -8,7 +9,7 @@ import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import { authErrorMessage } from "#/shared/lib/auth/auth-error";
-import { useAppForm } from "#/shared/lib/form";
+import { showFieldError, useAppForm } from "#/shared/lib/form";
 
 // both hops of the change-email flow land here; `to` lets the page tell them apart
 const callbackUrl = (newEmail: string) =>
@@ -37,6 +38,10 @@ export function EmailSection({ user }: { user: SessionUser }) {
 				newEmail: value.newEmail,
 				callbackURL: callbackUrl(value.newEmail),
 			});
+			if (error?.code === AUTH_ERROR_CODES.EMAIL_DOMAIN_INVALID) {
+				showFieldError(form, "newEmail", authErrorMessage(error));
+				return;
+			}
 			if (error) {
 				setServerError(authErrorMessage(error));
 				return;

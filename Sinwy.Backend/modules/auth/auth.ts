@@ -38,6 +38,7 @@ import {
 	refuseUnavailableOrganization,
 } from "./activeOrganization";
 import { cleanupDeletedUser } from "./deletedUserCleanup";
+import { refuseUndeliverableEmail } from "./emailDomain";
 import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
@@ -206,6 +207,11 @@ export const auth = betterAuth({
 		// The polar plugin trusts referenceId with no membership check, so it is
 		// refused here; the subscription read is ours (GET /api/account/subscription).
 		before: createAuthMiddleware(async (ctx) => {
+			// before the user lookup, so the refusal says nothing about existing accounts
+			if (ctx.path === "/sign-up/email")
+				await refuseUndeliverableEmail(ctx.body?.email);
+			if (ctx.path === "/change-email")
+				await refuseUndeliverableEmail(ctx.body?.newEmail);
 			if (ctx.path === "/checkout") {
 				const body = checkoutBodySchema.safeParse(ctx.body);
 				if (!body.success)
