@@ -7,6 +7,7 @@ import { SettingsSection } from "#/shared/components/SettingsSection";
 import { FieldError } from "#/shared/components/ui/field";
 import { toast } from "#/shared/components/ui/toast";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 import { useAppForm } from "#/shared/lib/form";
 
 export function ProfileSection({ user }: { user: SessionUser }) {
@@ -20,7 +21,7 @@ export function ProfileSection({ user }: { user: SessionUser }) {
 			setServerError(null);
 			const { error } = await authClient.updateUser({ name: value.name });
 			if (error) {
-				setServerError(error.message ?? "Couldn't save your profile");
+				setServerError(authErrorMessage(error));
 				return;
 			}
 			form.reset(value);

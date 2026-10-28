@@ -22,6 +22,7 @@ import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { usePageRestored } from "#/shared/hooks/use-page-restored";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 import { invalidateOrganizations } from "#/shared/lib/organizations";
 import { getPlanName } from "#/shared/lib/plans";
 
@@ -163,7 +164,7 @@ function ChoosePlan() {
 		setPendingSlug(slug);
 		const { error } = await authClient.checkout({ slug });
 		if (error) {
-			setServerError(error.message ?? "Checkout failed");
+			setServerError(authErrorMessage(error));
 			setPendingSlug(null);
 		}
 		// On success better-auth redirects the browser to Polar.

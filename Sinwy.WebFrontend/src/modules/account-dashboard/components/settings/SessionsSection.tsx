@@ -11,6 +11,7 @@ import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 
 const when = new Intl.DateTimeFormat(undefined, {
 	dateStyle: "medium",
@@ -30,7 +31,7 @@ export function SessionsSection({ currentToken }: { currentToken: string }) {
 	const revokeOne = useMutation({
 		mutationFn: async (token: string) => {
 			const { error } = await authClient.revokeSession({ token });
-			if (error) throw new Error(error.message ?? "Couldn't revoke session");
+			if (error) throw new Error(authErrorMessage(error));
 		},
 		onMutate: () => setError(null),
 		onError: (e) => setError(e.message),
@@ -40,7 +41,7 @@ export function SessionsSection({ currentToken }: { currentToken: string }) {
 	const revokeOthers = useMutation({
 		mutationFn: async () => {
 			const { error } = await authClient.revokeOtherSessions();
-			if (error) throw new Error(error.message ?? "Couldn't sign out devices");
+			if (error) throw new Error(authErrorMessage(error));
 		},
 		onMutate: () => setError(null),
 		onError: (e) => setError(e.message),

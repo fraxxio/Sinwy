@@ -7,6 +7,7 @@ import { formOptions, revalidateLogic } from "@tanstack/react-form";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 import { useAppForm } from "#/shared/lib/form";
 
 export const registerSchema = z
@@ -64,7 +65,7 @@ const useRegister = ({ source }: Props = {}) => {
 				callbackURL,
 			});
 			if (error) {
-				setServerError(error.message ?? "Sign up failed");
+				setServerError(authErrorMessage(error));
 				return;
 			}
 			setSentTo(value.email);

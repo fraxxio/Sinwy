@@ -1804,10 +1804,30 @@ test("plugin checkout while the user has a plan → 400 PLAN_EXISTS, no checkout
 	const res = await checkout(cookie, { slug: "professional" });
 
 	expect(res.status).toBe(400);
-	expect(((await res.json()) as { code: string }).code).toBe(
-		AUTH_ERROR_CODES.PLAN_EXISTS,
-	);
+	expect(await res.json()).toMatchObject({
+		code: AUTH_ERROR_CODES.PLAN_EXISTS,
+		message: "You already have a plan; change or resume it instead",
+	});
 	expect(checkoutsCreated()).toHaveLength(0);
+});
+
+test("plugin checkout while Polar fails → 500 with only the generic message", async () => {
+	const { cookie } = await seedOrg();
+	polarCoreSpy = stubPolarCore({
+		"POST /v1/checkouts/": Response.json(
+			{ error: "InternalServerError", detail: "db shard 7 down" },
+			{ status: 500 },
+		),
+	});
+
+	const res = await checkout(cookie, { slug: "professional" });
+
+	expect(res.status).toBe(500);
+	expect(await res.json()).toEqual({
+		code: "INTERNAL_SERVER_ERROR",
+		message: "Something went wrong. Try again in a moment.",
+	});
+	expect(checkoutsCreated()).toHaveLength(1);
 });
 
 const seedTransferTo = async (

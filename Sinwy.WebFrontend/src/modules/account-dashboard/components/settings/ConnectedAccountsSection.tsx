@@ -18,6 +18,7 @@ import {
 	TooltipTrigger,
 } from "#/shared/components/ui/tooltip";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 
 export function ConnectedAccountsSection() {
 	const queryClient = useQueryClient();
@@ -33,7 +34,7 @@ export function ConnectedAccountsSection() {
 				provider: "google",
 				callbackURL: "/account/settings",
 			});
-			if (error) throw new Error(error.message ?? "Couldn't connect Google");
+			if (error) throw new Error(authErrorMessage(error));
 		},
 		onMutate: () => setError(null),
 		onError: (e) => setError(e.message),
@@ -42,7 +43,7 @@ export function ConnectedAccountsSection() {
 	const unlink = useMutation({
 		mutationFn: async (accountId: string) => {
 			const { error } = await authClient.unlinkAccount({ accountId });
-			if (error) throw new Error(error.message ?? "Couldn't disconnect Google");
+			if (error) throw new Error(authErrorMessage(error));
 		},
 		onMutate: () => setError(null),
 		onError: (e) => setError(e.message),

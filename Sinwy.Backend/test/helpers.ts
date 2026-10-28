@@ -214,7 +214,7 @@ export const polarPages =
  * Answers the better-auth plugin's own Polar calls offline: it syncs the
  * customer on sign-up, user update and user delete, and serves checkout and
  * the customer portal, all through `polarCore`. `responses` is keyed by
- * route, e.g. `"POST /v1/checkouts/"`.
+ * route, e.g. `"POST /v1/checkouts/"`; a `Response` is sent as is.
  */
 export const stubPolarCore = (responses: Record<string, unknown> = {}) =>
 	spyOn(polarCore, "sendRequest").mockImplementation(([url, init]) => {
@@ -226,7 +226,9 @@ const cannedPolarResponse = (
 	route: string,
 	responses: Record<string, unknown>,
 ) => {
-	if (route in responses) return Response.json(responses[route]);
+	const canned = responses[route];
+	if (canned instanceof Response) return canned;
+	if (route in responses) return Response.json(canned);
 	if (route.startsWith("DELETE ")) return new Response(null, { status: 204 });
 	// no existing customer for the email, so sign-up creates one
 	if (route === "GET /v1/customers/")

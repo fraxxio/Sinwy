@@ -7,6 +7,7 @@ import { Badge } from "#/shared/components/ui/badge";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 import { useAppForm } from "#/shared/lib/form";
 
 // both hops of the change-email flow land here; `to` lets the page tell them apart
@@ -37,7 +38,7 @@ export function EmailSection({ user }: { user: SessionUser }) {
 				callbackURL: callbackUrl(value.newEmail),
 			});
 			if (error) {
-				setServerError(error.message ?? "Couldn't start the email change");
+				setServerError(authErrorMessage(error));
 				return;
 			}
 			setSentTo(value.newEmail);

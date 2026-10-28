@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Icon } from "#/shared/components/icons";
 import { FieldError } from "#/shared/components/ui/field";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 
 export const GoogleSignInButton = ({
 	callbackURL,
@@ -21,7 +22,7 @@ export const GoogleSignInButton = ({
 						provider: "google",
 						callbackURL,
 					});
-					if (error) setServerError(error.message ?? "Google sign-in failed");
+					if (error) setServerError(authErrorMessage(error));
 				}}
 			>
 				<Icon name="google" className="size-5 shrink-0" />

@@ -14,6 +14,7 @@ import { Skeleton } from "#/shared/components/ui/skeleton";
 import { toast } from "#/shared/components/ui/toast";
 import { api } from "#/shared/lib/api";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 import { useAppForm } from "#/shared/lib/form";
 
 const mismatch = {
@@ -77,7 +78,7 @@ function ChangePasswordForm() {
 				revokeOtherSessions: true,
 			});
 			if (error) {
-				setServerError(error.message ?? "Couldn't change your password");
+				setServerError(authErrorMessage(error));
 				return;
 			}
 			form.reset();
