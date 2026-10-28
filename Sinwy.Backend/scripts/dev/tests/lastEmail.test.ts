@@ -13,7 +13,7 @@ let base: URL;
 let polarSpy: ReturnType<typeof stubPolarCore>;
 
 beforeAll(() => {
-	// verifying the email updates the user, which the polar plugin syncs to Polar
+	// verifying the email updates the user, which is synced to the Polar customer
 	polarSpy = stubPolarCore();
 	const app = createApp();
 	registerAuthRoutes(app);

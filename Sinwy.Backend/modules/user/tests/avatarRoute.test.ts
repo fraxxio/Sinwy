@@ -18,7 +18,7 @@ let polarSpy: ReturnType<typeof stubPolarCore>;
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
 
 beforeAll(() => {
-	// the polar plugin syncs every user update to the Polar customer; keep tests offline
+	// every user update is synced to the Polar customer; keep tests offline
 	polarSpy = stubPolarCore();
 	const app = createApp();
 	registerAuthRoutes(app);

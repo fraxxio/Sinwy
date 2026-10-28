@@ -12,8 +12,7 @@ import type { PlanSlug } from "@sinwy/shared";
 import { and, eq } from "drizzle-orm";
 
 // Mirrors better-call's signCookieValue: `${token}.${base64(HMAC-SHA256(token, secret))}`.
-// Forged instead of signing up through better-auth because createCustomerOnSignUp
-// would call the Polar API, which placeholder credentials can't reach.
+// Forged so a test gets a verified, logged-in user without the sign-up and email round trip.
 const cookieName = appConfig.BETTER_AUTH_URL.startsWith("https")
 	? "__Secure-better-auth.session_token"
 	: "better-auth.session_token";
@@ -211,10 +210,11 @@ export const polarPages =
 		})();
 
 /**
- * Answers the better-auth plugin's own Polar calls offline: it syncs the
- * customer on sign-up, user update and user delete, and serves checkout and
- * the customer portal, all through `polarCore`. `responses` is keyed by
- * route, e.g. `"POST /v1/checkouts/"`.
+ * Answers Polar calls sent through `polarCore` offline: the better-auth
+ * plugin's checkout and portal, and our customer ensure, sync and delete.
+ * `responses` is keyed by route, e.g. `"POST /v1/checkouts/"`; a `Response`
+ * is sent as is, and a function is called for each request. By default the
+ * user has no customer yet.
  */
 export const stubPolarCore = (responses: Record<string, unknown> = {}) =>
 	spyOn(polarCore, "sendRequest").mockImplementation(([url, init]) => {
@@ -226,9 +226,17 @@ const cannedPolarResponse = (
 	route: string,
 	responses: Record<string, unknown>,
 ) => {
-	if (route in responses) return Response.json(responses[route]);
+	const value = responses[route];
+	const canned = typeof value === "function" ? value() : value;
+	if (canned instanceof Response) return canned;
+	if (route in responses) return Response.json(canned);
 	if (route.startsWith("DELETE ")) return new Response(null, { status: 204 });
-	// no existing customer for the email, so sign-up creates one
+	if (route.startsWith("GET /v1/customers/external/"))
+		return Response.json(
+			{ error: "ResourceNotFound", detail: "Not found" },
+			{ status: 404 },
+		);
+	// no customer with the email either, so the ensure creates one
 	if (route === "GET /v1/customers/")
 		return Response.json({
 			items: [],

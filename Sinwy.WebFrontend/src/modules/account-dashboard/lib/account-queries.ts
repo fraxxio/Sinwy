@@ -7,6 +7,7 @@ import type {
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "#/shared/lib/api";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 
 export const accountKeys = {
 	accounts: ["account", "accounts"],
@@ -19,7 +20,7 @@ export const accountsQuery = queryOptions({
 	queryKey: accountKeys.accounts,
 	queryFn: async () => {
 		const { data, error } = await authClient.listAccounts();
-		if (error) throw new Error(error.message ?? "Couldn't load accounts");
+		if (error) throw new Error(authErrorMessage(error));
 		return data ?? [];
 	},
 });
@@ -28,7 +29,7 @@ export const sessionsQuery = queryOptions({
 	queryKey: accountKeys.sessions,
 	queryFn: async () => {
 		const { data, error } = await authClient.listSessions();
-		if (error) throw new Error(error.message ?? "Couldn't load sessions");
+		if (error) throw new Error(authErrorMessage(error));
 		return data ?? [];
 	},
 });
@@ -75,7 +76,7 @@ export const checkoutForTransfer = async (
 	// the backend's checkout hook reads transferId; the plugin's body type doesn't list it
 	const body = { slug, transferId };
 	const { error } = await authClient.checkout(body);
-	if (error) throw new Error(error.message ?? "Checkout failed");
+	if (error) throw new Error(authErrorMessage(error));
 };
 
 export const declineTransfer = (transferId: string) =>

@@ -22,6 +22,7 @@ import { FieldError, FieldLabel } from "#/shared/components/ui/field";
 import { Input } from "#/shared/components/ui/input";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 
 const sameEmail = (a: string, b: string) =>
 	a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -53,7 +54,7 @@ export function DangerZone({ user }: { user: SessionUser }) {
 		});
 		setBusy(false);
 		if (error) {
-			setError(error.message ?? "Couldn't start account deletion");
+			setError(authErrorMessage(error));
 			return;
 		}
 		setSent(true);

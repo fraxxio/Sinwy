@@ -421,7 +421,7 @@ Owner account deletion (confirmed from an emailed link, D13)
    └─ Polar refuses → nothing changes; the goodbye page shows the error
 → every owned organization → Scheduled for deletion: its slot freed, pending
   invitations and open transfers canceled, out of every open session
-→ the Polar customer is deleted and anonymized (Default 2); it keeps the
+→ the Polar customer, if the user ever had one, is anonymized; it keeps the
   deleted user's id as its external id, which no new user gets, so its late
   webhooks are ignored as an unknown user
 A member who isn't an owner deleting their account leaves the organizations
@@ -459,6 +459,10 @@ organization hooks, `activeOrganization.ts`), `modules/organizations/`
 Polar holds: products and prices, the subscription (status, billing period,
 scheduled plan change, pause, cancellation), payments, refunds, invoices, one
 customer per user (keyed by the user's id) and the customer portal.
+The customer is created just before the user's first checkout or portal visit,
+never on sign-up, so sign-up works while Polar is down. It takes the account's
+email and name, which every user update syncs and each checkout or portal
+visit repairs.
 The app holds: which plan each user is on, slots, organizations and roles,
 transfers, and the organizations a downgrade deactivates.
 
@@ -517,6 +521,8 @@ code; Better Auth's endpoints answer the string code.
 | `PLAN_REQUIRED` (40911) | 409 | Activating or finishing a draft without a plan that grants access; any plan action (change, stay on, suspend, undo, resume, cancel) without a plan |
 | `ORGANIZATION_LIMIT_REACHED` (40912) | 409 | Activating or finishing a draft at the cap |
 | `PLAN_EXISTS` (Better Auth) | 400 | A checkout while the user has a plan, paused included |
+| `BILLING_UNAVAILABLE` (Better Auth) | 503 | A checkout or the portal while Polar fails, times out or can't be reached; try again |
+| `BILLING_ACCOUNT_REJECTED` (Better Auth) | 409 | A checkout or the portal when Polar refuses the customer, or another Polar customer holds the account's email; contact support |
 | `PLAN_SUSPENDED` (40918) | 409 | A plan change, suspend, cancel or their undo while paused; accepting a transfer while paused |
 | `PLAN_NOT_SUSPENDED` (4094) | 409 | Resume when the plan isn't paused |
 | `ORGANIZATION_SUSPENDED` (4093) | 409 | Offering a suspended organization |

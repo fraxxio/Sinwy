@@ -6,7 +6,7 @@ The web app runs on `http://localhost:3000`, which proxies `/api` to the backend
 
 | Step | URL | Real or simulated |
 | --- | --- | --- |
-| Register | `/auth/register` | real; sign-up also creates a real Polar sandbox customer |
+| Register | `/auth/register` | real; makes no Polar call: the sandbox customer is created at the first checkout or portal visit |
 | Verify email | link from `dev:last-email` | real link, read from the console driver's outbox instead of an inbox |
 | Log in | `/auth/login`, then `/auth/postlogin` | real; or `dev:login-as` |
 | Create org | `/organizations/new` | real; takes a free slot when the owner has a plan, else stays a `draft` (inactive, no slot, setup unfinished) |

@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { createUserWithSession, stubPolarCore } from "@backend/test/helpers";
+import {
+	createUserWithSession,
+	polarCoreRequests,
+	stubPolarCore,
+} from "@backend/test/helpers";
 import db from "@db";
 import { user } from "@db/schema/userSchema";
 import { APIError } from "better-auth/api";
@@ -8,7 +12,7 @@ import { auth } from "../auth";
 
 let polarSpy: ReturnType<typeof stubPolarCore>;
 
-// the polar plugin syncs every user update to the Polar customer; keep tests offline
+// every user update is synced to the Polar customer; keep tests offline
 beforeAll(() => {
 	polarSpy = stubPolarCore();
 });
@@ -17,6 +21,7 @@ afterAll(() => polarSpy.mockRestore());
 
 beforeEach(async () => {
 	await db.delete(user);
+	polarSpy.mockClear();
 });
 
 const nameOf = async (userId: string) => {
@@ -60,4 +65,36 @@ test("updateUser without a name skips the name rule", async () => {
 	});
 
 	expect(await nameOf(userId)).toBe("Test User");
+});
+
+test("updateUser syncs the account's email and new name to the Polar customer", async () => {
+	const { userId, cookie } = await createUserWithSession();
+
+	await auth.api.updateUser({
+		body: { name: "Jane Doe" },
+		headers: { cookie },
+	});
+
+	expect(
+		polarCoreRequests(polarSpy, `PATCH /v1/customers/external/${userId}`),
+	).toEqual([{ email: `${userId}@test.dev`, name: "Jane Doe" }]);
+});
+
+test("updateUser for a user with no Polar customer yet still saves", async () => {
+	const { userId, cookie } = await createUserWithSession();
+	polarSpy.mockRestore();
+	polarSpy = stubPolarCore({
+		[`PATCH /v1/customers/external/${userId}`]: Response.json(
+			{ error: "ResourceNotFound", detail: "Not found" },
+			{ status: 404 },
+		),
+	});
+
+	await auth.api.updateUser({
+		body: { name: "Jane Doe" },
+		headers: { cookie },
+	});
+
+	expect(await nameOf(userId)).toBe("Jane Doe");
+	expect(polarSpy).toHaveBeenCalledTimes(1);
 });

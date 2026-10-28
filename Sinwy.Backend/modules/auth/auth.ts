@@ -3,7 +3,9 @@ import { polarCore, productIdFor } from "@backend/infrastructure/polar";
 import {
 	applySubscriptionEvent,
 	ensureCheckoutAllowed,
+	ensurePolarCustomer,
 	revokeAccountSubscriptions,
+	syncPolarCustomer,
 } from "@billingModule";
 import appConfig from "@config";
 import db from "@db";
@@ -27,6 +29,7 @@ import {
 	APIError,
 	createAuthMiddleware,
 	getSessionFromCtx,
+	isAPIError,
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
@@ -36,6 +39,7 @@ import {
 	refuseUnavailableOrganization,
 } from "./activeOrganization";
 import { cleanupDeletedUser } from "./deletedUserCleanup";
+import { refuseUndeliverableEmail } from "./emailDomain";
 import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
@@ -87,12 +91,35 @@ const transferCheckoutFields = async (userId: string, transferId: string) => {
 	};
 };
 
+// the polar plugin logs Polar's error text, whose body echoes what we sent; matches
+// the Polar SDK's wording, guarded by the "plugin checkout while Polar fails" billing test
+const POLAR_ERROR_BODY = /(Polar API returned [^:]*: \d+) - .*/s;
+const EMAIL_ADDRESS = /[^\s@"'<>]+@[^\s@"'<>]+\.[a-z]{2,}/gi;
+
+const scrubLogMessage = (message: string) =>
+	message.replace(POLAR_ERROR_BODY, "$1").replace(EMAIL_ADDRESS, "[email]");
+
 export const auth = betterAuth({
 	baseURL: appConfig.BETTER_AUTH_URL,
 	logger: {
 		level: appConfig.LOG_LEVEL,
 		log: (level, message, ...args) => {
-			authLogger[level](message, args.length > 0 ? { args } : undefined);
+			authLogger[level](
+				scrubLogMessage(message),
+				args.length > 0 ? { args } : undefined,
+			);
+		},
+	},
+	onAPIError: {
+		// a refusal is the caller's to fix; Better Auth's default logs each one at ERROR
+		onError: (error) => {
+			if (!isAPIError(error))
+				return authLogger.error("Auth request failed", { error });
+			if (error.statusCode < 500) return;
+			authLogger.error("Auth request failed", {
+				status: error.statusCode,
+				message: error.message,
+			});
 		},
 	},
 	database: drizzleAdapter(db, {
@@ -185,6 +212,7 @@ export const auth = betterAuth({
 						data: { ...data, name: validName(data.name) },
 					});
 				},
+				after: (user) => syncPolarCustomer(user),
 			},
 		},
 	},
@@ -203,6 +231,11 @@ export const auth = betterAuth({
 		// The polar plugin trusts referenceId with no membership check, so it is
 		// refused here; the subscription read is ours (GET /api/account/subscription).
 		before: createAuthMiddleware(async (ctx) => {
+			// before the user lookup, so the refusal says nothing about existing accounts
+			if (ctx.path === "/sign-up/email")
+				await refuseUndeliverableEmail(ctx.body?.email);
+			if (ctx.path === "/change-email")
+				await refuseUndeliverableEmail(ctx.body?.newEmail);
 			if (ctx.path === "/checkout") {
 				const body = checkoutBodySchema.safeParse(ctx.body);
 				if (!body.success)
@@ -213,18 +246,26 @@ export const auth = betterAuth({
 				if (!session) throw new APIError("UNAUTHORIZED");
 				const { transferId, ...rest } = body.data;
 				const { allowTrial } = await ensureCheckoutAllowed(session.user.id);
+				const transferFields = transferId
+					? await transferCheckoutFields(session.user.id, transferId)
+					: {};
+				// Polar locks the checkout email only for an existing customer
+				await ensurePolarCustomer(session.user);
 				return {
 					context: {
 						body: {
 							...rest,
-							...(transferId
-								? await transferCheckoutFields(session.user.id, transferId)
-								: {}),
+							...transferFields,
 							// one trial per user: the plugin passes allow_trial on to Polar
 							...(!allowTrial && { allow_trial: false }),
 						},
 					},
 				};
+			}
+			if (ctx.path === "/customer/portal") {
+				const session = await getSessionFromCtx(ctx);
+				if (!session) throw new APIError("UNAUTHORIZED");
+				await ensurePolarCustomer(session.user);
 			}
 			if (ctx.path.startsWith("/organization/")) {
 				const session = await getSessionFromCtx(ctx);
@@ -312,8 +353,9 @@ export const auth = betterAuth({
 		}),
 		polar({
 			client: polarCore,
-			// also deletes the customer on user delete, anonymized by `polarCore`
-			createCustomerOnSignUp: true,
+			// the customer is ours: ensured before checkout and the portal, synced on
+			// user update, anonymized on user delete
+			createCustomerOnSignUp: false,
 			use: [
 				checkout({
 					products: PLAN_SLUGS.map((slug) => ({

@@ -3,6 +3,7 @@ import { BASE_ERROR_CODES } from "better-auth";
 import { useState } from "react";
 import z from "zod";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 import { useAppForm } from "#/shared/lib/form";
 
 const loginSchema = z.object({
@@ -41,7 +42,7 @@ const useLogin = ({ redirectFrom }: Props) => {
 			if (!error) return;
 			if (error.code === BASE_ERROR_CODES.EMAIL_NOT_VERIFIED.code)
 				setUnverifiedEmail(value.email);
-			else setServerError(error.message ?? "Sign in failed");
+			else setServerError(authErrorMessage(error));
 		},
 	});
 

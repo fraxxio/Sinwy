@@ -11,6 +11,7 @@ import {
 } from "@tanstack/react-query";
 import { api } from "#/shared/lib/api";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 
 export const billingKeys = {
 	all: ["billing"] as const,
@@ -82,7 +83,7 @@ export const requestInvoiceDownload = (orderId: string) =>
 /** On success the auth client navigates the tab to Polar's customer portal. */
 export const openPolarPortal = async () => {
 	const { error } = await authClient.customer.portal();
-	if (error) throw new Error(error.message ?? "Couldn't open Polar");
+	if (error) throw new Error(authErrorMessage(error));
 };
 
 export type OrganizationSlotAction = "activate" | "deactivate";

@@ -2,6 +2,7 @@ import type { OfferTransferBody, OrganizationTransferDto } from "@sinwy/shared";
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "#/shared/lib/api";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 
 export const transferKeys = {
 	open: (organizationId: string) =>
@@ -33,7 +34,7 @@ export const transferCandidatesQuery = (
 			const { data, error } = await authClient.organization.listMembers({
 				query: { organizationId },
 			});
-			if (error) throw new Error(error.message ?? "Couldn't load members");
+			if (error) throw new Error(authErrorMessage(error));
 			return (data?.members ?? [])
 				.filter((member) => member.userId !== ownerUserId)
 				.map((member) => ({

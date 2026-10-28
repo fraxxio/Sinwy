@@ -6,6 +6,7 @@ import {
 } from "@sinwy/shared";
 import { useRouteContext } from "@tanstack/react-router";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 
 export type MemberAccess = { roles: OrgRole[] };
 
@@ -21,7 +22,8 @@ export const memberAccessQuery = (organizationId: string) => ({
 		const { data, error } = await authClient.organization.getActiveMemberRole({
 			query: { organizationId },
 		});
-		if (error || !data) throw new Error(error?.message ?? "Not a member");
+		if (error || !data)
+			throw new Error(error ? authErrorMessage(error) : "Not a member");
 		return { roles: parseMemberRoles(data.role) };
 	},
 	staleTime: 60_000,
