@@ -1838,7 +1838,13 @@ test("plugin checkout while Polar fails → 500 with only the generic message", 
 		),
 	});
 
+	const consoleError = spyOn(console, "error").mockImplementation(() => {});
+
 	const res = await checkout(cookie, { slug: "professional" });
+	const logged = consoleError.mock.calls
+		.map((args) => Bun.inspect(args))
+		.join("\n");
+	consoleError.mockRestore();
 
 	expect(res.status).toBe(500);
 	expect(await res.json()).toEqual({
@@ -1846,6 +1852,8 @@ test("plugin checkout while Polar fails → 500 with only the generic message", 
 		message: "Something went wrong. Try again in a moment.",
 	});
 	expect(checkoutsCreated()).toHaveLength(1);
+	expect(logged).toContain("Polar API returned a server error: 500");
+	expect(logged).not.toContain("db shard 7 down");
 });
 
 test("plugin checkout for a user with no Polar customer → the customer created under the account's email, then the checkout", async () => {

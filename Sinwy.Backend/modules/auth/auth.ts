@@ -29,6 +29,7 @@ import {
 	APIError,
 	createAuthMiddleware,
 	getSessionFromCtx,
+	isAPIError,
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
 import { z } from "zod";
@@ -90,12 +91,34 @@ const transferCheckoutFields = async (userId: string, transferId: string) => {
 	};
 };
 
+// the polar plugin logs Polar's error text, whose body echoes what we sent
+const POLAR_ERROR_BODY = /(Polar API returned [^:]*: \d+) - .*/s;
+const EMAIL_ADDRESS = /[^\s@"'<>]+@[^\s@"'<>]+\.[a-z]{2,}/gi;
+
+const scrubLogMessage = (message: string) =>
+	message.replace(POLAR_ERROR_BODY, "$1").replace(EMAIL_ADDRESS, "[email]");
+
 export const auth = betterAuth({
 	baseURL: appConfig.BETTER_AUTH_URL,
 	logger: {
 		level: appConfig.LOG_LEVEL,
 		log: (level, message, ...args) => {
-			authLogger[level](message, args.length > 0 ? { args } : undefined);
+			authLogger[level](
+				scrubLogMessage(message),
+				args.length > 0 ? { args } : undefined,
+			);
+		},
+	},
+	onAPIError: {
+		// a refusal is the caller's to fix; Better Auth's default logs each one at ERROR
+		onError: (error) => {
+			if (!isAPIError(error))
+				return authLogger.error("Auth request failed", { error });
+			if (error.statusCode < 500) return;
+			authLogger.error("Auth request failed", {
+				status: error.statusCode,
+				message: error.message,
+			});
 		},
 	},
 	database: drizzleAdapter(db, {

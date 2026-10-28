@@ -109,3 +109,44 @@ Finished phases of [signup-resilience-plan.md](signup-resilience-plan.md), each 
 - Shipped: `modules/auth/emailDomain.ts`, which is `refuseUndeliverableEmail` over `emailDomainAcceptsMail`. A non-null MX passes. A lone null MX is refused even when the domain has an A record. With no MX, an A or AAAA record passes. `ENOTFOUND`/`ENODATA` on every lookup means refused. Any other error, or the 2 s cap, lets the address through with a WARN that names only the domain and the reason. `.test` is skipped unless `NODE_ENV=prod`. `hooks.before` calls it for `/sign-up/email` (`body.email`) and `/change-email` (`body.newEmail`), before Better Auth's user lookup, and refuses with a 400 `EMAIL_DOMAIN_INVALID` "Enter a valid email". `EMAIL_DOMAIN_INVALID` is in `AUTH_ERROR_CODES`. Frontend: both forms branch on the code and call the new `showFieldError` helper, so the message sits under the email field. Tests: `emailDomain.test.ts` (NXDOMAIN, no records, MX with no address lookup, A only and AAAA only, null MX with an A record, SERVFAIL, ETIMEOUT, a hung lookup under fake timers, the 400 body, `.test` outside prod and in prod). `signUp.test.ts` now also covers a refused sign-up (no row, no email) and a refused email change (no confirmation, while an accepted change sends one).
 - Differs from plan: there were no change-email tests to extend, so the change-email cases went into `signUp.test.ts`, which already has the server and outbox setup. The server field error is set as a form-sourced `onDynamic` error so that TanStack Form clears it on the next validation. Without that, it would stick and block the next submit. The trade-off is that editing any field clears it, not only the email field. Each refusal logs `ERROR [Better Auth]: Enter a valid email` through Better Auth's router `onError`, just as the existing hook refusals do. That is left for phase 4.
 - Checked in the running app (e2e, real DNS): signing up with `newuser@no-such-domain-sinwy.invalid` showed "Enter a valid email" under the email field (`aria-invalid`), with no form-level error, no `user` row and no email. Editing the field cleared the error. `newuser@sinwy.test` reached "Check your inbox", with a row and a verification email. For the seeded gmail plus-alias user, changing the email to `x@gmail.con` showed the field error, left the email unchanged and sent no confirmation. Editing cleared that error too. There were no DNS warnings, so the lookups did not fail open. Not checked: the prod path where `.test` is looked up (unit-tested only), a real DNS outage (unit-tested only), and delivery through Resend with the hook in place.
+
+## Phase 4: Code review
+
+**Goal:** A review of phases 1 to 3 against auth, money and data-deletion risks, with findings fixed or recorded.
+
+**Files:** `git diff 7427aa8 HEAD` (the commit before phase 1). The paths that matter:
+- Backend: `modules/auth/auth.ts` (`hooks.before`, `databaseHooks.user.update.after`, `deleteUser`), `modules/auth/routes.ts` (5xx rewrite), `modules/auth/emailDomain.ts`, `modules/auth/deletedUserCleanup.ts`, `modules/billing/customer.ts`, `infrastructure/polar/polarClient.ts` and `polarErrors.ts`.
+- Tests: `modules/auth/tests/signUp.test.ts`, `emailDomain.test.ts`, `userUpdateHook.test.ts`, `deleteUserCallback.test.ts`, `modules/billing/tests/customer.test.ts` and `billing.test.ts`, `test/helpers.ts` (`stubPolarCore`).
+- Frontend: `src/shared/lib/auth/auth-error.ts`, `src/shared/lib/form.ts` (`showFieldError`), `src/modules/auth/lib/useRegister.ts`, `src/modules/account-dashboard/components/settings/EmailSection.tsx`.
+- Logs to judge: the plugin's raw Polar error text (standing notes), Better Auth's `Sign-up attempt for existing email`, and its ERROR line for every hook refusal.
+
+**Steps:**
+- Check that no path reaches Polar during sign-up, verification or login.
+- Check that checkout can never create a customer under a different email than the account's, and can't proceed without a customer.
+- Check that user deletion still revokes the plan and anonymizes the customer, and that a late webhook for the deleted id still finds no user.
+- Check that the 5xx rewrite can't hide a deliberate refusal, and that nothing logs a Polar body or a customer email.
+- Check that the DNS check fails open and doesn't add latency on the happy path beyond one lookup.
+
+**Tests that matter:** Whatever the review finds missing on the paths above.
+
+**Done when:** Findings are fixed or written into the log with a reason.
+
+**Verify:** None.
+
+### Log (2026-10-28, `fix(backend): keep Polar bodies, emails and refusals out of auth logs`)
+- Shipped: three logging fixes in `modules/auth/auth.ts`. (1) The Better Auth logger adapter cuts Polar's response body from the plugin's `Polar … failed. Error: Polar API returned …: <status> - <body>` lines. A 422 body echoes our input, including the `customer_ip_address` the plugin sends. (2) The adapter masks email addresses, so `Sign-up attempt for existing email:` logs `[email]`. (3) `onAPIError.onError` replaces Better Auth's default error logging. That default printed every 4xx `APIError` (wrong password, "Enter a valid email", org refusals) as `ERROR [Better Auth]: …` on its own console logger whenever `LOG_LEVEL` is debug, warn or error. Refusals are now not logged; a 5xx `APIError` logs its status and message, and any other error is logged in full, all through our logger. Tests: `signUp.test.ts` signs up twice with the same address, then with `@gmail.con`, over HTTP, and asserts that neither address nor the refusal reaches the console (the console email driver's own lines excluded). The `billing.test.ts` Polar-500 checkout test now also asserts that the status is logged and the body isn't. Both tests fail against the previous `auth.ts`.
+- Review, checked and holding:
+  - Sign-up, verification and login make no Polar call except the verification's best-effort sync. In plugin 2.1.0, its user create, update and delete hooks all return early when `createCustomerOnSignUp` is false.
+  - Checkout can't change the customer or proceed without one. `checkoutBodySchema` is a `strictObject`, so no `organization_id` or email reaches the plugin. The ensure runs after the plan and transfer guards and throws before the plugin's handler, and the plugin sends only `external_customer_id`. No cookie cache is configured, so `session.user` is read from the database and the ensure writes the current email. Polar's `email` list filter is an exact match (API spec), so linking can't take a customer that belongs to another address. Customers linked elsewhere and team customers are refused (`customer.test.ts`, `billing.test.ts`).
+  - Deletion still revokes in `beforeDelete` and anonymizes in `afterDelete` (`anonymize: true`; a 404 is fine). A late webhook for the deleted id is a no-op (`unknown-user`, `projection.test.ts`).
+  - The 5xx rewrite touches only a JSON body with status ≥ 500 whose `code` isn't one of ours. A 4xx is never rewritten, and our 503 and 409 pass through.
+  - The DNS check makes one MX lookup on the happy path, and A/AAAA only when there is no MX. Measured in Bun: an unreachable resolver answers `ETIMEOUT` after about 23 s, not `ENOTFOUND`, so the 2 s cap lets the address through.
+- Review, accepted with a reason:
+  - Verification still sends one best-effort `PATCH` (Default 5). It never fails the request, and it waits at most the 5 s timeout. The `update.after` hook can't see which fields changed, so skipping it would need state carried from `update.before` or a new column.
+  - A 5xx rewrite logs the request pathname, and `/reset-password/:token` has a one-time, 1 h token in its path. That only matters if that GET answers 5xx.
+  - If the Polar delete fails at account deletion, the customer keeps its email and the deleted id. A later account with that email then gets `BILLING_ACCOUNT_REJECTED` at checkout ("contact support"), as it did with the plugin. The failure is logged as `Polar customer delete failed`.
+  - `describePolarError` falls back to `error.message` for an error that isn't a Polar HTTP error (e.g. an SDK response-validation error), which could carry response text. That only happens when Polar's response breaks the SDK schema.
+  - A `BILLING_UNAVAILABLE` 503 logs twice: `Polar customer ensure failed` with the cause and `Auth request failed` with the status.
+  - A DNS lookup isn't cancelled at the 2 s cap; it runs on in the background until the resolver gives up.
+- Differs from plan: no separate review document; the findings are recorded here. The scrub depends on the SDK's message text (`Polar API returned …: <status> - <body>`, checked against SDK 1.0.2). A change to that text would let bodies through again, and the `billing.test.ts` assertion would catch it.
+- Checked in the running app: nothing (Verify: None). The logging was checked through the HTTP tests above.

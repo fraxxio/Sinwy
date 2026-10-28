@@ -106,6 +106,44 @@ test("sign-up with a domain that can't receive mail is refused, with no user and
 	expect(await emailsTo(email)).toEqual([]);
 });
 
+const signUp = (email: string) =>
+	fetch(new URL("/api/auth/sign-up/email", base), {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({
+			name: "New User",
+			email,
+			password: "correct-horse-battery",
+		}),
+	});
+
+test("a repeat sign-up and a refused one log neither the address nor the refusal", async () => {
+	const existing = `${crypto.randomUUID()}@sign-up.test`;
+	const undeliverable = `${crypto.randomUUID()}@gmail.con`;
+	expect((await signUp(existing)).status).toBe(200);
+	const consoleSpies = (["debug", "info", "log", "warn", "error"] as const).map(
+		(method) => spyOn(console, method).mockImplementation(() => {}),
+	);
+
+	let logged = "";
+	try {
+		expect((await signUp(existing)).status).toBe(200);
+		expect((await signUp(undeliverable)).status).toBe(400);
+		// the console email driver prints each email by design
+		logged = consoleSpies
+			.flatMap((spy) => spy.mock.calls)
+			.map((args) => Bun.inspect(args))
+			.filter((line) => !/[A-Z]+ \[email\]"/.test(line))
+			.join("\n");
+	} finally {
+		for (const spy of consoleSpies) spy.mockRestore();
+	}
+
+	expect(logged).not.toContain(existing);
+	expect(logged).not.toContain(undeliverable);
+	expect(logged).not.toContain("Enter a valid email");
+});
+
 const changeEmail = (cookie: string, newEmail: string) =>
 	fetch(new URL("/api/auth/change-email", base), {
 		method: "POST",
