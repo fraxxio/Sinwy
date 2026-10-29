@@ -1,0 +1,1 @@
+export { registerServiceRoutes } from "./routes";

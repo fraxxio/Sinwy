@@ -226,6 +226,13 @@ test("two orgs with the same name → distinct slugs", async () => {
 	expect(second.slug).not.toBe(first.slug);
 });
 
+test("a name matching a top-level route → suffixed slug", async () => {
+	const { cookie } = await createUserWithSession();
+	expect((await createOrg("Settings", cookie)).slug).toMatch(
+		/^settings-[a-z0-9]{6}$/,
+	);
+});
+
 test("built-in organization.create endpoint → rejected", async () => {
 	const { cookie } = await createUserWithSession();
 	const res = await post(

@@ -1,7 +1,8 @@
 import type { Membership } from "@authModule";
+import { uniqueSlug } from "@backend/lib/slug";
 import {
 	type OrganizationProfileInput,
-	uniqueSlug,
+	reservedSlugs,
 } from "@backend/modules/organizations/utils";
 import db from "@db";
 import {
@@ -52,7 +53,11 @@ export const createOrganization = async (
 	industry: OrganizationIndustry,
 	timezone: string,
 ): Promise<OrganizationDto> => {
-	const slug = await uniqueSlug(name, isSlugTaken);
+	const slug = await uniqueSlug(
+		name,
+		async (candidate) =>
+			reservedSlugs.has(candidate) || (await isSlugTaken(candidate)),
+	);
 	const org = await insertOrganizationWithOwner(
 		{ name, slug, industry, timezone },
 		userId,

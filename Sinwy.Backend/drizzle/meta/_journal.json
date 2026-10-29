@@ -127,6 +127,13 @@
       "when": 1793293210545,
       "tag": "0017_organization_timezone_currency",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793293565459,
+      "tag": "0018_services",
+      "breakpoints": true
     }
   ]
 }

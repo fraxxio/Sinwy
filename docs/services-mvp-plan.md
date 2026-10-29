@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Organization timezone and currency | – | done | `feat(backend, web): organization timezone and currency` |
-| 2 | Services module: schema and CRUD | 1 | todo | |
+| 2 | Services module: schema and CRUD | 1 | done | `feat(backend): services schema and CRUD` |
 | 3 | Business hours and closures: schema and endpoints | 2 | todo | |
 | 4 | Bookable times function and endpoint | 3 | todo | |
 | 5 | Services list, editor and duplicate (web) | 2 | todo | |
@@ -49,12 +49,12 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **"Slot" is taken.** In this codebase a slot is one unit of an owner's plan cap (`modules/organizations/slots.ts`, [org-rules-map.md](org-rules-map.md)). Call the generated booking start times **bookable times** in code, routes and UI copy (`bookableTimes.ts`, `/times`), never "slots".
 - **Permissions already exist.** `services:read` / `services:write` are in `Sinwy.Shared/types/access/Permission.ts` and `RolePermissions.ts`: owner and admin write, staff read. Use `requirePermission` from `@authModule`; don't add permissions.
 - **Membership gives the status.** `membershipFrom(ctx)` returns `{ organizationId, roles, status, plan }` (`Sinwy.Backend/modules/auth/requirePermission.ts`); `status === "active"` is the write check. `resolveMembership` already returns null for orgs scheduled for deletion.
-- **Route pattern:** `organizationPath("services")` → `/api/organizations/:organizationId/services`. Register in a `registerServiceRoutes(app)` exported from the module's `index.ts` and called in `Sinwy.Backend/index.ts`; add `@servicesModule` to `Sinwy.Backend/import_map.json` and the `paths` in `Sinwy.Backend/tsconfig.json`.
-- **Controller pattern:** `safeParse(await c.req.json().catch(() => null))`, `fail(message, status, code?)` / `ok(data, status?, message?)` from `Sinwy.Backend/lib/app/respond.ts`; services return `{ ok: true, data } | { ok: false, error }`. See `saveOrganizationProfileHandler` in `modules/organizations/controller.ts` and its local `respondWriteError`.
+- **Services module (Phase 2):** `@servicesModule` is wired (`import_map.json`, `tsconfig.json`, `Sinwy.Backend/index.ts`). Add new routes to `registerServiceRoutes` in `modules/services/routes.ts` with its `read`/`write` middleware arrays; controllers use the local `respondError` and `parseBody` (400 with the first Zod message); service functions take the `Membership`, return `Result<T>` and check `membership.status !== "active"` → `inactive` before any write.
 - **IDs are `crypto.randomUUID()` in `text` columns**; FKs to `organization.id` use `onDelete: "cascade"`, so org purge (`modules/organizations/purge.ts`) removes services and hours without code changes.
-- **Migrations:** edit `Sinwy.Backend/db/schema/`, export from `db/schema/index.ts`, then `bun run db:generate --name <name>` and `bun run db:migrate`. Latest is `drizzle/0017_organization_timezone_currency.sql`. Check constraints use `check(...)`; see `organizationTransfer` in `organizationSchema.ts`.
-- **Slug helpers are internal to organizations** (`slugify`, `uniqueSlug` in `modules/organizations/utils.ts`). Move them to `Sinwy.Backend/lib/slug.ts` and import from there in both modules rather than reaching into another module.
-- **Backend tests** use `bun:test` with a real DB and helpers in `Sinwy.Backend/test/helpers.ts`: `createUserWithSession`, `insertOrganization`, `givePlan`, `holdSlot`, `activateOrganization`, `joinOrganization`, `fakeCtx`. See `modules/transfers/tests/transfer.test.ts`.
+- **Migrations:** edit `Sinwy.Backend/db/schema/`, export from `db/schema/index.ts`, then `bun run db:generate --name <name>` and `bun run db:migrate`. Latest is `drizzle/0018_services.sql`. Check constraints use `check(...)`; see `organizationTransfer` in `organizationSchema.ts`.
+- **Backend tests** use `bun:test` with a real DB and helpers in `Sinwy.Backend/test/helpers.ts`: `createUserWithSession`, `insertOrganization`, `givePlan`, `holdSlot`, `activateOrganization`, `joinOrganization`, `fakeCtx`. HTTP-level tests start an app on port 0; copy the `seedOrg`/`call` harness in `modules/services/tests/services.test.ts`. Make an org inactive by setting `slotHeldAt: null`.
+- **Drizzle queries are thenables, not Promises:** `expect(query).rejects` fails; use `query.then(() => null, (e) => e)` and read `error.cause.message` for the Postgres text (see the check-constraint tests).
+- **`exactOptionalPropertyTypes` is on:** a `.partial()` Zod output has `| undefined` values, so repository update types spell that out (`ServiceUpdate` in `modules/services/repository.ts`).
 - **Org locale (Phase 1):** `getOrganizationLocale(organizationId) → { timezone, currency } | null` and `setOrganizationTimezone(organizationId, timezone, executor?)` come from `@organizationsModule`; pass a transaction as `executor` to join it (`Tx` pattern in `modules/organizations/access.ts`). Validate zones with `isTimeZone` from `@sinwy/shared` (also `DEFAULT_TIME_ZONE`, `currencyForCountry`, `DEFAULT_CURRENCY`).
 - **Time zone names:** Bun lists 445 zones in `Intl.supportedValuesOf("timeZone")` but lacks newer names like `Europe/Kyiv` (it has `Europe/Kiev`); `isTimeZone` also accepts any `Area/City` name Intl can format, so a stored zone may be missing from that list. The Phase 6 combobox must still show the stored value. Log: Phase 1.
 - **Playwright's browser zone is the host's** (`Europe/Vilnius`), not `UTC`, unless the context sets `timezoneId`.
@@ -63,52 +63,15 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 ---
 
-## Phase 2: Services module: schema and CRUD
-
-**Goal:** Owners and admins can create, list, edit, toggle, duplicate and archive services through the API; staff can only read.
-
-**Files:**
-- New `Sinwy.Backend/db/schema/serviceSchema.ts` (export from `db/schema/index.ts`), new migration.
-- New module `Sinwy.Backend/modules/services/`: `index.ts`, `routes.ts`, `controller.ts`, `service.ts`, `repository.ts`, `utils.ts` (Zod bodies), `tests/`.
-- New `Sinwy.Backend/lib/slug.ts`, moving `slugify`/`uniqueSlug` out of `modules/organizations/utils.ts` (update its imports).
-- `Sinwy.Backend/import_map.json`, `Sinwy.Backend/tsconfig.json`, `Sinwy.Backend/index.ts`.
-- New `Sinwy.Shared/types/service/` (`ServiceDto`, shared Zod schema for the editor fields), exported from `Sinwy.Shared/types/index.ts`.
-- `getOrganizationLocale` from `@organizationsModule` (currency for create); `membershipFrom`/`requirePermission` from `@authModule`.
-- Tests: `Sinwy.Backend/test/helpers.ts`; `modules/organizations/tests/slug.test.ts` follows the slug helpers to `lib/`.
-
-**Steps:**
-- `service` table: `id`, `organizationId` (FK cascade), `name`, `slug`, `description` (nullable), `durationMinutes`, `priceMinor`, `currency` (char 3), `capacity` (default 1), `bufferBeforeMinutes`, `bufferAfterMinutes` (default 0), `isActive` (default true), `archivedAt` (nullable), `createdAt`, `updatedAt`. Partial unique index on `(organizationId, slug) where archived_at is null`; index on `organizationId`. Check constraints: duration 5–720, price ≥ 0, buffers 0–240, capacity ≥ 1.
-- Shared schema validates the same ranges plus multiples of 5 for duration and buffers; backend body extends it (trim, canonicalize), like `organizationProfileBody` does.
-- Endpoints under `organizationPath("services")`: `GET` list (non-archived, by name), `POST` create, `GET :serviceId`, `PATCH :serviceId` (partial, includes `isActive`), `POST :serviceId/duplicate`, `DELETE :serviceId` (sets `archivedAt`). Reads `services:read`, writes `services:write`.
-- Create copies `currency` from `getOrganizationLocale`; the body has no currency or capacity field.
-- Every query scopes by `membership.organizationId`; a service of another org, or archived, is 404.
-- Writes on an inactive org return the 409 `ORGANIZATION_INACTIVE` error.
-- Duplicate copies every field except id, slug, timestamps; name becomes "<name> (copy)", `isActive` false so it isn't bookable by surprise.
-- Map rows to `ServiceDto`; never return the Drizzle row.
-
-**Tests that matter:**
-- Staff gets 403 on every write and 200 on reads; a member of org A gets 404 for org B's service ids.
-- Inactive org: writes 409, reads 200.
-- Archive frees the slug: creating a service with the same name afterwards succeeds and gets the base slug.
-- Duplicate keeps price, currency, duration and buffers, comes back inactive, with a distinct slug.
-- Price and duration out of range are rejected at 400 and by the DB constraint.
-
-**Done when:**
-- All endpoints respond as above and `ServiceDto` is importable from `@sinwy/shared`.
-
-**Verify:** Seed `org-with-staff`. As the owner, via the API: create "Haircut" (30 min, 2500), list it, patch `isActive: false`, duplicate it, archive the original. Check `service` rows: two rows, one with `archived_at` set, the copy inactive with currency equal to the org's. As the staff member, `POST` returns 403 and `GET` returns the list. Nothing simulated.
-
----
-
 ## Phase 3: Business hours and closures: schema and endpoints
 
 **Goal:** An organization's weekly hours, timezone and whole-day closures can be read and saved through the API.
 
 **Files:**
-- `Sinwy.Backend/db/schema/serviceSchema.ts` (add tables), new migration.
-- `Sinwy.Backend/modules/services/` (`routes.ts`, `controller.ts`, `service.ts`, `repository.ts`, `utils.ts`, `tests/`).
-- `Sinwy.Shared/types/service/` (`AvailabilityDto`, `ClosureDto`, shared Zod schemas).
-- Organizations `index.ts` exports from Phase 1 (`getOrganizationLocale`, `setOrganizationTimezone`).
+- `Sinwy.Backend/db/schema/serviceSchema.ts` (add both tables next to `service`; already exported from `db/schema/index.ts`), new migration `0019`.
+- `Sinwy.Backend/modules/services/`: `routes.ts` (`organizationPath("availability")`, `read`/`write` arrays), `controller.ts` (`respondError`, `parseBody`), `service.ts` (`Result<T>`, inactive check), `repository.ts`, `utils.ts`, new `tests/availability.test.ts` reusing the harness from `tests/services.test.ts`.
+- `Sinwy.Shared/types/service/` (new `Availability.ts` with `AvailabilityDto`/`ClosureDto` and the shared Zod schemas; export from `service/index.ts`).
+- `getOrganizationLocale` and `setOrganizationTimezone(organizationId, timezone, executor)` from `@organizationsModule`. Its `Tx` type lives in `modules/organizations/access.ts` and isn't exported from the module's `index.ts`; export it there or derive it locally from `db.transaction`. "Today in the org's zone" needs no library: `Intl.DateTimeFormat("en-CA", { timeZone })` formats `YYYY-MM-DD` (`date-fns` only arrives in Phase 4).
 
 **Steps:**
 - `service_availability`: `id`, `organizationId` (FK cascade), `serviceId` (nullable FK cascade), `weekday` smallint 1–7, `startTime`/`endTime` `time`, check `start_time < end_time`, index on `(organizationId, serviceId)`.
