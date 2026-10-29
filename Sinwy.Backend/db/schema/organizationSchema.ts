@@ -21,6 +21,8 @@ export const organization = pgTable(
 		// set while the org holds one of its owner's slots; active only if their plan grants access too
 		slotHeldAt: timestamp("slot_held_at"),
 		industry: text("industry").notNull().default("other"),
+		timezone: text("timezone").notNull().default("UTC"),
+		currency: text("currency").notNull().default("EUR"),
 		onboardingCompletedAt: timestamp("onboarding_completed_at"),
 		deletionScheduledAt: timestamp("deletion_scheduled_at"),
 		logo: text("logo"),

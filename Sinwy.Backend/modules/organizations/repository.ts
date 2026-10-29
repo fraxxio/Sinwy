@@ -21,7 +21,12 @@ import {
 	not,
 	sql,
 } from "drizzle-orm";
-import { clearFromSessions, organizationAccess, ownedBy } from "./access";
+import {
+	clearFromSessions,
+	organizationAccess,
+	ownedBy,
+	type Tx,
+} from "./access";
 import { countHeldSlots, slotLimit } from "./slots";
 
 export const isSlugTaken = async (slug: string) => {
@@ -34,7 +39,7 @@ export const isSlugTaken = async (slug: string) => {
 
 /** A new organization with its creator as owner. */
 export const insertOrganizationWithOwner = (
-	values: { name: string; slug: string; industry: string },
+	values: { name: string; slug: string; industry: string; timezone: string },
 	userId: string,
 ) =>
 	db.transaction(async (tx) => {
@@ -119,17 +124,44 @@ export const upsertProfile = async (
 		typeof organizationProfile.$inferInsert,
 		"organizationId" | "updatedAt"
 	>,
-) => {
+	currency: string,
+) =>
+	db.transaction(async (tx) => {
+		const [row] = await tx
+			.insert(organizationProfile)
+			.values({ ...values, organizationId })
+			.onConflictDoUpdate({
+				target: organizationProfile.organizationId,
+				set: { ...values, updatedAt: sql`now()` },
+			})
+			.returning();
+		await tx
+			.update(organization)
+			.set({ currency })
+			.where(eq(organization.id, organizationId));
+		return row;
+	});
+
+export const findOrganizationLocale = async (organizationId: string) => {
 	const [row] = await db
-		.insert(organizationProfile)
-		.values({ ...values, organizationId })
-		.onConflictDoUpdate({
-			target: organizationProfile.organizationId,
-			set: { ...values, updatedAt: sql`now()` },
+		.select({
+			timezone: organization.timezone,
+			currency: organization.currency,
 		})
-		.returning();
-	return row;
+		.from(organization)
+		.where(eq(organization.id, organizationId));
+	return row ?? null;
 };
+
+export const updateOrganizationTimezone = (
+	executor: Tx | typeof db,
+	organizationId: string,
+	timezone: string,
+) =>
+	executor
+		.update(organization)
+		.set({ timezone })
+		.where(eq(organization.id, organizationId));
 
 /** Idempotent: an organization keeps the timestamp of its first completion. */
 export const markOnboardingCompleted = async (organizationId: string) => {

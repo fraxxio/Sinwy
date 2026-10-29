@@ -61,6 +61,7 @@ export const createOrganizationHandler: Handler = async (c) => {
 		user.id,
 		body.data.name,
 		body.data.industry,
+		body.data.timezone,
 	);
 	return ok(org, 201, "Organization created");
 };

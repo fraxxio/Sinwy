@@ -120,6 +120,13 @@
       "when": 1793039774533,
       "tag": "0016_drop_transfer_billing_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793293210545,
+      "tag": "0017_organization_timezone_currency",
+      "breakpoints": true
     }
   ]
 }

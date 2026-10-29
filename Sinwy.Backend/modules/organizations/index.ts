@@ -12,6 +12,7 @@ export {
 	getInvitationOrganizationId,
 	getMembershipAccess,
 	getOrganizationAccess,
+	getOrganizationLocale,
 	getOrganizationOnboarding,
 	getOrganizationState,
 	getUnfinishedOnboardingOrganizationId,
@@ -21,11 +22,13 @@ export {
 	isSuspended,
 	listOrganizations,
 	listOwnedOrganizationIds,
+	type OrganizationLocale,
 	type OrganizationState,
 	organizationPlanOf,
 	organizationStatusOf,
 	saveOrganizationProfile,
 	scheduleOwnedOrganizationsForDeletion,
+	setOrganizationTimezone,
 } from "./service";
 export {
 	fitSlotsToCap,

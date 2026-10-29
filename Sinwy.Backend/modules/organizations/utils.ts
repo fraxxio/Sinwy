@@ -1,6 +1,8 @@
 import {
 	COUNTRY_CODES,
 	DEFAULT_ORGANIZATION_INDUSTRY,
+	DEFAULT_TIME_ZONE,
+	isTimeZone,
 	ORGANIZATION_INDUSTRIES,
 	organizationProfileSchema,
 } from "@sinwy/shared";
@@ -61,6 +63,11 @@ export const createOrganizationBody = z.object({
 	industry: z
 		.enum(ORGANIZATION_INDUSTRIES)
 		.default(DEFAULT_ORGANIZATION_INDUSTRY),
+	// detected by the browser, so a bad value falls back instead of blocking creation
+	timezone: z
+		.unknown()
+		.optional()
+		.transform((value) => (isTimeZone(value) ? value : DEFAULT_TIME_ZONE)),
 });
 
 const optional = <T extends z.ZodType<string, string>>(base: T) =>
