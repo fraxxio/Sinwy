@@ -21,3 +21,12 @@ export const updateServiceBody = serviceSchema
 
 export type CreateServiceInput = z.infer<typeof createServiceBody>;
 export type UpdateServiceInput = z.infer<typeof updateServiceBody>;
+
+/** The calendar date at `now` in `timezone`, as "YYYY-MM-DD". */
+export const todayIn = (timezone: string, now = new Date()) =>
+	new Intl.DateTimeFormat("en-CA", {
+		timeZone: timezone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+	}).format(now);

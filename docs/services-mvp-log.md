@@ -72,3 +72,36 @@ Finished phases of [services-mvp-plan.md](services-mvp-plan.md).
 - Shipped: `service` table (migration 0018) with the planned checks, `(organization_id, slug)` unique only while not archived. Module `modules/services/` with list, create, get, PATCH (partial, incl. `isActive`), duplicate and archive under `organizationPath("services")`. `ServiceDto`, `SERVICE_LIMITS` and `serviceSchema` in `Sinwy.Shared/types/service/`. `slugify`/`uniqueSlug` moved to `Sinwy.Backend/lib/slug.ts` with a `fallback` argument (`"service"` for services); the organization-only `reservedSlugs` stay in `modules/organizations/utils.ts` and organizations pass them into `isTaken`. 24 tests (HTTP and DB constraint) in `modules/services/tests/services.test.ts`.
 - Differs from plan: `ServiceDto` leaves out `capacity` (not editable, Default 7). Price has an upper bound (`priceMinorMax` 99,999,999) so a huge number is a 400, not an integer-overflow 500. Duplicate names are cut so "<name> (copy)" stays within the 100-character limit; the copy's slug comes from that name (`haircut-copy`). Unknown body keys (`currency`, `capacity`) are dropped, not rejected. The reserved-slug test moved from the slug unit test to an org-creation HTTP test.
 - Checked in the running app: seeded `org-with-staff`; as the owner via curl, create (201, `haircut`, EUR), list, PATCH `isActive: false`, duplicate (201, "Haircut (copy)", inactive) and archive (200, then 404 on GET) all behaved as planned. The DB had two rows, the original with `archived_at` and the copy inactive in the org's currency. As staff, `POST` was 403 with no row written and `GET` was 200. The subagent also switched the org to US (currency USD) and confirmed a new service took USD, then restored it. No backend warnings. Not checked in the running app: the admin role, PATCH validation, collisions and cross-org access (all covered by backend tests).
+
+## Phase 3: Business hours and closures: schema and endpoints
+
+**Goal:** An organization's weekly hours, timezone and whole-day closures can be read and saved through the API.
+
+**Files:**
+- `Sinwy.Backend/db/schema/serviceSchema.ts` (add both tables next to `service`; already exported from `db/schema/index.ts`), new migration `0019`.
+- `Sinwy.Backend/modules/services/`: `routes.ts` (`organizationPath("availability")`, `read`/`write` arrays), `controller.ts` (`respondError`, `parseBody`), `service.ts` (`Result<T>`, inactive check), `repository.ts`, `utils.ts`, new `tests/availability.test.ts` reusing the harness from `tests/services.test.ts`.
+- `Sinwy.Shared/types/service/` (new `Availability.ts` with `AvailabilityDto`/`ClosureDto` and the shared Zod schemas; export from `service/index.ts`).
+- `getOrganizationLocale` and `setOrganizationTimezone(organizationId, timezone, executor)` from `@organizationsModule`. Its `Tx` type lives in `modules/organizations/access.ts` and isn't exported from the module's `index.ts`; export it there or derive it locally from `db.transaction`. "Today in the org's zone" needs no library: `Intl.DateTimeFormat("en-CA", { timeZone })` formats `YYYY-MM-DD` (`date-fns` only arrives in Phase 4).
+
+**Steps:**
+- `service_availability`: `id`, `organizationId` (FK cascade), `serviceId` (nullable FK cascade), `weekday` smallint 1–7, `startTime`/`endTime` `time`, check `start_time < end_time`, index on `(organizationId, serviceId)`.
+- `availability_exception`: `id`, `organizationId`, `serviceId` (nullable), `date` (`date`), `kind` (`closed` | `open`, `oneOf` check), `startTime`/`endTime` (nullable `time`, null = whole day), `note` (nullable), `createdAt`. The MVP writes only `kind = closed` with null times; the columns exist so openings and partial closures need no migration.
+- `GET organizationPath("availability")` (`services:read`): `{ timezone, weekly: [{ weekday, start, end }], closures: [{ id, date, note }] }`, closures from today (in the org's zone) onwards.
+- `PUT availability` (`services:write`): `{ timezone, weekly }` replaces the org-wide rows (`serviceId` null) in one transaction and sets the timezone through `setOrganizationTimezone`. Validate: times `HH:MM` on 15-minute steps, ranges on the same weekday don't overlap, at most one range per weekday in the MVP body.
+- `POST availability/closures` `{ date, note? }` and `DELETE availability/closures/:closureId`. Same date twice is a no-op, not an error.
+- Times go over the wire as `"HH:MM"` strings and dates as `"YYYY-MM-DD"`; no `Date` objects for wall-clock values.
+
+**Tests that matter:**
+- PUT replaces, never appends: saving twice leaves one set of rows; another org's rows are untouched.
+- Invalid timezone, `end <= start`, or off-grid minutes → 400 and nothing written (transaction).
+- Staff 403 on writes; inactive org 409.
+
+**Done when:**
+- Hours, timezone and closures round-trip through the API.
+
+**Verify:** Seed `subscribed-org`. As the owner via the API: PUT Mon–Fri 09:00–17:00 with `Europe/Vilnius`, POST a closure for next Monday, GET availability. Expect 5 `service_availability` rows with null `service_id`, `organization.timezone = 'Europe/Vilnius'`, one `availability_exception` row with `kind = 'closed'`. PUT Mon only and expect 1 row left. Nothing simulated.
+
+### Log (2026-10-30, `feat(backend): business hours and closures API`)
+- Shipped: `service_availability` and `availability_exception` tables (migration 0019) with weekday, range and kind checks, plus a partial unique index on `(organization_id, date)` for org-wide whole-day closures. `GET`/`PUT availability` and `POST`/`DELETE availability/closures[/:closureId]` in `modules/services/`. The PUT deletes and reinserts the org rows and sets the timezone in one transaction, opened in the repository (`saveOrganizationHours`). Shared `availabilitySchema`, `closureSchema` and the DTOs are in `Sinwy.Shared/types/service/Availability.ts`. 7 HTTP and constraint tests are in `modules/services/tests/availability.test.ts`.
+- Differs from plan: `Tx` isn't exported; the transaction follows the `transfers/repository.ts` pattern. "One range per weekday" also covers "ranges don't overlap", so there's no separate overlap check. A repeated closure date returns 201 with the existing row and keeps its original note (the new note is ignored). Closure dates in the past are accepted (they just don't show in GET). Times stop at 23:45; there's no `24:00` end.
+- Checked in the running app: the e2e subagent seeded `subscribed-org` (org `3d18666a-cf87-4340-baeb-a2507e1b9f0e`) and used curl as the owner. PUT Mon–Fri 09:00–17:00 `Europe/Vilnius` gave 5 rows with null `service_id` and set the timezone. POST 2026-11-02 gave one `closed` row, and posting it again returned the same id. Invalid PUTs (end ≤ start, `09:10`, unknown zone, two Monday ranges) returned 400 and changed nothing. PUT Mon only left 1 row. DELETE removed the closure, and a second DELETE was 404. No backend warnings. Not checked in the running app: staff 403 and inactive 409 (covered by backend tests).

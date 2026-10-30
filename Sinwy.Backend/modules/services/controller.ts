@@ -1,14 +1,22 @@
 import { membershipFrom } from "@authModule";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler, IReqContext } from "@backend/lib/app/types";
-import { API_ERROR_CODES } from "@sinwy/shared";
+import {
+	API_ERROR_CODES,
+	availabilitySchema,
+	closureSchema,
+} from "@sinwy/shared";
 import type { z } from "zod";
 import {
+	addClosure,
 	archiveService,
 	createService,
 	duplicateService,
+	getAvailability,
 	getService,
 	listServices,
+	removeClosure,
+	saveAvailability,
 	updateService,
 } from "./service";
 import { createServiceBody, updateServiceBody } from "./utils";
@@ -83,5 +91,38 @@ export const archiveServiceHandler: Handler = async (c) => {
 	const result = await archiveService(membershipFrom(c), serviceIdFrom(c));
 	return result.ok
 		? ok(null, 200, "Service archived")
+		: respondError(result.error);
+};
+
+export const getAvailabilityHandler: Handler = async (c) => {
+	const result = await getAvailability(membershipFrom(c));
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const saveAvailabilityHandler: Handler = async (c) => {
+	const body = await parseBody(c, availabilitySchema);
+	if (!body.ok) return body.response;
+
+	const result = await saveAvailability(membershipFrom(c), body.data);
+	return result.ok
+		? ok(result.data, 200, "Business hours saved")
+		: respondError(result.error);
+};
+
+export const addClosureHandler: Handler = async (c) => {
+	const body = await parseBody(c, closureSchema);
+	if (!body.ok) return body.response;
+
+	const result = await addClosure(membershipFrom(c), body.data);
+	return result.ok
+		? ok(result.data, 201, "Closure added")
+		: respondError(result.error);
+};
+
+export const removeClosureHandler: Handler = async (c) => {
+	const { closureId } = c.req.params as { closureId: string };
+	const result = await removeClosure(membershipFrom(c), closureId);
+	return result.ok
+		? ok(null, 200, "Closure removed")
 		: respondError(result.error);
 };

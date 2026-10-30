@@ -10,7 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Organization timezone and currency | – | done | `feat(backend, web): organization timezone and currency` |
 | 2 | Services module: schema and CRUD | 1 | done | `feat(backend): services schema and CRUD` |
-| 3 | Business hours and closures: schema and endpoints | 2 | todo | |
+| 3 | Business hours and closures: schema and endpoints | 2 | done | `feat(backend): business hours and closures API` |
 | 4 | Bookable times function and endpoint | 3 | todo | |
 | 5 | Services list, editor and duplicate (web) | 2 | todo | |
 | 6 | Business hours and closures page (web) | 3, 5 | todo | |
@@ -51,10 +51,12 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Membership gives the status.** `membershipFrom(ctx)` returns `{ organizationId, roles, status, plan }` (`Sinwy.Backend/modules/auth/requirePermission.ts`); `status === "active"` is the write check. `resolveMembership` already returns null for orgs scheduled for deletion.
 - **Services module (Phase 2):** `@servicesModule` is wired (`import_map.json`, `tsconfig.json`, `Sinwy.Backend/index.ts`). Add new routes to `registerServiceRoutes` in `modules/services/routes.ts` with its `read`/`write` middleware arrays; controllers use the local `respondError` and `parseBody` (400 with the first Zod message); service functions take the `Membership`, return `Result<T>` and check `membership.status !== "active"` → `inactive` before any write.
 - **IDs are `crypto.randomUUID()` in `text` columns**; FKs to `organization.id` use `onDelete: "cascade"`, so org purge (`modules/organizations/purge.ts`) removes services and hours without code changes.
-- **Migrations:** edit `Sinwy.Backend/db/schema/`, export from `db/schema/index.ts`, then `bun run db:generate --name <name>` and `bun run db:migrate`. Latest is `drizzle/0018_services.sql`. Check constraints use `check(...)`; see `organizationTransfer` in `organizationSchema.ts`.
-- **Backend tests** use `bun:test` with a real DB and helpers in `Sinwy.Backend/test/helpers.ts`: `createUserWithSession`, `insertOrganization`, `givePlan`, `holdSlot`, `activateOrganization`, `joinOrganization`, `fakeCtx`. HTTP-level tests start an app on port 0; copy the `seedOrg`/`call` harness in `modules/services/tests/services.test.ts`. Make an org inactive by setting `slotHeldAt: null`.
+- **Migrations:** edit `Sinwy.Backend/db/schema/`, export from `db/schema/index.ts`, then `bun run db:generate --name <name>` and `bun run db:migrate` (both from the repo root). Latest is `drizzle/0019_availability.sql`. Check constraints use `check(...)`; see `organizationTransfer` in `organizationSchema.ts`.
+- **Backend tests** use `bun:test` with a real DB and helpers in `Sinwy.Backend/test/helpers.ts`: `createUserWithSession`, `insertOrganization`, `givePlan`, `holdSlot`, `activateOrganization`, `joinOrganization`, `fakeCtx`. HTTP-level tests start an app on port 0; copy the `seedOrg`/`call` harness in `modules/services/tests/services.test.ts` (also used by `availability.test.ts`). Make an org inactive by setting `slotHeldAt: null`.
 - **Drizzle queries are thenables, not Promises:** `expect(query).rejects` fails; use `query.then(() => null, (e) => e)` and read `error.cause.message` for the Postgres text (see the check-constraint tests).
 - **`exactOptionalPropertyTypes` is on:** a `.partial()` Zod output has `| undefined` values, so repository update types spell that out (`ServiceUpdate` in `modules/services/repository.ts`).
+- **Availability (Phase 3):** `service_availability` and `availability_exception` live in `db/schema/serviceSchema.ts`. Drizzle `time` columns read back as `"HH:MM:SS"` (the service maps them to `"HH:MM"`) and accept `"HH:MM"` on insert; `date` columns are `"YYYY-MM-DD"` strings. The repository reads only org-wide rows (`serviceId` null) and whole-day closures (`kind = 'closed'`, null times). `todayIn(timezone, now?)` is in `modules/services/utils.ts`. Shared: `availabilitySchema`, `closureSchema`, `AvailabilityDto`, `ClosureDto`, `WeeklyRangeDto`, `AVAILABILITY_LIMITS` in `Sinwy.Shared/types/service/Availability.ts`. Times run 00:00–23:45, so a day can't close at midnight yet. Log: Phase 3.
+- **Cross-module transactions** open in the repository and pass `tx` into the other module's exported function (`saveOrganizationHours` → `setOrganizationTimezone`, as `transfers/repository.ts` does); `Tx` stays unexported.
 - **Org locale (Phase 1):** `getOrganizationLocale(organizationId) → { timezone, currency } | null` and `setOrganizationTimezone(organizationId, timezone, executor?)` come from `@organizationsModule`; pass a transaction as `executor` to join it (`Tx` pattern in `modules/organizations/access.ts`). Validate zones with `isTimeZone` from `@sinwy/shared` (also `DEFAULT_TIME_ZONE`, `currencyForCountry`, `DEFAULT_CURRENCY`).
 - **Time zone names:** Bun lists 445 zones in `Intl.supportedValuesOf("timeZone")` but lacks newer names like `Europe/Kyiv` (it has `Europe/Kiev`); `isTimeZone` also accepts any `Area/City` name Intl can format, so a stored zone may be missing from that list. The Phase 6 combobox must still show the stored value. Log: Phase 1.
 - **Playwright's browser zone is the host's** (`Europe/Vilnius`), not `UTC`, unless the context sets `timezoneId`.
@@ -63,44 +65,17 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 ---
 
-## Phase 3: Business hours and closures: schema and endpoints
-
-**Goal:** An organization's weekly hours, timezone and whole-day closures can be read and saved through the API.
-
-**Files:**
-- `Sinwy.Backend/db/schema/serviceSchema.ts` (add both tables next to `service`; already exported from `db/schema/index.ts`), new migration `0019`.
-- `Sinwy.Backend/modules/services/`: `routes.ts` (`organizationPath("availability")`, `read`/`write` arrays), `controller.ts` (`respondError`, `parseBody`), `service.ts` (`Result<T>`, inactive check), `repository.ts`, `utils.ts`, new `tests/availability.test.ts` reusing the harness from `tests/services.test.ts`.
-- `Sinwy.Shared/types/service/` (new `Availability.ts` with `AvailabilityDto`/`ClosureDto` and the shared Zod schemas; export from `service/index.ts`).
-- `getOrganizationLocale` and `setOrganizationTimezone(organizationId, timezone, executor)` from `@organizationsModule`. Its `Tx` type lives in `modules/organizations/access.ts` and isn't exported from the module's `index.ts`; export it there or derive it locally from `db.transaction`. "Today in the org's zone" needs no library: `Intl.DateTimeFormat("en-CA", { timeZone })` formats `YYYY-MM-DD` (`date-fns` only arrives in Phase 4).
-
-**Steps:**
-- `service_availability`: `id`, `organizationId` (FK cascade), `serviceId` (nullable FK cascade), `weekday` smallint 1–7, `startTime`/`endTime` `time`, check `start_time < end_time`, index on `(organizationId, serviceId)`.
-- `availability_exception`: `id`, `organizationId`, `serviceId` (nullable), `date` (`date`), `kind` (`closed` | `open`, `oneOf` check), `startTime`/`endTime` (nullable `time`, null = whole day), `note` (nullable), `createdAt`. The MVP writes only `kind = closed` with null times; the columns exist so openings and partial closures need no migration.
-- `GET organizationPath("availability")` (`services:read`): `{ timezone, weekly: [{ weekday, start, end }], closures: [{ id, date, note }] }`, closures from today (in the org's zone) onwards.
-- `PUT availability` (`services:write`): `{ timezone, weekly }` replaces the org-wide rows (`serviceId` null) in one transaction and sets the timezone through `setOrganizationTimezone`. Validate: times `HH:MM` on 15-minute steps, ranges on the same weekday don't overlap, at most one range per weekday in the MVP body.
-- `POST availability/closures` `{ date, note? }` and `DELETE availability/closures/:closureId`. Same date twice is a no-op, not an error.
-- Times go over the wire as `"HH:MM"` strings and dates as `"YYYY-MM-DD"`; no `Date` objects for wall-clock values.
-
-**Tests that matter:**
-- PUT replaces, never appends: saving twice leaves one set of rows; another org's rows are untouched.
-- Invalid timezone, `end <= start`, or off-grid minutes → 400 and nothing written (transaction).
-- Staff 403 on writes; inactive org 409.
-
-**Done when:**
-- Hours, timezone and closures round-trip through the API.
-
-**Verify:** Seed `subscribed-org`. As the owner via the API: PUT Mon–Fri 09:00–17:00 with `Europe/Vilnius`, POST a closure for next Monday, GET availability. Expect 5 `service_availability` rows with null `service_id`, `organization.timezone = 'Europe/Vilnius'`, one `availability_exception` row with `kind = 'closed'`. PUT Mon only and expect 1 row left. Nothing simulated.
-
----
-
 ## Phase 4: Bookable times function and endpoint
 
 **Goal:** A pure, thoroughly tested function turns hours, closures, busy intervals, duration and buffers into bookable start times, exposed for a service and a date range.
 
 **Files:**
-- New `Sinwy.Backend/modules/services/bookableTimes.ts` and `tests/bookableTimes.test.ts`.
-- `Sinwy.Backend/modules/services/` (`service.ts`, `controller.ts`, `routes.ts`, `index.ts`).
+- New `Sinwy.Backend/modules/services/bookableTimes.ts` and `tests/bookableTimes.test.ts` (pure, no DB harness needed).
+- `Sinwy.Backend/modules/services/repository.ts`: add a query for a service's own `service_availability` rows and closures in a date range (the existing `findOrganizationHours`/`findClosuresFrom` read org-wide rows only; reuse `orgWide`/`orgClosures`).
+- `Sinwy.Backend/modules/services/service.ts` (`listBookableTimes`, reusing `toClock`, `getOrganizationLocale` and `findService`, which already hides archived services), `controller.ts` (`respondError`; query-string parsing, not `parseBody`), `routes.ts` (`read` array), `index.ts`.
+- `Sinwy.Shared/types/service/Availability.ts` (range query schema and a `BookableTimesDto`).
 - `Sinwy.Backend/package.json` (add `date-fns`, `@date-fns/tz` with `bun add`).
+- Endpoint test: extend `tests/availability.test.ts` or add `tests/times.test.ts` with the same harness.
 
 **Steps:**
 - `bookableTimes(input) → Date[]` with no DB or clock access. Input: `timezone`, `weekly` rules, `closures` (local dates), `busy` (`{ start, end }` instants), `durationMinutes`, `bufferBeforeMinutes`, `bufferAfterMinutes`, `from`/`to` (local dates, inclusive), `now`, `minNoticeMinutes`, `stepMinutes`. Export the step as a constant `BOOKABLE_TIME_STEP_MINUTES = 15`.

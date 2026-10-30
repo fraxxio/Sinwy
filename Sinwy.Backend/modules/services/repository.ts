@@ -1,6 +1,11 @@
 import db from "@db";
-import { service } from "@db/schema/serviceSchema";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import {
+	availabilityException,
+	service,
+	serviceAvailability,
+} from "@db/schema/serviceSchema";
+import { setOrganizationTimezone } from "@organizationsModule";
+import { and, asc, eq, gte, isNull } from "drizzle-orm";
 
 export type ServiceRow = typeof service.$inferSelect;
 type ServiceUpdate = {
@@ -62,4 +67,114 @@ export const updateService = async (
 		.where(byId(organizationId, serviceId))
 		.returning();
 	return row ?? null;
+};
+
+const orgWide = (organizationId: string) =>
+	and(
+		eq(serviceAvailability.organizationId, organizationId),
+		isNull(serviceAvailability.serviceId),
+	);
+
+const orgClosures = (organizationId: string) =>
+	and(
+		eq(availabilityException.organizationId, organizationId),
+		isNull(availabilityException.serviceId),
+		eq(availabilityException.kind, "closed"),
+		isNull(availabilityException.startTime),
+	);
+
+export type WeeklyRange = {
+	weekday: number;
+	startTime: string;
+	endTime: string;
+};
+
+export const findOrganizationHours = (organizationId: string) =>
+	db
+		.select({
+			weekday: serviceAvailability.weekday,
+			startTime: serviceAvailability.startTime,
+			endTime: serviceAvailability.endTime,
+		})
+		.from(serviceAvailability)
+		.where(orgWide(organizationId))
+		.orderBy(
+			asc(serviceAvailability.weekday),
+			asc(serviceAvailability.startTime),
+		);
+
+/** Replaces the org-wide rows and sets the timezone together, so hours are never read in the wrong zone. */
+export const saveOrganizationHours = (
+	organizationId: string,
+	timezone: string,
+	ranges: WeeklyRange[],
+) =>
+	db.transaction(async (tx) => {
+		await tx.delete(serviceAvailability).where(orgWide(organizationId));
+		if (ranges.length > 0)
+			await tx.insert(serviceAvailability).values(
+				ranges.map((range) => ({
+					...range,
+					id: crypto.randomUUID(),
+					organizationId,
+				})),
+			);
+		await setOrganizationTimezone(organizationId, timezone, tx);
+	});
+
+const closureColumns = {
+	id: availabilityException.id,
+	date: availabilityException.date,
+	note: availabilityException.note,
+};
+
+export const findClosuresFrom = (organizationId: string, fromDate: string) =>
+	db
+		.select(closureColumns)
+		.from(availabilityException)
+		.where(
+			and(
+				orgClosures(organizationId),
+				gte(availabilityException.date, fromDate),
+			),
+		)
+		.orderBy(asc(availabilityException.date));
+
+/** A date that's already closed keeps its row and note. */
+export const insertClosure = async (
+	organizationId: string,
+	date: string,
+	note: string | null,
+) => {
+	await db
+		.insert(availabilityException)
+		.values({
+			id: crypto.randomUUID(),
+			organizationId,
+			date,
+			kind: "closed",
+			note,
+		})
+		.onConflictDoNothing();
+	const [row] = await db
+		.select(closureColumns)
+		.from(availabilityException)
+		.where(
+			and(orgClosures(organizationId), eq(availabilityException.date, date)),
+		);
+	if (!row) throw new Error("Closure insert left no row");
+	return row;
+};
+
+export const deleteClosure = async (
+	organizationId: string,
+	closureId: string,
+) => {
+	const [row] = await db
+		.delete(availabilityException)
+		.where(
+			and(orgClosures(organizationId), eq(availabilityException.id, closureId)),
+		)
+		.returning({ id: availabilityException.id });
+	return Boolean(row);
 };

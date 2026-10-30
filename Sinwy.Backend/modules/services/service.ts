@@ -1,16 +1,32 @@
 import type { Membership } from "@authModule";
 import { uniqueSlug } from "@backend/lib/slug";
 import { getOrganizationLocale } from "@organizationsModule";
-import { SERVICE_LIMITS, type ServiceDto } from "@sinwy/shared";
 import {
+	type AvailabilityDto,
+	type AvailabilityInput,
+	type ClosureDto,
+	type ClosureInput,
+	SERVICE_LIMITS,
+	type ServiceDto,
+} from "@sinwy/shared";
+import {
+	deleteClosure,
+	findClosuresFrom,
+	findOrganizationHours,
 	findService,
 	findServices,
+	insertClosure,
 	insertService,
 	isServiceSlugTaken,
 	type ServiceRow,
+	saveOrganizationHours,
 	updateService as updateServiceRow,
 } from "./repository";
-import type { CreateServiceInput, UpdateServiceInput } from "./utils";
+import {
+	type CreateServiceInput,
+	todayIn,
+	type UpdateServiceInput,
+} from "./utils";
 
 type Result<T> =
 	| { ok: true; data: T }
@@ -125,4 +141,75 @@ export const archiveService = async (
 		archivedAt: new Date(),
 	});
 	return row ? { ok: true, data: null } : notFound;
+};
+
+// Postgres returns "HH:MM:SS"; the API speaks "HH:MM"
+const toClock = (time: string) => time.slice(0, 5);
+
+/** Org-wide hours, the timezone they're read in, and closures from today on. */
+export const getAvailability = async (
+	membership: Membership,
+): Promise<Result<AvailabilityDto>> => {
+	const { organizationId } = membership;
+	const locale = await getOrganizationLocale(organizationId);
+	if (!locale) return notFound;
+
+	const [hours, closures] = await Promise.all([
+		findOrganizationHours(organizationId),
+		findClosuresFrom(organizationId, todayIn(locale.timezone)),
+	]);
+	return {
+		ok: true,
+		data: {
+			timezone: locale.timezone,
+			weekly: hours.map((row) => ({
+				weekday: row.weekday,
+				start: toClock(row.startTime),
+				end: toClock(row.endTime),
+			})),
+			closures,
+		},
+	};
+};
+
+export const saveAvailability = async (
+	membership: Membership,
+	input: AvailabilityInput,
+): Promise<Result<AvailabilityDto>> => {
+	if (membership.status !== "active") return inactive;
+	await saveOrganizationHours(
+		membership.organizationId,
+		input.timezone,
+		input.weekly.map((range) => ({
+			weekday: range.weekday,
+			startTime: range.start,
+			endTime: range.end,
+		})),
+	);
+	return getAvailability(membership);
+};
+
+export const addClosure = async (
+	membership: Membership,
+	input: ClosureInput,
+): Promise<Result<ClosureDto>> => {
+	if (membership.status !== "active") return inactive;
+	return {
+		ok: true,
+		data: await insertClosure(
+			membership.organizationId,
+			input.date,
+			input.note,
+		),
+	};
+};
+
+export const removeClosure = async (
+	membership: Membership,
+	closureId: string,
+): Promise<Result<null>> => {
+	if (membership.status !== "active") return inactive;
+	return (await deleteClosure(membership.organizationId, closureId))
+		? { ok: true, data: null }
+		: notFound;
 };

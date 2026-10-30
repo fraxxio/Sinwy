@@ -1,11 +1,15 @@
 import { organizationPath, requireAuth, requirePermission } from "@authModule";
 import type { IApp } from "@backend/lib/app/types";
 import {
+	addClosureHandler,
 	archiveServiceHandler,
 	createServiceHandler,
 	duplicateServiceHandler,
+	getAvailabilityHandler,
 	getServiceHandler,
 	listServicesHandler,
+	removeClosureHandler,
+	saveAvailabilityHandler,
 	updateServiceHandler,
 } from "./controller";
 
@@ -35,5 +39,21 @@ export const registerServiceRoutes = (app: IApp) => {
 		organizationPath("services/:serviceId/duplicate"),
 		duplicateServiceHandler,
 		{ method: "POST", routeMiddlewares: write },
+	);
+	app.route(organizationPath("availability"), getAvailabilityHandler, {
+		routeMiddlewares: read,
+	});
+	app.route(organizationPath("availability"), saveAvailabilityHandler, {
+		method: "PUT",
+		routeMiddlewares: write,
+	});
+	app.route(organizationPath("availability/closures"), addClosureHandler, {
+		method: "POST",
+		routeMiddlewares: write,
+	});
+	app.route(
+		organizationPath("availability/closures/:closureId"),
+		removeClosureHandler,
+		{ method: "DELETE", routeMiddlewares: write },
 	);
 };
