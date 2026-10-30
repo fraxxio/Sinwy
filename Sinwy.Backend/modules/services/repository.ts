@@ -5,7 +5,7 @@ import {
 	serviceAvailability,
 } from "@db/schema/serviceSchema";
 import { setOrganizationTimezone } from "@organizationsModule";
-import { and, asc, eq, gte, isNull } from "drizzle-orm";
+import { and, asc, between, eq, gte, isNull, or } from "drizzle-orm";
 
 export type ServiceRow = typeof service.$inferSelect;
 type ServiceUpdate = {
@@ -103,6 +103,29 @@ export const findOrganizationHours = (organizationId: string) =>
 			asc(serviceAvailability.startTime),
 		);
 
+/** The org-wide rows and the service's own, told apart by `serviceId`. */
+export const findHoursForService = (
+	organizationId: string,
+	serviceId: string,
+) =>
+	db
+		.select({
+			serviceId: serviceAvailability.serviceId,
+			weekday: serviceAvailability.weekday,
+			startTime: serviceAvailability.startTime,
+			endTime: serviceAvailability.endTime,
+		})
+		.from(serviceAvailability)
+		.where(
+			or(
+				orgWide(organizationId),
+				and(
+					eq(serviceAvailability.organizationId, organizationId),
+					eq(serviceAvailability.serviceId, serviceId),
+				),
+			),
+		);
+
 /** Replaces the org-wide rows and sets the timezone together, so hours are never read in the wrong zone. */
 export const saveOrganizationHours = (
 	organizationId: string,
@@ -177,4 +200,21 @@ export const deleteClosure = async (
 		)
 		.returning({ id: availabilityException.id });
 	return Boolean(row);
+};
+
+export const findClosedDates = async (
+	organizationId: string,
+	fromDate: string,
+	toDate: string,
+) => {
+	const rows = await db
+		.select({ date: availabilityException.date })
+		.from(availabilityException)
+		.where(
+			and(
+				orgClosures(organizationId),
+				between(availabilityException.date, fromDate, toDate),
+			),
+		);
+	return rows.map((row) => row.date);
 };

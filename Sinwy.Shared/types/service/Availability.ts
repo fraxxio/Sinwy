@@ -9,6 +9,7 @@ export type AvailabilityExceptionKind =
 export const AVAILABILITY_LIMITS = {
 	stepMinutes: 15,
 	closureNote: 200,
+	bookableTimesDays: 31,
 } as const;
 
 /** Wall-clock times are "HH:MM" and dates "YYYY-MM-DD", read in the organization's timezone. */
@@ -30,6 +31,8 @@ export type AvailabilityDto = {
 	weekly: WeeklyRangeDto[];
 	closures: ClosureDto[];
 };
+
+const localDate = z.iso.date("Use a date like 2026-12-24");
 
 const quarterHour = z
 	.string()
@@ -65,7 +68,7 @@ export const availabilitySchema = z.object({
 });
 
 export const closureSchema = z.object({
-	date: z.iso.date("Use a date like 2026-12-24"),
+	date: localDate,
 	note: z
 		.string()
 		.trim()
@@ -77,5 +80,31 @@ export const closureSchema = z.object({
 		.transform((value) => value || null),
 });
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** An inclusive range of local dates in the organization's timezone. */
+export const bookableTimesQuerySchema = z
+	.object({ from: localDate, to: localDate })
+	.refine((range) => range.from <= range.to, {
+		message: "The start date must not be after the end date",
+		path: ["to"],
+	})
+	.refine(
+		(range) =>
+			(Date.parse(range.to) - Date.parse(range.from)) / DAY_MS <
+			AVAILABILITY_LIMITS.bookableTimesDays,
+		{
+			message: `Pick at most ${AVAILABILITY_LIMITS.bookableTimesDays} days`,
+			path: ["to"],
+		},
+	);
+
+/** Start times as ISO instants, with the timezone to show them in. */
+export type BookableTimesDto = {
+	timezone: string;
+	times: string[];
+};
+
 export type AvailabilityInput = z.infer<typeof availabilitySchema>;
 export type ClosureInput = z.infer<typeof closureSchema>;
+export type BookableTimesQuery = z.infer<typeof bookableTimesQuerySchema>;

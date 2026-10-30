@@ -4,6 +4,7 @@ import type { Handler, IReqContext } from "@backend/lib/app/types";
 import {
 	API_ERROR_CODES,
 	availabilitySchema,
+	bookableTimesQuerySchema,
 	closureSchema,
 } from "@sinwy/shared";
 import type { z } from "zod";
@@ -14,6 +15,7 @@ import {
 	duplicateService,
 	getAvailability,
 	getService,
+	listBookableTimes,
 	listServices,
 	removeClosure,
 	saveAvailability,
@@ -92,6 +94,23 @@ export const archiveServiceHandler: Handler = async (c) => {
 	return result.ok
 		? ok(null, 200, "Service archived")
 		: respondError(result.error);
+};
+
+export const listBookableTimesHandler: Handler = async (c) => {
+	const query = bookableTimesQuerySchema.safeParse(
+		Object.fromEntries(new URL(c.req.url).searchParams),
+	);
+	if (!query.success)
+		return fail(query.error.issues[0]?.message ?? "Invalid query", 400);
+
+	const { organizationId } = membershipFrom(c);
+	const result = await listBookableTimes(
+		organizationId,
+		serviceIdFrom(c),
+		query.data,
+		[],
+	);
+	return result.ok ? ok(result.data) : respondError(result.error);
 };
 
 export const getAvailabilityHandler: Handler = async (c) => {

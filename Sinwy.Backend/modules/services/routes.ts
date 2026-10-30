@@ -7,6 +7,7 @@ import {
 	duplicateServiceHandler,
 	getAvailabilityHandler,
 	getServiceHandler,
+	listBookableTimesHandler,
 	listServicesHandler,
 	removeClosureHandler,
 	saveAvailabilityHandler,
@@ -39,6 +40,11 @@ export const registerServiceRoutes = (app: IApp) => {
 		organizationPath("services/:serviceId/duplicate"),
 		duplicateServiceHandler,
 		{ method: "POST", routeMiddlewares: write },
+	);
+	app.route(
+		organizationPath("services/:serviceId/times"),
+		listBookableTimesHandler,
+		{ routeMiddlewares: read },
 	);
 	app.route(organizationPath("availability"), getAvailabilityHandler, {
 		routeMiddlewares: read,

@@ -11,7 +11,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 1 | Organization timezone and currency | – | done | `feat(backend, web): organization timezone and currency` |
 | 2 | Services module: schema and CRUD | 1 | done | `feat(backend): services schema and CRUD` |
 | 3 | Business hours and closures: schema and endpoints | 2 | done | `feat(backend): business hours and closures API` |
-| 4 | Bookable times function and endpoint | 3 | todo | |
+| 4 | Bookable times function and endpoint | 3 | done | `feat(backend): bookable times function and endpoint` |
 | 5 | Services list, editor and duplicate (web) | 2 | todo | |
 | 6 | Business hours and closures page (web) | 3, 5 | todo | |
 | 7 | Code review | 1–6 | todo | |
@@ -59,46 +59,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Cross-module transactions** open in the repository and pass `tx` into the other module's exported function (`saveOrganizationHours` → `setOrganizationTimezone`, as `transfers/repository.ts` does); `Tx` stays unexported.
 - **Org locale (Phase 1):** `getOrganizationLocale(organizationId) → { timezone, currency } | null` and `setOrganizationTimezone(organizationId, timezone, executor?)` come from `@organizationsModule`; pass a transaction as `executor` to join it (`Tx` pattern in `modules/organizations/access.ts`). Validate zones with `isTimeZone` from `@sinwy/shared` (also `DEFAULT_TIME_ZONE`, `currencyForCountry`, `DEFAULT_CURRENCY`).
 - **Time zone names:** Bun lists 445 zones in `Intl.supportedValuesOf("timeZone")` but lacks newer names like `Europe/Kyiv` (it has `Europe/Kiev`); `isTimeZone` also accepts any `Area/City` name Intl can format, so a stored zone may be missing from that list. The Phase 6 combobox must still show the stored value. Log: Phase 1.
+- **Bookable times (Phase 4):** `bookableTimes` (pure) and `listBookableTimes(organizationId, serviceId, range, busy, now?)` are exported from `@servicesModule`; `GET services/:serviceId/times?from&to` returns `BookableTimesDto` (`{ timezone, times }`, ISO instants). Archived services are 404 like every other route, inactive ones an empty list. Wall times convert with `tzOffset`, never `TZDate`: `TZDate` picks the first or second fall-back occurrence depending on the host's `TZ` (`bun test` runs with UTC). Log: Phase 4.
 - **Playwright's browser zone is the host's** (`Europe/Vilnius`), not `UTC`, unless the context sets `timezoneId`.
 - **Web:** dashboard routes live in `Sinwy.WebFrontend/src/modules/org-dashboard/routes/` (`_shell.services.tsx` layout already guards `services:read`; `_shell.services.index.tsx` is an `EmptyState` stub; `_shell.services.$id.tsx` exists). Data fetching follows `lib/transfer-queries.ts` (`queryOptions` + `api<T>()` from `#/shared/lib/api`). Route context gives `organization` and `member`; check writes with `hasPermission(member.roles, "services:write")`. Shared UI: `PageHeader`, `EmptyState`, `ContentBox`, `SettingsSection`, `TextField`, `TextareaField`, `SelectField`, `ComboboxField`, `SubmitButton`; shadcn kit in `src/shared/components/ui/` has no `switch` or `table` yet (add with the shadcn MCP or CLI, `components.json` exists).
 - **E2E seeds:** `bun run dev:seed-scenario subscribed-org` gives an active org with an owner; `org-with-staff` adds a staff member. Details in `.agents/skills/e2e-test/references/seed-scenario.md`.
-
----
-
-## Phase 4: Bookable times function and endpoint
-
-**Goal:** A pure, thoroughly tested function turns hours, closures, busy intervals, duration and buffers into bookable start times, exposed for a service and a date range.
-
-**Files:**
-- New `Sinwy.Backend/modules/services/bookableTimes.ts` and `tests/bookableTimes.test.ts` (pure, no DB harness needed).
-- `Sinwy.Backend/modules/services/repository.ts`: add a query for a service's own `service_availability` rows and closures in a date range (the existing `findOrganizationHours`/`findClosuresFrom` read org-wide rows only; reuse `orgWide`/`orgClosures`).
-- `Sinwy.Backend/modules/services/service.ts` (`listBookableTimes`, reusing `toClock`, `getOrganizationLocale` and `findService`, which already hides archived services), `controller.ts` (`respondError`; query-string parsing, not `parseBody`), `routes.ts` (`read` array), `index.ts`.
-- `Sinwy.Shared/types/service/Availability.ts` (range query schema and a `BookableTimesDto`).
-- `Sinwy.Backend/package.json` (add `date-fns`, `@date-fns/tz` with `bun add`).
-- Endpoint test: extend `tests/availability.test.ts` or add `tests/times.test.ts` with the same harness.
-
-**Steps:**
-- `bookableTimes(input) → Date[]` with no DB or clock access. Input: `timezone`, `weekly` rules, `closures` (local dates), `busy` (`{ start, end }` instants), `durationMinutes`, `bufferBeforeMinutes`, `bufferAfterMinutes`, `from`/`to` (local dates, inclusive), `now`, `minNoticeMinutes`, `stepMinutes`. Export the step as a constant `BOOKABLE_TIME_STEP_MINUTES = 15`.
-- Walk each local date in the range; skip closed dates; for each rule on that weekday, try starts on the clock's quarter hours inside the range where `start + duration <= rangeEnd`. Convert wall time to an instant with `@date-fns/tz`; a wall time that doesn't exist (spring-forward gap) is skipped; an ambiguous one (fall-back) uses the first occurrence.
-- Reject a start if `start < now + minNotice`, or if `[start − bufferBefore, start + duration + bufferAfter)` overlaps any busy interval (half-open, so back-to-back is allowed).
-- Rule selection lives in the service layer, not the function: use the service's own rows if it has any, otherwise the org rows (Default 3).
-- `GET organizationPath("services/:serviceId/times")?from=YYYY-MM-DD&to=YYYY-MM-DD` (`services:read`): range at most 31 days, `from <= to`; inactive or archived services return an empty list; busy is `[]` and `minNoticeMinutes` is 0 until bookings exist. Return ISO strings plus the timezone so the client can format.
-- Export `bookableTimes` and a service-level `listBookableTimes(organizationId, serviceId, range, busy)` from `index.ts` for the bookings ticket.
-
-**Tests that matter:** table-driven, each with a fixed `now`:
-- Open day 09:00–12:00, 60-min service → 09:00 … 11:00 every 15 min (9 times); 11:15 excluded because it ends after 12:00.
-- Range starting at 09:10 → first time 09:15.
-- Closed weekday and closure date → no times.
-- Busy 10:00–11:00 with 15-min buffers on both sides → no start whose padded window touches 09:45–11:15; 08:45 end-to-start adjacency allowed.
-- `now` mid-day → nothing earlier than now; `minNoticeMinutes` pushes it further.
-- DST in `Europe/Vilnius`: last Sunday of March, hours 02:00–05:00 skip the missing 03:00–03:59 and produce correct UTC instants; last Sunday of October produces each wall time once.
-- Range crossing midnight UTC for a far-offset zone (`Pacific/Auckland`) puts times on the right local date.
-- Service rows replace org rows; with none, org rows apply.
-
-**Done when:**
-- The test table passes and the endpoint returns times for a service under the hours saved in Phase 3.
-
-**Verify:** Seed `subscribed-org`. Via the API as the owner: PUT Mon–Fri 09:00–12:00 `Europe/Vilnius`, create a 60-min service with 15-min buffer after, add a closure for next Wednesday, GET times for next Monday–Friday. Expect 9 times per open day as ISO strings (07:00Z–09:00Z in winter time), none on Wednesday or the weekend; deactivate the service and expect an empty list. Nothing simulated.
 
 ---
 
@@ -110,6 +74,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.services.index.tsx` (replace stub), `_shell.services.$id.tsx` (editor), new `_shell.services.new.tsx`.
 - New `Sinwy.WebFrontend/src/modules/org-dashboard/lib/service-queries.ts`, components under `org-dashboard/components/` (e.g. `ServiceForm.tsx`, `ServicesTable.tsx`).
 - `src/shared/components/ui/` (add shadcn `switch`, `table`), `src/shared/components/EmptyState.tsx`.
+- `Sinwy.Shared/types/service/ServiceSchema.ts` (`serviceSchema`, the editor's validation) and `Service.ts` (`ServiceDto`); inactive-org handling is `handleOrganizationInactive` in `src/shared/lib/auth/organization-inactive.ts` (used by `_shell.tsx`).
 
 **Steps:**
 - List: table with name, duration ("45 min"), price formatted with `Intl.NumberFormat` from `priceMinor` and `currency`, and an active switch that PATCHes optimistically. Row actions: Edit, Duplicate, Archive (confirm with `alert-dialog`). Write controls only render with `services:write`.

@@ -4,14 +4,23 @@ import { getOrganizationLocale } from "@organizationsModule";
 import {
 	type AvailabilityDto,
 	type AvailabilityInput,
+	type BookableTimesDto,
+	type BookableTimesQuery,
 	type ClosureDto,
 	type ClosureInput,
 	SERVICE_LIMITS,
 	type ServiceDto,
 } from "@sinwy/shared";
 import {
+	BOOKABLE_TIME_STEP_MINUTES,
+	type BusyInterval,
+	bookableTimes,
+} from "./bookableTimes";
+import {
 	deleteClosure,
+	findClosedDates,
 	findClosuresFrom,
+	findHoursForService,
 	findOrganizationHours,
 	findService,
 	findServices,
@@ -212,4 +221,52 @@ export const removeClosure = async (
 	return (await deleteClosure(membership.organizationId, closureId))
 		? { ok: true, data: null }
 		: notFound;
+};
+
+/** A service with hours of its own uses only those; otherwise the organization's apply. */
+export const listBookableTimes = async (
+	organizationId: string,
+	serviceId: string,
+	range: BookableTimesQuery,
+	busy: BusyInterval[],
+	now = new Date(),
+): Promise<Result<BookableTimesDto>> => {
+	const [row, locale] = await Promise.all([
+		findService(organizationId, serviceId),
+		getOrganizationLocale(organizationId),
+	]);
+	if (!row || !locale) return notFound;
+	if (!row.isActive)
+		return { ok: true, data: { timezone: locale.timezone, times: [] } };
+
+	const [hours, closures] = await Promise.all([
+		findHoursForService(organizationId, serviceId),
+		findClosedDates(organizationId, range.from, range.to),
+	]);
+	const own = hours.filter((hour) => hour.serviceId !== null);
+	const times = bookableTimes({
+		timezone: locale.timezone,
+		weekly: (own.length > 0 ? own : hours).map((hour) => ({
+			weekday: hour.weekday,
+			start: toClock(hour.startTime),
+			end: toClock(hour.endTime),
+		})),
+		closures,
+		busy,
+		durationMinutes: row.durationMinutes,
+		bufferBeforeMinutes: row.bufferBeforeMinutes,
+		bufferAfterMinutes: row.bufferAfterMinutes,
+		from: range.from,
+		to: range.to,
+		now,
+		minNoticeMinutes: 0,
+		stepMinutes: BOOKABLE_TIME_STEP_MINUTES,
+	});
+	return {
+		ok: true,
+		data: {
+			timezone: locale.timezone,
+			times: times.map((time) => time.toISOString()),
+		},
+	};
 };

@@ -105,3 +105,43 @@ Finished phases of [services-mvp-plan.md](services-mvp-plan.md).
 - Shipped: `service_availability` and `availability_exception` tables (migration 0019) with weekday, range and kind checks, plus a partial unique index on `(organization_id, date)` for org-wide whole-day closures. `GET`/`PUT availability` and `POST`/`DELETE availability/closures[/:closureId]` in `modules/services/`. The PUT deletes and reinserts the org rows and sets the timezone in one transaction, opened in the repository (`saveOrganizationHours`). Shared `availabilitySchema`, `closureSchema` and the DTOs are in `Sinwy.Shared/types/service/Availability.ts`. 7 HTTP and constraint tests are in `modules/services/tests/availability.test.ts`.
 - Differs from plan: `Tx` isn't exported; the transaction follows the `transfers/repository.ts` pattern. "One range per weekday" also covers "ranges don't overlap", so there's no separate overlap check. A repeated closure date returns 201 with the existing row and keeps its original note (the new note is ignored). Closure dates in the past are accepted (they just don't show in GET). Times stop at 23:45; there's no `24:00` end.
 - Checked in the running app: the e2e subagent seeded `subscribed-org` (org `3d18666a-cf87-4340-baeb-a2507e1b9f0e`) and used curl as the owner. PUT Mon–Fri 09:00–17:00 `Europe/Vilnius` gave 5 rows with null `service_id` and set the timezone. POST 2026-11-02 gave one `closed` row, and posting it again returned the same id. Invalid PUTs (end ≤ start, `09:10`, unknown zone, two Monday ranges) returned 400 and changed nothing. PUT Mon only left 1 row. DELETE removed the closure, and a second DELETE was 404. No backend warnings. Not checked in the running app: staff 403 and inactive 409 (covered by backend tests).
+
+## Phase 4: Bookable times function and endpoint
+
+**Goal:** A pure, thoroughly tested function turns hours, closures, busy intervals, duration and buffers into bookable start times, exposed for a service and a date range.
+
+**Files:**
+- New `Sinwy.Backend/modules/services/bookableTimes.ts` and `tests/bookableTimes.test.ts` (pure, no DB harness needed).
+- `Sinwy.Backend/modules/services/repository.ts`: add a query for a service's own `service_availability` rows and closures in a date range (the existing `findOrganizationHours`/`findClosuresFrom` read org-wide rows only; reuse `orgWide`/`orgClosures`).
+- `Sinwy.Backend/modules/services/service.ts` (`listBookableTimes`, reusing `toClock`, `getOrganizationLocale` and `findService`, which already hides archived services), `controller.ts` (`respondError`; query-string parsing, not `parseBody`), `routes.ts` (`read` array), `index.ts`.
+- `Sinwy.Shared/types/service/Availability.ts` (range query schema and a `BookableTimesDto`).
+- `Sinwy.Backend/package.json` (add `date-fns`, `@date-fns/tz` with `bun add`).
+- Endpoint test: extend `tests/availability.test.ts` or add `tests/times.test.ts` with the same harness.
+
+**Steps:**
+- `bookableTimes(input) → Date[]` with no DB or clock access. Input: `timezone`, `weekly` rules, `closures` (local dates), `busy` (`{ start, end }` instants), `durationMinutes`, `bufferBeforeMinutes`, `bufferAfterMinutes`, `from`/`to` (local dates, inclusive), `now`, `minNoticeMinutes`, `stepMinutes`. Export the step as a constant `BOOKABLE_TIME_STEP_MINUTES = 15`.
+- Walk each local date in the range; skip closed dates; for each rule on that weekday, try starts on the clock's quarter hours inside the range where `start + duration <= rangeEnd`. Convert wall time to an instant with `@date-fns/tz`; a wall time that doesn't exist (spring-forward gap) is skipped; an ambiguous one (fall-back) uses the first occurrence.
+- Reject a start if `start < now + minNotice`, or if `[start − bufferBefore, start + duration + bufferAfter)` overlaps any busy interval (half-open, so back-to-back is allowed).
+- Rule selection lives in the service layer, not the function: use the service's own rows if it has any, otherwise the org rows (Default 3).
+- `GET organizationPath("services/:serviceId/times")?from=YYYY-MM-DD&to=YYYY-MM-DD` (`services:read`): range at most 31 days, `from <= to`; inactive or archived services return an empty list; busy is `[]` and `minNoticeMinutes` is 0 until bookings exist. Return ISO strings plus the timezone so the client can format.
+- Export `bookableTimes` and a service-level `listBookableTimes(organizationId, serviceId, range, busy)` from `index.ts` for the bookings ticket.
+
+**Tests that matter:** table-driven, each with a fixed `now`:
+- Open day 09:00–12:00, 60-min service → 09:00 … 11:00 every 15 min (9 times); 11:15 excluded because it ends after 12:00.
+- Range starting at 09:10 → first time 09:15.
+- Closed weekday and closure date → no times.
+- Busy 10:00–11:00 with 15-min buffers on both sides → no start whose padded window touches 09:45–11:15; 08:45 end-to-start adjacency allowed.
+- `now` mid-day → nothing earlier than now; `minNoticeMinutes` pushes it further.
+- DST in `Europe/Vilnius`: last Sunday of March, hours 02:00–05:00 skip the missing 03:00–03:59 and produce correct UTC instants; last Sunday of October produces each wall time once.
+- Range crossing midnight UTC for a far-offset zone (`Pacific/Auckland`) puts times on the right local date.
+- Service rows replace org rows; with none, org rows apply.
+
+**Done when:**
+- The test table passes and the endpoint returns times for a service under the hours saved in Phase 3.
+
+**Verify:** Seed `subscribed-org`. Via the API as the owner: PUT Mon–Fri 09:00–12:00 `Europe/Vilnius`, create a 60-min service with 15-min buffer after, add a closure for next Wednesday, GET times for next Monday–Friday. Expect 9 times per open day as ISO strings (07:00Z–09:00Z in winter time), none on Wednesday or the weekend; deactivate the service and expect an empty list. Nothing simulated.
+
+### Log (2026-10-30, `feat(backend): bookable times function and endpoint`)
+- Shipped: pure `bookableTimes` in `modules/services/bookableTimes.ts` with `BOOKABLE_TIME_STEP_MINUTES = 15`, and `listBookableTimes` in `service.ts`. It reads the service's own rows and the org rows in one query (`findHoursForService`) and uses the service's own when it has any. Closed dates come from `findClosedDates`. The endpoint is `GET services/:serviceId/times?from&to` (`services:read`). Shared `bookableTimesQuerySchema` (from ≤ to, at most `AVAILABILITY_LIMITS.bookableTimesDays` = 31 days) and `BookableTimesDto` are in `Availability.ts`. `date-fns` and `@date-fns/tz` were added to the backend. 13 table-driven cases are in `tests/bookableTimes.test.ts` and 5 HTTP tests in `tests/times.test.ts` (service rows replace org rows, closures, inactive/archived/foreign services, range validation, inactive org reads).
+- Differs from plan: wall times are converted with `tzOffset` instead of `TZDate`. `new TZDate(...)` resolves a fall-back wall time to the first occurrence when the host is `Europe/Vilnius` but to the second under `TZ=UTC` (what `bun test` uses), so results would have depended on the server's zone. `tzOffset` gave the same answer under UTC, Vilnius and New York; the unit tests pass under all three. A closing time inside a DST gap closes at its earlier reading (conservative; 03:30 on the spring-forward day counts as 02:30 +02:00). Archived services return 404 rather than an empty list: `findService` hides them and every other route treats them as not found; they still never produce times. The range end is checked as an instant, so an appointment spanning a DST change must really fit before closing. Closures are org-wide only, as the MVP writes no service-level ones.
+- Checked in the running app: the e2e subagent seeded `subscribed-org` (org `b32d3e27-d3d8-4a26-bd3d-81fea0315fce`) and used curl as the owner. PUT Mon–Fri 09:00–12:00 `Europe/Vilnius`, a 60-min service with a 15-min buffer after, and a closure on 2026-11-04. GET 2026-11-02 … 11-06 returned 9 times per open day, 07:00Z–09:00Z, none on Wednesday; a range including the weekend gave the same 36. Ranges of 32 days and from > to were 400; exactly 31 days was 200. Past dates gave no times. 2027-03-25 … 03-30 moved from 07:00Z to 06:00Z across the spring change. After deactivation GET returned `times: []`. DB rows matched and the backend logged no warnings. Not checked in the running app: staff reads and inactive-org reads (covered by `times.test.ts`).
