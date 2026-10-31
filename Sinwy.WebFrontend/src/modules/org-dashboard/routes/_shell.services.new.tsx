@@ -9,6 +9,7 @@ import {
 } from "#/modules/org-dashboard/lib/service-queries";
 import { NEW_SERVICE_VALUES } from "#/modules/org-dashboard/lib/services";
 import { PageHeader } from "#/shared/components/PageHeader";
+import { toast } from "#/shared/components/ui/toast";
 import { requirePermission } from "#/shared/lib/auth/protected-route";
 
 export const Route = createFileRoute("/$organizationSlug/_shell/services/new")({
@@ -25,13 +26,15 @@ function NewServicePage() {
 
 	const create = async (input: ServiceInput) => {
 		try {
-			const service = unwrap(await createService(organization.id, input));
-			void queryClient.invalidateQueries({
-				queryKey: serviceKeys.all(organization.id),
+			unwrap(await createService(organization.id, input));
+			await queryClient.invalidateQueries({
+				queryKey: serviceKeys.list(organization.id),
+				refetchType: "all",
 			});
+			toast.add({ type: "success", title: "Service created", timeout: 4_000 });
 			await navigate({
-				to: "/$organizationSlug/services/$id",
-				params: { organizationSlug: organization.slug, id: service.id },
+				to: "/$organizationSlug/services",
+				params: { organizationSlug: organization.slug },
 			});
 			return null;
 		} catch (error) {
