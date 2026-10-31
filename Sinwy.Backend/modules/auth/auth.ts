@@ -347,6 +347,11 @@ export const auth = betterAuth({
 							required: false,
 							input: false,
 						},
+						currency: {
+							type: "string",
+							required: false,
+							input: false,
+						},
 					},
 				},
 			},

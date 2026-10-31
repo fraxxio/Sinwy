@@ -36,6 +36,7 @@ export const authClient = createAuthClient({
 							required: false,
 						},
 						slotHeldAt: { type: "date", input: false, required: false },
+						currency: { type: "string", input: false, required: false },
 					},
 				},
 			},

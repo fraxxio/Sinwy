@@ -12,7 +12,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 2 | Services module: schema and CRUD | 1 | done | `feat(backend): services schema and CRUD` |
 | 3 | Business hours and closures: schema and endpoints | 2 | done | `feat(backend): business hours and closures API` |
 | 4 | Bookable times function and endpoint | 3 | done | `feat(backend): bookable times function and endpoint` |
-| 5 | Services list, editor and duplicate (web) | 2 | todo | |
+| 5 | Services list, editor and duplicate (web) | 2 | done | `feat(backend, web): services list, editor and duplicate` |
 | 6 | Business hours and closures page (web) | 3, 5 | todo | |
 | 7 | Code review | 1–6 | todo | |
 
@@ -61,36 +61,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Time zone names:** Bun lists 445 zones in `Intl.supportedValuesOf("timeZone")` but lacks newer names like `Europe/Kyiv` (it has `Europe/Kiev`); `isTimeZone` also accepts any `Area/City` name Intl can format, so a stored zone may be missing from that list. The Phase 6 combobox must still show the stored value. Log: Phase 1.
 - **Bookable times (Phase 4):** `bookableTimes` (pure) and `listBookableTimes(organizationId, serviceId, range, busy, now?)` are exported from `@servicesModule`; `GET services/:serviceId/times?from&to` returns `BookableTimesDto` (`{ timezone, times }`, ISO instants). Archived services are 404 like every other route, inactive ones an empty list. Wall times convert with `tzOffset`, never `TZDate`: `TZDate` picks the first or second fall-back occurrence depending on the host's `TZ` (`bun test` runs with UTC). Log: Phase 4.
 - **Playwright's browser zone is the host's** (`Europe/Vilnius`), not `UTC`, unless the context sets `timezoneId`.
-- **Web:** dashboard routes live in `Sinwy.WebFrontend/src/modules/org-dashboard/routes/` (`_shell.services.tsx` layout already guards `services:read`; `_shell.services.index.tsx` is an `EmptyState` stub; `_shell.services.$id.tsx` exists). Data fetching follows `lib/transfer-queries.ts` (`queryOptions` + `api<T>()` from `#/shared/lib/api`). Route context gives `organization` and `member`; check writes with `hasPermission(member.roles, "services:write")`. Shared UI: `PageHeader`, `EmptyState`, `ContentBox`, `SettingsSection`, `TextField`, `TextareaField`, `SelectField`, `ComboboxField`, `SubmitButton`; shadcn kit in `src/shared/components/ui/` has no `switch` or `table` yet (add with the shadcn MCP or CLI, `components.json` exists).
+- **Web:** dashboard routes live in `Sinwy.WebFrontend/src/modules/org-dashboard/routes/`; route context gives `organization` (now with `currency`, a read-only better-auth field) and `member`; check writes with `hasPermission(member.roles, "services:write")`. Shared UI: `PageHeader`, `EmptyState`, `ContentBox`, `SettingsSection`, `TextField`, `TextareaField`, `SelectField`, `ComboboxField`, `SubmitButton`; shadcn `switch`, `table`, `collapsible`, `alert-dialog` exist. Running the shadcn CLI adds a stray `cn` npm package and imports it: revert `package.json`/`bun.lock` and import `cn` from `@/shared/lib/utils`. Log: Phase 5.
+- **Services web (Phase 5):** `org-dashboard/lib/service-queries.ts` holds `serviceKeys` (invalidate `serviceKeys.all(orgId)` after writes), the queries, the write functions and `useUnwrapWrite()`, which throws the API message or, for a 409 inactive org, calls `handleOrganizationInactive` and throws an empty message (show nothing). Form pattern: string form values, a Zod schema that transforms into the shared schema (`lib/services.ts`), `onSubmit` returning an error message or null, and `<fieldset disabled>` for read-only staff. Money input: `parseMinorUnits`/`formatAmountInput` in `src/shared/lib/money.ts`.
+- **Driving the browser from zsh:** `$P click …` with `P="bunx playwright-cli"` doesn't word-split and fails silently; write the command out. Base UI renders `Button render={<Link/>}` as role `button`, not `link`.
 - **E2E seeds:** `bun run dev:seed-scenario subscribed-org` gives an active org with an owner; `org-with-staff` adds a staff member. Details in `.agents/skills/e2e-test/references/seed-scenario.md`.
-
----
-
-## Phase 5: Services list, editor and duplicate (web)
-
-**Goal:** In the dashboard an owner creates, edits, toggles, duplicates and archives services; staff see them read-only; a new org sees an empty state that leads to its first service.
-
-**Files:**
-- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.services.index.tsx` (replace stub), `_shell.services.$id.tsx` (editor), new `_shell.services.new.tsx`.
-- New `Sinwy.WebFrontend/src/modules/org-dashboard/lib/service-queries.ts`, components under `org-dashboard/components/` (e.g. `ServiceForm.tsx`, `ServicesTable.tsx`).
-- `src/shared/components/ui/` (add shadcn `switch`, `table`), `src/shared/components/EmptyState.tsx`.
-- `Sinwy.Shared/types/service/ServiceSchema.ts` (`serviceSchema`, the editor's validation) and `Service.ts` (`ServiceDto`); inactive-org handling is `handleOrganizationInactive` in `src/shared/lib/auth/organization-inactive.ts` (used by `_shell.tsx`).
-
-**Steps:**
-- List: table with name, duration ("45 min"), price formatted with `Intl.NumberFormat` from `priceMinor` and `currency`, and an active switch that PATCHes optimistically. Row actions: Edit, Duplicate, Archive (confirm with `alert-dialog`). Write controls only render with `services:write`.
-- Empty state: "Create your first service" button to `/services/new` (writers only; staff see text without a button).
-- Editor: one form with sections "Details" (name, description), "Pricing & duration" (price as a decimal input converted to minor units on submit, read-only currency, duration select in 5-min steps), "Advanced" in a `collapsible` (buffers before/after). Validate with the shared Zod schema. Shared by new and edit.
-- After create or duplicate, go to the editor of the new service; after archive, back to the list. Invalidate the list query after every write.
-- A 409 inactive response shows the existing inactive messaging, not a generic error.
-
-**Tests that matter:**
-- Price conversion: "25", "25.5", "25.50" → 2500, 2550, 2550; more than two decimals rejected; JPY-style zero-decimal currencies don't multiply by 100 (use `Intl.NumberFormat(...).resolvedOptions().maximumFractionDigits`).
-- Staff see no write controls.
-
-**Done when:**
-- The full create → edit → toggle → duplicate → archive flow works in the browser for an owner, read-only for staff.
-
-**Verify:** Seed `org-with-staff`. Log in as the owner, open Services: the empty state shows a create button. Create "Haircut" 30 min, €25, buffer after 10: list shows "30 min" and "€25.00"; `service` row has `price_minor = 2500`. Toggle it off (`is_active = false`), duplicate it (new inactive row named "Haircut (copy)"), archive the original (row gets `archived_at`, disappears from the list). Log in as staff: list visible, no create, switch, or row actions. Nothing simulated.
 
 ---
 
@@ -99,9 +73,11 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** An owner sets the timezone, weekly hours and closure dates from the dashboard; staff see them read-only.
 
 **Files:**
-- New `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.services.hours.tsx` (static segment, wins over `$id`).
-- `org-dashboard/lib/service-queries.ts` (availability queries and mutations from Phase 5's file), new `org-dashboard/components/BusinessHoursForm.tsx`, `ClosuresList.tsx`.
-- `_shell.services.index.tsx` (link to "Business hours" in the page header).
+- New `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.services.hours.tsx` (static segment, wins over `$id`; copy the `useQuery` + `Skeleton` + read-only `<fieldset disabled>` shape of `_shell.services.$id.tsx`).
+- `org-dashboard/lib/service-queries.ts`: add availability queries (`GET availability`), `saveAvailability` (PUT), `addClosure`/`removeClosure`; reuse `useUnwrapWrite` and add keys under `serviceKeys.all`.
+- New `org-dashboard/components/BusinessHoursForm.tsx`, `ClosuresList.tsx`; form ↔ DTO mapping next to the form mapping in `org-dashboard/lib/services.ts` (or its own file if it grows), tests beside `tests/services.test.ts`.
+- `_shell.services.index.tsx` (add a "Business hours" button to the `PageHeader` action, which already renders "New service" for writers with services).
+- Shared: `availabilitySchema`, `closureSchema`, `AvailabilityDto`, `AVAILABILITY_LIMITS` in `Sinwy.Shared/types/service/Availability.ts`; `Switch` in `src/shared/components/ui/switch.tsx`.
 
 **Steps:**
 - Timezone: `ComboboxField` over `Intl.supportedValuesOf("timeZone")`, at the top of the form.
