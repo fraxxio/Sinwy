@@ -11,6 +11,7 @@ import db from "@db";
 import { organization } from "@db/schema/organizationSchema";
 import {
 	availabilityException,
+	service,
 	serviceAvailability,
 } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
@@ -146,6 +147,35 @@ test("PUT replaces the org's hours and timezone, leaving other orgs alone", asyn
 	const cleared = await save({ timezone: "Europe/Vilnius", weekly: [] });
 	expect(cleared.weekly).toEqual([]);
 	expect(await rowsOf(orgId)).toHaveLength(0);
+});
+
+test("PUT and GET leave a service's own hours out of the org's", async () => {
+	const serviceId = crypto.randomUUID();
+	await db.insert(service).values({
+		id: serviceId,
+		organizationId: orgId,
+		name: "Haircut",
+		slug: "haircut",
+		durationMinutes: 30,
+		priceMinor: 2500,
+		currency: "EUR",
+	});
+	await db.insert(serviceAvailability).values({
+		id: crypto.randomUUID(),
+		organizationId: orgId,
+		serviceId,
+		weekday: 7,
+		startTime: "10:00",
+		endTime: "12:00",
+	});
+
+	const saved = await save({ timezone: "UTC", weekly: weekdays });
+	expect(saved.weekly).toEqual(weekdays);
+	const own = await db
+		.select({ weekday: serviceAvailability.weekday })
+		.from(serviceAvailability)
+		.where(eq(serviceAvailability.serviceId, serviceId));
+	expect(own).toEqual([{ weekday: 7 }]);
 });
 
 test("invalid bodies are rejected with 400 and nothing is written", async () => {

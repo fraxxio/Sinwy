@@ -122,6 +122,11 @@ reasons).
 ```text
 Any signed-in user creates one (name, industry) → they are its owner
 (Better Auth's own create endpoint is refused; creation goes through the app)
+├─ its timezone is the browser's; an unknown or missing one → UTC. The owner
+│  or an admin changes it on the business hours page
+├─ its currency is EUR until the profile names a country; every profile save
+│  sets it from the country (unknown → EUR). Services copy it when created
+│  and keep it when it later changes; nobody sets it directly
 ├─ plan with a free slot → Active at once → setup wizard
 ├─ plan at its cap → Draft (D5) → the wizard says it stays a draft until a slot is free
 ├─ plan suspended → Draft → the wizard says to resume the plan first
@@ -153,7 +158,9 @@ Drafts and inactive organizations never expire (Default 5).
 ```
 
 Enforced in: `Sinwy.Backend/modules/organizations/` (`service.ts`,
-`controller.ts`), `modules/user/service.ts` (prompts); web
+`controller.ts`, `utils.ts`), `modules/services/service.ts` (timezone,
+service currency), `modules/user/service.ts` (prompts),
+`Sinwy.Shared/types/organization/` (`TimeZone.ts`, `Currency.ts`); web
 `src/modules/organizations/routes/`, `src/modules/checkout/routes/success.tsx`,
 `src/modules/user/lib/resume-prompt.ts`.
 
@@ -334,6 +341,8 @@ Post-login
 Members' requests to an inactive organization
 ├─ reads (its summary, status, setup data, members, invitations) → answered
 ├─ setup writes, except on the owner's draft [4] → refused, "organization inactive"
+├─ services, business hours (and timezone) and closures: reads and bookable
+│  times answered, writes refused, "organization inactive"
 ├─ managing it (rename, delete, invite, cancel invitations, remove members,
 │  change roles) → refused, "organization inactive"
 ├─ paid features → refused, "upgrade required"
@@ -345,7 +354,8 @@ None are built yet; every new public route must follow this rule.
 
 Enforced in: `Sinwy.Backend/modules/auth/` (`activeOrganization.ts`,
 `requirePermission.ts`, `requireFeature.ts`),
-`modules/organizations/service.ts`; web `src/shared/lib/organizations.ts`,
+`modules/organizations/service.ts`, `modules/services/service.ts`; web
+`src/shared/lib/organizations.ts`,
 `src/modules/auth/lib/post-login.ts`,
 `src/modules/org-dashboard/routes/_shell.tsx`,
 `src/shared/components/shell/OrganizationSwitcher.tsx`.
@@ -575,6 +585,10 @@ Open, product or copy:
   even when several wait.
 - The plan-change and accept-transfer dialogs show USD catalog prices while
   Polar charges EUR.
+- The new-service form reads the price in the currency the page loaded with;
+  if the country (so the currency) changes in another tab meanwhile, the
+  amount is stored in the new currency's minor units. The list shows the
+  stored currency, so it's visible.
 - `invite-member` accepts `role: "member"`, which isn't an app role.
 - Better Auth logs a refused open (inactive organization) and the checkout
   refusals at ERROR level, though they are user-caused.

@@ -211,3 +211,33 @@ Finished phases of [services-mvp-plan.md](services-mvp-plan.md).
 - Shipped: `_shell.services.hours.tsx` (Business hours page, `staticData.crumb`), `BusinessHoursForm` (timezone `ComboboxField`, seven rows with a `Switch` and two `<input type="time" step="900">`, "Copy Monday to weekdays", PUT on save, server error under the button, a "customers can't book yet" hint while no saved day is open), `ClosuresList` (date + optional note + Add, upcoming closures with Remove; errors on remove go to a toast), availability query/writes and `serviceKeys.availability` in `lib/service-queries.ts`, mapping in a new `lib/business-hours.ts` with `tests/business-hours.test.ts`. The Services header shows a "Business hours" outline button to every member, before "New service".
 - Differs from plan: the mapping got its own file, `lib/business-hours.ts`, not `lib/services.ts`. Staff see the page read-only. Switches and the combobox get `disabled` explicitly because `<fieldset disabled>` doesn't reach Base UI's span-based controls; the label uses `htmlFor`, and Base UI moves the `id` to its hidden input, which keeps the label click and the accessible name. The closure form validates the note as a plain string (`maxLength` caps it) and submits through the shared `closureSchema`, because Zod 4 `pipe` won't accept the nullish shared note schema. A date before today in the org's zone is refused client-side; the API doesn't check it. After the e2e run, the hint's "Open the days you work and save" part is shown to writers only.
 - Checked in the running app: inline on `subscribed-org` `seed-81dd818f`: Monday 09:00–16:30 copied to weekdays with timezone Europe/Vilnius saved 5 rows and the timezone; Saturday 09:00–08:00 showed "End must be after start"; a closure on 2026-11-06 was added (form cleared) and removed. With a 60-minute service, `GET services/:id/times` for 2026-11-02…08 returned 09:00–15:30 Vilnius time Monday to Thursday and nothing on the closed Friday or the weekend. The e2e subagent on `seed-abc363c7` (owner) and `seed-c80664f1` (staff) ran the full Verify brief: 5 rows, timezone updated, values kept on reload, the closure row added and deleted, staff saw everything disabled with no write buttons, no console errors. Not checked: the server logs, because the servers were started outside the session; an inactive org's 409 on this page (it goes through the same `useUnwrapWrite` as Phase 5).
+
+## Phase 7: Code review
+
+**Goal:** The plan's changes are reviewed for correctness in the risky areas before bookings build on them.
+
+**Files:** `git diff 047b85d^..HEAD` (this plan's six commits). The risky parts:
+- Backend: `Sinwy.Backend/modules/services/` (`routes.ts`, `controller.ts`, `service.ts`, `repository.ts`, `bookableTimes.ts`, `utils.ts`, tests), `db/schema/serviceSchema.ts`, migrations `0017`–`0019`, the locale functions in `modules/organizations/` (`repository.ts`, `service.ts`, `index.ts`) and the `currency` field in `modules/auth/auth.ts`.
+- Shared: `Sinwy.Shared/types/service/` (`ServiceSchema.ts`, `Service.ts`, `Availability.ts`), `types/organization/` (`Currency.ts`, `TimeZone.ts`).
+- Web: `Sinwy.WebFrontend/src/modules/org-dashboard/` (`lib/service-queries.ts`, `lib/services.ts`, `lib/business-hours.ts`, `components/ServiceForm.tsx`, `ServicesTable.tsx`, `ServiceActions.tsx`, `BusinessHoursForm.tsx`, `ClosuresList.tsx`, `routes/_shell.services.*`), `src/shared/lib/money.ts`.
+- Docs: `docs/org-rules-map.md`.
+
+**Steps:**
+- Review with focus on: org scoping of every services query (no cross-org reads or writes), permission middleware on every route, the inactive-org write guard, money as integers end to end (DB, DTO, form conversion), timezone and DST handling in `bookableTimes`, the "service rows replace org rows" selection, and archived/inactive services never producing bookable times.
+- Update [org-rules-map.md](org-rules-map.md) where the plan touched org rules: an org's timezone and currency and where they come from, and that services and hours are writable only while the org is active.
+- Fix or file what the review finds; record the outcome in the log.
+
+**Tests that matter:**
+- Any gap the review finds in the risky behaviour above gets a test.
+
+**Done when:**
+- Review findings are fixed or ticketed and `bun run verify` passes.
+
+**Verify:** None.
+
+
+### Log (2026-10-31, `test(backend): review the services MVP and map org timezone and currency`)
+- Shipped: review of the plan's six commits. No defects found in the risky areas: every services and availability query filters by the membership's `organizationId` (cross-org reads and writes are 404); every route has `requireAuth` + `requirePermission`; every write checks `status !== "active"` first; prices are `int` in Zod, Postgres `integer` with a check, and parsed/formatted with string arithmetic in the web (the edit form uses the service's own currency); `bookableTimes` is covered for the spring gap, a closing time inside the gap, the fall-back overlap and a zone crossing UTC midnight; service rows replace org rows in `listBookableTimes`; archived services are 404 and inactive ones return no times. New tests: PATCH ignores `organizationId`, `currency`, `slug`, `capacity` and `archivedAt`, and rejects a fractional price; saving and reading org hours leaves a service's own hours alone. `org-rules-map.md` §4 now says where an org's timezone and currency come from and that services keep theirs; §9 says services, hours and closures are read-only for an inactive org.
+- Filed, not fixed: the new-service form parses the price in the currency the page loaded with, so a country change in another tab meanwhile stores the amount in the new currency's minor units (rules map §14; visible in the list). `listBookableTimes` has no org-status check, left to the bookings plan (standing note). Two creates racing for the same service slug hit the partial unique index and return 500; not worth a retry for the MVP. A fall-back day offers the repeated hour only once (Phase 4 choice).
+- Differs from plan: nothing; there's no next phase to rewrite the Files list for.
+- Checked in the running app: nothing, as Verify is None. `bun run verify` exit 0.

@@ -148,6 +148,33 @@ test("PATCH is partial and keeps the slug on rename", async () => {
 	expect((await unwrap<ServiceDto>(cleared)).description).toBeNull();
 });
 
+test("PATCH ignores the organization, currency, slug, capacity and archive fields", async () => {
+	const other = await seedOrg("Other");
+	const created = await create();
+	const res = await call("PATCH", `services/${created.id}`, ownerCookie, {
+		organizationId: other.orgId,
+		currency: "JPY",
+		slug: "renamed",
+		capacity: 9,
+		archivedAt: new Date().toISOString(),
+		priceMinor: 3000,
+	});
+	expect(await unwrap<ServiceDto>(res)).toMatchObject({
+		slug: "haircut",
+		currency: "EUR",
+		priceMinor: 3000,
+	});
+	const [row] = await db
+		.select({
+			organizationId: service.organizationId,
+			capacity: service.capacity,
+			archivedAt: service.archivedAt,
+		})
+		.from(service)
+		.where(eq(service.id, created.id));
+	expect(row).toEqual({ organizationId: orgId, capacity: 1, archivedAt: null });
+});
+
 test("staff read but never write", async () => {
 	const created = await create();
 	const writes = [
@@ -307,7 +334,11 @@ test.each([
 
 test("PATCH rejects out-of-range values with 400", async () => {
 	const created = await create();
-	for (const body of [{ priceMinor: -5 }, { durationMinutes: 721 }]) {
+	for (const body of [
+		{ priceMinor: -5 },
+		{ priceMinor: 12.5 },
+		{ durationMinutes: 721 },
+	]) {
 		const res = await call(
 			"PATCH",
 			`services/${created.id}`,

@@ -14,7 +14,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 4 | Bookable times function and endpoint | 3 | done | `feat(backend): bookable times function and endpoint` |
 | 5 | Services list, editor and duplicate (web) | 2 | done | `feat(backend, web): services list, editor and duplicate` |
 | 6 | Business hours and closures page (web) | 3, 5 | done | `feat(web): business hours and closures page` |
-| 7 | Code review | 1–6 | todo | |
+| 7 | Code review | 1–6 | done | `test(backend): review the services MVP and map org timezone and currency` |
 
 ## Decisions
 
@@ -44,7 +44,7 @@ Settled with the product owner. Ask before changing any of them.
 
 ## Standing notes
 
-Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
+Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes. All phases are done; these carry over to the bookings plan.
 
 - **"Slot" is taken.** In this codebase a slot is one unit of an owner's plan cap (`modules/organizations/slots.ts`, [org-rules-map.md](org-rules-map.md)). Call the generated booking start times **bookable times** in code, routes and UI copy (`bookableTimes.ts`, `/times`), never "slots".
 - **Permissions already exist.** `services:read` / `services:write` are in `Sinwy.Shared/types/access/Permission.ts` and `RolePermissions.ts`: owner and admin write, staff read. Use `requirePermission` from `@authModule`; don't add permissions.
@@ -63,28 +63,5 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Web:** dashboard routes live in `Sinwy.WebFrontend/src/modules/org-dashboard/routes/`; route context gives `organization` (now with `currency`, a read-only better-auth field) and `member`; check writes with `hasPermission(member.roles, "services:write")`. Shared UI: `PageHeader`, `EmptyState`, `ContentBox`, `SettingsSection`, `TextField`, `TextareaField`, `SelectField`, `ComboboxField`, `SubmitButton`; shadcn `switch`, `table`, `collapsible`, `alert-dialog` exist. Running the shadcn CLI adds a stray `cn` npm package and imports it: revert `package.json`/`bun.lock` and import `cn` from `@/shared/lib/utils`. Log: Phase 5.
 - **Services web (Phase 5):** `org-dashboard/lib/service-queries.ts` holds `serviceKeys` (invalidate `serviceKeys.all(orgId)` after writes), the queries, the write functions and `useUnwrapWrite()`, which throws the API message or, for a 409 inactive org, calls `handleOrganizationInactive` and throws an empty message (show nothing). Form pattern: string form values, a Zod schema that transforms into the shared schema (`lib/services.ts`), `onSubmit` returning an error message or null, and `<fieldset disabled>` for read-only staff. Money input: `parseMinorUnits`/`formatAmountInput` in `src/shared/lib/money.ts`.
 - **Hours web (Phase 6):** `/services/hours` (`_shell.services.hours.tsx`) reads `availabilityQuery` (`serviceKeys.availability`); form ↔ DTO mapping and the closure form schema are in `org-dashboard/lib/business-hours.ts`. Closed days keep 09:00–17:00 in form state only; the "can't book yet" hint follows saved hours, not unsaved edits. Closures before today (org zone) are refused client-side only; the API accepts them and hides them. Log: Phase 6.
-
----
-
-## Phase 7: Code review
-
-**Goal:** The plan's changes are reviewed for correctness in the risky areas before bookings build on them.
-
-**Files:** `git diff 047b85d^..HEAD` (this plan's six commits). The risky parts:
-- Backend: `Sinwy.Backend/modules/services/` (`routes.ts`, `controller.ts`, `service.ts`, `repository.ts`, `bookableTimes.ts`, `utils.ts`, tests), `db/schema/serviceSchema.ts`, migrations `0017`–`0019`, the locale functions in `modules/organizations/` (`repository.ts`, `service.ts`, `index.ts`) and the `currency` field in `modules/auth/auth.ts`.
-- Shared: `Sinwy.Shared/types/service/` (`ServiceSchema.ts`, `Service.ts`, `Availability.ts`), `types/organization/` (`Currency.ts`, `TimeZone.ts`).
-- Web: `Sinwy.WebFrontend/src/modules/org-dashboard/` (`lib/service-queries.ts`, `lib/services.ts`, `lib/business-hours.ts`, `components/ServiceForm.tsx`, `ServicesTable.tsx`, `ServiceActions.tsx`, `BusinessHoursForm.tsx`, `ClosuresList.tsx`, `routes/_shell.services.*`), `src/shared/lib/money.ts`.
-- Docs: `docs/org-rules-map.md`.
-
-**Steps:**
-- Review with focus on: org scoping of every services query (no cross-org reads or writes), permission middleware on every route, the inactive-org write guard, money as integers end to end (DB, DTO, form conversion), timezone and DST handling in `bookableTimes`, the "service rows replace org rows" selection, and archived/inactive services never producing bookable times.
-- Update [org-rules-map.md](org-rules-map.md) where the plan touched org rules: an org's timezone and currency and where they come from, and that services and hours are writable only while the org is active.
-- Fix or file what the review finds; record the outcome in the log.
-
-**Tests that matter:**
-- Any gap the review finds in the risky behaviour above gets a test.
-
-**Done when:**
-- Review findings are fixed or ticketed and `bun run verify` passes.
-
-**Verify:** None.
+- **Bookings must check the org is active.** `listBookableTimes` doesn't look at org status (the dashboard reads times for an inactive org on purpose, tested); a public booking route must refuse inactive orgs itself, as [org-rules-map.md](org-rules-map.md) §9 requires. Log: Phase 7.
+- **Fall-back hour:** on a DST-end day only the first occurrence of a repeated wall time is offered, so the repeated hour's second pass has no bookable times. Fine for the MVP; revisit if bookings show demand. Log: Phases 4 and 7.
