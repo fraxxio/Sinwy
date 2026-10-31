@@ -1,7 +1,7 @@
 import { hasPermission } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { PlusIcon, WrenchIcon } from "lucide-react";
+import { ClockIcon, PlusIcon, WrenchIcon } from "lucide-react";
 import { ServicesTable } from "#/modules/org-dashboard/components/ServicesTable";
 import { servicesQuery } from "#/modules/org-dashboard/lib/service-queries";
 import { ContentBox } from "#/shared/components/ContentBox";
@@ -37,12 +37,33 @@ function ServicesPage() {
 
 	const hasServices = !!services.data?.length;
 
+	const hoursButton = (
+		<Button
+			variant="outline"
+			nativeButton={false}
+			render={
+				<Link
+					to="/$organizationSlug/services/hours"
+					params={{ organizationSlug: organization.slug }}
+				/>
+			}
+		>
+			<ClockIcon />
+			Business hours
+		</Button>
+	);
+
 	return (
 		<>
 			<PageHeader
 				title="Services"
 				description="What your organization offers and what it costs."
-				action={canWrite && hasServices && createButton("New service")}
+				action={
+					<div className="flex gap-2">
+						{hoursButton}
+						{canWrite && hasServices && createButton("New service")}
+					</div>
+				}
 			/>
 			{services.isPending ? (
 				<Skeleton className="h-48 rounded-xl" />

@@ -47,6 +47,7 @@ import { Route as OrganizationSlugShellDotpagesDotindexRouteImport } from './mod
 import { Route as OrganizationSlugShellDotpagesDotidRouteImport } from './modules/org-dashboard/routes/_shell.pages.$id'
 import { Route as OrganizationSlugShellDotservicesDotindexRouteImport } from './modules/org-dashboard/routes/_shell.services.index'
 import { Route as OrganizationSlugShellDotservicesDotidRouteImport } from './modules/org-dashboard/routes/_shell.services.$id'
+import { Route as OrganizationSlugShellDotservicesDothoursRouteImport } from './modules/org-dashboard/routes/_shell.services.hours'
 import { Route as OrganizationSlugShellDotservicesDotnewRouteImport } from './modules/org-dashboard/routes/_shell.services.new'
 import { Route as OrganizationSlugShellDotsettingsDotindexRouteImport } from './modules/org-dashboard/routes/_shell.settings.index'
 import { Route as AccountShellDotbookingsDotindexRouteImport } from './modules/account-dashboard/routes/_shell.bookings.index'
@@ -262,6 +263,12 @@ const OrganizationSlugShellDotservicesDotidRoute =
     path: '/$id',
     getParentRoute: () => OrganizationSlugShellDotservicesRoute,
   } as any)
+const OrganizationSlugShellDotservicesDothoursRoute =
+  OrganizationSlugShellDotservicesDothoursRouteImport.update({
+    id: '/hours',
+    path: '/hours',
+    getParentRoute: () => OrganizationSlugShellDotservicesRoute,
+  } as any)
 const OrganizationSlugShellDotservicesDotnewRoute =
   OrganizationSlugShellDotservicesDotnewRouteImport.update({
     id: '/new',
@@ -322,6 +329,7 @@ export interface FileRoutesByFullPath {
   '/$organizationSlug/customers/$id': typeof OrganizationSlugShellDotcustomersDotidRoute
   '/$organizationSlug/pages/$id': typeof OrganizationSlugShellDotpagesDotidRoute
   '/$organizationSlug/services/$id': typeof OrganizationSlugShellDotservicesDotidRoute
+  '/$organizationSlug/services/hours': typeof OrganizationSlugShellDotservicesDothoursRoute
   '/$organizationSlug/services/new': typeof OrganizationSlugShellDotservicesDotnewRoute
   '/account/bookings/$id': typeof AccountShellDotbookingsDotidRoute
   '/$organizationSlug/bookings/': typeof OrganizationSlugShellDotbookingsDotindexRoute
@@ -358,6 +366,7 @@ export interface FileRoutesByTo {
   '/$organizationSlug/customers/$id': typeof OrganizationSlugShellDotcustomersDotidRoute
   '/$organizationSlug/pages/$id': typeof OrganizationSlugShellDotpagesDotidRoute
   '/$organizationSlug/services/$id': typeof OrganizationSlugShellDotservicesDotidRoute
+  '/$organizationSlug/services/hours': typeof OrganizationSlugShellDotservicesDothoursRoute
   '/$organizationSlug/services/new': typeof OrganizationSlugShellDotservicesDotnewRoute
   '/account/bookings/$id': typeof AccountShellDotbookingsDotidRoute
   '/$organizationSlug/bookings': typeof OrganizationSlugShellDotbookingsDotindexRoute
@@ -403,6 +412,7 @@ export interface FileRoutesById {
   '/$organizationSlug/_shell/customers/$id': typeof OrganizationSlugShellDotcustomersDotidRoute
   '/$organizationSlug/_shell/pages/$id': typeof OrganizationSlugShellDotpagesDotidRoute
   '/$organizationSlug/_shell/services/$id': typeof OrganizationSlugShellDotservicesDotidRoute
+  '/$organizationSlug/_shell/services/hours': typeof OrganizationSlugShellDotservicesDothoursRoute
   '/$organizationSlug/_shell/services/new': typeof OrganizationSlugShellDotservicesDotnewRoute
   '/account/_shell/bookings/$id': typeof AccountShellDotbookingsDotidRoute
   '/$organizationSlug/_shell/bookings/': typeof OrganizationSlugShellDotbookingsDotindexRoute
@@ -449,6 +459,7 @@ export interface FileRouteTypes {
     | '/$organizationSlug/customers/$id'
     | '/$organizationSlug/pages/$id'
     | '/$organizationSlug/services/$id'
+    | '/$organizationSlug/services/hours'
     | '/$organizationSlug/services/new'
     | '/account/bookings/$id'
     | '/$organizationSlug/bookings/'
@@ -485,6 +496,7 @@ export interface FileRouteTypes {
     | '/$organizationSlug/customers/$id'
     | '/$organizationSlug/pages/$id'
     | '/$organizationSlug/services/$id'
+    | '/$organizationSlug/services/hours'
     | '/$organizationSlug/services/new'
     | '/account/bookings/$id'
     | '/$organizationSlug/bookings'
@@ -529,6 +541,7 @@ export interface FileRouteTypes {
     | '/$organizationSlug/_shell/customers/$id'
     | '/$organizationSlug/_shell/pages/$id'
     | '/$organizationSlug/_shell/services/$id'
+    | '/$organizationSlug/_shell/services/hours'
     | '/$organizationSlug/_shell/services/new'
     | '/account/_shell/bookings/$id'
     | '/$organizationSlug/_shell/bookings/'
@@ -824,6 +837,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrganizationSlugShellDotservicesDotidRouteImport
       parentRoute: typeof OrganizationSlugShellDotservicesRoute
     }
+    '/$organizationSlug/_shell/services/hours': {
+      id: '/$organizationSlug/_shell/services/hours'
+      path: '/hours'
+      fullPath: '/$organizationSlug/services/hours'
+      preLoaderRoute: typeof OrganizationSlugShellDotservicesDothoursRouteImport
+      parentRoute: typeof OrganizationSlugShellDotservicesRoute
+    }
     '/$organizationSlug/_shell/services/new': {
       id: '/$organizationSlug/_shell/services/new'
       path: '/new'
@@ -911,6 +931,7 @@ const OrganizationSlugShellDotpagesRouteWithChildren =
 
 interface OrganizationSlugShellDotservicesRouteChildren {
   OrganizationSlugShellDotservicesDotidRoute: typeof OrganizationSlugShellDotservicesDotidRoute
+  OrganizationSlugShellDotservicesDothoursRoute: typeof OrganizationSlugShellDotservicesDothoursRoute
   OrganizationSlugShellDotservicesDotnewRoute: typeof OrganizationSlugShellDotservicesDotnewRoute
   OrganizationSlugShellDotservicesDotindexRoute: typeof OrganizationSlugShellDotservicesDotindexRoute
 }
@@ -919,6 +940,8 @@ const OrganizationSlugShellDotservicesRouteChildren: OrganizationSlugShellDotser
   {
     OrganizationSlugShellDotservicesDotidRoute:
       OrganizationSlugShellDotservicesDotidRoute,
+    OrganizationSlugShellDotservicesDothoursRoute:
+      OrganizationSlugShellDotservicesDothoursRoute,
     OrganizationSlugShellDotservicesDotnewRoute:
       OrganizationSlugShellDotservicesDotnewRoute,
     OrganizationSlugShellDotservicesDotindexRoute:

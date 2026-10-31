@@ -1,4 +1,12 @@
-import type { ApiResponse, ServiceDto, ServiceInput } from "@sinwy/shared";
+import type {
+	ApiResponse,
+	AvailabilityDto,
+	AvailabilityInput,
+	ClosureDto,
+	ClosureInput,
+	ServiceDto,
+	ServiceInput,
+} from "@sinwy/shared";
 import { queryOptions, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { api } from "#/shared/lib/api";
@@ -10,6 +18,8 @@ export const serviceKeys = {
 		[...serviceKeys.all(organizationId), "list"] as const,
 	detail: (organizationId: string, serviceId: string) =>
 		[...serviceKeys.all(organizationId), "detail", serviceId] as const,
+	availability: (organizationId: string) =>
+		[...serviceKeys.all(organizationId), "availability"] as const,
 };
 
 const servicesPath = (organizationId: string, suffix = "") =>
@@ -60,6 +70,39 @@ export const duplicateService = (organizationId: string, serviceId: string) =>
 
 export const archiveService = (organizationId: string, serviceId: string) =>
 	api<null>(servicesPath(organizationId, `/${serviceId}`), {
+		method: "DELETE",
+	});
+
+const availabilityPath = (organizationId: string, suffix = "") =>
+	`/organizations/${organizationId}/availability${suffix}`;
+
+export const availabilityQuery = (organizationId: string) =>
+	queryOptions({
+		queryKey: serviceKeys.availability(organizationId),
+		queryFn: async () => {
+			const res = await api<AvailabilityDto>(availabilityPath(organizationId));
+			if (!res.isSuccess) throw new Error(res.message);
+			return res.data;
+		},
+	});
+
+export const saveAvailability = (
+	organizationId: string,
+	body: AvailabilityInput,
+) =>
+	api<AvailabilityDto>(availabilityPath(organizationId), {
+		method: "PUT",
+		body: JSON.stringify(body),
+	});
+
+export const addClosure = (organizationId: string, body: ClosureInput) =>
+	api<ClosureDto>(availabilityPath(organizationId, "/closures"), {
+		method: "POST",
+		body: JSON.stringify(body),
+	});
+
+export const removeClosure = (organizationId: string, closureId: string) =>
+	api<null>(availabilityPath(organizationId, `/closures/${closureId}`), {
 		method: "DELETE",
 	});
 

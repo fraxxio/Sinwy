@@ -13,7 +13,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 3 | Business hours and closures: schema and endpoints | 2 | done | `feat(backend): business hours and closures API` |
 | 4 | Bookable times function and endpoint | 3 | done | `feat(backend): bookable times function and endpoint` |
 | 5 | Services list, editor and duplicate (web) | 2 | done | `feat(backend, web): services list, editor and duplicate` |
-| 6 | Business hours and closures page (web) | 3, 5 | todo | |
+| 6 | Business hours and closures page (web) | 3, 5 | done | `feat(web): business hours and closures page` |
 | 7 | Code review | 1–6 | todo | |
 
 ## Decisions
@@ -58,41 +58,11 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Availability (Phase 3):** `service_availability` and `availability_exception` live in `db/schema/serviceSchema.ts`. Drizzle `time` columns read back as `"HH:MM:SS"` (the service maps them to `"HH:MM"`) and accept `"HH:MM"` on insert; `date` columns are `"YYYY-MM-DD"` strings. The repository reads only org-wide rows (`serviceId` null) and whole-day closures (`kind = 'closed'`, null times). `todayIn(timezone, now?)` is in `modules/services/utils.ts`. Shared: `availabilitySchema`, `closureSchema`, `AvailabilityDto`, `ClosureDto`, `WeeklyRangeDto`, `AVAILABILITY_LIMITS` in `Sinwy.Shared/types/service/Availability.ts`. Times run 00:00–23:45, so a day can't close at midnight yet. Log: Phase 3.
 - **Cross-module transactions** open in the repository and pass `tx` into the other module's exported function (`saveOrganizationHours` → `setOrganizationTimezone`, as `transfers/repository.ts` does); `Tx` stays unexported.
 - **Org locale (Phase 1):** `getOrganizationLocale(organizationId) → { timezone, currency } | null` and `setOrganizationTimezone(organizationId, timezone, executor?)` come from `@organizationsModule`; pass a transaction as `executor` to join it (`Tx` pattern in `modules/organizations/access.ts`). Validate zones with `isTimeZone` from `@sinwy/shared` (also `DEFAULT_TIME_ZONE`, `currencyForCountry`, `DEFAULT_CURRENCY`).
-- **Time zone names:** Bun lists 445 zones in `Intl.supportedValuesOf("timeZone")` but lacks newer names like `Europe/Kyiv` (it has `Europe/Kiev`); `isTimeZone` also accepts any `Area/City` name Intl can format, so a stored zone may be missing from that list. The Phase 6 combobox must still show the stored value. Log: Phase 1.
+- **Time zone names:** Bun lacks newer names like `Europe/Kyiv` (has `Europe/Kiev`); `isTimeZone` also accepts any `Area/City` Intl can format, so the hours page adds the stored zone and `UTC` to the browser list (`timeZoneOptions`). Log: Phase 1.
 - **Bookable times (Phase 4):** `bookableTimes` (pure) and `listBookableTimes(organizationId, serviceId, range, busy, now?)` are exported from `@servicesModule`; `GET services/:serviceId/times?from&to` returns `BookableTimesDto` (`{ timezone, times }`, ISO instants). Archived services are 404 like every other route, inactive ones an empty list. Wall times convert with `tzOffset`, never `TZDate`: `TZDate` picks the first or second fall-back occurrence depending on the host's `TZ` (`bun test` runs with UTC). Log: Phase 4.
-- **Playwright's browser zone is the host's** (`Europe/Vilnius`), not `UTC`, unless the context sets `timezoneId`.
 - **Web:** dashboard routes live in `Sinwy.WebFrontend/src/modules/org-dashboard/routes/`; route context gives `organization` (now with `currency`, a read-only better-auth field) and `member`; check writes with `hasPermission(member.roles, "services:write")`. Shared UI: `PageHeader`, `EmptyState`, `ContentBox`, `SettingsSection`, `TextField`, `TextareaField`, `SelectField`, `ComboboxField`, `SubmitButton`; shadcn `switch`, `table`, `collapsible`, `alert-dialog` exist. Running the shadcn CLI adds a stray `cn` npm package and imports it: revert `package.json`/`bun.lock` and import `cn` from `@/shared/lib/utils`. Log: Phase 5.
 - **Services web (Phase 5):** `org-dashboard/lib/service-queries.ts` holds `serviceKeys` (invalidate `serviceKeys.all(orgId)` after writes), the queries, the write functions and `useUnwrapWrite()`, which throws the API message or, for a 409 inactive org, calls `handleOrganizationInactive` and throws an empty message (show nothing). Form pattern: string form values, a Zod schema that transforms into the shared schema (`lib/services.ts`), `onSubmit` returning an error message or null, and `<fieldset disabled>` for read-only staff. Money input: `parseMinorUnits`/`formatAmountInput` in `src/shared/lib/money.ts`.
-- **Driving the browser from zsh:** `$P click …` with `P="bunx playwright-cli"` doesn't word-split and fails silently; write the command out. Base UI renders `Button render={<Link/>}` as role `button`, not `link`.
-- **E2E seeds:** `bun run dev:seed-scenario subscribed-org` gives an active org with an owner; `org-with-staff` adds a staff member. Details in `.agents/skills/e2e-test/references/seed-scenario.md`.
-
----
-
-## Phase 6: Business hours and closures page (web)
-
-**Goal:** An owner sets the timezone, weekly hours and closure dates from the dashboard; staff see them read-only.
-
-**Files:**
-- New `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.services.hours.tsx` (static segment, wins over `$id`; copy the `useQuery` + `Skeleton` + read-only `<fieldset disabled>` shape of `_shell.services.$id.tsx`).
-- `org-dashboard/lib/service-queries.ts`: add availability queries (`GET availability`), `saveAvailability` (PUT), `addClosure`/`removeClosure`; reuse `useUnwrapWrite` and add keys under `serviceKeys.all`.
-- New `org-dashboard/components/BusinessHoursForm.tsx`, `ClosuresList.tsx`; form ↔ DTO mapping next to the form mapping in `org-dashboard/lib/services.ts` (or its own file if it grows), tests beside `tests/services.test.ts`.
-- `_shell.services.index.tsx` (add a "Business hours" button to the `PageHeader` action, which already renders "New service" for writers with services).
-- Shared: `availabilitySchema`, `closureSchema`, `AvailabilityDto`, `AVAILABILITY_LIMITS` in `Sinwy.Shared/types/service/Availability.ts`; `Switch` in `src/shared/components/ui/switch.tsx`.
-
-**Steps:**
-- Timezone: `ComboboxField` over `Intl.supportedValuesOf("timeZone")`, at the top of the form.
-- Seven rows Monday–Sunday: open/closed switch plus start and end `<input type="time" step="900">`; "Copy Monday to weekdays" button. One range per day. Save sends the whole set with PUT.
-- Client validation mirrors the shared schema (end after start, quarter hours); server errors show inline.
-- Closures: date input + optional note + Add; upcoming closures listed with Remove.
-- New orgs with no rows show all days closed and a hint that customers can't book until hours are set.
-
-**Tests that matter:**
-- Form ↔ DTO mapping: closed days send no rule; open days send `HH:MM` exactly; loading the DTO back produces the same form state.
-
-**Done when:**
-- Hours and closures saved in the browser are what the bookable-times endpoint uses.
-
-**Verify:** Seed `subscribed-org`, log in as the owner, open Services → Business hours. Set timezone `Europe/Vilnius`, Monday open 09:00–17:00, Copy to weekdays, save: 5 `service_availability` rows, `organization.timezone` updated, page reload shows the same values. Add a closure for next Friday with note "Holiday", then remove it: the `availability_exception` row appears and is deleted. As staff (seed `org-with-staff`), the page is visible with disabled inputs and no save. Nothing simulated.
+- **Hours web (Phase 6):** `/services/hours` (`_shell.services.hours.tsx`) reads `availabilityQuery` (`serviceKeys.availability`); form ↔ DTO mapping and the closure form schema are in `org-dashboard/lib/business-hours.ts`. Closed days keep 09:00–17:00 in form state only; the "can't book yet" hint follows saved hours, not unsaved edits. Closures before today (org zone) are refused client-side only; the API accepts them and hides them. Log: Phase 6.
 
 ---
 
@@ -100,7 +70,11 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 **Goal:** The plan's changes are reviewed for correctness in the risky areas before bookings build on them.
 
-**Files:** Every file changed by Phases 1–6 (`git log` for this plan's commits).
+**Files:** `git diff 047b85d^..HEAD` (this plan's six commits). The risky parts:
+- Backend: `Sinwy.Backend/modules/services/` (`routes.ts`, `controller.ts`, `service.ts`, `repository.ts`, `bookableTimes.ts`, `utils.ts`, tests), `db/schema/serviceSchema.ts`, migrations `0017`–`0019`, the locale functions in `modules/organizations/` (`repository.ts`, `service.ts`, `index.ts`) and the `currency` field in `modules/auth/auth.ts`.
+- Shared: `Sinwy.Shared/types/service/` (`ServiceSchema.ts`, `Service.ts`, `Availability.ts`), `types/organization/` (`Currency.ts`, `TimeZone.ts`).
+- Web: `Sinwy.WebFrontend/src/modules/org-dashboard/` (`lib/service-queries.ts`, `lib/services.ts`, `lib/business-hours.ts`, `components/ServiceForm.tsx`, `ServicesTable.tsx`, `ServiceActions.tsx`, `BusinessHoursForm.tsx`, `ClosuresList.tsx`, `routes/_shell.services.*`), `src/shared/lib/money.ts`.
+- Docs: `docs/org-rules-map.md`.
 
 **Steps:**
 - Review with focus on: org scoping of every services query (no cross-org reads or writes), permission middleware on every route, the inactive-org write guard, money as integers end to end (DB, DTO, form conversion), timezone and DST handling in `bookableTimes`, the "service rows replace org rows" selection, and archived/inactive services never producing bookable times.
