@@ -15,6 +15,8 @@ import { user } from "@db/schema/userSchema";
 import {
 	API_ERROR_CODES,
 	type ApiResponse,
+	COUNTRY_CODES,
+	currencyForCountry,
 	type OrganizationSummary,
 	PLAN_FEATURES,
 } from "@sinwy/shared";
@@ -173,6 +175,36 @@ test("omitted industry → 'other', never null", async () => {
 	expect(row?.industry).toBe("other");
 });
 
+const localeOf = async (id: string) => {
+	const [row] = await db
+		.select({
+			timezone: organization.timezone,
+			currency: organization.currency,
+		})
+		.from(organization)
+		.where(eq(organization.id, id));
+	return row;
+};
+
+test("the browser's time zone is stored; a bad or missing one falls back to UTC", async () => {
+	const { cookie } = await createUserWithSession();
+	const create = async (timezone?: unknown) =>
+		unwrap<OrgDto>(
+			await post("/api/organizations", { name: "Acme", timezone }, cookie),
+		);
+
+	const vilnius = await create("Europe/Vilnius");
+	expect((await localeOf(vilnius.id))?.timezone).toBe("Europe/Vilnius");
+
+	for (const timezone of [undefined, "Mars/Olympus", "+02:00", 42]) {
+		const org = await create(timezone);
+		expect(await localeOf(org.id)).toEqual({
+			timezone: "UTC",
+			currency: "EUR",
+		});
+	}
+});
+
 test("creator has an owner membership row", async () => {
 	const { userId, cookie } = await createUserWithSession();
 	const { id } = await createOrg("Acme", cookie);
@@ -192,6 +224,13 @@ test("two orgs with the same name → distinct slugs", async () => {
 	expect(first.slug).toBe("acme");
 	expect(second.slug).toMatch(/^acme-[a-z0-9]{6}$/);
 	expect(second.slug).not.toBe(first.slug);
+});
+
+test("a name matching a top-level route → suffixed slug", async () => {
+	const { cookie } = await createUserWithSession();
+	expect((await createOrg("Settings", cookie)).slug).toMatch(
+		/^settings-[a-z0-9]{6}$/,
+	);
 });
 
 test("built-in organization.create endpoint → rejected", async () => {
@@ -333,6 +372,26 @@ test("PUT profile: a second save overwrites the first", async () => {
 	);
 
 	expect(second.city).toBe("Kaunas");
+});
+
+test("PUT profile: the organization's currency follows the country", async () => {
+	const { cookie } = await createUserWithSession();
+	const { id } = await createActiveOrg("Acme", cookie);
+
+	await saveProfile(id, cookie, { country: "GB" });
+	expect((await localeOf(id))?.currency).toBe("GBP");
+
+	await saveProfile(id, cookie, { country: "LT" });
+	expect((await localeOf(id))?.currency).toBe("EUR");
+});
+
+test("currencyForCountry: every known country has a currency; anything else is EUR", () => {
+	for (const code of COUNTRY_CODES)
+		expect(currencyForCountry(code)).toMatch(/^[A-Z]{3}$/);
+	expect(currencyForCountry("JP")).toBe("JPY");
+	expect(currencyForCountry("ZZ")).toBe("EUR");
+	expect(currencyForCountry("constructor")).toBe("EUR");
+	expect(currencyForCountry(null)).toBe("EUR");
 });
 
 // the form checks the same rules, so these all stand in for a bypassed form

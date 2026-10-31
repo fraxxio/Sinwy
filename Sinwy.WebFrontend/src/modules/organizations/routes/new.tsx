@@ -98,7 +98,10 @@ function NewOrganizationPage() {
 			setServerError(null);
 			const response = await api<OrganizationDto>("/organizations", {
 				method: "POST",
-				body: JSON.stringify(value),
+				body: JSON.stringify({
+					...value,
+					timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+				}),
 			});
 			if (!response.isSuccess) {
 				setServerError(response.message);

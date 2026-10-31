@@ -27,3 +27,4 @@ A plan is two files:
 - Write steps as decisions and constraints, not code. Name files and functions; don't paste their contents.
 - **Tests that matter** names the risky behaviour (money, auth, data loss, races), not coverage for its own sake.
 - End with a code review phase when the plan touches money, auth or data deletion.
+- The last phase's final step, after the review is done and the plan, log and docs are written: stop every dev server started during the plan's work unless the user explicitly asked to keep it running, and delete the temporary files and artifacts the plan's work created (probe scripts, screenshots, browser console logs, scratch data) that are no longer needed.

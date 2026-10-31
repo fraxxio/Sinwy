@@ -10,6 +10,7 @@
 		"@userModule": "./modules/user",
 		"@filesModule": "./modules/files",
 		"@transfersModule": "./modules/transfers",
+		"@servicesModule": "./modules/services",
 		"@backend/*": "./*"
 	}
 }

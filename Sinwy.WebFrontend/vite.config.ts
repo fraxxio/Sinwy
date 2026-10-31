@@ -11,6 +11,8 @@ const config = defineConfig({
 	server: {
 		// ponytail: dev proxy keeps auth cookies same-origin; set BACKEND_URL if the backend isn't on :3001
 		proxy: { "/api": appConfig.BACKEND_URL },
+		// on by default under an AI agent; with devtools' console piping it echoes each browser error back forever
+		forwardConsole: false,
 	},
 	plugins: [
 		devtools(),

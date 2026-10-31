@@ -8,6 +8,7 @@ import {
 	purgeOrganizationsJob,
 	registerOrganizationRoutes,
 } from "@organizationsModule";
+import { registerServiceRoutes } from "@servicesModule";
 import { expireTransfersJob, registerTransferRoutes } from "@transfersModule";
 import { registerUserRoutes } from "@userModule";
 
@@ -17,6 +18,7 @@ registerAuthRoutes(app);
 registerOrganizationRoutes(app);
 registerBillingRoutes(app);
 registerTransferRoutes(app);
+registerServiceRoutes(app);
 registerUserRoutes(app);
 registerFileRoutes(app);
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { slugify, uniqueSlug } from "@backend/modules/organizations/utils";
+import { slugify, uniqueSlug } from "@backend/lib/slug";
 
 test("basic slugify", () => {
 	expect(slugify("My Cool Org")).toBe("my-cool-org");
@@ -13,6 +13,7 @@ test("unicode and symbol-heavy names", () => {
 test("name that strips to empty falls back", () => {
 	expect(slugify("!!!")).toBe("org");
 	expect(slugify("日本語")).toBe("org");
+	expect(slugify("!!!", "service")).toBe("service");
 });
 
 test("collision → suffixed slug", async () => {
@@ -23,13 +24,4 @@ test("collision → suffixed slug", async () => {
 
 test("no collision → plain slug", async () => {
 	expect(await uniqueSlug("Acme", async () => false)).toBe("acme");
-});
-
-test("reserved slug → suffixed even when free in the DB", async () => {
-	expect(await uniqueSlug("Settings", async () => false)).toMatch(
-		/^settings-[a-z0-9]{6}$/,
-	);
-	expect(await uniqueSlug("About", async () => false)).toMatch(
-		/^about-[a-z0-9]{6}$/,
-	);
 });

@@ -1,11 +1,13 @@
 import type { Membership } from "@authModule";
+import { uniqueSlug } from "@backend/lib/slug";
 import {
 	type OrganizationProfileInput,
-	uniqueSlug,
+	reservedSlugs,
 } from "@backend/modules/organizations/utils";
 import db from "@db";
 import {
 	type AccountDeletionPreviewDto,
+	currencyForCountry,
 	EMPTY_ORGANIZATION_PROFILE,
 	featuresFor,
 	hasPermission,
@@ -20,7 +22,7 @@ import {
 	parseMemberRoles,
 	toPlanSlug,
 } from "@sinwy/shared";
-import { clearFromSessions, type OrganizationAccess } from "./access";
+import { clearFromSessions, type OrganizationAccess, type Tx } from "./access";
 import {
 	countOwnedHeldSlots,
 	findDeletionScheduledAt,
@@ -29,6 +31,7 @@ import {
 	findMembershipAccess,
 	findOnboardingCompletedAt,
 	findOrganizationAccess,
+	findOrganizationLocale,
 	findOwnedOrganizationIds,
 	findProfile,
 	findSoleOwnedOrganizations,
@@ -39,6 +42,7 @@ import {
 	isSlugTaken,
 	markOnboardingCompleted,
 	scheduleOrganizationsForDeletion,
+	updateOrganizationTimezone,
 	upsertProfile,
 } from "./repository";
 import { holdSlot, releaseSlot, type SlotHold } from "./slots";
@@ -47,10 +51,15 @@ export const createOrganization = async (
 	userId: string,
 	name: string,
 	industry: OrganizationIndustry,
+	timezone: string,
 ): Promise<OrganizationDto> => {
-	const slug = await uniqueSlug(name, isSlugTaken);
+	const slug = await uniqueSlug(
+		name,
+		async (candidate) =>
+			reservedSlugs.has(candidate) || (await isSlugTaken(candidate)),
+	);
 	const org = await insertOrganizationWithOwner(
-		{ name, slug, industry },
+		{ name, slug, industry, timezone },
 		userId,
 	);
 	// a new organization, not a freed slot, so it takes one when it can;
@@ -247,8 +256,28 @@ export const saveOrganizationProfile = async (
 	if (!target) return { ok: false, error: "not-found" };
 	if (!target.writable) return { ok: false, error: "inactive" };
 
-	const row = await upsertProfile(membership.organizationId, input);
+	const row = await upsertProfile(
+		membership.organizationId,
+		input,
+		currencyForCountry(input.country),
+	);
 	return { ok: true, data: toProfileDto(row) };
+};
+
+export type OrganizationLocale = { timezone: string; currency: string };
+
+/** The zone its hours are kept in and the currency new services price in. */
+export const getOrganizationLocale = (
+	organizationId: string,
+): Promise<OrganizationLocale | null> => findOrganizationLocale(organizationId);
+
+/** Callers validate the zone (`isTimeZone`); pass `executor` to join their transaction. */
+export const setOrganizationTimezone = async (
+	organizationId: string,
+	timezone: string,
+	executor: Tx | typeof db = db,
+) => {
+	await updateOrganizationTimezone(executor, organizationId, timezone);
 };
 
 /**
