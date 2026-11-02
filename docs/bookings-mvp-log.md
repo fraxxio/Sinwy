@@ -192,3 +192,79 @@ Finished phases of [bookings-mvp-plan.md](bookings-mvp-plan.md).
   - The whole matrix is in, including self-booking emails, which are tested by calling `createBooking` with a `customer` actor. Subjects start with the matrix label (e.g. "Booking confirmed: Haircut at Salon").
   - Concurrent confirm and cancel can both succeed legally (staff may cancel a confirmed booking), so the race test runs complete against cancel on a started booking, and two confirms. It fails 5/5 with the row lock removed.
 - Checked in the running app: nothing; Verify was "None" (API only), and the HTTP tests cover every item in **Tests that matter**.
+
+## Phase 5: Storefront module and the public booking flow
+
+**Goal:** A signed-in user books a service at `/<slug>/book`, gets `confirmed` or `pending` per the service, and the right emails go out.
+
+**Files:**
+- `Sinwy.Backend/modules/organizations/`: `repository.ts` (a slug lookup returning `organizationAccess` fields plus name, slug, timezone, currency; copy `findOrganizationAccess`), `service.ts` (`findPublicOrganization(slug)` using `isOrganizationPublic`), `index.ts`.
+- `Sinwy.Backend/modules/services/`: export `listPublicServices(organizationId)` (active, non-archived, with name, description, duration, price and `requiresApproval`) through `index.ts`.
+- `Sinwy.Backend/modules/bookings/`:
+  - `repository.ts`: the cap in `insertBookingIfFree` (count the customer's upcoming `pending`/`confirmed` bookings in the org under the same lock).
+  - `service.ts`: `createSelfBooking` (bookable-time check via `listBookableTimes`, then `createBooking` with actor `customer`), plus a `limit-reached` error.
+  - `controller.ts`/`routes.ts`: public handlers. Register them from `registerBookingRoutes` or a new function wired in `Sinwy.Backend/index.ts`.
+  - Emails need no work: self-booking emails already dispatch.
+  - Tests: new `tests/storefront.test.ts`, copying the harness from `tests/changes.test.ts`.
+- `Sinwy.Shared/types/booking/BookingSchema.ts` (self-booking body from `customerPhoneSchema` and `customerNoteSchema`), `types/api/ApiResponse.ts` (`BOOKING_LIMIT_REACHED: 40921`), and a public profile/services DTO.
+- Web: new `Sinwy.WebFrontend/src/modules/storefront/routes/` (`route.tsx` layout, `index.tsx` redirect, `book.tsx`) and `storefront/lib/` (queries); `src/routes.ts` (root slug → storefront, last); new `src/shared/components/booking/BookableTimesPicker.tsx`; `Sinwy.WebFrontend/package.json` (Default 10).
+
+**Steps:**
+- **Public API**, every route resolving the org through `findPublicOrganization` (unknown or non-active → 404):
+  - `GET /api/public/organizations/:slug` returns the org profile plus its public services.
+  - `GET /api/public/organizations/:slug/services/:serviceId/times?from&to` returns bookable times with busy intervals. It clamps the window to now → 60 days; a range outside it is empty.
+  - `POST /api/public/organizations/:slug/bookings` (`requireAuth`) takes `{ serviceId, startsAt, customerPhone?, customerNote? }`.
+- **Self-booking rules:**
+  - `startsAt` must be one of the service's current bookable times (recompute for that local date). This is the check manual bookings skip.
+  - Under the lock, count the user's upcoming active bookings in the org and refuse a 6th (409, `BOOKING_LIMIT_REACHED`).
+  - Status is `pending` if `requiresApproval`, else `confirmed`. The snapshot uses the user's name and email, and the actor is `customer`.
+- **Web storefront:** mount with `physical("/$organizationSlug", "modules/storefront/routes")` last in `routes.ts`.
+  - The layout loads the public profile; a 404 renders "This booking page isn't available".
+  - The index redirects to `book`. The `book` page runs three steps, and its search params (`service`, `date`, `start`) survive refresh.
+  - Confirm with no session → `/auth/login?redirect=<current href>`.
+  - The success state shows "Booked" or "Request sent — {org} will confirm", with a link to `/account/bookings/<id>` (that page arrives in Phase 10; the placeholder is fine).
+- **`BookableTimesPicker`** (shared, presentational):
+  - Props: `timezone`, a selected date plus `onDateChange`, `times: string[]`, `value`/`onChange`, and loading and empty states.
+  - Shows a day row (a native date input is fine), then the times as buttons, labelled in the org zone with the zone name.
+  - No data fetching inside it.
+
+**Tests that matter:**
+- An inactive, scheduled-for-deletion or draft org: all three public routes are 404.
+- A start that isn't a bookable time (off grid, outside hours, taken, past, beyond 60 days) → 409/400.
+- The 6th upcoming booking is refused; a cancelled one doesn't count.
+- A `requiresApproval` service creates `pending` and sends "Request received" plus "New booking request" to the owner and admins. An auto-confirm service sends "Booking confirmed" plus "New booking".
+- An unauthenticated POST → 401.
+
+**Done when:**
+- A signed-in user can book both seeded services in the browser, and the DB and outbox match.
+
+**Verify:** Seed `bookable-org`, plus a `user` scenario for the customer.
+1. Signed out, open `/<slug>`: it redirects to `/<slug>/book` and lists Haircut and Colouring with prices.
+2. Pick Haircut, then tomorrow and 10:00, then Confirm. You're redirected to login; log in as the customer and you're back on the confirm step with the selection intact.
+3. Confirm → "Booked". `psql service=sinwy_ro -c "select status, customer_name, customer_email, price_minor from booking where organization_id = '<id>' limit 5"` shows `confirmed`. The outbox has "Booking confirmed" to the customer and "New booking" to the owner.
+4. Book Colouring → "Request sent". The row is `pending`, and the emails are "Request received" plus "New booking request".
+5. Reopen tomorrow's times for Haircut: 10:00–10:30 (plus buffers) is gone.
+6. Open `/<slug-of-an-owner-with-org-draft>/book` (seed `owner-with-org`): "This booking page isn't available".
+
+Emails go to the local outbox; nothing else is simulated.
+
+### Log (2026-11-02, `feat(backend, web): add the storefront and public self-booking`)
+- Shipped:
+  - Backend: `findPublicOrganization(slug)` (organizations), `listPublicServices` (services) and the three public routes in `registerStorefrontRoutes`. `createSelfBooking` checks the start against the current free times for that local date, then calls `createBooking` with actor `customer`, status from `requiresApproval` and `upcomingLimit: 5`. `insertBookingIfFree` counts the cap under the org lock. `listBookingTimes` and the storefront share `findFreeTimes`.
+  - Shared: `selfBookingSchema`, `StorefrontDto`, `PublicServiceDto`, `BOOKING_LIMITS.selfBookingDays`/`upcomingSelfBookings` and `BOOKING_LIMIT_REACHED: 40921`. Tests: `bookings/tests/storefront.test.ts` (9).
+  - Web: the `storefront` module (`route.tsx` layout with the unavailable page, `index.tsx` redirect, `book.tsx` with three steps in search params), `BookableTimesPicker`, booking date helpers in `src/shared/lib/date.ts`, and `date-fns` + `@date-fns/tz`.
+- Differs from plan:
+  - The self-booking response is a `CustomerBookingDto`, not a `BookingDto`, so `internalNote` and the contact snapshot never reach the storefront.
+  - An unbookable start (off grid, outside hours, taken, past, beyond 60 days) is 409 with `BOOKING_TIME_TAKEN`, so the web handles one code: it refetches the times and offers "Pick another time". A malformed `startsAt` is 400.
+  - "Now → 60 days" is local dates today through today + 60, inclusive. The cap is checked before the overlap, so a customer at the cap hears about the cap.
+  - The storefront profile also carries the tagline, description, city and country for the page header. The layout is `ssr: false` like the rest of the app, so `/<slug>` redirects in the browser.
+  - The confirm button reads "Confirm booking", or "Send request" for approval services.
+  - `bun add` bumped unrelated TanStack packages and broke `router.tsx` types (two `query-core` versions), so the lockfile has only the two new workspace lines, added by hand and checked with `--frozen-lockfile`.
+- Checked in the running app (e2e subagent, all 6 Verify steps passed):
+  - Signed out, `/<slug>` → `/<slug>/book` with both services and their prices.
+  - Haircut tomorrow 10:00 → Confirm → login → back on the confirm URL → "Booked". The row is `confirmed` with the account's name and email, plus the typed phone and note. The outbox has "Booking confirmed" (customer) and "New booking" (owner).
+  - Colouring 13:00 → "Request sent". The row is `pending`. The outbox has "Request received" and "New booking request".
+  - Haircut's times lost 09:45–10:15 and 12:45–14:15, so pending bookings hold time. An `owner-with-org` org and an unknown slug show "This booking page isn't available".
+  - A taken start is 409 40919, and a POST without a session is 401.
+  - Found: phone and note typed before the login redirect are lost (minor, not in the brief).
+  - Not checked: real Resend delivery of the four templates. The web server's own log during the run wasn't captured.

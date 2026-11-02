@@ -2,22 +2,32 @@ import { membershipFrom, sessionFrom } from "@authModule";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler, IReqContext } from "@backend/lib/app/types";
 import {
+	findPublicOrganization,
+	type PublicOrganization,
+} from "@organizationsModule";
+import {
 	API_ERROR_CODES,
+	BOOKING_LIMITS,
+	bookableTimesQuerySchema,
 	bookingCalendarQuerySchema,
 	bookingListQuerySchema,
 	bookingUpdateSchema,
 	cancelBookingSchema,
 	manualBookingSchema,
 	rescheduleBookingSchema,
+	selfBookingSchema,
 } from "@sinwy/shared";
 import type { z } from "zod";
 import {
 	changeBookingStatus,
 	createManualBooking,
+	createSelfBooking,
 	getBooking,
+	getStorefront,
 	listBookings,
 	listBookingTimes,
 	listCalendarBookings,
+	listStorefrontTimes,
 	type Result,
 	rescheduleBooking,
 	type StaffStatusChange,
@@ -42,6 +52,18 @@ const respondError = (error: BookingError) => {
 				"That time was just taken",
 				409,
 				API_ERROR_CODES.BOOKING_TIME_TAKEN,
+			);
+		case "not-bookable":
+			return fail(
+				"That time isn't available, pick another one",
+				409,
+				API_ERROR_CODES.BOOKING_TIME_TAKEN,
+			);
+		case "limit-reached":
+			return fail(
+				`You can have at most ${BOOKING_LIMITS.upcomingSelfBookings} upcoming bookings with this business`,
+				409,
+				API_ERROR_CODES.BOOKING_LIMIT_REACHED,
 			);
 		case "illegal-transition":
 			return fail(
@@ -190,3 +212,53 @@ export const updateBookingHandler: Handler = async (c) => {
 	);
 	return result.ok ? ok(result.data) : respondError(result.error);
 };
+
+/** Serves the handler only for an organization whose booking page may be shown. */
+const storefront =
+	(
+		handler: (
+			c: IReqContext,
+			organization: PublicOrganization,
+		) => Promise<Response>,
+	): Handler =>
+	async (c) => {
+		const { slug } = c.req.params as { slug: string };
+		const organization = await findPublicOrganization(slug);
+		return organization
+			? handler(c, organization)
+			: fail("This booking page isn't available", 404);
+	};
+
+export const getStorefrontHandler = storefront(async (_c, organization) =>
+	ok(await getStorefront(organization)),
+);
+
+export const listStorefrontTimesHandler = storefront(
+	async (c, organization) => {
+		const params = new URL(c.req.url).searchParams;
+		const query = bookableTimesQuerySchema.safeParse(
+			Object.fromEntries(params),
+		);
+		if (!query.success)
+			return fail(query.error.issues[0]?.message ?? "Invalid query", 400);
+
+		const { serviceId } = c.req.params as { serviceId: string };
+		const result = await listStorefrontTimes(
+			organization,
+			serviceId,
+			query.data,
+		);
+		return result.ok ? ok(result.data) : respondError(result.error);
+	},
+);
+
+export const createSelfBookingHandler = storefront(async (c, organization) => {
+	const body = await parseBody(c, selfBookingSchema);
+	if (!body.ok) return body.response;
+
+	const { user } = sessionFrom(c);
+	const result = await createSelfBooking(organization, user, body.data);
+	return result.ok
+		? ok(result.data, 201, "Booking created")
+		: respondError(result.error);
+});

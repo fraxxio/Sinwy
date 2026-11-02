@@ -16,6 +16,18 @@ export type ServiceDto = {
 	updatedAt: string;
 };
 
+/** What a storefront shows of a service. */
+export type PublicServiceDto = Pick<
+	ServiceDto,
+	| "id"
+	| "name"
+	| "description"
+	| "durationMinutes"
+	| "priceMinor"
+	| "currency"
+	| "requiresApproval"
+>;
+
 export const SERVICE_LIMITS = {
 	name: 100,
 	description: 1000,

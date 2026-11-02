@@ -93,15 +93,52 @@ export const findBusyIntervals = (
 type NewBooking = Omit<typeof booking.$inferInsert, "id">;
 type NewEvent = Omit<typeof bookingEvent.$inferInsert, "id" | "bookingId">;
 
-/** Inserts the booking and its `created` event unless its padded window is taken; null when it is. */
+/** The customer's pending and confirmed bookings in the organization that haven't started. */
+const countUpcomingOf = async (
+	tx: Tx,
+	organizationId: string,
+	customerUserId: string,
+	now: Date,
+) => {
+	const [row] = await tx
+		.select({ total: count() })
+		.from(booking)
+		.where(
+			and(
+				eq(booking.organizationId, organizationId),
+				eq(booking.customerUserId, customerUserId),
+				inArray(booking.status, ACTIVE_BOOKING_STATUSES),
+				gte(booking.startsAt, now),
+			),
+		);
+	return row?.total ?? 0;
+};
+
+/**
+ * Inserts the booking and its `created` event unless its padded window is taken
+ * or, with `cap`, its customer already holds that many upcoming bookings here.
+ */
 export const insertBookingIfFree = (
 	values: NewBooking,
 	window: BusyInterval,
 	event: NewEvent,
+	cap?: { upcoming: number; now: Date },
 ) =>
 	db.transaction(async (tx) => {
 		await lockOrganization(tx, values.organizationId);
-		if (await isTimeTaken(tx, values.organizationId, window)) return null;
+		if (
+			cap &&
+			values.customerUserId &&
+			(await countUpcomingOf(
+				tx,
+				values.organizationId,
+				values.customerUserId,
+				cap.now,
+			)) >= cap.upcoming
+		)
+			return { ok: false, error: "limit-reached" } as const;
+		if (await isTimeTaken(tx, values.organizationId, window))
+			return { ok: false, error: "time-taken" } as const;
 
 		const [row] = await tx
 			.insert(booking)
@@ -112,7 +149,7 @@ export const insertBookingIfFree = (
 			.insert(bookingEvent)
 			.values({ ...event, id: crypto.randomUUID(), bookingId: row.id })
 			.returning();
-		return { booking: row, events };
+		return { ok: true, booking: row, events } as const;
 	});
 
 type BookingUpdate = Partial<

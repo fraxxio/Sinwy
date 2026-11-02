@@ -32,6 +32,7 @@ import {
 	findMembershipAccess,
 	findOnboardingCompletedAt,
 	findOrganizationAccess,
+	findOrganizationBySlug,
 	findOrganizationLocale,
 	findOwnedOrganizationIds,
 	findProfile,
@@ -88,6 +89,27 @@ export const isOrganizationPublic = (access: OrganizationAccess) =>
 	access.slotHeldAt !== null &&
 	access.deletionScheduledAt === null &&
 	access.ownerPlan !== null;
+
+/** An organization whose booking page may be shown; null when the slug is unknown or it isn't active. */
+export const findPublicOrganization = async (slug: string) => {
+	const row = await findOrganizationBySlug(slug);
+	if (!row || !isOrganizationPublic(row)) return null;
+	return {
+		id: row.id,
+		name: row.name,
+		slug: row.slug,
+		timezone: row.timezone,
+		currency: row.currency,
+		tagline: row.tagline,
+		description: row.description,
+		city: row.city,
+		country: row.country,
+	};
+};
+
+export type PublicOrganization = NonNullable<
+	Awaited<ReturnType<typeof findPublicOrganization>>
+>;
 
 export const organizationStatusOf = (
 	access: OrganizationAccess,

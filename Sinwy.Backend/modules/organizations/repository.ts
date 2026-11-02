@@ -87,6 +87,30 @@ export const findOrganizationAccess = async (organizationId: string) => {
 	return row ?? null;
 };
 
+/** What a booking page needs, with the access fields that decide whether it may be shown. */
+export const findOrganizationBySlug = async (slug: string) => {
+	const [row] = await db
+		.select({
+			id: organization.id,
+			name: organization.name,
+			slug: organization.slug,
+			timezone: organization.timezone,
+			currency: organization.currency,
+			...organizationAccess,
+			tagline: organizationProfile.tagline,
+			description: organizationProfile.description,
+			city: organizationProfile.city,
+			country: organizationProfile.country,
+		})
+		.from(organization)
+		.leftJoin(
+			organizationProfile,
+			eq(organizationProfile.organizationId, organization.id),
+		)
+		.where(eq(organization.slug, slug));
+	return row ?? null;
+};
+
 export const countOwnedHeldSlots = (userId: string) =>
 	countHeldSlots(db, userId);
 

@@ -28,6 +28,10 @@ export const BOOKING_LIMITS = {
 	listPageSize: 25,
 	listMaxPageSize: 100,
 	calendarDays: 42,
+	/** How far ahead customers may book, in local dates from today. */
+	selfBookingDays: 60,
+	/** Pending or confirmed upcoming self-bookings a customer may hold in one organization. */
+	upcomingSelfBookings: 5,
 } as const;
 
 /** What staff see. Times are ISO instants; prices are in the currency's smallest unit. */

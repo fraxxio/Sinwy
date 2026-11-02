@@ -5,10 +5,13 @@ import {
 	completeBookingHandler,
 	confirmBookingHandler,
 	createManualBookingHandler,
+	createSelfBookingHandler,
 	getBookingHandler,
+	getStorefrontHandler,
 	listBookingsHandler,
 	listBookingTimesHandler,
 	listCalendarBookingsHandler,
+	listStorefrontTimesHandler,
 	markNoShowHandler,
 	rescheduleBookingHandler,
 	updateBookingHandler,
@@ -54,4 +57,19 @@ export const registerBookingRoutes = (app: IApp) => {
 			method: "POST",
 			routeMiddlewares: write,
 		});
+};
+
+const STOREFRONT = "/api/public/organizations/:slug";
+
+/** Booking pages: anyone may browse an active organization's services and times; booking needs a session. */
+export const registerStorefrontRoutes = (app: IApp) => {
+	app.route(STOREFRONT, getStorefrontHandler);
+	app.route(
+		`${STOREFRONT}/services/:serviceId/times`,
+		listStorefrontTimesHandler,
+	);
+	app.route(`${STOREFRONT}/bookings`, createSelfBookingHandler, {
+		method: "POST",
+		routeMiddlewares: [requireAuth],
+	});
 };

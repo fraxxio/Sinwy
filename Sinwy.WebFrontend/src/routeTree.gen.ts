@@ -10,7 +10,10 @@
 
 import { Route as rootRouteImport } from './root'
 import { Route as IndexRouteImport } from './modules/home/routes/index'
+import { Route as OrganizationSlugRouteRouteImport } from './modules/storefront/routes/route'
 import { Route as AboutRouteImport } from './modules/home/routes/about'
+import { Route as OrganizationSlugIndexRouteImport } from './modules/storefront/routes/index'
+import { Route as OrganizationSlugBookRouteImport } from './modules/storefront/routes/book'
 import { Route as AccountShellRouteImport } from './modules/account-dashboard/routes/_shell'
 import { Route as AuthForgotPasswordRouteImport } from './modules/auth/routes/forgot-password'
 import { Route as AuthGoodbyeRouteImport } from './modules/auth/routes/goodbye'
@@ -58,10 +61,25 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrganizationSlugRouteRoute = OrganizationSlugRouteRouteImport.update({
+  id: '/$organizationSlug',
+  path: '/$organizationSlug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
   getParentRoute: () => rootRouteImport,
+} as any)
+const OrganizationSlugIndexRoute = OrganizationSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OrganizationSlugRouteRoute,
+} as any)
+const OrganizationSlugBookRoute = OrganizationSlugBookRouteImport.update({
+  id: '/book',
+  path: '/book',
+  getParentRoute: () => OrganizationSlugRouteRoute,
 } as any)
 const AccountShellRoute = AccountShellRouteImport.update({
   id: '/account/_shell',
@@ -297,7 +315,9 @@ const DashboardOrganizationSlugShellDotsettingsDotindexRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$organizationSlug': typeof OrganizationSlugRouteRouteWithChildren
   '/about': typeof AboutRoute
+  '/$organizationSlug/book': typeof OrganizationSlugBookRoute
   '/account': typeof AccountShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/goodbye': typeof AuthGoodbyeRoute
@@ -307,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/$organizationSlug/': typeof OrganizationSlugIndexRoute
   '/account/billing': typeof AccountShellDotbillingRoute
   '/account/bookings': typeof AccountShellDotbookingsRouteWithChildren
   '/account/notifications': typeof AccountShellDotnotificationsRoute
@@ -343,6 +364,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/$organizationSlug/book': typeof OrganizationSlugBookRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/goodbye': typeof AuthGoodbyeRoute
   '/auth/login': typeof AuthLoginRoute
@@ -351,6 +373,7 @@ export interface FileRoutesByTo {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/$organizationSlug': typeof OrganizationSlugIndexRoute
   '/account/billing': typeof AccountShellDotbillingRoute
   '/account/notifications': typeof AccountShellDotnotificationsRoute
   '/account/organizations': typeof AccountShellDotorganizationsRoute
@@ -380,7 +403,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/$organizationSlug': typeof OrganizationSlugRouteRouteWithChildren
   '/about': typeof AboutRoute
+  '/$organizationSlug/book': typeof OrganizationSlugBookRoute
   '/account/_shell': typeof AccountShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/goodbye': typeof AuthGoodbyeRoute
@@ -390,6 +415,7 @@ export interface FileRoutesById {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
+  '/$organizationSlug/': typeof OrganizationSlugIndexRoute
   '/account/_shell/billing': typeof AccountShellDotbillingRoute
   '/account/_shell/bookings': typeof AccountShellDotbookingsRouteWithChildren
   '/account/_shell/notifications': typeof AccountShellDotnotificationsRoute
@@ -427,7 +453,9 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/$organizationSlug'
     | '/about'
+    | '/$organizationSlug/book'
     | '/account'
     | '/auth/forgot-password'
     | '/auth/goodbye'
@@ -437,6 +465,7 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
+    | '/$organizationSlug/'
     | '/account/billing'
     | '/account/bookings'
     | '/account/notifications'
@@ -473,6 +502,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/$organizationSlug/book'
     | '/auth/forgot-password'
     | '/auth/goodbye'
     | '/auth/login'
@@ -481,6 +511,7 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
+    | '/$organizationSlug'
     | '/account/billing'
     | '/account/notifications'
     | '/account/organizations'
@@ -509,7 +540,9 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/$organizationSlug'
     | '/about'
+    | '/$organizationSlug/book'
     | '/account/_shell'
     | '/auth/forgot-password'
     | '/auth/goodbye'
@@ -519,6 +552,7 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
+    | '/$organizationSlug/'
     | '/account/_shell/billing'
     | '/account/_shell/bookings'
     | '/account/_shell/notifications'
@@ -555,6 +589,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  OrganizationSlugRouteRoute: typeof OrganizationSlugRouteRouteWithChildren
   AboutRoute: typeof AboutRoute
   AccountShellRoute: typeof AccountShellRouteWithChildren
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
@@ -579,12 +614,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$organizationSlug': {
+      id: '/$organizationSlug'
+      path: '/$organizationSlug'
+      fullPath: '/$organizationSlug'
+      preLoaderRoute: typeof OrganizationSlugRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/$organizationSlug/': {
+      id: '/$organizationSlug/'
+      path: '/'
+      fullPath: '/$organizationSlug/'
+      preLoaderRoute: typeof OrganizationSlugIndexRouteImport
+      parentRoute: typeof OrganizationSlugRouteRoute
+    }
+    '/$organizationSlug/book': {
+      id: '/$organizationSlug/book'
+      path: '/book'
+      fullPath: '/$organizationSlug/book'
+      preLoaderRoute: typeof OrganizationSlugBookRouteImport
+      parentRoute: typeof OrganizationSlugRouteRoute
     }
     '/account/_shell': {
       id: '/account/_shell'
@@ -876,6 +932,21 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface OrganizationSlugRouteRouteChildren {
+  OrganizationSlugBookRoute: typeof OrganizationSlugBookRoute
+  OrganizationSlugIndexRoute: typeof OrganizationSlugIndexRoute
+}
+
+const OrganizationSlugRouteRouteChildren: OrganizationSlugRouteRouteChildren = {
+  OrganizationSlugBookRoute: OrganizationSlugBookRoute,
+  OrganizationSlugIndexRoute: OrganizationSlugIndexRoute,
+}
+
+const OrganizationSlugRouteRouteWithChildren =
+  OrganizationSlugRouteRoute._addFileChildren(
+    OrganizationSlugRouteRouteChildren,
+  )
+
 interface AccountShellDotbookingsRouteChildren {
   AccountShellDotbookingsDotidRoute: typeof AccountShellDotbookingsDotidRoute
   AccountShellDotbookingsDotindexRoute: typeof AccountShellDotbookingsDotindexRoute
@@ -1050,6 +1121,7 @@ const DashboardOrganizationSlugShellRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  OrganizationSlugRouteRoute: OrganizationSlugRouteRouteWithChildren,
   AboutRoute: AboutRoute,
   AccountShellRoute: AccountShellRouteWithChildren,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,

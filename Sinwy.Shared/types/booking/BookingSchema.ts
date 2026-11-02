@@ -73,6 +73,14 @@ export const manualBookingSchema = contactFields
 	})
 	.refine(hasEmailOrPhone, emailOrPhoneMessage);
 
+/** A signed-in customer books one of the service's bookable times; their name and email come from the account. */
+export const selfBookingSchema = z.object({
+	serviceId: z.string().min(1, "Pick a service"),
+	startsAt: startsAtSchema,
+	customerPhone: customerPhoneSchema,
+	customerNote: customerNoteSchema,
+});
+
 /** Staff may move a booking to any start; it keeps its length. */
 export const rescheduleBookingSchema = z.object({ startsAt: startsAtSchema });
 
@@ -165,6 +173,7 @@ export const bookingCalendarQuerySchema = bookingFilters
 
 export type BookingContactInput = z.infer<typeof bookingContactSchema>;
 export type ManualBookingInput = z.infer<typeof manualBookingSchema>;
+export type SelfBookingInput = z.infer<typeof selfBookingSchema>;
 export type RescheduleBookingInput = z.infer<typeof rescheduleBookingSchema>;
 export type CancelBookingInput = z.infer<typeof cancelBookingSchema>;
 export type BookingUpdateInput = z.infer<typeof bookingUpdateSchema>;

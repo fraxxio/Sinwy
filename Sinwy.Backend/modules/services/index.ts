@@ -9,5 +9,6 @@ export {
 	type BookableService,
 	findBookableService,
 	listBookableTimes,
+	listPublicServices,
 } from "./service";
 export { todayIn } from "./utils";

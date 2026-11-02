@@ -8,6 +8,7 @@ import {
 	type BookableTimesQuery,
 	type ClosureDto,
 	type ClosureInput,
+	type PublicServiceDto,
 	SERVICE_LIMITS,
 	type ServiceDto,
 } from "@sinwy/shared";
@@ -224,6 +225,22 @@ export const removeClosure = async (
 		? { ok: true, data: null }
 		: notFound;
 };
+
+/** The services a storefront offers: active and not archived. */
+export const listPublicServices = async (
+	organizationId: string,
+): Promise<PublicServiceDto[]> =>
+	(await findServices(organizationId))
+		.filter((row) => row.isActive)
+		.map((row) => ({
+			id: row.id,
+			name: row.name,
+			description: row.description,
+			durationMinutes: row.durationMinutes,
+			priceMinor: row.priceMinor,
+			currency: row.currency,
+			requiresApproval: row.requiresApproval,
+		}));
 
 export type BookableService = Pick<
 	ServiceRow,

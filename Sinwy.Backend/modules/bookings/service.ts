@@ -1,15 +1,21 @@
 import type { Membership } from "@authModule";
-import { getOrganizationLocale } from "@organizationsModule";
+import {
+	getOrganizationLocale,
+	type PublicOrganization,
+} from "@organizationsModule";
 import {
 	type BookableService,
 	findBookableService,
 	listBookableTimes,
+	listPublicServices,
 	todayIn,
 } from "@servicesModule";
 import {
 	ACTIVE_BOOKING_STATUSES,
+	BOOKING_LIMITS,
 	BOOKING_STATUSES,
 	type BookableTimesDto,
+	type BookableTimesQuery,
 	type BookingCalendarQuery,
 	type BookingDetailDto,
 	type BookingDto,
@@ -19,9 +25,12 @@ import {
 	type BookingListQuery,
 	type BookingStatus,
 	type BookingUpdateInput,
+	type CustomerBookingDto,
 	canTransition,
 	type ManualBookingInput,
 	type RescheduleBookingInput,
+	type SelfBookingInput,
+	type StorefrontDto,
 } from "@sinwy/shared";
 import { addMinutes } from "date-fns";
 import { dispatchBookingEvent } from "./dispatch";
@@ -50,6 +59,8 @@ type BookingError =
 	| "inactive"
 	| "service-unavailable"
 	| "time-taken"
+	| "not-bookable"
+	| "limit-reached"
 	| "illegal-transition"
 	| "not-reschedulable"
 	| "contact-locked";
@@ -111,11 +122,14 @@ export type CreateBookingInput = {
 	internalNote: string | null;
 	status: Extract<BookingStatus, "pending" | "confirmed">;
 	actor: { type: BookingEventActorType; userId: string | null };
+	/** Refuses the booking when its customer already holds this many upcoming ones here. */
+	upcomingLimit?: number;
 };
 
 /** Every way into the calendar: copies the service's price and buffers and refuses a taken window. */
 export const createBooking = async (
 	input: CreateBookingInput,
+	now = new Date(),
 ): Promise<Result<BookingDto>> => {
 	const { service } = input;
 	const values = {
@@ -132,13 +146,20 @@ export const createBooking = async (
 		customerNote: input.customerNote,
 		internalNote: input.internalNote,
 	};
-	const created = await insertBookingIfFree(values, paddedWindow(values), {
-		type: "created",
-		toStatus: input.status,
-		actorType: input.actor.type,
-		actorUserId: input.actor.userId,
-	});
-	if (!created) return fail("time-taken");
+	const created = await insertBookingIfFree(
+		values,
+		paddedWindow(values),
+		{
+			type: "created",
+			toStatus: input.status,
+			actorType: input.actor.type,
+			actorUserId: input.actor.userId,
+		},
+		input.upcomingLimit === undefined
+			? undefined
+			: { upcoming: input.upcomingLimit, now },
+	);
+	if (!created.ok) return created;
 	await dispatchAll(created.events);
 	return { ok: true, data: toBookingDto(created.booking, service.name) };
 };
@@ -337,29 +358,41 @@ export const listBusyIntervals = (
 ) =>
 	findBusyIntervals(organizationId, { start: from, end: to }, excludeBookingId);
 
-/** Bookable times minus busy time; `excludeBookingId` frees a booking's own window for its reschedule. */
+/** Bookable times on local dates, minus the time other bookings hold. */
+const findFreeTimes = async (
+	organizationId: string,
+	timezone: string,
+	serviceId: string,
+	range: BookableTimesQuery,
+	now: Date,
+	excludeBookingId?: string,
+) => {
+	// a day either side covers any buffer reaching across the range's edges
+	const busy = await listBusyIntervals(
+		organizationId,
+		startOfLocalDate(addDaysToDate(range.from, -1), timezone),
+		startOfLocalDate(addDaysToDate(range.to, 2), timezone),
+		excludeBookingId,
+	);
+	return listBookableTimes(organizationId, serviceId, range, busy, now);
+};
+
+/** `excludeBookingId` frees a booking's own window for its reschedule. */
 export const listBookingTimes = async (
 	membership: Membership,
 	query: BookingTimesQuery,
 	now = new Date(),
 ): Promise<Result<BookableTimesDto>> => {
-	const { organizationId } = membership;
-	const locale = await getOrganizationLocale(organizationId);
+	const locale = await getOrganizationLocale(membership.organizationId);
 	if (!locale) return fail("not-found");
 
-	// a day either side covers any buffer reaching across the range's edges
-	const busy = await listBusyIntervals(
-		organizationId,
-		startOfLocalDate(addDaysToDate(query.from, -1), locale.timezone),
-		startOfLocalDate(addDaysToDate(query.to, 2), locale.timezone),
-		query.excludeBookingId,
-	);
-	return listBookableTimes(
-		organizationId,
+	return findFreeTimes(
+		membership.organizationId,
+		locale.timezone,
 		query.serviceId,
 		{ from: query.from, to: query.to },
-		busy,
 		now,
+		query.excludeBookingId,
 	);
 };
 
@@ -446,6 +479,118 @@ export const getBooking = async (
 		data: {
 			...toBookingDto(row.booking, row.serviceName),
 			history: events.map((event) => toEventDto(event.event, event.actorName)),
+		},
+	};
+};
+
+export const getStorefront = async ({
+	id,
+	...organization
+}: PublicOrganization): Promise<StorefrontDto> => ({
+	organization,
+	services: await listPublicServices(id),
+});
+
+/** The local dates customers may book: today through `selfBookingDays` ahead. */
+const selfBookingDates = (timezone: string, now: Date) => {
+	const first = todayIn(timezone, now);
+	return {
+		first,
+		last: addDaysToDate(first, BOOKING_LIMITS.selfBookingDays),
+	};
+};
+
+/** Free times within the self-booking window; a range outside it is empty. */
+export const listStorefrontTimes = async (
+	organization: PublicOrganization,
+	serviceId: string,
+	range: BookableTimesQuery,
+	now = new Date(),
+): Promise<Result<BookableTimesDto>> => {
+	const { first, last } = selfBookingDates(organization.timezone, now);
+	const from = range.from > first ? range.from : first;
+	const to = range.to < last ? range.to : last;
+	if (from > to)
+		return { ok: true, data: { timezone: organization.timezone, times: [] } };
+	return await findFreeTimes(
+		organization.id,
+		organization.timezone,
+		serviceId,
+		{ from, to },
+		now,
+	);
+};
+
+/**
+ * A signed-in customer books one of the service's current free times, which
+ * staff bookings don't need. It waits for approval when the service asks for it.
+ */
+export const createSelfBooking = async (
+	organization: PublicOrganization,
+	customer: { id: string; name: string; email: string },
+	input: SelfBookingInput,
+	now = new Date(),
+): Promise<Result<CustomerBookingDto>> => {
+	const service = await findBookableService(organization.id, input.serviceId);
+	if (!service) return fail("not-found");
+	if (!service.isActive) return fail("service-unavailable");
+
+	const startsAt = new Date(input.startsAt);
+	const date = todayIn(organization.timezone, startsAt);
+	const { first, last } = selfBookingDates(organization.timezone, now);
+	if (date < first || date > last) return fail("not-bookable");
+	const free = await findFreeTimes(
+		organization.id,
+		organization.timezone,
+		service.id,
+		{ from: date, to: date },
+		now,
+	);
+	if (!free.ok) return free;
+	if (!free.data.times.includes(startsAt.toISOString()))
+		return fail("not-bookable");
+
+	const created = await createBooking(
+		{
+			organizationId: organization.id,
+			service,
+			startsAt,
+			contact: {
+				customerUserId: customer.id,
+				customerName: customer.name,
+				customerEmail: customer.email,
+				customerPhone: input.customerPhone,
+			},
+			customerNote: input.customerNote,
+			internalNote: null,
+			status: service.requiresApproval ? "pending" : "confirmed",
+			actor: { type: "customer", userId: customer.id },
+			upcomingLimit: BOOKING_LIMITS.upcomingSelfBookings,
+		},
+		now,
+	);
+	if (!created.ok) return created;
+	const { data } = created;
+	return {
+		ok: true,
+		data: {
+			id: data.id,
+			serviceId: data.serviceId,
+			serviceName: data.serviceName,
+			startsAt: data.startsAt,
+			endsAt: data.endsAt,
+			priceMinor: data.priceMinor,
+			currency: data.currency,
+			status: data.status,
+			cancelledBy: data.cancelledBy,
+			cancellationReason: data.cancellationReason,
+			customerNote: data.customerNote,
+			createdAt: data.createdAt,
+			organization: {
+				name: organization.name,
+				slug: organization.slug,
+				timezone: organization.timezone,
+			},
 		},
 	};
 };
