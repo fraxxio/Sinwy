@@ -8,14 +8,20 @@ import {
 	joinOrganization,
 } from "@backend/test/helpers";
 import db from "@db";
+import { booking } from "@db/schema/bookingSchema";
 import { organization } from "@db/schema/organizationSchema";
 import { serviceAvailability } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
-import type { ApiResponse, BookableTimesDto, ServiceDto } from "@sinwy/shared";
+import { registerServiceRoutes, todayIn } from "@servicesModule";
+import type {
+	ApiResponse,
+	BookableTimesDto,
+	BookingDto,
+	ServiceDto,
+} from "@sinwy/shared";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
-import { registerServiceRoutes } from "../routes";
-import { todayIn } from "../utils";
+import { registerBookingRoutes } from "../routes";
 
 let server: Server<never>;
 let base: URL;
@@ -24,6 +30,7 @@ beforeAll(() => {
 	const app = createApp();
 	registerAuthRoutes(app);
 	registerServiceRoutes(app);
+	registerBookingRoutes(app);
 	server = app.listen(0);
 	base = server.url;
 });
@@ -109,7 +116,7 @@ const day = (offset: number) => {
 };
 
 const timesPath = (serviceId: string, from: string, to: string) =>
-	`services/${serviceId}/times?from=${from}&to=${to}`;
+	`bookings/times?serviceId=${serviceId}&from=${from}&to=${to}`;
 
 const getTimes = async (
 	serviceId: string,
@@ -198,8 +205,9 @@ test("ranges must be real dates in order, at most 31 days", async () => {
 	const { id } = await createService();
 	const from = day(1).iso;
 	const bad = [
-		`services/${id}/times`,
-		`services/${id}/times?from=${from}`,
+		`bookings/times?serviceId=${id}`,
+		`bookings/times?serviceId=${id}&from=${from}`,
+		`bookings/times?from=${from}&to=${from}`,
 		timesPath(id, day(2).iso, from),
 		timesPath(id, from, day(32).iso),
 		timesPath(id, "2027-02-29", "2027-03-01"),
@@ -218,4 +226,49 @@ test("an inactive organization can still read times", async () => {
 		.where(eq(organization.id, orgId));
 
 	expect((await getTimes(id, day(1).iso, day(1).iso)).times).toHaveLength(3);
+});
+
+test("a booking's padded window leaves the times until it's cancelled, and can be excluded", async () => {
+	const haircut = await unwrap<ServiceDto>(
+		await call("POST", "services", ownerCookie, {
+			name: "Haircut",
+			durationMinutes: 30,
+			priceMinor: 2500,
+			bufferAfterMinutes: 15,
+		}),
+	);
+	const trim = await unwrap<ServiceDto>(
+		await call("POST", "services", ownerCookie, {
+			name: "Trim",
+			durationMinutes: 15,
+			priceMinor: 1000,
+		}),
+	);
+	const tomorrow = day(1).iso;
+	const created = await unwrap<BookingDto>(
+		await call("POST", "bookings", ownerCookie, {
+			serviceId: haircut.id,
+			startsAt: `${tomorrow}T09:00:00.000Z`,
+			customerName: "Ana",
+			customerPhone: "+370 600 00000",
+		}),
+	);
+
+	expect((await getTimes(trim.id, tomorrow, tomorrow)).times).toEqual(
+		at(tomorrow, ["09:45"]),
+	);
+	const excluded = await call(
+		"GET",
+		`${timesPath(trim.id, tomorrow, tomorrow)}&excludeBookingId=${created.id}`,
+		ownerCookie,
+	);
+	expect((await unwrap<BookableTimesDto>(excluded)).times).toHaveLength(4);
+
+	await db
+		.update(booking)
+		.set({ status: "cancelled", cancelledBy: "organization" })
+		.where(eq(booking.id, created.id));
+	expect((await getTimes(trim.id, tomorrow, tomorrow)).times).toEqual(
+		at(tomorrow, ["09:00", "09:15", "09:30", "09:45"]),
+	);
 });

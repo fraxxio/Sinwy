@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BOOKING_LIMITS as LIMITS } from "./Booking";
+import { BOOKING_STATUSES } from "./BookingStatus";
 
 const optionalText = (max: number, label: string) =>
 	z
@@ -21,26 +22,33 @@ export const customerPhoneSchema = z
 	.or(z.literal("").transform(() => null))
 	.transform((value) => value || null);
 
+const contactFields = z.object({
+	customerName: z
+		.string()
+		.trim()
+		.min(1, "Name is required")
+		.max(LIMITS.customerName, `Max ${LIMITS.customerName} characters`),
+	customerEmail: z
+		.email("Enter a valid email")
+		.max(LIMITS.customerEmail)
+		.nullish()
+		.or(z.literal("").transform(() => null))
+		.transform((value) => value || null),
+	customerPhone: customerPhoneSchema,
+});
+
+const hasEmailOrPhone = (contact: z.infer<typeof contactFields>) =>
+	Boolean(contact.customerEmail || contact.customerPhone);
+const emailOrPhoneMessage = {
+	message: "Add an email or a phone number",
+	path: ["customerEmail"],
+};
+
 /** Staff-entered contact details: a name, plus an email or a phone to reach the customer. */
-export const bookingContactSchema = z
-	.object({
-		customerName: z
-			.string()
-			.trim()
-			.min(1, "Name is required")
-			.max(LIMITS.customerName, `Max ${LIMITS.customerName} characters`),
-		customerEmail: z
-			.email("Enter a valid email")
-			.max(LIMITS.customerEmail)
-			.nullish()
-			.or(z.literal("").transform(() => null))
-			.transform((value) => value || null),
-		customerPhone: customerPhoneSchema,
-	})
-	.refine((contact) => contact.customerEmail || contact.customerPhone, {
-		message: "Add an email or a phone number",
-		path: ["customerEmail"],
-	});
+export const bookingContactSchema = contactFields.refine(
+	hasEmailOrPhone,
+	emailOrPhoneMessage,
+);
 
 export const internalNoteSchema = optionalText(LIMITS.note, "Note");
 export const customerNoteSchema = optionalText(LIMITS.note, "Note");
@@ -49,4 +57,72 @@ export const cancellationReasonSchema = optionalText(
 	"Reason",
 );
 
+/** A phone or walk-in booking. Any start is allowed; the end follows from the service. */
+export const manualBookingSchema = contactFields
+	.extend({
+		serviceId: z.string().min(1, "Pick a service"),
+		startsAt: z.iso.datetime({ offset: true, error: "Pick a start time" }),
+		internalNote: internalNoteSchema,
+	})
+	.refine(hasEmailOrPhone, emailOrPhoneMessage);
+
+const localDate = z.iso.date("Use a date like 2026-12-24");
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const BOOKING_SORTS = ["startsAt", "-startsAt", "-createdAt"] as const;
+export type BookingSort = (typeof BOOKING_SORTS)[number];
+
+/**
+ * Dates are local to the organization and inclusive, and filter on `startsAt`.
+ * Without `from` and `to` the list shows bookings from today on; without `status`, everything but cancelled.
+ */
+const bookingFilters = z.object({
+	from: localDate.optional(),
+	to: localDate.optional(),
+	serviceId: z.array(z.string().min(1)).default([]),
+	status: z.array(z.enum(BOOKING_STATUSES)).default([]),
+	q: z
+		.string()
+		.trim()
+		.max(LIMITS.customerEmail)
+		.optional()
+		.transform((value) => value || undefined),
+});
+
+const ordered = <
+	T extends { from?: string | undefined; to?: string | undefined },
+>(
+	range: T,
+) => !range.from || !range.to || range.from <= range.to;
+const orderedMessage = {
+	message: "The start date must not be after the end date",
+	path: ["to"],
+};
+
+export const bookingListQuerySchema = bookingFilters
+	.extend({
+		sort: z.enum(BOOKING_SORTS).default("startsAt"),
+		page: z.coerce.number().int().min(1).default(1),
+		pageSize: z.coerce
+			.number()
+			.int()
+			.min(1)
+			.max(LIMITS.listMaxPageSize, `At most ${LIMITS.listMaxPageSize} per page`)
+			.default(LIMITS.listPageSize),
+	})
+	.refine(ordered, orderedMessage);
+
+export const bookingCalendarQuerySchema = bookingFilters
+	.extend({ from: localDate, to: localDate })
+	.refine(ordered, orderedMessage)
+	.refine(
+		(range) =>
+			(Date.parse(range.to) - Date.parse(range.from)) / DAY_MS <
+			LIMITS.calendarDays,
+		{ message: `Pick at most ${LIMITS.calendarDays} days`, path: ["to"] },
+	);
+
 export type BookingContactInput = z.infer<typeof bookingContactSchema>;
+export type ManualBookingInput = z.infer<typeof manualBookingSchema>;
+export type BookingListQuery = z.infer<typeof bookingListQuerySchema>;
+export type BookingCalendarQuery = z.infer<typeof bookingCalendarQuerySchema>;

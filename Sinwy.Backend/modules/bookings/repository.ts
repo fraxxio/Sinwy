@@ -1,0 +1,195 @@
+import db from "@db";
+import { booking, bookingEvent } from "@db/schema/bookingSchema";
+import { service } from "@db/schema/serviceSchema";
+import { user } from "@db/schema/userSchema";
+import type { BusyInterval } from "@servicesModule";
+import {
+	ACTIVE_BOOKING_STATUSES,
+	type BookingSort,
+	type BookingStatus,
+} from "@sinwy/shared";
+import {
+	and,
+	asc,
+	count,
+	desc,
+	eq,
+	gte,
+	ilike,
+	inArray,
+	lt,
+	ne,
+	or,
+	type SQL,
+	sql,
+} from "drizzle-orm";
+import { containsPattern } from "./utils";
+
+export type BookingRow = typeof booking.$inferSelect;
+export type BookingEventRow = typeof bookingEvent.$inferSelect;
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export type BookingFilters = {
+	start?: Date | undefined;
+	end?: Date | undefined;
+	statuses: BookingStatus[];
+	serviceIds: string[];
+	q?: string | undefined;
+};
+
+const paddedStart = sql<Date>`${booking.startsAt} - make_interval(mins => ${booking.bufferBeforeMinutes})`;
+const paddedEnd = sql<Date>`${booking.endsAt} + make_interval(mins => ${booking.bufferAfterMinutes})`;
+
+const instant = (date: Date) => sql`${date.toISOString()}::timestamptz`;
+
+/** Active bookings whose padded window overlaps `[start, end)`. */
+const holding = (
+	organizationId: string,
+	window: BusyInterval,
+	excludeBookingId?: string,
+) =>
+	and(
+		eq(booking.organizationId, organizationId),
+		inArray(booking.status, ACTIVE_BOOKING_STATUSES),
+		sql`${paddedStart} < ${instant(window.end)}`,
+		sql`${paddedEnd} > ${instant(window.start)}`,
+		excludeBookingId ? ne(booking.id, excludeBookingId) : undefined,
+	);
+
+/** Serializes every booking write in one organization until the transaction ends. */
+const lockOrganization = (tx: Tx, organizationId: string) =>
+	tx.execute(sql`select pg_advisory_xact_lock(hashtext(${organizationId}))`);
+
+/** Call under `lockOrganization`, so nothing books the window between the check and the write. */
+export const isTimeTaken = async (
+	tx: Tx,
+	organizationId: string,
+	window: BusyInterval,
+	excludeBookingId?: string,
+) => {
+	const [row] = await tx
+		.select({ id: booking.id })
+		.from(booking)
+		.where(holding(organizationId, window, excludeBookingId))
+		.limit(1);
+	return Boolean(row);
+};
+
+export const findBusyIntervals = (
+	organizationId: string,
+	window: BusyInterval,
+	excludeBookingId?: string,
+): Promise<BusyInterval[]> =>
+	db
+		.select({
+			start: paddedStart.mapWith(booking.startsAt),
+			end: paddedEnd.mapWith(booking.endsAt),
+		})
+		.from(booking)
+		.where(holding(organizationId, window, excludeBookingId))
+		.orderBy(asc(booking.startsAt));
+
+type NewBooking = Omit<typeof booking.$inferInsert, "id">;
+type NewEvent = Omit<typeof bookingEvent.$inferInsert, "id" | "bookingId">;
+
+/** Inserts the booking and its `created` event unless its padded window is taken; null when it is. */
+export const insertBookingIfFree = (
+	values: NewBooking,
+	window: BusyInterval,
+	event: NewEvent,
+) =>
+	db.transaction(async (tx) => {
+		await lockOrganization(tx, values.organizationId);
+		if (await isTimeTaken(tx, values.organizationId, window)) return null;
+
+		const [row] = await tx
+			.insert(booking)
+			.values({ ...values, id: crypto.randomUUID() })
+			.returning();
+		if (!row) throw new Error("Booking insert returned no row");
+		const events = await tx
+			.insert(bookingEvent)
+			.values({ ...event, id: crypto.randomUUID(), bookingId: row.id })
+			.returning();
+		return { booking: row, events };
+	});
+
+const matching = (organizationId: string, filters: BookingFilters) =>
+	and(
+		eq(booking.organizationId, organizationId),
+		filters.start ? gte(booking.startsAt, filters.start) : undefined,
+		filters.end ? lt(booking.startsAt, filters.end) : undefined,
+		filters.statuses.length > 0
+			? inArray(booking.status, filters.statuses)
+			: undefined,
+		filters.serviceIds.length > 0
+			? inArray(booking.serviceId, filters.serviceIds)
+			: undefined,
+		filters.q
+			? or(
+					ilike(booking.customerName, containsPattern(filters.q)),
+					ilike(booking.customerEmail, containsPattern(filters.q)),
+					ilike(booking.customerPhone, containsPattern(filters.q)),
+				)
+			: undefined,
+	);
+
+const ORDER: Record<BookingSort, SQL[]> = {
+	startsAt: [asc(booking.startsAt), asc(booking.id)],
+	"-startsAt": [desc(booking.startsAt), desc(booking.id)],
+	"-createdAt": [desc(booking.createdAt), desc(booking.id)],
+};
+
+const withServiceName = { booking, serviceName: service.name };
+
+export const findBookings = (
+	organizationId: string,
+	filters: BookingFilters,
+	sort: BookingSort,
+	page?: { limit: number; offset: number },
+) => {
+	const query = db
+		.select(withServiceName)
+		.from(booking)
+		.innerJoin(service, eq(service.id, booking.serviceId))
+		.where(matching(organizationId, filters))
+		.orderBy(...ORDER[sort]);
+	return page ? query.limit(page.limit).offset(page.offset) : query;
+};
+
+export const countBookings = async (
+	organizationId: string,
+	filters: BookingFilters,
+) => {
+	const [row] = await db
+		.select({ total: count() })
+		.from(booking)
+		.where(matching(organizationId, filters));
+	return row?.total ?? 0;
+};
+
+export const findBooking = async (
+	organizationId: string,
+	bookingId: string,
+) => {
+	const [row] = await db
+		.select(withServiceName)
+		.from(booking)
+		.innerJoin(service, eq(service.id, booking.serviceId))
+		.where(
+			and(
+				eq(booking.organizationId, organizationId),
+				eq(booking.id, bookingId),
+			),
+		);
+	return row ?? null;
+};
+
+/** Oldest first, with the name of the user who acted, while their account exists. */
+export const findBookingEvents = (bookingId: string) =>
+	db
+		.select({ event: bookingEvent, actorName: user.name })
+		.from(bookingEvent)
+		.leftJoin(user, eq(user.id, bookingEvent.actorUserId))
+		.where(eq(bookingEvent.bookingId, bookingId))
+		.orderBy(asc(bookingEvent.occurredAt), asc(bookingEvent.id));

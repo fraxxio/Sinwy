@@ -10,7 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Move the dashboard to `/dashboard/$organizationSlug` | – | done | `feat(backend, web): move the org dashboard under /dashboard` |
 | 2 | Bookings schema, status rules and the approval switch | 1 | done | `feat(backend, web): add the bookings schema and the service approval switch` |
-| 3 | Create bookings, the capacity check, list and calendar API | 2 | todo | |
+| 3 | Create bookings, the capacity check, list and calendar API | 2 | done | `feat(backend): add manual bookings with the capacity check, list and calendar API` |
 | 4 | Status changes, reschedule, edits and booking emails | 3 | todo | |
 | 5 | Storefront module and the public booking flow | 4 | todo | |
 | 6 | Bookings calendar and list (web) | 3 | todo | |
@@ -116,8 +116,8 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Permissions exist.** `bookings:read`/`bookings:write` are in `Sinwy.Shared/types/access/Permission.ts`; owner, admin and staff have both (`RolePermissions.ts`). Bookings are on every plan; `PLAN_FEATURES` gates nothing here.
 - **Backend module pattern.** Copy `modules/services/`: `routes.ts` with `read`/`write` middleware arrays (`requireAuth`, `requirePermission` from `@authModule`), and controllers with a local `respondError` and `parseBody` (400 with the first Zod message). Service functions take the `Membership` (`membershipFrom(c)`), return `Result<T>` and check `membership.status !== "active"` → `inactive` (409 `ORGANIZATION_INACTIVE`) before any write. Wire a new module in `Sinwy.Backend/import_map.json`, `tsconfig.json` and `Sinwy.Backend/index.ts`.
 - **The public org check exists.** `isOrganizationPublic(access)` in `modules/organizations/service.ts` is the §9 "active" rule (slot held, not scheduled, owner has a plan); `findOrganizationAccess(organizationId)` in its repository loads `access`. A slug lookup doesn't exist yet.
-- **Org locale:** `getOrganizationLocale(organizationId) → { timezone, currency } | null` from `@organizationsModule`; `todayIn(timezone, now?)` is in `modules/services/utils.ts` (not exported).
-- **Bookable times:** `listBookableTimes(organizationId, serviceId, range, busy, now?)` from `@servicesModule` takes `BusyInterval[]` (`{ start, end }`, already padded) and returns `{ timezone, times }`. The range is local dates, limited by `bookableTimesQuerySchema` / `AVAILABILITY_LIMITS.bookableTimesDays` in `Sinwy.Shared/types/service/Availability.ts`. It ignores org status, so callers check it. Wall times convert with `tzOffset`, never `TZDate`.
+- **Org locale:** `getOrganizationLocale(organizationId) → { timezone, currency } | null` from `@organizationsModule`; `todayIn(timezone, now?)` from `@servicesModule`.
+- **Bookable times:** `listBookableTimes(organizationId, serviceId, range, busy, now?)` from `@servicesModule` takes `BusyInterval[]` (`{ start, end }`, already padded) and returns `{ timezone, times }`. The range is local dates, limited by `bookableTimesQuerySchema` / `AVAILABILITY_LIMITS.bookableTimesDays` in `Sinwy.Shared/types/service/Availability.ts`. It ignores org status, so callers check it. Wall times convert with `tzOffset`, never `TZDate`. `findBookableService(organizationId, serviceId)` from `@servicesModule` returns the fields a booking copies (null when archived or foreign). The old `GET services/:serviceId/times` route is gone.
 - **Transactions across modules:** open in the repository and pass `tx` into the other module's exported function (`Tx` pattern in `modules/organizations/access.ts`, as `transfers/repository.ts` does). Row locks use `.for("update")` (`modules/organizations/slots.ts`).
 - **IDs** are `crypto.randomUUID()` in `text` columns; FKs to `organization.id` cascade, so purge (`modules/organizations/purge.ts`) removes bookings without code changes. FK to `service.id`: `restrict` (services are archived, never deleted).
 - **Migrations:** edit `Sinwy.Backend/db/schema/`, export from `db/schema/index.ts`, then `bun run db:generate --name <name>` and `bun run db:migrate`. Latest is `drizzle/0020_bookings.sql`. Status-style checks use `oneOf` from `@db/oneOf` (see `availability_exception`).
@@ -127,7 +127,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Owner account deletion runs `beforeDelete` → `scheduleOwnedOrganizationsForDeletion(user.id)` and `afterDelete` → `cleanupDeletedUser` (`modules/auth/auth.ts` ~168–195, `deletedUserCleanup.ts`).
   - Immediate org deletion is Better Auth's `/organization/delete`; `organizationHooks` sits in `auth.ts` ~313, and there's no delete hook yet.
   - The deletion dialog's data is `getAccountDeletionPreview` (`modules/organizations/service.ts` ~310, `GET /api/user/deletion-preview`).
-- **Backend tests:** `bun:test` with a real DB, using the helpers in `Sinwy.Backend/test/helpers.ts` (`createUserWithSession`, `insertOrganization`, `givePlan`, `holdSlot`, `activateOrganization`, `joinOrganization`, `fakeCtx`). For HTTP tests, copy the `seedOrg`/`call` harness from `modules/services/tests/services.test.ts`. An org becomes inactive with `slotHeldAt: null`.
+- **Backend tests:** `bun:test` with a real DB, using the helpers in `Sinwy.Backend/test/helpers.ts` (`createUserWithSession`, `insertOrganization`, `givePlan`, `holdSlot`, `activateOrganization`, `joinOrganization`, `fakeCtx`). For booking HTTP tests, copy the harness in `modules/bookings/tests/bookings.test.ts` (`seedOrg`, `call`, `book`, `setStatus`, `seedVilniusBookings` with fixed 2099 dates in a UTC+2 zone). An org becomes inactive with `slotHeldAt: null`.
 - **Seeds:** `bun run dev:seed-scenario <user|owner-with-org|subscribed-org|org-with-staff>` (`Sinwy.Backend/scripts/dev/seedScenario.ts`, `scenarios` array). `subscribed-org` returns an active, onboarded org with its owner's credentials. See the `e2e-test` skill.
 - **Web routing:**
   - `Sinwy.WebFrontend/src/routes.ts` mounts modules with `physical(prefix, dir)`. The dashboard is at `/dashboard/$organizationSlug` (route ids `"/dashboard/$organizationSlug/_shell/..."`); nothing serves the root slug until the storefront mounts there, last.
@@ -149,54 +149,11 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **`Sinwy.Shared` has no test runner** (its tsconfig has `types: []`); tests of shared logic live in the backend (`bookings/tests/transitions.test.ts`) or web.
 - **`bookable-org`** is in `Europe/Vilnius`; its output adds `timezone`, `hours` and `services` (ids, prices, `requiresApproval`) to `organization`.
 - **The backend dev server doesn't watch files.** Restart it after backend changes before a browser Verify, with its output in a log file; ask the user before stopping a server you didn't start.
+- **Bookings API (Phase 3):** `GET|POST organizationPath("bookings")`, `GET bookings/times?serviceId&from&to&excludeBookingId`, `GET bookings/calendar` (returns `BookingDto[]`, no timezone) and `GET bookings/:bookingId` (`BookingDetailDto` with `history`). Filters are repeatable `serviceId` and `status`; no `status` means everything but cancelled, and a list without `from`/`to` starts today in the org zone. Schemas: `manualBookingSchema`, `bookingListQuerySchema`, `bookingCalendarQuerySchema` in `@sinwy/shared`.
+- **One way in:** `createBooking(input)` in `bookings/service.ts` (`BookableService`, `startsAt`, contact, notes, status, actor) returns `Result<BookingDto>` with `time-taken` → 409 `BOOKING_TIME_TAKEN` (40919; the next free code is 40920). Its transaction is `insertBookingIfFree` in the repository, which returns `{ booking, events }` for Phase 4's dispatch; Phase 5's 5-booking cap belongs inside that transaction.
+- **Overlap check:** `lockOrganization(tx, organizationId)` (repository-private) then `isTimeTaken(tx, organizationId, window, excludeBookingId?)` (exported from `@bookingsModule`); `paddedWindow(booking)` in `bookings/utils.ts` builds the window. Removing the lock makes the race test fail, so it is a real guard (log Phase 3).
+- **Local dates → instants:** `startOfLocalDate`, `localDateRange` and `addDaysToDate` in `bookings/utils.ts` (DST-tested in `tests/utils.test.ts`). Raw `sql` comparisons pass instants as ISO strings cast `::timestamptz` (`instant()` in the repository).
 - **The fall-back hour** of a DST-end day offers only the first pass of the repeated hour. Fine for the MVP.
-
----
-
-## Phase 3: Create bookings, the capacity check, list and calendar API
-
-**Goal:** Staff can create manual bookings through the API, nothing can double-book an org, bookable times leave out busy time, and the list, calendar and detail endpoints return bookings.
-
-**Files:**
-- `Sinwy.Backend/modules/bookings/`: `routes.ts` (empty `registerBookingRoutes`, already wired in `Sinwy.Backend/index.ts`, `import_map.json` and `tsconfig.json`) and `index.ts`; new `repository.ts`, `service.ts`, `controller.ts`, `utils.ts`. Tests in `tests/` next to `schema.test.ts` and `transitions.test.ts`; the HTTP tests copy the `seedOrg`/`call` harness from `modules/services/tests/services.test.ts`.
-- `Sinwy.Backend/db/schema/bookingSchema.ts` (`booking`, `bookingEvent`; no schema change expected).
-- `Sinwy.Backend/modules/services/`: `index.ts` exports `listBookableTimes`, `bookableTimes` and `BusyInterval`; add a read of the fields to copy (`repository.ts` `findService`, `service.ts` ~230–260 where `listBookableTimes` checks `isActive`) and `todayIn` from `utils.ts` if needed. Remove `listBookableTimesHandler` from `controller.ts` and its route in `routes.ts`; move `tests/times.test.ts` to bookings.
-- `Sinwy.Shared/types/booking/BookingSchema.ts` (contact, note and reason schemas exist; add the manual booking body and the list and calendar queries); `Sinwy.Shared/types/api/ApiResponse.ts` (`API_ERROR_CODES`, add `BOOKING_TIME_TAKEN`).
-
-**Steps:**
-- **Core:** one `createBooking` in the service layer, used by manual bookings now and self-bookings in Phase 5. It takes the copied service fields, the start, the contact snapshot, the notes, the starting status and the actor.
-  - Inside one transaction it takes the advisory lock (Default 4), checks for overlapping padded windows among `ACTIVE_BOOKING_STATUSES`, and inserts the booking plus a `created` `booking_event`.
-  - Export a reusable `assertNoOverlap(tx, organizationId, window, excludeBookingId?)` for reschedule.
-- **Manual booking:** `POST organizationPath("bookings")`, with `bookings:write`.
-  - Body: `serviceId`, `startsAt` (ISO instant), `customerName`, `customerEmail?`, `customerPhone?`, `internalNote?`.
-  - Rules: name plus email or phone, an active non-archived service, and an active org. Status `confirmed`; the actor is the member.
-  - Hours and the 15-minute grid aren't checked (Decision: custom times allowed).
-  - An overlap is a 409 with a clear code (add `BOOKING_TIME_TAKEN` to `API_ERROR_CODES`).
-- **Busy times:** `listBusyIntervals(organizationId, from, to, excludeBookingId?)` returns padded windows of active bookings.
-  - `GET organizationPath("bookings/times")?serviceId&from&to&excludeBookingId`, with `bookings:read`, wraps `listBookableTimes` with those intervals. The dashboard picker and reschedule use it.
-- **List:** `GET organizationPath("bookings")` per the decision (filters, sort, paging, defaults).
-  - Local dates convert to instants with the org zone.
-  - `q` uses `ilike` over name, email and phone, escaping `%` and `_`.
-  - Returns `{ items, total }`; each item has the service name.
-- **Calendar:** `GET organizationPath("bookings/calendar")` with the same filters, no paging, and at most 42 days.
-- **Detail:** `GET organizationPath("bookings/:bookingId")` returns the booking, the service name and the `booking_event` history with actor names (member names via a join on `user`). Another org's booking is a 404.
-- Writes check `membership.status === "active"`; reads work for inactive orgs, as services do.
-
-**Tests that matter:**
-- **Concurrency:** two `createBooking` calls for the same window with `Promise.all` give exactly one 201 and one 409.
-- **Overlap rules:**
-  - Buffers padding either side cause a clash.
-  - Back-to-back bookings with no buffers don't clash.
-  - Cancelled and `no_show` bookings don't block.
-  - Bookings in another org don't block.
-- Bookable times leave out a confirmed booking's padded window and show it again once the booking is cancelled.
-- The list filters by date range in the org zone (a booking at 23:30 local on a UTC+2 org falls on the right day), status, service and `q`. Paging totals are correct.
-- Manual bookings are refused for an inactive org (409), for a non-member (404), and when there's no email or phone (400).
-
-**Done when:**
-- Manual bookings can be created, listed and fetched by API, and every test above passes.
-
-**Verify:** None. This is API only, and the HTTP tests cover it; the dashboard pages arrive in Phases 6 and 7.
 
 ---
 
@@ -205,9 +162,14 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** Staff can move bookings through the transition table, reschedule them and edit notes and manual contacts, each change writes a `booking_event`, and the email matrix is sent after commit.
 
 **Files:**
-- `Sinwy.Backend/modules/bookings/` (service, repository, controller, routes, new `emails/bookingEmails.ts`, new `dispatch.ts`, tests).
-- `Sinwy.Backend/modules/organizations/`: add and export `listOrganizationManagerEmails(organizationId)` (the owner and admins) if no equivalent exists.
-- `Sinwy.Backend/infrastructure/email/` (templates only use its types).
+- `Sinwy.Backend/modules/bookings/`:
+  - `repository.ts`: status change with the row locked `.for("update")`; reschedule under `lockOrganization` + `isTimeTaken(tx, …, bookingId)`; the PATCH update. Each write returns the inserted `booking_event` rows, as `insertBookingIfFree` does.
+  - `service.ts`: `createBooking` and the new writes call dispatch after commit; add errors to `BookingError` (e.g. `illegal-transition`, `contact-locked`). `toBookingDto` is there.
+  - `controller.ts` (`respondError`, `parseBody`), `routes.ts`, new `emails/bookingEmails.ts` (copy `modules/transfers/emails/transferEmails.ts`), new `dispatch.ts`.
+  - Tests: extend `tests/bookings.test.ts` or add `tests/status.test.ts` and `tests/emails.test.ts` with the same harness.
+- `Sinwy.Shared/types/booking/BookingSchema.ts`: add the cancel body (`cancellationReasonSchema`), the reschedule body (`startsAt` like `manualBookingSchema`) and the PATCH body (`internalNote` plus the contact fields; `contactFields` and `hasEmailOrPhone` are private there today).
+- `Sinwy.Backend/modules/organizations/`: add and export `listOrganizationManagerEmails(organizationId)` (no equivalent exists); filter `member` with `memberHasRole("owner")`/`("admin")` from `@db/memberRole` joined to `user`.
+- `Sinwy.Backend/infrastructure/email/` (templates only use its types); links via `appConfig.WEB_APP_URL` as `transfers/service.ts` ~190 does.
 
 **Steps:**
 - `changeBookingStatus(actor, bookingId, to, reason?)` locks the booking row (`for update`) and enforces `canTransition` from `@sinwy/shared`.

@@ -25,6 +25,9 @@ export const BOOKING_LIMITS = {
 	customerPhone: 32,
 	note: 1000,
 	cancellationReason: 500,
+	listPageSize: 25,
+	listMaxPageSize: 100,
+	calendarDays: 42,
 } as const;
 
 /** What staff see. Times are ISO instants; prices are in the currency's smallest unit. */
@@ -70,6 +73,8 @@ export type CustomerBookingDto = Pick<
 	organization: { name: string; slug: string; timezone: string };
 };
 
+export type BookingListDto = { items: BookingDto[]; total: number };
+
 export type BookingEventDto = {
 	id: string;
 	type: BookingEventType;
@@ -80,3 +85,5 @@ export type BookingEventDto = {
 	payload: Record<string, unknown>;
 	occurredAt: string;
 };
+
+export type BookingDetailDto = BookingDto & { history: BookingEventDto[] };

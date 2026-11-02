@@ -225,6 +225,40 @@ export const removeClosure = async (
 		: notFound;
 };
 
+export type BookableService = Pick<
+	ServiceRow,
+	| "id"
+	| "name"
+	| "durationMinutes"
+	| "bufferBeforeMinutes"
+	| "bufferAfterMinutes"
+	| "priceMinor"
+	| "currency"
+	| "isActive"
+	| "requiresApproval"
+>;
+
+/** The fields a booking copies from its service; null when archived or in another org. */
+export const findBookableService = async (
+	organizationId: string,
+	serviceId: string,
+): Promise<BookableService | null> => {
+	const row = await findService(organizationId, serviceId);
+	return (
+		row && {
+			id: row.id,
+			name: row.name,
+			durationMinutes: row.durationMinutes,
+			bufferBeforeMinutes: row.bufferBeforeMinutes,
+			bufferAfterMinutes: row.bufferAfterMinutes,
+			priceMinor: row.priceMinor,
+			currency: row.currency,
+			isActive: row.isActive,
+			requiresApproval: row.requiresApproval,
+		}
+	);
+};
+
 /** A service with hours of its own uses only those; otherwise the organization's apply. */
 export const listBookableTimes = async (
 	organizationId: string,
