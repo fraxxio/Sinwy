@@ -37,8 +37,10 @@ const contactFields = z.object({
 	customerPhone: customerPhoneSchema,
 });
 
-const hasEmailOrPhone = (contact: z.infer<typeof contactFields>) =>
-	Boolean(contact.customerEmail || contact.customerPhone);
+const hasEmailOrPhone = (contact: {
+	customerEmail?: string | null | undefined;
+	customerPhone?: string | null | undefined;
+}) => Boolean(contact.customerEmail || contact.customerPhone);
 const emailOrPhoneMessage = {
 	message: "Add an email or a phone number",
 	path: ["customerEmail"],
@@ -57,14 +59,53 @@ export const cancellationReasonSchema = optionalText(
 	"Reason",
 );
 
+const startsAtSchema = z.iso.datetime({
+	offset: true,
+	error: "Pick a start time",
+});
+
 /** A phone or walk-in booking. Any start is allowed; the end follows from the service. */
 export const manualBookingSchema = contactFields
 	.extend({
 		serviceId: z.string().min(1, "Pick a service"),
-		startsAt: z.iso.datetime({ offset: true, error: "Pick a start time" }),
+		startsAt: startsAtSchema,
 		internalNote: internalNoteSchema,
 	})
 	.refine(hasEmailOrPhone, emailOrPhoneMessage);
+
+/** Staff may move a booking to any start; it keeps its length. */
+export const rescheduleBookingSchema = z.object({ startsAt: startsAtSchema });
+
+export const cancelBookingSchema = z.object({
+	reason: cancellationReasonSchema,
+});
+
+const CONTACT_KEYS = [
+	"customerName",
+	"customerEmail",
+	"customerPhone",
+] as const;
+
+/**
+ * A staff edit: the internal note, the contact, or both; absent fields stay as they are.
+ * The contact is sent whole, as the contact card edits it.
+ */
+export const bookingUpdateSchema = contactFields
+	.partial()
+	.extend({ internalNote: internalNoteSchema.optional() })
+	.refine(
+		(body) =>
+			CONTACT_KEYS.every((key) => key in body) ||
+			CONTACT_KEYS.every((key) => !(key in body)),
+		{
+			message: "Send the name, email and phone together",
+			path: ["customerName"],
+		},
+	)
+	.refine(
+		(body) => !("customerName" in body) || hasEmailOrPhone(body),
+		emailOrPhoneMessage,
+	);
 
 const localDate = z.iso.date("Use a date like 2026-12-24");
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -124,5 +165,8 @@ export const bookingCalendarQuerySchema = bookingFilters
 
 export type BookingContactInput = z.infer<typeof bookingContactSchema>;
 export type ManualBookingInput = z.infer<typeof manualBookingSchema>;
+export type RescheduleBookingInput = z.infer<typeof rescheduleBookingSchema>;
+export type CancelBookingInput = z.infer<typeof cancelBookingSchema>;
+export type BookingUpdateInput = z.infer<typeof bookingUpdateSchema>;
 export type BookingListQuery = z.infer<typeof bookingListQuerySchema>;
 export type BookingCalendarQuery = z.infer<typeof bookingCalendarQuerySchema>;

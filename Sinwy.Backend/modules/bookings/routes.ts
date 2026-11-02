@@ -1,11 +1,17 @@
 import { organizationPath, requireAuth, requirePermission } from "@authModule";
 import type { IApp } from "@backend/lib/app/types";
 import {
+	cancelBookingHandler,
+	completeBookingHandler,
+	confirmBookingHandler,
 	createManualBookingHandler,
 	getBookingHandler,
 	listBookingsHandler,
 	listBookingTimesHandler,
 	listCalendarBookingsHandler,
+	markNoShowHandler,
+	rescheduleBookingHandler,
+	updateBookingHandler,
 } from "./controller";
 
 const read = [requireAuth, requirePermission("bookings:read")];
@@ -32,4 +38,20 @@ export const registerBookingRoutes = (app: IApp) => {
 	app.route(organizationPath("bookings/:bookingId"), getBookingHandler, {
 		routeMiddlewares: read,
 	});
+	app.route(organizationPath("bookings/:bookingId"), updateBookingHandler, {
+		method: "PATCH",
+		routeMiddlewares: write,
+	});
+	const writes = {
+		confirm: confirmBookingHandler,
+		cancel: cancelBookingHandler,
+		complete: completeBookingHandler,
+		"no-show": markNoShowHandler,
+		reschedule: rescheduleBookingHandler,
+	};
+	for (const [action, handler] of Object.entries(writes))
+		app.route(organizationPath(`bookings/:bookingId/${action}`), handler, {
+			method: "POST",
+			routeMiddlewares: write,
+		});
 };

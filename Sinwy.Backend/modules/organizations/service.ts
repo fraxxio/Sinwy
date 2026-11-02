@@ -27,6 +27,7 @@ import {
 	countOwnedHeldSlots,
 	findDeletionScheduledAt,
 	findInvitationOrganizationId,
+	findManagerEmails,
 	findMemberOrganizations,
 	findMembershipAccess,
 	findOnboardingCompletedAt,
@@ -270,6 +271,10 @@ export type OrganizationLocale = { timezone: string; currency: string };
 export const getOrganizationLocale = (
 	organizationId: string,
 ): Promise<OrganizationLocale | null> => findOrganizationLocale(organizationId);
+
+/** Who hears about the organization's bookings: its owner and admins. */
+export const listOrganizationManagerEmails = (organizationId: string) =>
+	findManagerEmails(organizationId);
 
 /** Callers validate the zone (`isTimeZone`); pass `executor` to join their transaction. */
 export const setOrganizationTimezone = async (

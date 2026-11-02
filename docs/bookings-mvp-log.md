@@ -135,3 +135,60 @@ Finished phases of [bookings-mvp-plan.md](bookings-mvp-plan.md).
 - Shipped: `createBooking` in the bookings service, backed by `insertBookingIfFree` (advisory lock, padded-window overlap check among `pending`/`confirmed`, insert plus a `created` event in one transaction). Manual bookings (`POST bookings`, `bookings:write`) start `confirmed` with the member as actor and refuse overlaps with 409 `BOOKING_TIME_TAKEN`. `listBusyIntervals` feeds `GET bookings/times`, which wraps `listBookableTimes` and takes `excludeBookingId`. The list (`{ items, total }`, filters, three sorts, 25/100 paging), the calendar (same filters, at most 42 days) and the detail with its history and actor names are in. Shared: `manualBookingSchema`, the list and calendar query schemas, `BOOKING_SORTS`, `BookingListDto`, `BookingDetailDto` and the new `BOOKING_LIMITS` entries. Services: `findBookableService` and `todayIn` are exported, and the old times route is removed with its tests moved to `bookings/tests/times.test.ts`.
 - Differs from plan: `assertNoOverlap` became `isTimeTaken(tx, organizationId, window, excludeBookingId?)`, returning a boolean, and lives in the repository because transactions open there; the caller rolls back by returning null. The calendar returns a bare `BookingDto[]`; the web gets the zone from the availability query. Defaults the plan left open: no `status` means everything but cancelled (list and calendar), and a list without `from`/`to` starts at today in the org zone; sorts are `startsAt`, `-startsAt` and `-createdAt`. An inactive service gives 409 "This service isn't taking bookings"; an archived, foreign or unknown one gives 404. The times endpoint reads busy time one local day beyond each end of the range, which covers the 240-minute buffer limit. Extra tests: `tests/utils.test.ts` checks `startOfLocalDate` on DST days (including Santiago's missing midnight), and the race test was confirmed to fail with the lock removed.
 - Checked in the running app: nothing; Verify was "None" (API only), and the HTTP tests cover every item in **Tests that matter**.
+
+## Phase 4: Status changes, reschedule, edits and booking emails
+
+**Goal:** Staff can move bookings through the transition table, reschedule them and edit notes and manual contacts, each change writes a `booking_event`, and the email matrix is sent after commit.
+
+**Files:**
+- `Sinwy.Backend/modules/bookings/`:
+  - `repository.ts`: status change with the row locked `.for("update")`; reschedule under `lockOrganization` + `isTimeTaken(tx, …, bookingId)`; the PATCH update. Each write returns the inserted `booking_event` rows, as `insertBookingIfFree` does.
+  - `service.ts`: `createBooking` and the new writes call dispatch after commit; add errors to `BookingError` (e.g. `illegal-transition`, `contact-locked`). `toBookingDto` is there.
+  - `controller.ts` (`respondError`, `parseBody`), `routes.ts`, new `emails/bookingEmails.ts` (copy `modules/transfers/emails/transferEmails.ts`), new `dispatch.ts`.
+  - Tests: extend `tests/bookings.test.ts` or add `tests/status.test.ts` and `tests/emails.test.ts` with the same harness.
+- `Sinwy.Shared/types/booking/BookingSchema.ts`: add the cancel body (`cancellationReasonSchema`), the reschedule body (`startsAt` like `manualBookingSchema`) and the PATCH body (`internalNote` plus the contact fields; `contactFields` and `hasEmailOrPhone` are private there today).
+- `Sinwy.Backend/modules/organizations/`: add and export `listOrganizationManagerEmails(organizationId)` (no equivalent exists); filter `member` with `memberHasRole("owner")`/`("admin")` from `@db/memberRole` joined to `user`.
+- `Sinwy.Backend/infrastructure/email/` (templates only use its types); links via `appConfig.WEB_APP_URL` as `transfers/service.ts` ~190 does.
+
+**Steps:**
+- `changeBookingStatus(actor, bookingId, to, reason?)` locks the booking row (`for update`) and enforces `canTransition` from `@sinwy/shared`.
+  - It sets `cancelledBy`/`cancellationReason` on cancel and clears them on nothing else (cancelled is final).
+  - It writes a `status_changed` event.
+  - Endpoints, all `bookings:write`: `POST organizationPath("bookings/:bookingId/confirm" | "cancel" | "complete" | "no-show")`. `cancel` takes an optional `reason`, and the correction between `completed` and `no_show` reuses `complete` and `no-show`.
+- **Reschedule:** `POST organizationPath("bookings/:bookingId/reschedule")` takes `{ startsAt }` and is allowed only for `pending`/`confirmed`.
+  - The end is recomputed from the booking's own duration (`endsAt − startsAt`). Price and buffers are kept.
+  - It runs under the org advisory lock with `assertNoOverlap` excluding itself, and writes `rescheduled` with the old and new times.
+- **Edits:** `PATCH organizationPath("bookings/:bookingId")` takes `internalNote` and, only when `customerUserId` is null, the contact fields (same "email or phone" rule).
+  - A contact change writes `contact_updated` with the changed field names. A note change writes no event.
+- **Dispatch:** each write returns the events it inserted, and the service calls `dispatchBookingEvent(event)` **after** the transaction commits.
+  - Dispatch maps the event to the email matrix, loads the booking, service name, org name, slug and timezone, and sends.
+  - Each send is wrapped so a failure logs `createLogger("bookings").warn` and never fails the request.
+  - Manual creation from Phase 3 now dispatches too (customer "Booking confirmed" only).
+- **Templates:** one file holding every template in the matrix. Times are formatted in the org zone with the zone name, plus the links per Default 9.
+
+**Tests that matter:**
+- Every illegal transition returns 409 (e.g. confirm a cancelled booking, complete before start, staff confirm after start).
+- Concurrent confirm and cancel on the same booking leave exactly one transition and one event.
+- A reschedule onto a taken window is 409. A reschedule onto its own padded window (a 15-minute shift) succeeds.
+- Contact edits on a self-booking are refused, and note edits work on both kinds of booking.
+- **Emails** (read the outbox in tests):
+  - Manual booking with an email → one customer email. Phone only → none.
+  - A decline sends the reason.
+  - An email failure (stub `emailClient.send` to throw) still returns 200, and the change is committed.
+- Inactive org: every write is 409.
+
+**Done when:**
+- The full transition table and reschedule work through the API, the history lists the events, and the outbox shows the matrix emails.
+
+**Verify:** None. This is API only and covered by HTTP tests; Phase 7 drives it in the browser.
+
+### Log (2026-11-02, `feat(backend): add booking status changes, reschedule, edits and emails`)
+- Shipped: `POST bookings/:bookingId/confirm | cancel | complete | no-show | reschedule` and `PATCH bookings/:bookingId`, all `bookings:write` and 409 `ORGANIZATION_INACTIVE` for an inactive org. Illegal transitions are 409 `BOOKING_STATUS_CHANGE_NOT_ALLOWED` (40920). Every write goes through `changeBooking(organizationId, bookingId, decide, { lockOrganization? })` in the repository: it locks the row (`for update of booking`), runs `decide(row)`, checks `window` with `isTimeTaken` excluding the booking, then writes the update and its event in one transaction. `dispatch.ts` maps events to the email matrix after commit (`dispatchBookingEvent`, plus `sendBookingEmails(event, context)` for callers that preload `findBookingEmailContext`), and `emails/bookingEmails.ts` holds all nine templates with one props shape. `createBooking` dispatches too. Organizations export `listOrganizationManagerEmails`. Shared adds `cancelBookingSchema`, `rescheduleBookingSchema` and `bookingUpdateSchema`. Tests are in `bookings/tests/changes.test.ts`.
+- Differs from plan:
+  - `changeBookingStatus(membership, memberUserId, bookingId, to, reason?, now?)` is staff-only. Phase 9 adds the customer actor, and `changeBooking` scopes by organization today.
+  - PATCH contact fields are all-or-nothing (400 "Send the name, email and phone together"), so the email-or-phone rule stays in the schema.
+  - Reschedule takes the organization lock before the row lock, so the lock order is organization → row everywhere.
+  - Customer emails on manual bookings carry no link because there's no account to open it in. "Request declined" is sent only for a member cancelling a `pending` booking; a `system` cancel (Phase 10) sends "Booking cancelled".
+  - The whole matrix is in, including self-booking emails, which are tested by calling `createBooking` with a `customer` actor. Subjects start with the matrix label (e.g. "Booking confirmed: Haircut at Salon").
+  - Concurrent confirm and cancel can both succeed legally (staff may cancel a confirmed booking), so the race test runs complete against cancel on a started booking, and two confirms. It fails 5/5 with the row lock removed.
+- Checked in the running app: nothing; Verify was "None" (API only), and the HTTP tests cover every item in **Tests that matter**.

@@ -7,7 +7,7 @@ import {
 	organizationProfile,
 	organizationTransfer,
 } from "@db/schema/organizationSchema";
-import { userSubscription } from "@db/schema/userSchema";
+import { user, userSubscription } from "@db/schema/userSchema";
 import {
 	and,
 	asc,
@@ -19,6 +19,7 @@ import {
 	lt,
 	lte,
 	not,
+	or,
 	sql,
 } from "drizzle-orm";
 import {
@@ -151,6 +152,20 @@ export const findOrganizationLocale = async (organizationId: string) => {
 		.from(organization)
 		.where(eq(organization.id, organizationId));
 	return row ?? null;
+};
+
+export const findManagerEmails = async (organizationId: string) => {
+	const rows = await db
+		.selectDistinct({ email: user.email })
+		.from(member)
+		.innerJoin(user, eq(user.id, member.userId))
+		.where(
+			and(
+				eq(member.organizationId, organizationId),
+				or(memberHasRole("owner"), memberHasRole("admin")),
+			),
+		);
+	return rows.map((row) => row.email);
 };
 
 export const updateOrganizationTimezone = (

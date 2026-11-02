@@ -5,16 +5,23 @@ import {
 	API_ERROR_CODES,
 	bookingCalendarQuerySchema,
 	bookingListQuerySchema,
+	bookingUpdateSchema,
+	cancelBookingSchema,
 	manualBookingSchema,
+	rescheduleBookingSchema,
 } from "@sinwy/shared";
 import type { z } from "zod";
 import {
+	changeBookingStatus,
 	createManualBooking,
 	getBooking,
 	listBookings,
 	listBookingTimes,
 	listCalendarBookings,
 	type Result,
+	rescheduleBooking,
+	type StaffStatusChange,
+	updateBookingDetails,
 } from "./service";
 import { bookingTimesQuery } from "./utils";
 
@@ -35,6 +42,19 @@ const respondError = (error: BookingError) => {
 				"That time was just taken",
 				409,
 				API_ERROR_CODES.BOOKING_TIME_TAKEN,
+			);
+		case "illegal-transition":
+			return fail(
+				"This booking can't change to that status now",
+				409,
+				API_ERROR_CODES.BOOKING_STATUS_CHANGE_NOT_ALLOWED,
+			);
+		case "not-reschedulable":
+			return fail("Only pending and confirmed bookings can be moved", 409);
+		case "contact-locked":
+			return fail(
+				"The contact of a booking made from an account can't be edited",
+				409,
 			);
 		case "not-found":
 			return fail("Not found", 404);
@@ -66,6 +86,9 @@ const parseQuery = <T extends z.ZodType>(c: IReqContext, schema: T) => {
 				response: fail(query.error.issues[0]?.message ?? "Invalid query", 400),
 			} as const);
 };
+
+const bookingIdOf = (c: IReqContext) =>
+	(c.req.params as { bookingId: string }).bookingId;
 
 export const createManualBookingHandler: Handler = async (c) => {
 	const body = await parseBody(c, manualBookingSchema);
@@ -108,7 +131,62 @@ export const listCalendarBookingsHandler: Handler = async (c) => {
 };
 
 export const getBookingHandler: Handler = async (c) => {
-	const { bookingId } = c.req.params as { bookingId: string };
-	const result = await getBooking(membershipFrom(c), bookingId);
+	const result = await getBooking(membershipFrom(c), bookingIdOf(c));
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+const statusHandler =
+	(to: Exclude<StaffStatusChange, "cancelled">): Handler =>
+	async (c) => {
+		const result = await changeBookingStatus(
+			membershipFrom(c),
+			sessionFrom(c).user.id,
+			bookingIdOf(c),
+			to,
+		);
+		return result.ok ? ok(result.data) : respondError(result.error);
+	};
+
+export const confirmBookingHandler = statusHandler("confirmed");
+export const completeBookingHandler = statusHandler("completed");
+export const markNoShowHandler = statusHandler("no_show");
+
+export const cancelBookingHandler: Handler = async (c) => {
+	const body = await parseBody(c, cancelBookingSchema);
+	if (!body.ok) return body.response;
+
+	const result = await changeBookingStatus(
+		membershipFrom(c),
+		sessionFrom(c).user.id,
+		bookingIdOf(c),
+		"cancelled",
+		body.data.reason,
+	);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const rescheduleBookingHandler: Handler = async (c) => {
+	const body = await parseBody(c, rescheduleBookingSchema);
+	if (!body.ok) return body.response;
+
+	const result = await rescheduleBooking(
+		membershipFrom(c),
+		sessionFrom(c).user.id,
+		bookingIdOf(c),
+		body.data,
+	);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const updateBookingHandler: Handler = async (c) => {
+	const body = await parseBody(c, bookingUpdateSchema);
+	if (!body.ok) return body.response;
+
+	const result = await updateBookingDetails(
+		membershipFrom(c),
+		sessionFrom(c).user.id,
+		bookingIdOf(c),
+		body.data,
+	);
 	return result.ok ? ok(result.data) : respondError(result.error);
 };

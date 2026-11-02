@@ -7,6 +7,7 @@ import {
 	todayIn,
 } from "@servicesModule";
 import {
+	ACTIVE_BOOKING_STATUSES,
 	BOOKING_STATUSES,
 	type BookableTimesDto,
 	type BookingCalendarQuery,
@@ -17,13 +18,18 @@ import {
 	type BookingListDto,
 	type BookingListQuery,
 	type BookingStatus,
+	type BookingUpdateInput,
+	canTransition,
 	type ManualBookingInput,
+	type RescheduleBookingInput,
 } from "@sinwy/shared";
 import { addMinutes } from "date-fns";
+import { dispatchBookingEvent } from "./dispatch";
 import {
 	type BookingEventRow,
 	type BookingFilters,
 	type BookingRow,
+	changeBooking,
 	countBookings,
 	findBooking,
 	findBookingEvents,
@@ -43,7 +49,10 @@ type BookingError =
 	| "not-found"
 	| "inactive"
 	| "service-unavailable"
-	| "time-taken";
+	| "time-taken"
+	| "illegal-transition"
+	| "not-reschedulable"
+	| "contact-locked";
 export type Result<T> =
 	| { ok: true; data: T }
 	| { ok: false; error: BookingError };
@@ -129,9 +138,163 @@ export const createBooking = async (
 		actorType: input.actor.type,
 		actorUserId: input.actor.userId,
 	});
-	return created
-		? { ok: true, data: toBookingDto(created.booking, service.name) }
-		: fail("time-taken");
+	if (!created) return fail("time-taken");
+	await dispatchAll(created.events);
+	return { ok: true, data: toBookingDto(created.booking, service.name) };
+};
+
+const dispatchAll = async (events: BookingEventRow[]) => {
+	for (const event of events) await dispatchBookingEvent(event);
+};
+
+/** Maps a committed change to its DTO, sending its emails first. */
+const committed = async (
+	result: Awaited<ReturnType<typeof changeBooking<BookingError>>>,
+): Promise<Result<BookingDto>> => {
+	if (!result.ok) return result;
+	await dispatchAll(result.events);
+	return { ok: true, data: toBookingDto(result.booking, result.serviceName) };
+};
+
+export type StaffStatusChange = Exclude<BookingStatus, "pending">;
+
+/** Staff move a booking through the transition table; a cancel records the organization and its reason. */
+export const changeBookingStatus = async (
+	membership: Membership,
+	memberUserId: string,
+	bookingId: string,
+	to: StaffStatusChange,
+	reason: string | null = null,
+	now = new Date(),
+): Promise<Result<BookingDto>> => {
+	if (membership.status !== "active") return fail("inactive");
+	const result = await changeBooking<BookingError>(
+		membership.organizationId,
+		bookingId,
+		(row) => {
+			const from = row.status as BookingStatus;
+			if (!canTransition(from, to, "organization", row.startsAt, now))
+				return fail("illegal-transition");
+			return {
+				ok: true,
+				values:
+					to === "cancelled"
+						? {
+								status: to,
+								cancelledBy: "organization",
+								cancellationReason: reason,
+							}
+						: { status: to },
+				event: {
+					type: "status_changed",
+					fromStatus: from,
+					toStatus: to,
+					actorType: "member",
+					actorUserId: memberUserId,
+				},
+			};
+		},
+	);
+	return committed(result);
+};
+
+const isActiveStatus = (status: string) =>
+	(ACTIVE_BOOKING_STATUSES as readonly string[]).includes(status);
+
+/** Moves a pending or confirmed booking; it keeps its length, price, buffers and status. */
+export const rescheduleBooking = async (
+	membership: Membership,
+	memberUserId: string,
+	bookingId: string,
+	input: RescheduleBookingInput,
+): Promise<Result<BookingDto>> => {
+	if (membership.status !== "active") return fail("inactive");
+	const startsAt = new Date(input.startsAt);
+	const result = await changeBooking<BookingError>(
+		membership.organizationId,
+		bookingId,
+		(row) => {
+			if (!isActiveStatus(row.status)) return fail("not-reschedulable");
+			const moved = {
+				...row,
+				startsAt,
+				endsAt: new Date(
+					startsAt.getTime() + row.endsAt.getTime() - row.startsAt.getTime(),
+				),
+			};
+			return {
+				ok: true,
+				values: { startsAt: moved.startsAt, endsAt: moved.endsAt },
+				window: paddedWindow(moved),
+				event: {
+					type: "rescheduled",
+					actorType: "member",
+					actorUserId: memberUserId,
+					payload: {
+						previousStartsAt: row.startsAt.toISOString(),
+						previousEndsAt: row.endsAt.toISOString(),
+						startsAt: moved.startsAt.toISOString(),
+						endsAt: moved.endsAt.toISOString(),
+					},
+				},
+			};
+		},
+		{ lockOrganization: true },
+	);
+	return committed(result);
+};
+
+const CONTACT_FIELDS = [
+	"customerName",
+	"customerEmail",
+	"customerPhone",
+] as const;
+
+/** The internal note on any booking; the contact only on manual ones, logged with the fields that changed. */
+export const updateBookingDetails = async (
+	membership: Membership,
+	memberUserId: string,
+	bookingId: string,
+	input: BookingUpdateInput,
+): Promise<Result<BookingDto>> => {
+	if (membership.status !== "active") return fail("inactive");
+	const contact =
+		input.customerName === undefined
+			? null
+			: {
+					customerName: input.customerName,
+					customerEmail: input.customerEmail ?? null,
+					customerPhone: input.customerPhone ?? null,
+				};
+	const result = await changeBooking<BookingError>(
+		membership.organizationId,
+		bookingId,
+		(row) => {
+			if (contact && row.customerUserId) return fail("contact-locked");
+			const fields = contact
+				? CONTACT_FIELDS.filter((field) => contact[field] !== row[field])
+				: [];
+			return {
+				ok: true,
+				values: {
+					...(input.internalNote !== undefined && {
+						internalNote: input.internalNote,
+					}),
+					...(fields.length > 0 && contact),
+				},
+				event:
+					fields.length > 0
+						? {
+								type: "contact_updated",
+								actorType: "member",
+								actorUserId: memberUserId,
+								payload: { fields },
+							}
+						: null,
+			};
+		},
+	);
+	return committed(result);
 };
 
 /** Staff may book any start, past or outside hours; only the overlap check applies. */

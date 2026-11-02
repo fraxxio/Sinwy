@@ -1,5 +1,6 @@
 import db from "@db";
 import { booking, bookingEvent } from "@db/schema/bookingSchema";
+import { organization } from "@db/schema/organizationSchema";
 import { service } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
 import type { BusyInterval } from "@servicesModule";
@@ -114,6 +115,84 @@ export const insertBookingIfFree = (
 		return { booking: row, events };
 	});
 
+type BookingUpdate = Partial<
+	Pick<
+		NewBooking,
+		| "status"
+		| "cancelledBy"
+		| "cancellationReason"
+		| "startsAt"
+		| "endsAt"
+		| "customerName"
+		| "customerEmail"
+		| "customerPhone"
+		| "internalNote"
+	>
+>;
+
+export type BookingChange<E extends string> =
+	| { ok: false; error: E }
+	| {
+			ok: true;
+			values: BookingUpdate;
+			event: NewEvent | null;
+			/** Checked against other bookings under the organization lock. */
+			window?: BusyInterval;
+	  };
+
+/**
+ * Locks the booking row, lets `decide` turn its current state into a change, then writes it with its event.
+ * `lockOrganization` takes the organization lock first, as every write that moves a booking must.
+ */
+export const changeBooking = <E extends string>(
+	organizationId: string,
+	bookingId: string,
+	decide: (row: BookingRow) => BookingChange<E>,
+	options: { lockOrganization?: boolean } = {},
+) =>
+	db.transaction(async (tx) => {
+		if (options.lockOrganization) await lockOrganization(tx, organizationId);
+		const [current] = await tx
+			.select(withServiceName)
+			.from(booking)
+			.innerJoin(service, eq(service.id, booking.serviceId))
+			.where(
+				and(
+					eq(booking.organizationId, organizationId),
+					eq(booking.id, bookingId),
+				),
+			)
+			.for("update", { of: booking });
+		if (!current) return { ok: false, error: "not-found" } as const;
+
+		const change = decide(current.booking);
+		if (!change.ok) return change;
+		if (
+			change.window &&
+			(await isTimeTaken(tx, organizationId, change.window, bookingId))
+		)
+			return { ok: false, error: "time-taken" } as const;
+
+		const [row] = await tx
+			.update(booking)
+			.set({ ...change.values, updatedAt: new Date() })
+			.where(eq(booking.id, bookingId))
+			.returning();
+		if (!row) throw new Error("Booking update returned no row");
+		const events = change.event
+			? await tx
+					.insert(bookingEvent)
+					.values({ ...change.event, id: crypto.randomUUID(), bookingId })
+					.returning()
+			: [];
+		return {
+			ok: true,
+			booking: row,
+			serviceName: current.serviceName,
+			events,
+		} as const;
+	});
+
 const matching = (organizationId: string, filters: BookingFilters) =>
 	and(
 		eq(booking.organizationId, organizationId),
@@ -193,3 +272,26 @@ export const findBookingEvents = (bookingId: string) =>
 		.leftJoin(user, eq(user.id, bookingEvent.actorUserId))
 		.where(eq(bookingEvent.bookingId, bookingId))
 		.orderBy(asc(bookingEvent.occurredAt), asc(bookingEvent.id));
+
+/** What a booking email needs, loaded after the change commits. */
+export const findBookingEmailContext = async (bookingId: string) => {
+	const [row] = await db
+		.select({
+			booking,
+			serviceName: service.name,
+			organization: {
+				name: organization.name,
+				slug: organization.slug,
+				timezone: organization.timezone,
+			},
+		})
+		.from(booking)
+		.innerJoin(service, eq(service.id, booking.serviceId))
+		.innerJoin(organization, eq(organization.id, booking.organizationId))
+		.where(eq(booking.id, bookingId));
+	return row ?? null;
+};
+
+export type BookingEmailContext = NonNullable<
+	Awaited<ReturnType<typeof findBookingEmailContext>>
+>;

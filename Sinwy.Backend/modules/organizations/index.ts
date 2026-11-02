@@ -20,6 +20,7 @@ export {
 	isOrganizationPublic,
 	isScheduledForDeletion,
 	isSuspended,
+	listOrganizationManagerEmails,
 	listOrganizations,
 	listOwnedOrganizationIds,
 	type OrganizationLocale,
