@@ -2,6 +2,7 @@ import { registerAuthRoutes } from "@authModule";
 import createApp from "@backend/lib/app";
 import { startJobs } from "@backend/lib/jobs";
 import { registerBillingRoutes } from "@billingModule";
+import { registerBookingRoutes } from "@bookingsModule";
 import appConfig from "@config";
 import { registerFileRoutes } from "@filesModule";
 import {
@@ -19,6 +20,7 @@ registerOrganizationRoutes(app);
 registerBillingRoutes(app);
 registerTransferRoutes(app);
 registerServiceRoutes(app);
+registerBookingRoutes(app);
 registerUserRoutes(app);
 registerFileRoutes(app);
 

@@ -10,6 +10,8 @@ export type ServiceDto = {
 	bufferBeforeMinutes: number;
 	bufferAfterMinutes: number;
 	isActive: boolean;
+	/** Self-bookings start `pending` until staff confirm them. */
+	requiresApproval: boolean;
 	createdAt: string;
 	updatedAt: string;
 };

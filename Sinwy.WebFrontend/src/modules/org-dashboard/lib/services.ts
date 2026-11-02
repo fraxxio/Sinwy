@@ -35,7 +35,7 @@ export const BUFFER_OPTIONS = minuteOptions(
 	option.value === "0" ? { ...option, label: "None" } : option,
 );
 
-/** Every field is the text the input holds; the schema turns them into a `ServiceInput`. */
+/** Text fields hold what the input holds; the schema turns them into a `ServiceInput`. */
 export type ServiceFormValues = {
 	name: string;
 	description: string;
@@ -43,6 +43,7 @@ export type ServiceFormValues = {
 	durationMinutes: string;
 	bufferBeforeMinutes: string;
 	bufferAfterMinutes: string;
+	requiresApproval: boolean;
 };
 
 const minutes = (rule: z.ZodNumber) => z.string().transform(Number).pipe(rule);
@@ -67,6 +68,7 @@ export const serviceFormSchema = (currency: string) =>
 		durationMinutes: minutes(serviceSchema.shape.durationMinutes),
 		bufferBeforeMinutes: minutes(serviceSchema.shape.bufferBeforeMinutes),
 		bufferAfterMinutes: minutes(serviceSchema.shape.bufferAfterMinutes),
+		requiresApproval: serviceSchema.shape.requiresApproval,
 	});
 
 export function toServiceInput(
@@ -84,6 +86,7 @@ export const NEW_SERVICE_VALUES: ServiceFormValues = {
 	durationMinutes: "30",
 	bufferBeforeMinutes: "0",
 	bufferAfterMinutes: "0",
+	requiresApproval: false,
 };
 
 export const toServiceFormValues = (
@@ -95,4 +98,5 @@ export const toServiceFormValues = (
 	durationMinutes: String(service.durationMinutes),
 	bufferBeforeMinutes: String(service.bufferBeforeMinutes),
 	bufferAfterMinutes: String(service.bufferAfterMinutes),
+	requiresApproval: service.requiresApproval,
 });

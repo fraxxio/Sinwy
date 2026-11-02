@@ -35,6 +35,7 @@ export const service = pgTable(
 		bufferBeforeMinutes: integer("buffer_before_minutes").notNull().default(0),
 		bufferAfterMinutes: integer("buffer_after_minutes").notNull().default(0),
 		isActive: boolean("is_active").notNull().default(true),
+		requiresApproval: boolean("requires_approval").notNull().default(false),
 		// archived rather than deleted, so bookings keep a service to point at
 		archivedAt: timestamp("archived_at"),
 		createdAt: timestamp("created_at").notNull().defaultNow(),

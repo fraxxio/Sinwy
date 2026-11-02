@@ -18,6 +18,7 @@ import {
 	CollapsibleTrigger,
 } from "#/shared/components/ui/collapsible";
 import { FieldError } from "#/shared/components/ui/field";
+import { Switch } from "#/shared/components/ui/switch";
 import { useAppForm } from "#/shared/lib/form";
 
 /** `onSubmit` resolves with an error message to show, or null when it worked. */
@@ -110,6 +111,28 @@ export function ServiceForm({
 								)}
 							</form.AppField>
 						</div>
+					</SettingsSection>
+
+					<SettingsSection
+						id="bookings"
+						title="Bookings"
+						description="How bookings customers make themselves start out."
+					>
+						<form.Field name="requiresApproval">
+							{(field) => (
+								<div className="flex items-center gap-3">
+									<Switch
+										id="requires-approval"
+										checked={field.state.value}
+										onCheckedChange={(checked) => field.handleChange(checked)}
+										disabled={readOnly}
+									/>
+									<label htmlFor="requires-approval" className="text-sm">
+										Approve each booking before it's confirmed
+									</label>
+								</div>
+							)}
+						</form.Field>
 					</SettingsSection>
 
 					<SettingsSection

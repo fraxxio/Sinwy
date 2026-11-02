@@ -13,6 +13,7 @@ export const createServiceBody = serviceSchema.extend({
 	description,
 	bufferBeforeMinutes: serviceSchema.shape.bufferBeforeMinutes.default(0),
 	bufferAfterMinutes: serviceSchema.shape.bufferAfterMinutes.default(0),
+	requiresApproval: serviceSchema.shape.requiresApproval.default(false),
 });
 
 export const updateServiceBody = serviceSchema

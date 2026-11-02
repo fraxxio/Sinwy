@@ -1,0 +1,1 @@
+export { registerBookingRoutes } from "./routes";

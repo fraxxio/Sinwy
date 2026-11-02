@@ -50,6 +50,7 @@ it("submits the selected minutes as numbers", () => {
 		durationMinutes: 45,
 		bufferBeforeMinutes: 0,
 		bufferAfterMinutes: 10,
+		requiresApproval: false,
 	});
 });
 
@@ -58,6 +59,7 @@ it("loads a saved service back into the same form values", () => {
 		...values("25.50"),
 		durationMinutes: "90",
 		bufferBeforeMinutes: "5",
+		requiresApproval: true,
 	};
 	const input = toServiceInput(form, "EUR");
 	const dto = {

@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Move the dashboard to `/dashboard/$organizationSlug` | – | done | `feat(backend, web): move the org dashboard under /dashboard` |
-| 2 | Bookings schema, status rules and the approval switch | 1 | todo | |
+| 2 | Bookings schema, status rules and the approval switch | 1 | done | `feat(backend, web): add the bookings schema and the service approval switch` |
 | 3 | Create bookings, the capacity check, list and calendar API | 2 | todo | |
 | 4 | Status changes, reschedule, edits and booking emails | 3 | todo | |
 | 5 | Storefront module and the public booking flow | 4 | todo | |
@@ -120,7 +120,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Bookable times:** `listBookableTimes(organizationId, serviceId, range, busy, now?)` from `@servicesModule` takes `BusyInterval[]` (`{ start, end }`, already padded) and returns `{ timezone, times }`. The range is local dates, limited by `bookableTimesQuerySchema` / `AVAILABILITY_LIMITS.bookableTimesDays` in `Sinwy.Shared/types/service/Availability.ts`. It ignores org status, so callers check it. Wall times convert with `tzOffset`, never `TZDate`.
 - **Transactions across modules:** open in the repository and pass `tx` into the other module's exported function (`Tx` pattern in `modules/organizations/access.ts`, as `transfers/repository.ts` does). Row locks use `.for("update")` (`modules/organizations/slots.ts`).
 - **IDs** are `crypto.randomUUID()` in `text` columns; FKs to `organization.id` cascade, so purge (`modules/organizations/purge.ts`) removes bookings without code changes. FK to `service.id`: `restrict` (services are archived, never deleted).
-- **Migrations:** edit `Sinwy.Backend/db/schema/`, export from `db/schema/index.ts`, then `bun run db:generate --name <name>` and `bun run db:migrate`. Latest is `drizzle/0019_availability.sql`. Status-style checks use `oneOf` from `@db/oneOf` (see `availability_exception`).
+- **Migrations:** edit `Sinwy.Backend/db/schema/`, export from `db/schema/index.ts`, then `bun run db:generate --name <name>` and `bun run db:migrate`. Latest is `drizzle/0020_bookings.sql`. Status-style checks use `oneOf` from `@db/oneOf` (see `availability_exception`).
 - **Drizzle quirks:** queries are thenables (`expect(query).rejects` fails; use `query.then(() => null, (e) => e)`). `exactOptionalPropertyTypes` is on, so partial update types spell out `| undefined`.
 - **Email:** `emailClient.send({ to, template, props })` from `@backend/infrastructure/email`. A template is `{ subject(props), html(props) }`; copy the shape of `modules/transfers/emails/transferEmails.ts`. Locally, mail lands in the outbox (`readOutboxEmails`, `bun run Sinwy.Backend/scripts/dev/lastEmail.ts`). Loggers: `createLogger("bookings")` from `@logger`.
 - **Deletion hooks:**
@@ -144,50 +144,12 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - shadcn: `table`, `dialog`, `alert-dialog`, `sheet`, `badge`, `card`, `switch`, `select`, `combobox`, `dropdown-menu`, `tooltip`, `skeleton`, `toast`.
   - The shadcn CLI adds a stray `cn` package: revert `package.json`/`bun.lock` and import `cn` from `@/shared/lib/utils`.
   - `src/shared/` must never import from `src/modules/`.
+- **Booking tables** (`db/schema/bookingSchema.ts`): `booking` and `bookingEvent`; status-like columns are `text` with `oneOf` checks, `startsAt`/`endsAt` are timestamptz, and `createdAt`/`occurredAt` are plain `timestamp` like the rest. The `restrict` FK to `service` still lets an org's cascade remove its bookings (`bookings/tests/schema.test.ts`).
+- **Shared booking types** (`Sinwy.Shared/types/booking/`): `BOOKING_STATUSES`, `ACTIVE_BOOKING_STATUSES`, `BOOKING_TRANSITIONS`, `canTransition(from, to, actor, startsAt, now?)` with actors `organization` | `customer` (the start instant counts as started), `BookingDto`, `CustomerBookingDto`, `BookingEventDto`, `BOOKING_LIMITS`, and `bookingContactSchema` (name + email or phone), `internalNoteSchema`, `customerNoteSchema`, `cancellationReasonSchema`. Event actor types (`member` | `customer` | `system`) differ from transition actors.
+- **`Sinwy.Shared` has no test runner** (its tsconfig has `types: []`); tests of shared logic live in the backend (`bookings/tests/transitions.test.ts`) or web.
+- **`bookable-org`** is in `Europe/Vilnius`; its output adds `timezone`, `hours` and `services` (ids, prices, `requiresApproval`) to `organization`.
+- **The backend dev server doesn't watch files.** Restart it after backend changes before a browser Verify, with its output in a log file; ask the user before stopping a server you didn't start.
 - **The fall-back hour** of a DST-end day offers only the first pass of the repeated hour. Fine for the MVP.
-
----
-
-## Phase 2: Bookings schema, status rules and the approval switch
-
-**Goal:** The `booking` and `booking_event` tables exist, the shared package holds the booking schemas and the transition table, `@bookingsModule` is wired, services have a working `requiresApproval` switch, and the `bookable-org` seed exists.
-
-**Files:**
-- New `Sinwy.Backend/db/schema/bookingSchema.ts` (export from `db/schema/index.ts`); new migration in `Sinwy.Backend/drizzle/`.
-- `Sinwy.Backend/db/schema/serviceSchema.ts` (`service.requiresApproval`); `modules/services/` `utils.ts` (`createServiceBody`, `updateServiceBody`), `repository.ts` (insert, update, duplicate), `service.ts` (DTO mapping).
-- New `Sinwy.Shared/types/booking/` (`BookingStatus.ts` with `BOOKING_STATUSES` and `BOOKING_TRANSITIONS`, `Booking.ts` DTOs, `BookingSchema.ts` inputs), exported from `Sinwy.Shared/types/index.ts`. `Sinwy.Shared/types/service/Service.ts` and `ServiceSchema.ts` (`requiresApproval`).
-- New `Sinwy.Backend/modules/bookings/` (`index.ts`, `routes.ts` with an empty `registerBookingRoutes`); `import_map.json`, `tsconfig.json`, `Sinwy.Backend/index.ts`.
-- Tests: `modules/services/tests/services.test.ts` (round-trip and 403 for staff); new `modules/bookings/tests/` for the check constraints; a `Sinwy.Shared` test for `canTransition`.
-- Web: `modules/org-dashboard/components/ServiceForm.tsx`, `org-dashboard/lib/services.ts`.
-- `Sinwy.Backend/scripts/dev/seedScenario.ts` and `.agents/skills/e2e-test/references/seed-scenario.md`; the dashboard URL in `.agents/skills/e2e-test/references/app-map.md` is already `/dashboard/<org slug>`.
-
-**Steps:**
-- `booking` columns:
-  - Identity: `id`, `organizationId` (cascade), `serviceId` (restrict), `customerUserId` (nullable, FK `user.id`, `onDelete: set null`).
-  - Contact snapshot: `customerName` (not null), `customerEmail`, `customerPhone`.
-  - Time: `startsAt`, `endsAt` (timestamptz, Default 1).
-  - Copied from the service: `bufferBeforeMinutes`, `bufferAfterMinutes`, `priceMinor`, `currency`.
-  - Status: `status`, `cancelledBy`, `cancellationReason`.
-  - Notes and timestamps: `customerNote`, `internalNote`, `createdAt`, `updatedAt`.
-- Checks: `status` and `cancelledBy` limited with `oneOf`; `startsAt < endsAt`; `cancelledBy` not null exactly when `status = 'cancelled'`; `customerEmail` or `customerPhone` or `customerUserId` not null.
-- Indexes: `(organizationId, startsAt)`, `(customerUserId, startsAt)`.
-- `booking_event` per Default 7, with an index on `(bookingId, occurredAt)`.
-- Shared: `BOOKING_STATUSES`, `ACTIVE_BOOKING_STATUSES` (`pending`, `confirmed`: the ones that hold time) and the transition table as data.
-  - Shape: for each transition, `from`, `to`, the actors allowed (`organization` | `customer`), and a timing rule (`beforeStart` | `afterStart` | `any`, with the confirmed→cancelled row split per actor).
-  - A pure `canTransition(from, to, actor, startsAt, now)` the backend enforces and the web uses to show buttons.
-  - The DTOs leave out `internalNote` for the customer-facing type.
-- `requiresApproval`: `boolean not null default false`. It goes in the API body, the DTO, Duplicate, and an editor switch labelled "Approve each booking before it's confirmed" (read-only for staff like the rest of the form).
-- Seed `bookable-org` per Default 11, adding `bookable-org` to the `scenarios` array and the skill reference.
-
-**Tests that matter:**
-- `canTransition` against the full table, including the time rules and the customer/staff split on confirmed → cancelled.
-- The check constraints refuse a cancelled booking without `cancelledBy`, and a booking with no way to reach the customer.
-- `requiresApproval` round-trips through create, update and duplicate; staff can't change it (403).
-
-**Done when:**
-- The migration is applied, the editor switch saves, and `bun run dev:seed-scenario bookable-org` prints an org with two services and hours.
-
-**Verify:** Run `bun run dev:seed-scenario bookable-org`. Log in as the owner, open the services list at `/dashboard/<slug>/services` and edit "Haircut": the approval switch is off. Turn it on and save; `psql service=sinwy_ro -c "select name, requires_approval from service where organization_id = '<id>' limit 5"` shows it true. Duplicate it; the copy is also true. Nothing is simulated.
 
 ---
 
@@ -196,9 +158,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** Staff can create manual bookings through the API, nothing can double-book an org, bookable times leave out busy time, and the list, calendar and detail endpoints return bookings.
 
 **Files:**
-- `Sinwy.Backend/modules/bookings/`: `repository.ts`, `service.ts`, `controller.ts`, `routes.ts`, `utils.ts`, `index.ts`, `tests/`.
-- `Sinwy.Backend/modules/services/`: export what bookings needs from `index.ts`: a read of the service fields to copy (duration, buffers, price, currency, `requiresApproval`, active/archived), `listBookableTimes`, and `todayIn` if needed. Remove the `services/:serviceId/times` route and its controller; move its HTTP tests (`tests/times.test.ts` or wherever they live) to bookings.
-- `Sinwy.Shared/types/booking/` for the query and input schemas.
+- `Sinwy.Backend/modules/bookings/`: `routes.ts` (empty `registerBookingRoutes`, already wired in `Sinwy.Backend/index.ts`, `import_map.json` and `tsconfig.json`) and `index.ts`; new `repository.ts`, `service.ts`, `controller.ts`, `utils.ts`. Tests in `tests/` next to `schema.test.ts` and `transitions.test.ts`; the HTTP tests copy the `seedOrg`/`call` harness from `modules/services/tests/services.test.ts`.
+- `Sinwy.Backend/db/schema/bookingSchema.ts` (`booking`, `bookingEvent`; no schema change expected).
+- `Sinwy.Backend/modules/services/`: `index.ts` exports `listBookableTimes`, `bookableTimes` and `BusyInterval`; add a read of the fields to copy (`repository.ts` `findService`, `service.ts` ~230–260 where `listBookableTimes` checks `isActive`) and `todayIn` from `utils.ts` if needed. Remove `listBookableTimesHandler` from `controller.ts` and its route in `routes.ts`; move `tests/times.test.ts` to bookings.
+- `Sinwy.Shared/types/booking/BookingSchema.ts` (contact, note and reason schemas exist; add the manual booking body and the list and calendar queries); `Sinwy.Shared/types/api/ApiResponse.ts` (`API_ERROR_CODES`, add `BOOKING_TIME_TAKEN`).
 
 **Steps:**
 - **Core:** one `createBooking` in the service layer, used by manual bookings now and self-bookings in Phase 5. It takes the copied service fields, the start, the contact snapshot, the notes, the starting status and the actor.

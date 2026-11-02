@@ -39,6 +39,7 @@ export const serviceSchema = z.object({
 		.max(LIMITS.priceMinorMax, "Price is too high"),
 	bufferBeforeMinutes: buffer("Buffer before"),
 	bufferAfterMinutes: buffer("Buffer after"),
+	requiresApproval: z.boolean(),
 });
 
 export type ServiceInput = z.infer<typeof serviceSchema>;

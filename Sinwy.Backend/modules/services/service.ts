@@ -55,6 +55,7 @@ const toServiceDto = (row: ServiceRow): ServiceDto => ({
 	bufferBeforeMinutes: row.bufferBeforeMinutes,
 	bufferAfterMinutes: row.bufferAfterMinutes,
 	isActive: row.isActive,
+	requiresApproval: row.requiresApproval,
 	createdAt: row.createdAt.toISOString(),
 	updatedAt: row.updatedAt.toISOString(),
 });
@@ -135,6 +136,7 @@ export const duplicateService = async (
 		capacity: source.capacity,
 		bufferBeforeMinutes: source.bufferBeforeMinutes,
 		bufferAfterMinutes: source.bufferAfterMinutes,
+		requiresApproval: source.requiresApproval,
 		isActive: false,
 	});
 	return { ok: true, data: toServiceDto(row) };
