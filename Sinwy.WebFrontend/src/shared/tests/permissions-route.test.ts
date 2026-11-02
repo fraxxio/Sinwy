@@ -34,7 +34,7 @@ it("redirects staff to the organization overview", () => {
 
 	expect(isRedirect(thrown)).toBe(true);
 	expect(isRedirect(thrown) && thrown.options).toMatchObject({
-		to: "/$organizationSlug",
+		to: "/dashboard/$organizationSlug",
 		params: { organizationSlug: "acme" },
 	});
 	expect(takeAccessDenied()).toBe("You don't have access to that page");

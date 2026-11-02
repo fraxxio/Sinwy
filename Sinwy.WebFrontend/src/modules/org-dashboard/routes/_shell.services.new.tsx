@@ -12,7 +12,9 @@ import { PageHeader } from "#/shared/components/PageHeader";
 import { toast } from "#/shared/components/ui/toast";
 import { requirePermission } from "#/shared/lib/auth/protected-route";
 
-export const Route = createFileRoute("/$organizationSlug/_shell/services/new")({
+export const Route = createFileRoute(
+	"/dashboard/$organizationSlug/_shell/services/new",
+)({
 	beforeLoad: requirePermission("services:write"),
 	staticData: { crumb: "New service" },
 	component: NewServicePage,
@@ -33,7 +35,7 @@ function NewServicePage() {
 			});
 			toast.add({ type: "success", title: "Service created", timeout: 4_000 });
 			await navigate({
-				to: "/$organizationSlug/services",
+				to: "/dashboard/$organizationSlug/services",
 				params: { organizationSlug: organization.slug },
 			});
 			return null;

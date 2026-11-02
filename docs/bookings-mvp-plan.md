@@ -8,7 +8,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
-| 1 | Move the dashboard to `/dashboard/$organizationSlug` | – | todo | |
+| 1 | Move the dashboard to `/dashboard/$organizationSlug` | – | done | `feat(backend, web): move the org dashboard under /dashboard` |
 | 2 | Bookings schema, status rules and the approval switch | 1 | todo | |
 | 3 | Create bookings, the capacity check, list and calendar API | 2 | todo | |
 | 4 | Status changes, reschedule, edits and booking emails | 3 | todo | |
@@ -130,8 +130,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Backend tests:** `bun:test` with a real DB, using the helpers in `Sinwy.Backend/test/helpers.ts` (`createUserWithSession`, `insertOrganization`, `givePlan`, `holdSlot`, `activateOrganization`, `joinOrganization`, `fakeCtx`). For HTTP tests, copy the `seedOrg`/`call` harness from `modules/services/tests/services.test.ts`. An org becomes inactive with `slotHeldAt: null`.
 - **Seeds:** `bun run dev:seed-scenario <user|owner-with-org|subscribed-org|org-with-staff>` (`Sinwy.Backend/scripts/dev/seedScenario.ts`, `scenarios` array). `subscribed-org` returns an active, onboarded org with its owner's credentials. See the `e2e-test` skill.
 - **Web routing:**
-  - `Sinwy.WebFrontend/src/routes.ts` mounts modules with `physical(prefix, dir)`, and the dynamic root slug must stay last.
+  - `Sinwy.WebFrontend/src/routes.ts` mounts modules with `physical(prefix, dir)`. The dashboard is at `/dashboard/$organizationSlug` (route ids `"/dashboard/$organizationSlug/_shell/..."`); nothing serves the root slug until the storefront mounts there, last.
   - Dashboard routes are in `modules/org-dashboard/routes/`; route context gives `organization` (with `currency`) and `member`. Check writes with `hasPermission(member.roles, "bookings:write")`.
+  - The route tree regenerates while `vite dev` runs; there's no separate generate script. The app has no `notFoundComponent`, so unmatched URLs show TanStack's plain "Not Found".
+  - An org the user can't open (not a member, unknown slug) redirects to `/` with no message (`_shell.tsx` `beforeLoad`); unchanged by Phase 1.
   - `requireSession` in `src/shared/lib/auth/protected-route.ts` redirects to `/auth/login?redirect=<href>`, and login honours it.
 - **Web data and forms:**
   - Copy `org-dashboard/lib/service-queries.ts`: a keys object, query options and write functions over `api()` from `src/shared/lib/api.ts`, and `useUnwrapWrite()` (a 409 inactive org calls `handleOrganizationInactive` and shows nothing).
@@ -146,38 +148,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 ---
 
-## Phase 1: Move the dashboard to `/dashboard/$organizationSlug`
-
-**Goal:** The org dashboard lives under `/dashboard/$organizationSlug`, every link and redirect points there, and the root slug is free for the storefront.
-
-**Files:**
-- `Sinwy.WebFrontend/src/routes.ts`: mount `modules/org-dashboard/routes` at `/dashboard/$organizationSlug`, keep the root slug last, and leave a comment that the storefront will take it.
-- Every route file in `modules/org-dashboard/routes/` (`createFileRoute("/$organizationSlug/...")` ids), then regenerate `src/routeTree.gen.ts`.
-- Links and redirects:
-  - Dashboard: `modules/org-dashboard/components/OrganizationSidebar.tsx`, `ServiceActions.tsx`, `ServicesTable.tsx`, `org-dashboard/lib/nav.tsx`, `org-dashboard/lib/sections.ts`.
-  - Shell and auth: `src/shared/components/shell/OrganizationSwitcher.tsx`, `src/shared/lib/auth/protected-route.ts`, `modules/auth/lib/post-login.ts`.
-  - Organizations and account: `modules/organizations/lib/funnel.ts`, `modules/organizations/routes/$id.onboarding.tsx`, `modules/account-dashboard/routes/_shell.organizations.tsx`.
-- Tests: `modules/auth/tests/post-login.test.ts`, `modules/organizations/tests/funnel.test.ts`, `src/shared/tests/permissions-route.test.ts`.
-- `Sinwy.Backend/modules/organizations/utils.ts` (`reservedSlugs`) and its tests.
-
-**Steps:**
-- This is a pure move: no behaviour changes. Grep `"/$organizationSlug` and `organizationSlug` after the change and leave none pointing at the old root.
-- Add `dashboard`, `book`, `s` and `app` to `reservedSlugs`. Check the dev DB for existing org slugs that collide (`psql service=sinwy_ro -c "select id, slug from organization where slug in ('dashboard','book','s','app') limit 10"`) and rename any with `sinwy_rw`.
-- After this phase, nothing serves the root slug; the storefront arrives in Phase 5.
-- Update `docs/user-flow-map.md` wherever it names dashboard URLs.
-
-**Tests that matter:**
-- Post-login and funnel redirects land on `/dashboard/<slug>`.
-- The permission guard redirect still works under the new prefix.
-- Reserved slugs: creating an org named "Dashboard" gets a different slug.
-
-**Done when:**
-- Every dashboard page opens under `/dashboard/<slug>`, `bun run verify` passes, and no source path builds a root-level dashboard URL.
-
-**Verify:** Seed `org-with-staff`. Log in as the owner; post-login lands on `/dashboard/<slug>`. Click every sidebar entry, the services list, a service editor and the hours page; each URL starts with `/dashboard/<slug>`. Use the org switcher, then log in as staff and open a page staff can't see (e.g. settings): they're redirected inside `/dashboard/<slug>`. Opening `/<slug>` shows the not-found page. Nothing is simulated.
-
----
-
 ## Phase 2: Bookings schema, status rules and the approval switch
 
 **Goal:** The `booking` and `booking_event` tables exist, the shared package holds the booking schemas and the transition table, `@bookingsModule` is wired, services have a working `requiresApproval` switch, and the `bookable-org` seed exists.
@@ -187,8 +157,9 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - `Sinwy.Backend/db/schema/serviceSchema.ts` (`service.requiresApproval`); `modules/services/` `utils.ts` (`createServiceBody`, `updateServiceBody`), `repository.ts` (insert, update, duplicate), `service.ts` (DTO mapping).
 - New `Sinwy.Shared/types/booking/` (`BookingStatus.ts` with `BOOKING_STATUSES` and `BOOKING_TRANSITIONS`, `Booking.ts` DTOs, `BookingSchema.ts` inputs), exported from `Sinwy.Shared/types/index.ts`. `Sinwy.Shared/types/service/Service.ts` and `ServiceSchema.ts` (`requiresApproval`).
 - New `Sinwy.Backend/modules/bookings/` (`index.ts`, `routes.ts` with an empty `registerBookingRoutes`); `import_map.json`, `tsconfig.json`, `Sinwy.Backend/index.ts`.
+- Tests: `modules/services/tests/services.test.ts` (round-trip and 403 for staff); new `modules/bookings/tests/` for the check constraints; a `Sinwy.Shared` test for `canTransition`.
 - Web: `modules/org-dashboard/components/ServiceForm.tsx`, `org-dashboard/lib/services.ts`.
-- `Sinwy.Backend/scripts/dev/seedScenario.ts` and `.agents/skills/e2e-test/references/seed-scenario.md`.
+- `Sinwy.Backend/scripts/dev/seedScenario.ts` and `.agents/skills/e2e-test/references/seed-scenario.md`; the dashboard URL in `.agents/skills/e2e-test/references/app-map.md` is already `/dashboard/<org slug>`.
 
 **Steps:**
 - `booking` columns:

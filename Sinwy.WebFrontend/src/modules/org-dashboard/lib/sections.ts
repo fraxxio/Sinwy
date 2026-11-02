@@ -8,21 +8,33 @@ type OrgSection = {
 
 /** Gated dashboard sections: the sidebar and the route guards both read this. */
 export const ORG_SECTIONS = {
-	bookings: { to: "/$organizationSlug/bookings", permission: "bookings:read" },
-	services: { to: "/$organizationSlug/services", permission: "services:read" },
+	bookings: {
+		to: "/dashboard/$organizationSlug/bookings",
+		permission: "bookings:read",
+	},
+	services: {
+		to: "/dashboard/$organizationSlug/services",
+		permission: "services:read",
+	},
 	customers: {
-		to: "/$organizationSlug/customers",
+		to: "/dashboard/$organizationSlug/customers",
 		permission: "customers:read",
 	},
-	pages: { to: "/$organizationSlug/pages", permission: "pages:read" },
-	payments: { to: "/$organizationSlug/payments", permission: "payments:read" },
+	pages: { to: "/dashboard/$organizationSlug/pages", permission: "pages:read" },
+	payments: {
+		to: "/dashboard/$organizationSlug/payments",
+		permission: "payments:read",
+	},
 	analytics: {
-		to: "/$organizationSlug/analytics",
+		to: "/dashboard/$organizationSlug/analytics",
 		permission: "analytics:read",
 	},
-	team: { to: "/$organizationSlug/team", permission: "people:manage" },
+	team: {
+		to: "/dashboard/$organizationSlug/team",
+		permission: "people:manage",
+	},
 	settings: {
-		to: "/$organizationSlug/settings",
+		to: "/dashboard/$organizationSlug/settings",
 		permission: "settings:manage",
 	},
 } as const satisfies Record<string, OrgSection>;

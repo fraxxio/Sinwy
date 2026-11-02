@@ -21,7 +21,7 @@ export function postLoginDestination(
 	const org = open.find((o) => o.id === activeOrgId) ?? open.at(-1);
 	if (org)
 		return {
-			to: "/$organizationSlug",
+			to: "/dashboard/$organizationSlug",
 			params: { organizationSlug: org.slug },
 		} as const;
 

@@ -15,7 +15,9 @@ import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 import { toast } from "#/shared/components/ui/toast";
 
-export const Route = createFileRoute("/$organizationSlug/_shell/services/$id")({
+export const Route = createFileRoute(
+	"/dashboard/$organizationSlug/_shell/services/$id",
+)({
 	staticData: { crumb: "Service" },
 	component: ServiceEditorPage,
 });
@@ -65,7 +67,7 @@ function ServiceEditorPage() {
 							showEdit={false}
 							onArchived={() =>
 								navigate({
-									to: "/$organizationSlug/services",
+									to: "/dashboard/$organizationSlug/services",
 									params: { organizationSlug: organization.slug },
 								})
 							}

@@ -20,7 +20,10 @@ it("sends an organization that finished onboarding to its dashboard", () => {
 			...organization,
 			onboardingCompletedAt: completedAt,
 		}),
-	).toEqual({ to: "/$organizationSlug", params: { organizationSlug: "acme" } });
+	).toEqual({
+		to: "/dashboard/$organizationSlug",
+		params: { organizationSlug: "acme" },
+	});
 });
 
 it("treats an organization as set up once onboarding is complete, whatever its status", () => {

@@ -3,7 +3,9 @@ import { CalendarCheckIcon } from "lucide-react";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
 
-export const Route = createFileRoute("/$organizationSlug/_shell/bookings/$id")({
+export const Route = createFileRoute(
+	"/dashboard/$organizationSlug/_shell/bookings/$id",
+)({
 	staticData: { crumb: "Booking" },
 	component: BookingDetailPage,
 });

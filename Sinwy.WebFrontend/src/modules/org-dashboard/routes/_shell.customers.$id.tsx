@@ -3,12 +3,12 @@ import { UsersIcon } from "lucide-react";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
 
-export const Route = createFileRoute("/$organizationSlug/_shell/customers/$id")(
-	{
-		staticData: { crumb: "Customer" },
-		component: CustomerDetailPage,
-	},
-);
+export const Route = createFileRoute(
+	"/dashboard/$organizationSlug/_shell/customers/$id",
+)({
+	staticData: { crumb: "Customer" },
+	component: CustomerDetailPage,
+});
 
 function CustomerDetailPage() {
 	const { id } = Route.useParams();

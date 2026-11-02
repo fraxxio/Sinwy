@@ -3,7 +3,7 @@ import { LayoutDashboardIcon } from "lucide-react";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
 
-export const Route = createFileRoute("/$organizationSlug/_shell/")({
+export const Route = createFileRoute("/dashboard/$organizationSlug/_shell/")({
 	component: OverviewPage,
 });
 

@@ -14,7 +14,7 @@ The web app runs on `http://localhost:3000`, which proxies `/api` to the backend
 | Pay | Polar checkout page, then `/checkout/success` | real card in the sandbox, or **simulated**: `dev:simulate-polar-webhook --type subscription.active --user <id>`. The success page waits for the plan, then activates the owner's oldest draft |
 | Activate the org | Account → Organizations (`/account/organizations`), or `POST /api/account/organizations/<id>/activate` (owner) | real; takes one of the plan's slots (Starter 1, Professional 2, Enterprise 5) |
 | Onboarding | `/organizations/<id>/onboarding` | real; opens for an active org or its owner's draft; finishing a draft's wizard takes a free slot |
-| Dashboard | `/<org slug>` | real |
+| Dashboard | `/dashboard/<org slug>` | real |
 
 An org is `active` when it holds a slot (`organization.slot_held_at`), isn't scheduled for deletion, and its owner's plan grants access (`user_subscription.plan` set). The plan belongs to the user, not to an org. Billing (plan, invoices, payment method, suspend) lives on the owner's Account → Billing; org settings show the tier name to the owner and admins only.
 

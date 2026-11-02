@@ -257,7 +257,7 @@ function OrganizationRow({
 						nativeButton={false}
 						render={
 							<Link
-								to="/$organizationSlug"
+								to="/dashboard/$organizationSlug"
 								params={{ organizationSlug: organization.slug }}
 							/>
 						}

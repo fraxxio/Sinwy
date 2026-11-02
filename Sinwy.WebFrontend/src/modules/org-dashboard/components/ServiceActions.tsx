@@ -63,7 +63,7 @@ export function ServiceActions({
 			unwrap(await duplicateService(organizationId, service.id)),
 		onSuccess: (copy) =>
 			navigate({
-				to: "/$organizationSlug/services/$id",
+				to: "/dashboard/$organizationSlug/services/$id",
 				params: { organizationSlug, id: copy.id },
 			}),
 		onError: toastError,
@@ -110,7 +110,7 @@ export function ServiceActions({
 							<DropdownMenuItem
 								render={
 									<Link
-										to="/$organizationSlug/services/$id"
+										to="/dashboard/$organizationSlug/services/$id"
 										params={{ organizationSlug, id: service.id }}
 									/>
 								}

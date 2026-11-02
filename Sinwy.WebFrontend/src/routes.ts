@@ -6,7 +6,7 @@ export const routes = rootRoute("root.tsx", [
 	physical("/account", "modules/account-dashboard/routes"),
 	physical("/organizations", "modules/organizations/routes"),
 	physical("/checkout", "modules/checkout/routes"),
-	// Dashboard lives at the root under the org slug, so it must stay last:
-	// every static prefix above outranks this dynamic segment.
-	physical("/$organizationSlug", "modules/org-dashboard/routes"),
+	physical("/dashboard/$organizationSlug", "modules/org-dashboard/routes"),
+	// The storefront will take the root slug; it must stay last so every
+	// static prefix above outranks the dynamic segment.
 ]);

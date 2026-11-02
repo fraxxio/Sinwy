@@ -11,7 +11,9 @@ import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
 
-export const Route = createFileRoute("/$organizationSlug/_shell/services/")({
+export const Route = createFileRoute(
+	"/dashboard/$organizationSlug/_shell/services/",
+)({
 	component: ServicesPage,
 });
 
@@ -25,7 +27,7 @@ function ServicesPage() {
 			nativeButton={false}
 			render={
 				<Link
-					to="/$organizationSlug/services/new"
+					to="/dashboard/$organizationSlug/services/new"
 					params={{ organizationSlug: organization.slug }}
 				/>
 			}
@@ -43,7 +45,7 @@ function ServicesPage() {
 			nativeButton={false}
 			render={
 				<Link
-					to="/$organizationSlug/services/hours"
+					to="/dashboard/$organizationSlug/services/hours"
 					params={{ organizationSlug: organization.slug }}
 				/>
 			}

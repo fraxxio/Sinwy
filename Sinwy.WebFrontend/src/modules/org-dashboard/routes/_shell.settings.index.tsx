@@ -8,7 +8,9 @@ import { Button } from "#/shared/components/ui/button";
 import { useEntitlements } from "#/shared/lib/auth/entitlements";
 import { getPlanName } from "#/shared/lib/plans";
 
-export const Route = createFileRoute("/$organizationSlug/_shell/settings/")({
+export const Route = createFileRoute(
+	"/dashboard/$organizationSlug/_shell/settings/",
+)({
 	component: SettingsPage,
 });
 

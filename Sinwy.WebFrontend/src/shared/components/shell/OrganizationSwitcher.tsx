@@ -160,7 +160,7 @@ function OrganizationItem({
 				className="gap-2 p-2"
 				render={
 					<Link
-						to="/$organizationSlug"
+						to="/dashboard/$organizationSlug"
 						params={{ organizationSlug: organization.slug }}
 					/>
 				}
