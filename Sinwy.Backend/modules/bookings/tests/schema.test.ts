@@ -8,7 +8,7 @@ import { booking, bookingEvent } from "@db/schema/bookingSchema";
 import { organization } from "@db/schema/organizationSchema";
 import { service } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 let orgId: string;
 let serviceId: string;
@@ -36,6 +36,7 @@ const insertBooking = (values: Partial<typeof booking.$inferInsert> = {}) =>
 		id: crypto.randomUUID(),
 		organizationId: orgId,
 		serviceId,
+		bookedBy: "organization",
 		customerName: "Ana",
 		customerPhone: "+370 600 00000",
 		startsAt,
@@ -84,6 +85,7 @@ test.each([
 		{ customerEmail: null, customerPhone: null, customerUserId: null },
 	],
 	["an unknown status", { status: "done" }],
+	["an unknown booker", { bookedBy: "staff" }],
 	["an unknown canceller", { status: "cancelled", cancelledBy: "system" }],
 	["an end before the start", { endsAt: startsAt }],
 	["a negative price", { priceMinor: -1 }],
@@ -124,6 +126,31 @@ test("the database rejects an unknown event type or actor", async () => {
 	expect(await violation(insertEvent({ actorType: "robot" }))).toContain(
 		"violates check constraint",
 	);
+});
+
+test("an event payload is stored as a JSON object that SQL can read", async () => {
+	const id = crypto.randomUUID();
+	await insertBooking({ id });
+	await db.insert(bookingEvent).values({
+		id: crypto.randomUUID(),
+		bookingId: id,
+		type: "rescheduled",
+		actorType: "member",
+		payload: { startsAt: "2026-11-03T11:00:00.000Z" },
+	});
+	const [row] = await db
+		.select({
+			payload: bookingEvent.payload,
+			kind: sql<string>`jsonb_typeof(${bookingEvent.payload})`,
+			startsAt: sql<string>`${bookingEvent.payload}->>'startsAt'`,
+		})
+		.from(bookingEvent)
+		.where(eq(bookingEvent.bookingId, id));
+	expect(row).toEqual({
+		payload: { startsAt: "2026-11-03T11:00:00.000Z" },
+		kind: "object",
+		startsAt: "2026-11-03T11:00:00.000Z",
+	});
 });
 
 test("a service with bookings can't be deleted, but its organization's cascade removes both", async () => {

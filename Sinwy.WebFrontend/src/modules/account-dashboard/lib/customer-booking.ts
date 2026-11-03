@@ -8,6 +8,7 @@ import {
 	customerCancelDeadline,
 } from "@sinwy/shared";
 import { formatCancellationWindow } from "#/shared/lib/cancellation-policy";
+import { formatShortDateIn, formatTimeIn } from "#/shared/lib/date";
 
 /** Pending or confirmed and not over yet: the Upcoming tab's rule. */
 export const isUpcoming = (booking: CustomerBookingDto, now = new Date()) =>
@@ -60,11 +61,58 @@ export const statusLineOf = (
 			? `${name} didn't answer this request before its start.`
 			: `Waiting for ${name} to confirm`;
 	if (booking.status !== "cancelled") return null;
-	const fromPending =
-		lastCancellation(booking.history)?.fromStatus === "pending";
+	const cancellation = lastCancellation(booking.history);
+	const fromPending = cancellation?.fromStatus === "pending";
 	if (booking.cancelledBy === "customer")
 		return fromPending
 			? "You withdrew this request"
 			: "You cancelled this booking";
-	return fromPending ? `Declined by ${name}` : `Cancelled by ${name}`;
+	return fromPending && cancellation?.actor === "organization"
+		? `Declined by ${name}`
+		: `Cancelled by ${name}`;
 };
+
+/** One line of the customer's timeline. */
+export function timelineLabelOf(
+	event: CustomerBookingEventDto,
+	organizationName: string,
+	timezone: string,
+) {
+	const when = (iso: string) =>
+		`${formatShortDateIn(iso, timezone)}, ${formatTimeIn(iso, timezone)}`;
+	const by =
+		event.actor === "customer"
+			? " by you"
+			: event.actor === "organization"
+				? ` by ${organizationName}`
+				: "";
+	switch (event.type) {
+		case "created":
+			if (event.actor === "customer")
+				return event.toStatus === "pending"
+					? "Requested by you"
+					: "Booked by you";
+			return `Booked${by}`;
+		case "rescheduled":
+			return event.moved
+				? `Moved from ${when(event.moved.from)} to ${when(event.moved.to)}${by}`
+				: `Moved${by}`;
+		case "status_changed":
+			switch (event.toStatus) {
+				case "confirmed":
+					return `Confirmed${by}`;
+				case "cancelled":
+					if (event.fromStatus !== "pending") return `Cancelled${by}`;
+					if (event.actor === "customer") return "Request withdrawn by you";
+					return event.actor === "organization"
+						? `Declined${by}`
+						: `Cancelled${by}`;
+				case "completed":
+					return "Completed";
+				case "no_show":
+					return "Marked as missed";
+				default:
+					return `Status changed${by}`;
+			}
+	}
+}

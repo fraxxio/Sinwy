@@ -20,7 +20,6 @@ import {
 	type BookableTimesDto,
 	type BookableTimesQuery,
 	type BookingCalendarQuery,
-	type BookingCanceller,
 	type BookingDetailDto,
 	type BookingDto,
 	type BookingEventActorType,
@@ -28,6 +27,7 @@ import {
 	type BookingListDto,
 	type BookingListQuery,
 	type BookingOverviewDto,
+	type BookingParty,
 	type BookingStatus,
 	type BookingUpdateInput,
 	type CustomerBookingDetailDto,
@@ -59,6 +59,7 @@ import {
 	countCustomerBookings,
 	countNeedingAttention,
 	countNotStartedBookings,
+	countNotStartedCustomerBookings,
 	findBooking,
 	findBookingEvents,
 	findBookings,
@@ -103,6 +104,7 @@ const toBookingDto = (row: BookingRow, serviceName: string): BookingDto => ({
 	id: row.id,
 	serviceId: row.serviceId,
 	serviceName,
+	bookedBy: row.bookedBy as BookingParty,
 	customerUserId: row.customerUserId,
 	customerName: row.customerName,
 	customerEmail: row.customerEmail,
@@ -164,6 +166,7 @@ export const createBooking = async (
 	const values = {
 		organizationId: input.organizationId,
 		serviceId: service.id,
+		bookedBy: input.actor.type === "customer" ? "customer" : "organization",
 		...input.contact,
 		startsAt: input.startsAt,
 		endsAt: addMinutes(input.startsAt, service.durationMinutes),
@@ -211,7 +214,7 @@ const statusChange = (
 	row: BookingRow,
 	to: BookingStatus,
 	actor: { type: BookingEventActorType; userId: string | null },
-	cancellation: { cancelledBy: BookingCanceller; reason: string | null },
+	cancellation: { cancelledBy: BookingParty; reason: string | null },
 	payload: Record<string, unknown> = {},
 ) =>
 	({
@@ -343,7 +346,8 @@ export const updateBookingDetails = async (
 		{ organizationId: membership.organizationId },
 		bookingId,
 		(row) => {
-			if (contact && row.customerUserId) return fail("contact-locked");
+			if (contact && row.bookedBy !== "organization")
+				return fail("contact-locked");
 			const fields = contact
 				? CONTACT_FIELDS.filter((field) => contact[field] !== row[field])
 				: [];
@@ -703,7 +707,7 @@ const toCustomerBookingDto = ({
 	priceMinor: row.priceMinor,
 	currency: row.currency,
 	status: row.status as BookingStatus,
-	cancelledBy: row.cancelledBy as BookingCanceller | null,
+	cancelledBy: row.cancelledBy as BookingParty | null,
 	cancellationReason: row.cancellationReason,
 	customerNote: row.customerNote,
 	cancellationWindowMinutes: row.cancellationWindowMinutes,
@@ -926,3 +930,9 @@ export const countUpcomingOrganizationBookings = async (
 	const rows = await countNotStartedBookings(organizationIds, now);
 	return new Map(rows.map((row) => [row.organizationId, row.count]));
 };
+
+/** The customer's own bookings their account deletion would cancel. */
+export const countUpcomingCustomerBookings = (
+	customerUserId: string,
+	now = new Date(),
+) => countNotStartedCustomerBookings(customerUserId, now);

@@ -4,6 +4,7 @@ import {
 	cancelPolicyOf,
 	isUpcoming,
 	statusLineOf,
+	timelineLabelOf,
 	windowPassedMessage,
 } from "#/modules/account-dashboard/lib/customer-booking";
 
@@ -93,27 +94,59 @@ describe("statusLineOf", () => {
 		).toBe("Salon didn't answer this request before its start.");
 	});
 
+	const cancelled = (
+		fromStatus: "pending" | "confirmed",
+		actor: "organization" | "system" = "organization",
+	) =>
+		booking({
+			status: "cancelled",
+			cancelledBy: "organization",
+			history: [
+				{
+					id: "e1",
+					type: "status_changed",
+					fromStatus,
+					toStatus: "cancelled",
+					actor,
+					moved: null,
+					occurredAt: "2026-11-02T08:00:00Z",
+				},
+			],
+		});
+
 	it("tells a decline from a cancellation", () => {
-		const cancelled = (fromStatus: "pending" | "confirmed") =>
-			booking({
-				status: "cancelled",
-				cancelledBy: "organization",
-				history: [
-					{
-						id: "e1",
-						type: "status_changed",
-						fromStatus,
-						toStatus: "cancelled",
-						actor: "organization",
-						moved: null,
-						occurredAt: "2026-11-02T08:00:00Z",
-					},
-				],
-			});
 		expect(statusLineOf(cancelled("pending"), NOW)).toBe("Declined by Salon");
 		expect(statusLineOf(cancelled("confirmed"), NOW)).toBe(
 			"Cancelled by Salon",
 		);
+	});
+
+	it("doesn't call the closing cancel of a request a decline", () => {
+		expect(statusLineOf(cancelled("pending", "system"), NOW)).toBe(
+			"Cancelled by Salon",
+		);
+	});
+});
+
+describe("timelineLabelOf", () => {
+	const cancel = (actor: "organization" | "system") =>
+		timelineLabelOf(
+			{
+				id: "e1",
+				type: "status_changed",
+				fromStatus: "pending",
+				toStatus: "cancelled",
+				actor,
+				moved: null,
+				occurredAt: "2026-11-02T08:00:00Z",
+			},
+			"Salon",
+			"Europe/Vilnius",
+		);
+
+	it("calls only the business's own cancel of a request a decline", () => {
+		expect(cancel("organization")).toBe("Declined by Salon");
+		expect(cancel("system")).toBe("Cancelled");
 	});
 });
 

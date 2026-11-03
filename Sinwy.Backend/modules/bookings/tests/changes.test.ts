@@ -347,6 +347,23 @@ test("note edits work on both kinds of booking and log nothing; a self-booking's
 	expect((await detail(self.id)).customerName).toBe("Bea");
 });
 
+test("a self-booking stays locked and marked as the customer's after they delete their account", async () => {
+	const self = await selfBook("confirmed", freshEmail());
+	if (!self.customerUserId) throw new Error("self-booking without a customer");
+	await db.delete(user).where(eq(user.id, self.customerUserId));
+
+	const after = await detail(self.id);
+	expect(after.customerUserId).toBeNull();
+	expect(after.bookedBy).toBe("customer");
+	const locked = await call("PATCH", `bookings/${self.id}`, {
+		customerName: "Someone else",
+		customerEmail: "else@example.com",
+		customerPhone: null,
+	});
+	expect(locked.status).toBe(409);
+	expect((await book(PAST)).bookedBy).toBe("organization");
+});
+
 test("a manual booking emails the customer once, and only with an email", async () => {
 	const email = freshEmail();
 	await book(FUTURE, { customerName: "Ana", customerEmail: email });

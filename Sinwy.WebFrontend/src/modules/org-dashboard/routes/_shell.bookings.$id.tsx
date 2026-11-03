@@ -138,7 +138,7 @@ function BookingDetailPage() {
 					<CardTitle>Notes</CardTitle>
 				</CardHeader>
 				<CardContent className="grid gap-6">
-					{data.customerUserId !== null && (
+					{data.bookedBy === "customer" && (
 						<div className="space-y-1">
 							<p className="font-medium text-sm">From the customer</p>
 							<p className="whitespace-pre-wrap text-muted-foreground text-sm">

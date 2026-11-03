@@ -36,6 +36,7 @@ export function DangerZone({ user }: { user: SessionUser }) {
 
 	const preview = useQuery({ ...deletionPreviewQuery, enabled: open });
 	const orgs = preview.data?.soleOwnedOrganizations ?? [];
+	const ownUpcoming = preview.data?.upcomingBookings ?? 0;
 	const canConfirm = preview.isSuccess && sameEmail(typed, user.email) && !busy;
 
 	const onOpenChange = (next: boolean) => {
@@ -103,34 +104,44 @@ export function DangerZone({ user }: { user: SessionUser }) {
 								<Skeleton className="h-12" />
 							) : preview.isError ? (
 								<FieldError>
-									Couldn't check your organizations. Close and try again.
+									Couldn't check your organizations and bookings. Close and try
+									again.
 								</FieldError>
 							) : (
-								orgs.length > 0 && (
-									<div className="grid gap-2 rounded-2xl bg-destructive/10 p-4 text-sm text-destructive">
-										<p className="font-medium">
-											You own{" "}
-											{orgs.length === 1
-												? "this organization"
-												: "these organizations"}
-											:
+								<>
+									{ownUpcoming > 0 && (
+										<p className="rounded-2xl bg-destructive/10 p-4 text-sm text-destructive">
+											{ownUpcoming === 1
+												? "Your upcoming booking will be cancelled, and the business will be told."
+												: `Your ${ownUpcoming} upcoming bookings will be cancelled, and the businesses will be told.`}
 										</p>
-										<ul className="list-inside list-disc">
-											{orgs.map((org) => (
-												<li key={org.id}>
-													{org.name}
-													{org.upcomingBookings > 0 &&
-														`: ${org.upcomingBookings} upcoming ${org.upcomingBookings === 1 ? "booking" : "bookings"} will be cancelled`}
-												</li>
-											))}
-										</ul>
-										<p>
-											Members lose access and public pages go offline right
-											away. {orgs.length === 1 ? "It is" : "They are"} deleted
-											for good after {ORGANIZATION_RETENTION_DAYS} days.
-										</p>
-									</div>
-								)
+									)}
+									{orgs.length > 0 && (
+										<div className="grid gap-2 rounded-2xl bg-destructive/10 p-4 text-sm text-destructive">
+											<p className="font-medium">
+												You own{" "}
+												{orgs.length === 1
+													? "this organization"
+													: "these organizations"}
+												:
+											</p>
+											<ul className="list-inside list-disc">
+												{orgs.map((org) => (
+													<li key={org.id}>
+														{org.name}
+														{org.upcomingBookings > 0 &&
+															`: ${org.upcomingBookings} upcoming ${org.upcomingBookings === 1 ? "booking" : "bookings"} will be cancelled`}
+													</li>
+												))}
+											</ul>
+											<p>
+												Members lose access and public pages go offline right
+												away. {orgs.length === 1 ? "It is" : "They are"} deleted
+												for good after {ORGANIZATION_RETENTION_DAYS} days.
+											</p>
+										</div>
+									)}
+								</>
 							)}
 
 							<div className="grid gap-2">

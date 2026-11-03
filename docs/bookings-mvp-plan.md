@@ -20,7 +20,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 10 | Customer Mode bookings | 4, 5, 9 | done | `feat(backend, web): add Customer Mode bookings` |
 | 11 | Account overview | 10 | done | `feat(backend, web): add the account overview` |
 | 12 | Bookings when an org, account or service goes away | 4, 9 | done | `feat(backend, web): cancel bookings when an org or account goes away` |
-| 13 | Code review | 1–12 | todo | |
+| 13 | Code review | 1–12 | done | `fix(backend, web): review the bookings MVP and store who made each booking` |
 
 ## Decisions
 
@@ -120,7 +120,7 @@ Settled with the product owner. Ask before changing any of them.
 
 ## Standing notes
 
-Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes. Services-plan notes still apply; [services-mvp-plan.md](services-mvp-plan.md) keeps them.
+Verified facts and gotchas for later booking work (staff and resources, payments, customer records). Don't check them again.
 
 - **"Slot" is taken** (plan cap). Say "bookable times" in code, routes and UI copy.
 - **Permissions exist.** `bookings:read`/`bookings:write` are in `Sinwy.Shared/types/access/Permission.ts`; owner, admin and staff have both (`RolePermissions.ts`). Bookings are on every plan; `PLAN_FEATURES` gates nothing here.
@@ -130,10 +130,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Bookable times:** `listBookableTimes(organizationId, serviceId, range, busy, now?)` from `@servicesModule` takes `BusyInterval[]` (`{ start, end }`, already padded) and returns `{ timezone, times }`. The range is local dates, limited by `bookableTimesQuerySchema` / `AVAILABILITY_LIMITS.bookableTimesDays` in `Sinwy.Shared/types/service/Availability.ts`. It ignores org status, so callers check it. Wall times convert with `tzOffset`, never `TZDate`. `findBookableService(organizationId, serviceId)` from `@servicesModule` returns the fields a booking copies (null when archived or foreign); `listPublicServices(organizationId)` returns `PublicServiceDto[]` (active, not archived). The old `GET services/:serviceId/times` route is gone.
 - **Transactions across modules:** open in the repository and pass `tx` into the other module's exported function (`Tx` pattern in `modules/organizations/access.ts`, as `transfers/repository.ts` does). Row locks use `.for("update")` (`modules/organizations/slots.ts`).
 - **IDs** are `crypto.randomUUID()` in `text` columns; FKs to `organization.id` cascade, so purge (`modules/organizations/purge.ts`) removes bookings without code changes. FK to `service.id`: `restrict` (services are archived, never deleted).
-- **Migrations:** edit `Sinwy.Backend/db/schema/`, export from `db/schema/index.ts`, then `bun run db:generate --name <name>` and `bun run db:migrate`. Latest is `drizzle/0021_cancellation_window.sql`. Status-style checks use `oneOf` from `@db/oneOf` (see `availability_exception`).
-- **Drizzle quirks:** queries are thenables (`expect(query).rejects` fails; use `query.then(() => null, (e) => e)`). `exactOptionalPropertyTypes` is on, so partial update types spell out `| undefined`.
+- **Migrations:** edit `Sinwy.Backend/db/schema/`, export from `db/schema/index.ts`, then `bun run db:generate --name <name>` and `bun run db:migrate`. Latest is `drizzle/0022_booked_by.sql`; a column added to a table with rows needs a hand-written backfill in the generated SQL (see that file). Status-style checks use `oneOf` from `@db/oneOf` (see `availability_exception`).
+- **Drizzle quirks:** queries are thenables (`expect(query).rejects` fails; use `query.then(() => null, (e) => e)`). `exactOptionalPropertyTypes` is on, so partial update types spell out `| undefined`. Use `jsonb` from `@db/jsonb`, never Drizzle's: with `bun-sql` Drizzle's stores a JSON string (log Phase 13).
 - **Email:** locally, mail lands in the outbox (`readOutboxEmails`, `bun run Sinwy.Backend/scripts/dev/lastEmail.ts`). Loggers: `createLogger("bookings")` from `@logger`.
-- **Lifecycle (Phase 12):** `auth.ts` `beforeDelete` → schedule owned orgs → `cancelUpcomingOrganizationBookings` → `handleCustomerAccountDeleted`; `beforeDeleteOrganization` cancels before the cascade. `auth.ts` must import `@bookingsModule` lazily (static import breaks module load). Organizations can't import bookings, so the purge repair's `scheduleOwnerless` cancels nothing (gap, `org-rules-map.md` §14). Deletion-preview counts are joined in `user/service.ts`. See log Phase 12.
+- **Lifecycle:** `auth.ts` `beforeDelete` → schedule owned orgs → `cancelUpcomingOrganizationBookings` → `handleCustomerAccountDeleted`; `beforeDeleteOrganization` cancels before the cascade. `auth.ts` must import `@bookingsModule` lazily (static import breaks module load). Organizations can't import bookings, so cross-module job wiring lives in `Sinwy.Backend/jobs.ts` (the purge's `onScheduled` hook cancels bookings). Deletion-preview counts (per org and the user's own) are joined in `user/service.ts`. A closing race is open (`org-rules-map.md` §14). See log Phases 12–13.
 - **Backend tests:** `bun:test` with a real DB, using the helpers in `Sinwy.Backend/test/helpers.ts` (`createUserWithSession` gives `<userId>@test.dev`, `insertOrganization`, `givePlan`, `holdSlot`, `activateOrganization`, `joinOrganization`, `fakeCtx`). For booking HTTP tests, copy the harness in `modules/bookings/tests/changes.test.ts` (`book`, `selfBook` via `createBooking` with a customer actor, `action`, `sentTo`, an org in `Europe/Vilnius`). The outbox is shared across tests: filter by a fresh recipient, and compare outbox ids to prove that nothing was sent. Stub failures with `spyOn(emailClient, "send")`. An org becomes inactive with `slotHeldAt: null`.
 - **Seeds:** `bun run dev:seed-scenario <user|owner-with-org|subscribed-org|org-with-staff>` (`Sinwy.Backend/scripts/dev/seedScenario.ts`, `scenarios` array). `subscribed-org` returns an active, onboarded org with its owner's credentials. See the `e2e-test` skill.
 - **Web routing:**
@@ -151,11 +151,11 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - shadcn: `table`, `dialog`, `alert-dialog`, `sheet`, `badge`, `card`, `switch`, `select`, `combobox`, `dropdown-menu`, `tooltip`, `skeleton`, `toast`.
   - The shadcn CLI adds a stray `cn` package: revert `package.json`/`bun.lock` and import `cn` from `@/shared/lib/utils`.
   - `src/shared/` must never import from `src/modules/`.
-- **Booking tables** (`db/schema/bookingSchema.ts`): `booking` and `bookingEvent`; status-like columns are `text` with `oneOf` checks, `startsAt`/`endsAt` are timestamptz, and `createdAt`/`occurredAt` are plain `timestamp` like the rest. The `restrict` FK to `service` still lets an org's cascade remove its bookings (`bookings/tests/schema.test.ts`).
-- **Shared booking types** (`Sinwy.Shared/types/booking/`): `BOOKING_STATUSES`, `ACTIVE_BOOKING_STATUSES`, `BOOKING_TRANSITIONS`, `canTransition(from, to, actor, startsAt, now?)` with actors `organization` | `customer` (the start instant counts as started), `BookingDto`, `CustomerBookingDto`, `BookingEventDto`, `BOOKING_LIMITS`, and `bookingContactSchema` (name + email or phone), `internalNoteSchema`, `customerNoteSchema`, `cancellationReasonSchema`. Event actor types (`member` | `customer` | `system`) differ from transition actors.
+- **Booking tables** (`db/schema/bookingSchema.ts`): `booking` and `bookingEvent`. `booking.bookedBy` (`customer` | `organization`) is what makes a booking manual, not `customerUserId`, which a deleted account nulls; `createBooking` derives it from the actor. Status-like columns are `text` with `oneOf` checks, `startsAt`/`endsAt` are timestamptz, and `createdAt`/`occurredAt` are plain `timestamp` like the rest. The `restrict` FK to `service` still lets an org's cascade remove its bookings (`bookings/tests/schema.test.ts`).
+- **Shared booking types** (`Sinwy.Shared/types/booking/`): `BOOKING_STATUSES`, `ACTIVE_BOOKING_STATUSES`, `BOOKING_TRANSITIONS`, `BOOKING_PARTIES` (`bookedBy`, `cancelledBy`), `canTransition(from, to, actor, startsAt, now?)` with actors `organization` | `customer` (the start instant counts as started), `BookingDto`, `CustomerBookingDto`, `BookingEventDto`, `BOOKING_LIMITS`, and `bookingContactSchema` (name + email or phone), `internalNoteSchema`, `customerNoteSchema`, `cancellationReasonSchema`. Event actor types (`member` | `customer` | `system`) differ from transition actors.
 - **`Sinwy.Shared` has no test runner** (its tsconfig has `types: []`); tests of shared logic live in the backend (`bookings/tests/transitions.test.ts`) or web.
 - **`bookable-org`** is in `Europe/Vilnius`; its output adds `timezone`, `hours` and `services` (ids, prices, `requiresApproval`) to `organization`.
-- **The backend dev server doesn't watch files.** Restart it after backend changes before a browser Verify, with its output in a log file; ask the user before stopping a server you didn't start.
+- **The backend dev server doesn't watch files.** Restart it after backend changes before a browser Verify, with its output in a log file (`bun run start:server`, :3001; vite is `bun run start:web`, :3000). The auto-mode classifier blocks killing a server without the user's approval, so ask first.
 - **Bookings API (Phase 3):** `GET|POST organizationPath("bookings")`, `GET bookings/times?serviceId&from&to&excludeBookingId`, `GET bookings/calendar` (returns `BookingDto[]`, no timezone) and `GET bookings/:bookingId` (`BookingDetailDto` with `history`). Filters are repeatable `serviceId` and `status`; no `status` means everything but cancelled, and a list without `from`/`to` starts today in the org zone. Schemas: `manualBookingSchema`, `bookingListQuerySchema`, `bookingCalendarQuerySchema` in `@sinwy/shared`.
 - **One way in:** `createBooking(input)` in `bookings/service.ts` (`BookableService`, `startsAt`, contact, notes, status, actor) returns `Result<BookingDto>` with `time-taken` → 409 `BOOKING_TIME_TAKEN`, and dispatches its emails. Its transaction is `insertBookingIfFree` in the repository; `upcomingLimit` turns on the per-customer cap (`limit-reached` → 409 `BOOKING_LIMIT_REACHED` 40921), checked before the overlap. Next free error code: 40923.
 - **Booking writes (Phase 4):** every change goes through `changeBooking(scope, bookingId, decide, { lockOrganization? })` in the repository. The scope is `{ organizationId }` or `{ customerUserId }`, and only an organization scope can take the organization lock. It takes the row lock, then `decide` returns `values`, `event` and an optional `window` to check. The service's `committed()` dispatches its events after commit. Status changes go through `changeBookingStatus` (staff) and `cancelCustomerBooking`, which share `statusChange()`.
@@ -171,7 +171,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Forms over shared nullish schemas:** a text field can't take `customerPhoneSchema` directly (its input allows null); pipe it through `fromText` from `src/shared/lib/text-schema.ts`. A cross-field `.refine` takes `when: () => true` so its error shows next to field errors (`lib/booking-forms.ts`).
 - **Dependencies:** `bun add` re-resolves the lockfile and bumps TanStack packages, leaving two `query-core` versions that break `router.tsx` types. Add the dependency to `package.json` and the workspace block of `bun.lock` by hand, then `bun install --frozen-lockfile`. After new deps, vite's first page load gives 504 "Outdated Optimize Dep"; a reload clears it.
 - **Vite reads `src/routes.ts` only at startup**: restart it after changing mounts, or a route-file edit regenerates the tree from the old config.
-- **Running servers:** the backend runs on :3001 (`bun run start:server`, log `/tmp/sinwy-backend.log`, last restarted in Phase 12 with the user's OK) and vite on :3000 (`bun run start:web`, log `/tmp/sinwy-web.log`). Check that they're up before relying on them. The auto-mode classifier blocks killing them without the user's approval, so ask first. Phase 13 stops them.
 - **Web bookings page (Phase 6):**
   - `org-dashboard/lib/booking-queries.ts` keys start `["bookings", organizationId]` (`bookingKeys.all`); invalidate that prefix after writes. List and calendar queries use `keepPreviousData`.
   - `src/shared/components/booking/BookingStatusBadge.tsx` (moved there in Phase 10) exports `BOOKING_STATUS_LABELS`, `BOOKING_STATUS_STYLES` and `isExpiredRequest`. The badge already reads "Expired request" for a past `pending`.
@@ -180,7 +179,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - `booking-queries.ts` has `bookingQuery` (detail), `bookingTimesQuery` (one local date, optional `excludeBookingId`), the writes (`createManualBooking`, `updateBooking`, `changeBookingStatus(org, id, to, body?)`, `rescheduleBooking`) and `invalidateBookings(queryClient, organizationId)`, which invalidates `bookingKeys.all`. Key new booking queries under `bookingKeys.all` so every write refreshes them.
   - `lib/booking-actions.ts`: `statusActions(booking, now?)` (labels and targets from `canTransition`) and `canReschedule`. `components/bookings/BookingActions.tsx` renders them, with a private `CancelDialog` (reason).
   - `lib/booking-forms.ts`: `bookingTimeSchema(timezone)` (picked time or typed wall time → ISO), `contactFormSchema`, `manualBookingFormSchema`. `BookingTimeField` is the picker plus the Custom time switch. Wall time → instant is `instantOfWallTime(date, "HH:mm", timezone)` in `lib/calendar.ts`.
-- **`booking_event.payload` is stored double-encoded** (a jsonb string) when it has content: the `bun-sql` driver encodes it twice. The app reads it back fine, but `payload->>'startsAt'` is null in SQL. Fix it before any SQL reads the payload (Phase 13 at the latest), and migrate existing rows then (log Phase 7).
 - **e2e quirks:** `page.ts` lists Base UI toasts as `Dialog:`. Option names overlap ("2 hours" matches "12 hours"), so role locators need `exact: true`.
 - **TanStack search schemas:** a Zod key whose input type is `unknown` (e.g. `z.preprocess`) makes `search` required on every `Link` to the route. Keep each key's input optional (`.optional()` before `.transform`/`.catch`).
 - **Browser zone in e2e:** `playwright-cli open --config <copy of .playwright/cli.config.json>` with `contextOptions.timezoneId` added. Don't edit the real config.
@@ -196,47 +194,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Backend: `registerAccountBookingRoutes` in `bookings/routes.ts` (`/api/account/bookings`, `/:bookingId` and `/:bookingId/cancel`, all `requireAuth`) is wired in `Sinwy.Backend/index.ts`. The service has `listCustomerBookings`, `getCustomerBooking` and `cancelCustomerBooking`, which returns 409 with no code when the org is scheduled for deletion.
   - DTO mapping is `toCustomerBookingDto(row)` over `findCustomerBooking(s)` in the repository, which join `organization` + `organization_profile` (`customerBookingFields`). `createSelfBooking` now reloads through it too.
   - "Upcoming" is `upcomingFor(now)` in the repository (`pending`/`confirmed` and `endsAt > now`, so in-progress bookings count). The web mirror is `isUpcoming` in `account-dashboard/lib/customer-booking.ts`.
-  - The timeline DTO is `CustomerBookingEventDto` (`actor`: `customer` | `organization` | `system`, plus `moved: { from, to }`). Contact events are dropped.
-  - Web: `account-dashboard/lib/booking-queries.ts` keys start `["account-bookings"]` (`accountBookingKeys.all`), and `invalidateAccountBookings` invalidates that prefix. `customer-booking.ts` has `cancelPolicyOf`, `windowPassedMessage` and `statusLineOf`. Reusable components: `components/bookings/AddToCalendarButton.tsx` (`downloadBookingIcs` in `lib/ics.ts`) and `CustomerBookingList.tsx`. See log Phase 10.
+  - The timeline DTO is `CustomerBookingEventDto` (`actor`: `customer` | `organization` | `system`, plus `moved: { from, to }`). Contact events are dropped. Only an `organization` cancel of a `pending` request reads "Declined" (`statusLineOf`, `timelineLabelOf`, and `dispatch.ts` for email).
+  - Web: `account-dashboard/lib/booking-queries.ts` keys start `["account-bookings"]` (`accountBookingKeys.all`), and `invalidateAccountBookings` invalidates that prefix. `customer-booking.ts` has `cancelPolicyOf`, `windowPassedMessage`, `statusLineOf` and `timelineLabelOf`. Reusable components: `components/bookings/AddToCalendarButton.tsx` (`downloadBookingIcs` in `lib/ics.ts`) and `CustomerBookingList.tsx`. See log Phase 10.
 - **Account overview (Phase 11):** `GET /api/account/bookings/summary` (`getCustomerBookingSummary`, `CustomerBookingSummaryDto` = `next` + `rebook`) and `accountBookingSummaryQuery` under `accountBookingKeys.all`. The `account.test.ts` harness has `selfBook(startsAt, { serviceId, organizationId, by, status, windowMinutes })` and `addService(name, organizationId?)` (a direct insert, so any org can have services).
 - **The fall-back hour** of a DST-end day offers only the first pass of the repeated hour. Fine for the MVP.
-
----
-
-## Phase 13: Code review
-
-**Goal:** The bookings work is reviewed for races, authorization leaks, timezone bugs and lifecycle gaps, and the findings are fixed.
-
-**Files:** Everything changed in Phases 1–12 (`git diff master...HEAD --stat`). Starting points for the known findings (log Phase 12):
-- "Manual booking" is `customerUserId === null` in `updateBookingDetails` (`contact-locked`, `bookings/service.ts`), `org-dashboard/components/bookings/ContactCard.tsx:38` and `routes/_shell.bookings.$id.tsx:141`; a deleted customer's booking now matches it too.
-- `account-dashboard/lib/customer-booking.ts:69` calls every org cancel of a `pending` booking "Declined", including the system closing cancel.
-- `account-dashboard/components/settings/DangerZone.tsx` (no line for the user's own upcoming bookings) and `organizations/purge.ts` `scheduleOwnerless` (cancels nothing).
-- The `booking_event.payload` double encoding (`Sinwy.Backend/db/index.ts`), and `goodbye.tsx`'s Base UI `nativeButton` console error.
-
-**Steps:**
-- **Races:** every path that creates or moves a booking takes the org advisory lock before reading overlaps. Status changes lock the row.
-- **Authorization:** each route's middleware matches its permission; customer endpoints filter on the session user; public endpoints never return `internalNote`, other customers' data or inactive orgs; another org's ids are 404.
-- **Time:** every conversion between a local date and an instant goes through the org zone, nothing uses the browser zone for booking times, and the DST tests exist for the calendar and overview.
-- **Lifecycle:** emails dispatch only after commit; org deletion emails go out before the cascade; no booking is left `pending`/`confirmed` at a scheduled org.
-  - A booking from a since-deleted account must not count as manual. Telling them apart needs a stored source, since `customerUserId` is nulled. Ask before changing the "Detail page edits" decision.
-  - The closing cancel shouldn't read "Declined" to the customer. Decide whether a customer's deletion dialog should name their own upcoming bookings.
-- **Cancellation window:** the server and the web both use `customerCanCancel`; only customer-started cancels check it.
-- **Docs:** `org-rules-map.md` and `user-flow-map.md` match the code; prune this plan's standing notes; move the finished phases to the log.
-- **Final step:** stop every dev server started during the plan's work unless the user asked to keep it running, and delete temporary files and artifacts from the plan's work (probe scripts, screenshots, browser console logs, scratch data).
-
-**Tests that matter:**
-- Any gap found gets a test before its fix.
-
-**Done when:**
-- The review findings are fixed or written down as known gaps in `org-rules-map.md` §14, and `bun run verify` passes.
-
-**Verify:** Seed `bookable-org` and two `user` customers, then run the main path end to end:
-1. Storefront booking of each kind (auto-confirmed and approval).
-2. Approve on the overview.
-3. Manual walk-in booking with a custom time.
-4. Reschedule.
-5. Complete, then no-show.
-6. Customer cancel from Customer Mode, outside and then inside a cancellation window.
-7. Owner account deletion.
-
-Check the DB rows and the outbox at each step, as in Phases 5–12. Emails go to the local outbox; Polar uses the seeded subscription.

@@ -493,6 +493,17 @@ export const findNotStartedBookings = (owner: BookingOwner, now: Date) =>
 		.where(notStartedOf(owner, now))
 		.orderBy(asc(booking.startsAt), asc(booking.id));
 
+export const countNotStartedCustomerBookings = async (
+	customerUserId: string,
+	now: Date,
+) => {
+	const [row] = await db
+		.select({ total: count() })
+		.from(booking)
+		.where(notStartedOf({ customerUserId }, now));
+	return row?.total ?? 0;
+};
+
 export const countNotStartedBookings = (organizationIds: string[], now: Date) =>
 	db
 		.select({ organizationId: booking.organizationId, count: count() })

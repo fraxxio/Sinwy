@@ -4,7 +4,10 @@ import {
 	keyFromFileUrl,
 	storageClient,
 } from "@backend/infrastructure/storage";
-import { countUpcomingOrganizationBookings } from "@bookingsModule";
+import {
+	countUpcomingCustomerBookings,
+	countUpcomingOrganizationBookings,
+} from "@bookingsModule";
 import {
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
@@ -80,13 +83,15 @@ export const getAccountDeletionPreview = async (
 	userId: string,
 ): Promise<AccountDeletionPreviewDto> => {
 	const orgs = await listSoleOwnedOrganizations(userId);
-	const upcoming = await countUpcomingOrganizationBookings(
-		orgs.map((org) => org.id),
-	);
+	const [upcoming, ownUpcoming] = await Promise.all([
+		countUpcomingOrganizationBookings(orgs.map((org) => org.id)),
+		countUpcomingCustomerBookings(userId),
+	]);
 	return {
 		soleOwnedOrganizations: orgs.map((org) => ({
 			...org,
 			upcomingBookings: upcoming.get(org.id) ?? 0,
 		})),
+		upcomingBookings: ownUpcoming,
 	};
 };

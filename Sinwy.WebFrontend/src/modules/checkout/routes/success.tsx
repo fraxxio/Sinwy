@@ -344,7 +344,11 @@ function FailedState({
 
 function HomeButton({ primary = false }: { primary?: boolean }) {
 	return (
-		<Button variant={primary ? "outline" : "ghost"} render={<Link to="/" />}>
+		<Button
+			variant={primary ? "outline" : "ghost"}
+			nativeButton={false}
+			render={<Link to="/" />}
+		>
 			Back to home
 		</Button>
 	);

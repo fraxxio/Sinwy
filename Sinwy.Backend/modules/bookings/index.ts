@@ -6,6 +6,7 @@ export {
 } from "./routes";
 export {
 	cancelUpcomingOrganizationBookings,
+	countUpcomingCustomerBookings,
 	countUpcomingOrganizationBookings,
 	createBooking,
 	handleCustomerAccountDeleted,

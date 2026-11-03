@@ -1,11 +1,12 @@
+import { jsonb } from "@db/jsonb";
 import { oneOf } from "@db/oneOf";
 import { organization } from "@db/schema/organizationSchema";
 import { service } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
 import {
-	BOOKING_CANCELLERS,
 	BOOKING_EVENT_ACTOR_TYPES,
 	BOOKING_EVENT_TYPES,
+	BOOKING_PARTIES,
 	BOOKING_STATUSES,
 } from "@sinwy/shared";
 import { sql } from "drizzle-orm";
@@ -14,7 +15,6 @@ import {
 	check,
 	index,
 	integer,
-	jsonb,
 	pgTable,
 	text,
 	timestamp,
@@ -30,6 +30,7 @@ export const booking = pgTable(
 		serviceId: text("service_id")
 			.notNull()
 			.references(() => service.id, { onDelete: "restrict" }),
+		bookedBy: text("booked_by").notNull(),
 		// null for manual bookings, and once the customer deletes their account
 		customerUserId: text("customer_user_id").references(() => user.id, {
 			onDelete: "set null",
@@ -65,10 +66,8 @@ export const booking = pgTable(
 			table.startsAt,
 		),
 		check("booking_status_check", oneOf("status", BOOKING_STATUSES)),
-		check(
-			"booking_cancelled_by_check",
-			oneOf("cancelled_by", BOOKING_CANCELLERS),
-		),
+		check("booking_booked_by_check", oneOf("booked_by", BOOKING_PARTIES)),
+		check("booking_cancelled_by_check", oneOf("cancelled_by", BOOKING_PARTIES)),
 		check(
 			"booking_cancelled_check",
 			sql`(${table.cancelledBy} IS NOT NULL) = (${table.status} = 'cancelled')`,
@@ -106,10 +105,7 @@ export const bookingEvent = pgTable(
 			onDelete: "set null",
 		}),
 		// old and new times, or the changed field names
-		payload: jsonb("payload")
-			.$type<Record<string, unknown>>()
-			.notNull()
-			.default({}),
+		payload: jsonb<Record<string, unknown>>("payload").notNull().default({}),
 		occurredAt: timestamp("occurred_at").notNull().defaultNow(),
 	},
 	(table) => [

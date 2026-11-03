@@ -60,5 +60,6 @@ test("lists only organizations the user owns", async () => {
 		soleOwnedOrganizations: [
 			{ id: solo, name: "Solo Co", status: "inactive", upcomingBookings: 0 },
 		],
+		upcomingBookings: 0,
 	});
 });

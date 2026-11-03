@@ -441,10 +441,12 @@ Deleting an organization (owner only; API only, no screen yet)
 │      emailed; then every booking goes with the organization
 └─ inactive or a draft → refused, "organization inactive"
 
-Bookings when an organization closes (deleted at once, or scheduled)
+Bookings when an organization closes (deleted at once, or scheduled by the
+owner's account deletion or the purge repair)
 → pending and confirmed bookings that haven't started → cancelled by the
   organization, reason "The business closed its Sinwy account", by the
-  system; the customer is emailed, cancellation window or not
+  system; the customer is emailed, cancellation window or not; a request
+  cancelled this way reads "Cancelled", not "Declined", in Customer Mode
 → started and past bookings are left as they are until the purge deletes them
 
 Owner account deletion (confirmed from an emailed link, D13)
@@ -464,11 +466,13 @@ untouched; their memberships and the offers to them go with them.
 
 Any user's account deletion, as a customer (one function, so regional rules
 can change it later)
+→ the deletion dialog says how many of their own bookings will be cancelled
 → their pending and confirmed bookings that haven't started → cancelled by the
   customer, cancellation window or not; each organization's owner and admins
   are emailed, the customer isn't
 → every booking keeps its contact snapshot (name, email, phone); the link to
-  the account is cleared
+  the account is cleared, but it stays a self-booking (`bookedBy`), so staff
+  still can't edit its contact
 
 Retention (30 days)
 ├─ hidden from everyone: no opening, reads, writes, invitations or transfers
@@ -480,7 +484,8 @@ Purge (hourly)
 → organizations without an owner, scheduled 30 days ago or more → deleted with
   their data and logo
 → repairs first, skipping anything under an hour old:
-   ├─ without an owner but never scheduled → scheduled now
+   ├─ without an owner but never scheduled → scheduled now, and its upcoming
+   │  bookings cancelled as above (wired in `Sinwy.Backend/jobs.ts`)
    └─ scheduled but still has an owner (the account deletion failed) →
       unscheduled; it comes back inactive, without its slot
 → drafts and inactive organizations with an owner are never purged (Default 5)
@@ -495,7 +500,8 @@ Enforced in: `Sinwy.Backend/modules/auth/` (`auth.ts` user deletion and
 organization hooks, `activeOrganization.ts`), `modules/organizations/`
 (`repository.ts`, `purge.ts`), `modules/billing/service.ts` (revocation),
 `modules/transfers/`, `modules/bookings/service.ts`
-(`cancelUpcomingOrganizationBookings`, `handleCustomerAccountDeleted`).
+(`cancelUpcomingOrganizationBookings`, `handleCustomerAccountDeleted`),
+`Sinwy.Backend/jobs.ts` (the purge's booking hook).
 
 ## 12. Polar's part
 
@@ -610,9 +616,16 @@ Open, product or copy:
 - Booking retention: a deleted customer's bookings keep their name, email and
   phone until the organization deletes them or closes; there is no per-region
   rule or erasure request yet [11].
-- An organization scheduled by the purge repair (owner gone, never scheduled)
-  keeps its upcoming bookings `pending`/`confirmed`; only the account deletion
-  and the owner's own deletion cancel them [11].
+- A booking whose request passed the open-organization check just before the
+  organization closed can commit after the cancel sweep, so it stays
+  `confirmed` at a scheduled organization (or, on an immediate deletion,
+  goes with the cascade unannounced). The window is milliseconds. A fix:
+  refuse the insert under the organization lock when the organization is
+  scheduled, and take and release that lock before the sweep looks for
+  bookings [11].
+- Customer Mode keeps offering "Book again" and the organization's phone and
+  email on bookings at an organization scheduled for deletion; "Book again"
+  then opens "This booking page isn't available" [11].
 - A recipient with a pending downgrade can accept into a free slot; at the
   period end the transferred organization is the latest-activated, so it
   loses its slot and they are emailed (Default 9) [7, 10].

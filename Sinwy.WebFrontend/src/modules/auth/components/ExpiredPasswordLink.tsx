@@ -13,6 +13,7 @@ const ExpiredPasswordLink = () => {
 			</div>
 			<Button
 				className="mt-6 w-full"
+				nativeButton={false}
 				render={<Link to="/auth/forgot-password" />}
 			>
 				Request a new link

@@ -704,3 +704,73 @@ Polar revocation uses the seeded subscription as in the `e2e-test` skill; emails
     - The payloads are double-encoded (known).
     - A console error on `/auth/goodbye` (Base UI `nativeButton` in `goodbye.tsx`).
   - Not checked: a real Resend send, and a real Polar revoke together with the cancels.
+
+## Phase 13: Code review
+
+**Goal:** The bookings work is reviewed for races, authorization leaks, timezone bugs and lifecycle gaps, and the findings are fixed.
+
+**Files:** Everything changed in Phases 1–12 (`git diff master...HEAD --stat`). Starting points for the known findings (log Phase 12):
+- "Manual booking" is `customerUserId === null` in `updateBookingDetails` (`contact-locked`, `bookings/service.ts`), `org-dashboard/components/bookings/ContactCard.tsx:38` and `routes/_shell.bookings.$id.tsx:141`; a deleted customer's booking now matches it too.
+- `account-dashboard/lib/customer-booking.ts:69` calls every org cancel of a `pending` booking "Declined", including the system closing cancel.
+- `account-dashboard/components/settings/DangerZone.tsx` (no line for the user's own upcoming bookings) and `organizations/purge.ts` `scheduleOwnerless` (cancels nothing).
+- The `booking_event.payload` double encoding (`Sinwy.Backend/db/index.ts`), and `goodbye.tsx`'s Base UI `nativeButton` console error.
+
+**Steps:**
+- **Races:** every path that creates or moves a booking takes the org advisory lock before reading overlaps. Status changes lock the row.
+- **Authorization:** each route's middleware matches its permission; customer endpoints filter on the session user; public endpoints never return `internalNote`, other customers' data or inactive orgs; another org's ids are 404.
+- **Time:** every conversion between a local date and an instant goes through the org zone, nothing uses the browser zone for booking times, and the DST tests exist for the calendar and overview.
+- **Lifecycle:** emails dispatch only after commit; org deletion emails go out before the cascade; no booking is left `pending`/`confirmed` at a scheduled org.
+  - A booking from a since-deleted account must not count as manual. Telling them apart needs a stored source, since `customerUserId` is nulled. Ask before changing the "Detail page edits" decision.
+  - The closing cancel shouldn't read "Declined" to the customer. Decide whether a customer's deletion dialog should name their own upcoming bookings.
+- **Cancellation window:** the server and the web both use `customerCanCancel`; only customer-started cancels check it.
+- **Docs:** `org-rules-map.md` and `user-flow-map.md` match the code; prune this plan's standing notes; move the finished phases to the log.
+- **Final step:** stop every dev server started during the plan's work unless the user asked to keep it running, and delete temporary files and artifacts from the plan's work (probe scripts, screenshots, browser console logs, scratch data).
+
+**Tests that matter:**
+- Any gap found gets a test before its fix.
+
+**Done when:**
+- The review findings are fixed or written down as known gaps in `org-rules-map.md` §14, and `bun run verify` passes.
+
+**Verify:** Seed `bookable-org` and two `user` customers, then run the main path end to end:
+1. Storefront booking of each kind (auto-confirmed and approval).
+2. Approve on the overview.
+3. Manual walk-in booking with a custom time.
+4. Reschedule.
+5. Complete, then no-show.
+6. Customer cancel from Customer Mode, outside and then inside a cancellation window.
+7. Owner account deletion.
+
+Check the DB rows and the outbox at each step, as in Phases 5–12. Emails go to the local outbox; Polar uses the seeded subscription.
+
+### Log (2026-11-03, `fix(backend, web): review the bookings MVP and store who made each booking`)
+- Shipped:
+  - **Stored booking source.** `booking.booked_by` (`customer` | `organization`, migration `0022_booked_by.sql` backfilled from each booking's `created` event) and `BookingDto.bookedBy`; `createBooking` derives it from the actor. `updateBookingDetails` (`contact-locked`), `ContactCard` and the detail page's customer note use it instead of `customerUserId === null`. A deleted customer's booking now stays locked and reads "From a customer account that has since been deleted". `BOOKING_CANCELLERS`/`BookingCanceller` became `BOOKING_PARTIES`/`BookingParty`. This keeps the "Detail page edits" decision as written, so nobody was asked.
+  - **Payload encoding.** `db/jsonb.ts` replaces Drizzle's `jsonb`: Drizzle stringifies the value and Bun SQL encodes that string as JSON again, while Bun encodes objects correctly by itself. The same migration unwrapped the existing string rows.
+  - **"Declined" only for a member's decline.** `statusLineOf` and the customer timeline (moved from `BookingTimeline.tsx` to `timelineLabelOf` in `customer-booking.ts`, so it can be tested) say "Cancelled" for a system cancel of a `pending` request. The email already did.
+  - **Purge repair cancels.** `purgeScheduledOrganizations(now, hooks)` and `createPurgeOrganizationsJob(hooks)` take an `onScheduled` hook. `Sinwy.Backend/jobs.ts` wires it to `cancelUpcomingOrganizationBookings` and is what `index.ts` and `scripts/purgeOrganizations.ts` run.
+  - **Customer deletion dialog.** `AccountDeletionPreviewDto.upcomingBookings` (`countUpcomingCustomerBookings`, the same not-started rule as `handleCustomerAccountDeleted`). `DangerZone` shows "Your upcoming booking will be cancelled, and the business will be told" (plural for several).
+  - **`nativeButton={false}`** on every `Button` that renders a `Link`: `goodbye.tsx`, `ExpiredPasswordLink`, `SentResetEmail`, checkout `success.tsx`, `AcceptTransferDialog`.
+  - **Test temp dirs.** `test/setup.ts` removes its `sinwy-storage-*`/`sinwy-emails-*` dirs in a preload `afterAll` (about 200 had piled up). `process.on("exit")` doesn't fire under `bun test`.
+  - **Docs.** `org-rules-map.md` §11 (purge repair, `bookedBy`, the deletion dialog) and §14 (the closing race and the Customer Mode "Book again" item; the purge-repair gap was removed). `user-flow-map.md` §11 and a new §12 for staff bookings.
+  - **Review found these sound:**
+    - Races: every create and reschedule takes the org advisory lock before the overlap read; status changes lock the row.
+    - Authorization: each route has its permission. Customer queries filter on the session user. Public DTOs carry no `internalNote` or other customers' data. Foreign ids are 404, and storefront times for archived or inactive services are empty or 404.
+    - Time: local dates convert through the org zone. The web's `parseISO(date)` formats only plain dates. DST tests exist for the calendar, overview, storefront and utils.
+    - Emails: they dispatch after commit, failures are logged, and an org deletion emails before the cascade. Customer cancels use `customerCanCancel` on both sides, and only customer cancels check the window.
+  - **Tests:** schema (payload is a JSON object, unknown `bookedBy`), changes (a deleted customer's booking stays `customer` and locked), lifecycle (the purge repair cancels; the customer's own count), deletion preview, web `customer-booking` (system cancel isn't "Declined" in the status line or the timeline).
+- Differs from plan:
+  - **Closing race left open.** A booking whose request passed the open-org check just before the org closed can commit after the cancel sweep. It is in `org-rules-map.md` §14 with a fix sketch: check the schedule under the org lock, and take and release the lock before the sweep. The window is milliseconds, and the fix isn't worth its complexity for the MVP.
+  - **Outside the bookings plan:** the `nativeButton` fix in four older files and the temp-dir cleanup were fixed because they are the same bugs.
+  - **Stale standing note:** it pointed to `services-mvp-plan.md`, which was deleted when this plan was added; the note is now gone.
+- Checked in the running app: the e2e subagent passed all 7 Verify steps. It used the `bookable-org` seed, two `user` seeds and a second `bookable-org` so the owner could hold a booking elsewhere.
+  - `booked_by` was `customer` on storefront bookings and `organization` on walk-ins. The Contact card read "From the customer's account" with no Edit, or "Added by your team" with Edit.
+  - The rescheduled event's payload was an `object` with `payload->>'startsAt'` set, and no `string` payloads were left (55 events).
+  - Inside a 24-hour window, a customer cancel got 409 40922 and the page showed the org's phone and email.
+  - The owner's deletion dialog listed "Seed …: 5 upcoming bookings will be cancelled" and the owner's own booking elsewhere. After deletion:
+    - all 5 bookings were cancelled by the organization with the closing reason and a `system` event, and the customers were emailed;
+    - the owner's own booking was cancelled as the customer (`accountDeleted`), and that org was told;
+    - B's closed request read "Cancelled by Seed …" and "Cancelled", never "Declined".
+  - `/auth/goodbye` had no console error. No page logged an error other than the expected 404 of the closed storefront, and the backend log was clean.
+  - Its copy nit about "the businesses" for a single booking was fixed afterwards and checked only by type check and Biome, not in the browser. Its "Book again at a closing org" item went to §14.
+  - Not checked: a real Resend send, and account deletion with a real Polar sandbox subscription.

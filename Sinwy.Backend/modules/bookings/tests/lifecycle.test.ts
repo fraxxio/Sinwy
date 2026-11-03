@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
 import { readOutboxEmails } from "@backend/infrastructure/email";
 import { polarClient } from "@backend/infrastructure/polar";
+import { purgeOrganizationsJob } from "@backend/jobs";
 import createApp from "@backend/lib/app";
 import {
 	activateOrganization,
@@ -14,13 +15,14 @@ import {
 import db from "@db";
 import { verification } from "@db/schema/authSchema";
 import { booking, bookingEvent } from "@db/schema/bookingSchema";
-import { organization } from "@db/schema/organizationSchema";
+import { member, organization } from "@db/schema/organizationSchema";
 import { service as serviceTable } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
 import { findBookableService } from "@servicesModule";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import {
+	countUpcomingCustomerBookings,
 	countUpcomingOrganizationBookings,
 	createBooking,
 	ORGANIZATION_CLOSED_REASON,
@@ -244,6 +246,29 @@ test("owner account deletion cancels the closing org's upcoming bookings, leaves
 	expect(toManual?.html).not.toContain("/account/bookings/");
 });
 
+test("the purge repair cancels the upcoming bookings of an ownerless org it schedules for deletion", async () => {
+	const email = freshEmail();
+	const upcoming = await book(hoursFromNow(24), { email });
+	await db.delete(member).where(eq(member.organizationId, orgId));
+	await db
+		.update(organization)
+		.set({ createdAt: hoursFromNow(-48) })
+		.where(eq(organization.id, orgId));
+
+	expect((await purgeOrganizationsJob.run()).scheduled).toBe(1);
+
+	expect(await rowOf(upcoming.id)).toMatchObject({
+		status: "cancelled",
+		cancelledBy: "organization",
+		cancellationReason: ORGANIZATION_CLOSED_REASON,
+	});
+	expect(
+		(await sentTo(email)).filter((e) =>
+			e.subject.startsWith("Booking cancelled:"),
+		),
+	).toHaveLength(1);
+});
+
 test("immediate org deletion emails the customers, then the cascade removes the bookings", async () => {
 	const email = freshEmail();
 	const upcoming = await book(hoursFromNow(24), { email });
@@ -326,4 +351,28 @@ test("the deletion count is the org's pending and confirmed bookings that haven'
 	const counts = await countUpcomingOrganizationBookings([orgId]);
 
 	expect([...counts]).toEqual([[orgId, 2]]);
+});
+
+test("the customer's deletion count is their own pending and confirmed bookings that haven't started", async () => {
+	await book(hoursFromNow(24));
+	await book(hoursFromNow(30), { status: "pending" });
+	await book(hoursFromNow(-3));
+	await book(hoursFromNow(36), {
+		by: null,
+		email: `${customer.userId}@test.dev`,
+	});
+	const otherOrgId = await addOrganization(
+		"Barber",
+		(await createUserWithSession()).userId,
+	);
+	const cancelled = await book(hoursFromNow(48), {
+		organizationId: otherOrgId,
+		serviceId: await addService(otherOrgId),
+	});
+	await db
+		.update(booking)
+		.set({ status: "cancelled", cancelledBy: "customer" })
+		.where(eq(booking.id, cancelled.id));
+
+	expect(await countUpcomingCustomerBookings(customer.userId)).toBe(2);
 });

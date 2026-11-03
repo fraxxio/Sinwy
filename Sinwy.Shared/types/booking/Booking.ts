@@ -1,7 +1,8 @@
 import type { BookingStatus } from "./BookingStatus";
 
-export const BOOKING_CANCELLERS = ["customer", "organization"] as const;
-export type BookingCanceller = (typeof BOOKING_CANCELLERS)[number];
+/** Who made a booking (`bookedBy`) and who cancelled it (`cancelledBy`). A manual booking is one the organization made. */
+export const BOOKING_PARTIES = ["customer", "organization"] as const;
+export type BookingParty = (typeof BOOKING_PARTIES)[number];
 
 export const BOOKING_EVENT_TYPES = [
 	"created",
@@ -42,6 +43,8 @@ export type BookingDto = {
 	id: string;
 	serviceId: string;
 	serviceName: string;
+	bookedBy: BookingParty;
+	/** Null on manual bookings, and once the customer deletes their account. */
 	customerUserId: string | null;
 	customerName: string;
 	customerEmail: string | null;
@@ -55,7 +58,7 @@ export type BookingDto = {
 	priceMinor: number;
 	currency: string;
 	status: BookingStatus;
-	cancelledBy: BookingCanceller | null;
+	cancelledBy: BookingParty | null;
 	cancellationReason: string | null;
 	customerNote: string | null;
 	internalNote: string | null;

@@ -169,6 +169,7 @@ Only the user's own bookings; a manual booking with the same email never shows.
 ```text
 Account → Settings → Delete account → dialog
 ├─ owned organizations listed, each with "N upcoming bookings will be cancelled"
+├─ the user's own upcoming bookings counted: "will be cancelled, and the businesses told"
 └─ type the email → link emailed → click it
     → plan revoked, owned orgs scheduled for deletion, their upcoming bookings
       cancelled and their customers emailed
@@ -177,3 +178,20 @@ Account → Settings → Delete account → dialog
 ```
 
 Rules: [org-rules-map.md](org-rules-map.md) §9 and §11.
+
+## 12. Bookings as staff
+
+```text
+/dashboard/<slug> → overview: today's bookings, booked this week, pending requests
+                    (Approve, Decline with a reason), occupancy, needs attention
+/dashboard/<slug>/bookings → Calendar (month, week, day) | List, in the org's zone
+├─ empty spot in week or day → New booking at that time
+├─ New booking → service, a free time or a custom start, name plus email or phone
+│   → confirmed; the customer emailed when there's an email
+└─ a booking → detail: actions by status (Confirm, Decline or Cancel, Complete,
+   No-show, Reschedule), contact (editable on manual bookings only), the
+   customer's note, internal note, history
+```
+
+Rules: [bookings-mvp-plan.md](bookings-mvp-plan.md) Decisions; lifecycle in
+[org-rules-map.md](org-rules-map.md) §9 and §11.

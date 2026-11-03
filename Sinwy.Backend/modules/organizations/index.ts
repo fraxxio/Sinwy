@@ -1,5 +1,5 @@
 export {
-	purgeOrganizationsJob,
+	createPurgeOrganizationsJob,
 	purgeScheduledOrganizations,
 } from "./purge";
 export { registerOrganizationRoutes } from "./routes";

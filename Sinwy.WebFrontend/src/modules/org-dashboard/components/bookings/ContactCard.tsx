@@ -35,14 +35,18 @@ export function ContactCard({
 	canWrite: boolean;
 }) {
 	const [editing, setEditing] = useState(false);
-	const fromAccount = booking.customerUserId !== null;
+	const fromAccount = booking.bookedBy === "customer";
 
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle>Customer</CardTitle>
 				<CardDescription>
-					{fromAccount ? "From the customer's account" : "Added by your team"}
+					{!fromAccount
+						? "Added by your team"
+						: booking.customerUserId
+							? "From the customer's account"
+							: "From a customer account that has since been deleted"}
 				</CardDescription>
 				{canWrite && !fromAccount && !editing && (
 					<CardAction>

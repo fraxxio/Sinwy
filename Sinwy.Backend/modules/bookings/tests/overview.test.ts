@@ -85,6 +85,7 @@ const addBooking = async (
 		id: crypto.randomUUID(),
 		organizationId: orgId,
 		serviceId,
+		bookedBy: "organization",
 		customerName: "Ona",
 		customerEmail: "ona@example.com",
 		startsAt: start,
