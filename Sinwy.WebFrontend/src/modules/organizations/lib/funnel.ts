@@ -24,7 +24,7 @@ export function activeOrganizationDestination(organization: {
 		} as const;
 
 	return {
-		to: "/$organizationSlug",
+		to: "/dashboard/$organizationSlug",
 		params: { organizationSlug: organization.slug },
 	} as const;
 }

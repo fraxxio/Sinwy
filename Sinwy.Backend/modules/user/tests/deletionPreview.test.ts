@@ -57,6 +57,9 @@ test("lists only organizations the user owns", async () => {
 	await joinOrganization(managed, userId, "admin");
 
 	expect(await getPreview(cookie)).toEqual({
-		soleOwnedOrganizations: [{ id: solo, name: "Solo Co", status: "inactive" }],
+		soleOwnedOrganizations: [
+			{ id: solo, name: "Solo Co", status: "inactive", upcomingBookings: 0 },
+		],
+		upcomingBookings: 0,
 	});
 });

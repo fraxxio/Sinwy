@@ -6,6 +6,7 @@ import {
 	DEFAULT_ORGANIZATION_INDUSTRY,
 	type OrganizationDto,
 	type OrganizationStatus,
+	type ServiceDto,
 } from "@sinwy/shared";
 import { assertLocalDev } from "../assertLocalDev";
 import { lastEmails } from "./lastEmail";
@@ -16,6 +17,7 @@ export const scenarios = [
 	"owner-with-org",
 	"subscribed-org",
 	"org-with-staff",
+	"bookable-org",
 ] as const;
 export type Scenario = (typeof scenarios)[number];
 
@@ -175,6 +177,58 @@ const completeOnboarding = async (
 	);
 };
 
+const BOOKABLE_TIMEZONE = "Europe/Vilnius";
+
+/** Mon–Sun 09:00–17:00, an auto-confirmed Haircut and a Colouring that needs approval. */
+const setUpBookings = async (
+	baseUrl: string | URL,
+	organizationId: string,
+	cookie: string,
+) => {
+	const path = (rest: string) => `/api/organizations/${organizationId}/${rest}`;
+	await callApp(baseUrl, "PUT", path("availability"), {
+		cookie,
+		body: {
+			timezone: BOOKABLE_TIMEZONE,
+			weekly: [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
+				weekday,
+				start: "09:00",
+				end: "17:00",
+			})),
+		},
+	});
+	const services = [];
+	for (const body of [
+		{ name: "Haircut", durationMinutes: 30, priceMinor: 2500 },
+		{
+			name: "Colouring",
+			durationMinutes: 90,
+			priceMinor: 8000,
+			requiresApproval: true,
+		},
+	]) {
+		const created = await callApp<ServiceDto>(
+			baseUrl,
+			"POST",
+			path("services"),
+			{ cookie, body },
+		);
+		services.push({
+			id: created.id,
+			name: created.name,
+			durationMinutes: created.durationMinutes,
+			priceMinor: created.priceMinor,
+			currency: created.currency,
+			requiresApproval: created.requiresApproval,
+		});
+	}
+	return {
+		timezone: BOOKABLE_TIMEZONE,
+		hours: "Mon–Sun 09:00–17:00",
+		services,
+	};
+};
+
 /**
  * Creates fresh users and an organization through the backend's HTTP API.
  * The owner's plan comes from a simulated Polar webhook, never a database
@@ -251,6 +305,11 @@ export const seedScenario = async ({
 		}
 	}
 
+	const bookings =
+		scenario === "bookable-org"
+			? await setUpBookings(baseUrl, org.id, owner.cookie)
+			: undefined;
+
 	return {
 		scenario,
 		password,
@@ -259,6 +318,7 @@ export const seedScenario = async ({
 			status: "active",
 			subscriptionId,
 			onboardingCompleted: true,
+			...bookings,
 		},
 		users,
 	};

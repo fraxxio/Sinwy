@@ -27,10 +27,12 @@ import {
 	countOwnedHeldSlots,
 	findDeletionScheduledAt,
 	findInvitationOrganizationId,
+	findManagerEmails,
 	findMemberOrganizations,
 	findMembershipAccess,
 	findOnboardingCompletedAt,
 	findOrganizationAccess,
+	findOrganizationBySlug,
 	findOrganizationLocale,
 	findOwnedOrganizationIds,
 	findProfile,
@@ -87,6 +89,27 @@ export const isOrganizationPublic = (access: OrganizationAccess) =>
 	access.slotHeldAt !== null &&
 	access.deletionScheduledAt === null &&
 	access.ownerPlan !== null;
+
+/** An organization whose booking page may be shown; null when the slug is unknown or it isn't active. */
+export const findPublicOrganization = async (slug: string) => {
+	const row = await findOrganizationBySlug(slug);
+	if (!row || !isOrganizationPublic(row)) return null;
+	return {
+		id: row.id,
+		name: row.name,
+		slug: row.slug,
+		timezone: row.timezone,
+		currency: row.currency,
+		tagline: row.tagline,
+		description: row.description,
+		city: row.city,
+		country: row.country,
+	};
+};
+
+export type PublicOrganization = NonNullable<
+	Awaited<ReturnType<typeof findPublicOrganization>>
+>;
 
 export const organizationStatusOf = (
 	access: OrganizationAccess,
@@ -271,6 +294,10 @@ export const getOrganizationLocale = (
 	organizationId: string,
 ): Promise<OrganizationLocale | null> => findOrganizationLocale(organizationId);
 
+/** Who hears about the organization's bookings: its owner and admins. */
+export const listOrganizationManagerEmails = (organizationId: string) =>
+	findManagerEmails(organizationId);
+
 /** Callers validate the zone (`isTimeZone`); pass `executor` to join their transaction. */
 export const setOrganizationTimezone = async (
 	organizationId: string,
@@ -307,17 +334,20 @@ export const completeOrganizationOnboarding = async (
 	return { ok: true, data: { completedAt: completedAt.toISOString() } };
 };
 
-export const getAccountDeletionPreview = async (
+type SoleOwnedOrganization = Omit<
+	AccountDeletionPreviewDto["soleOwnedOrganizations"][number],
+	"upcomingBookings"
+>;
+
+export const listSoleOwnedOrganizations = async (
 	userId: string,
-): Promise<AccountDeletionPreviewDto> => {
+): Promise<SoleOwnedOrganization[]> => {
 	const rows = await findSoleOwnedOrganizations(userId);
-	return {
-		soleOwnedOrganizations: rows.map((row) => ({
-			id: row.id,
-			name: row.name,
-			status: organizationStatusOf(row),
-		})),
-	};
+	return rows.map((row) => ({
+		id: row.id,
+		name: row.name,
+		status: organizationStatusOf(row),
+	}));
 };
 
 /** Post-login prompts: the oldest owned draft while there is no plan to pay for it. */
@@ -327,12 +357,9 @@ export const getUnpaidOwnedOrganizationId = findUnpaidOwnedOrganization;
 export const getUnfinishedOnboardingOrganizationId = async (userId: string) =>
 	findUnfinishedOnboardingOrganization(userId, await hasFreeSlot(userId));
 
-/** Takes every owned organization out of service for the retention period. */
+/** Takes every owned organization out of service for the retention period and returns their ids. */
 export const scheduleOwnedOrganizationsForDeletion = async (userId: string) => {
-	const orgs = await findSoleOwnedOrganizations(userId);
-	if (orgs.length === 0) return;
-	await scheduleOrganizationsForDeletion(
-		orgs.map((org) => org.id),
-		new Date(),
-	);
+	const ids = (await findSoleOwnedOrganizations(userId)).map((org) => org.id);
+	if (ids.length > 0) await scheduleOrganizationsForDeletion(ids, new Date());
+	return ids;
 };

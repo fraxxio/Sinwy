@@ -80,7 +80,7 @@ export function ServicesTable({
 					<TableRow key={service.id}>
 						<TableCell className="font-medium">
 							<Link
-								to="/$organizationSlug/services/$id"
+								to="/dashboard/$organizationSlug/services/$id"
 								params={{ organizationSlug, id: service.id }}
 								className="hover:underline"
 							>

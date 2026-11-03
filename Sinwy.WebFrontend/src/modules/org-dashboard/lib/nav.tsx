@@ -20,7 +20,7 @@ export const organizationNav = (organizationSlug: string): SidebarNavItem[] => {
 		{
 			title: "Overview",
 			icon: <LayoutDashboardIcon />,
-			link: linkOptions({ to: "/$organizationSlug", params }),
+			link: linkOptions({ to: "/dashboard/$organizationSlug", params }),
 			activeOptions: { exact: true },
 		},
 		{

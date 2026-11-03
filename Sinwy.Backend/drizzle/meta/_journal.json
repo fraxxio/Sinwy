@@ -141,6 +141,27 @@
       "when": 1793377026768,
       "tag": "0019_availability",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793634523148,
+      "tag": "0020_bookings",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793718523059,
+      "tag": "0021_cancellation_window",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793725104971,
+      "tag": "0022_booked_by",
+      "breakpoints": true
     }
   ]
 }

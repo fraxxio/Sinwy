@@ -1,0 +1,312 @@
+import { membershipFrom, sessionFrom } from "@authModule";
+import { fail, ok } from "@backend/lib/app/respond";
+import type { Handler, IReqContext } from "@backend/lib/app/types";
+import {
+	findPublicOrganization,
+	type PublicOrganization,
+} from "@organizationsModule";
+import {
+	API_ERROR_CODES,
+	BOOKING_LIMITS,
+	bookableTimesQuerySchema,
+	bookingCalendarQuerySchema,
+	bookingListQuerySchema,
+	bookingUpdateSchema,
+	cancelBookingSchema,
+	customerBookingListQuerySchema,
+	manualBookingSchema,
+	rescheduleBookingSchema,
+	selfBookingSchema,
+} from "@sinwy/shared";
+import type { z } from "zod";
+import {
+	cancelCustomerBooking,
+	changeBookingStatus,
+	createManualBooking,
+	createSelfBooking,
+	getBooking,
+	getCustomerBooking,
+	getCustomerBookingSummary,
+	getOverview,
+	getStorefront,
+	listBookings,
+	listBookingTimes,
+	listCalendarBookings,
+	listCustomerBookings,
+	listStorefrontTimes,
+	type Result,
+	rescheduleBooking,
+	type StaffStatusChange,
+	updateBookingDetails,
+} from "./service";
+import { bookingTimesQuery } from "./utils";
+
+type BookingError = Extract<Result<never>, { ok: false }>["error"];
+
+const respondError = (error: BookingError) => {
+	switch (error) {
+		case "inactive":
+			return fail(
+				"This organization doesn't have an active plan yet",
+				409,
+				API_ERROR_CODES.ORGANIZATION_INACTIVE,
+			);
+		case "service-unavailable":
+			return fail("This service isn't taking bookings", 409);
+		case "time-taken":
+			return fail(
+				"That time was just taken",
+				409,
+				API_ERROR_CODES.BOOKING_TIME_TAKEN,
+			);
+		case "not-bookable":
+			return fail(
+				"That time isn't available, pick another one",
+				409,
+				API_ERROR_CODES.BOOKING_TIME_TAKEN,
+			);
+		case "limit-reached":
+			return fail(
+				`You can have at most ${BOOKING_LIMITS.upcomingSelfBookings} upcoming bookings with this business`,
+				409,
+				API_ERROR_CODES.BOOKING_LIMIT_REACHED,
+			);
+		case "illegal-transition":
+			return fail(
+				"This booking can't change to that status now",
+				409,
+				API_ERROR_CODES.BOOKING_STATUS_CHANGE_NOT_ALLOWED,
+			);
+		case "not-reschedulable":
+			return fail("Only pending and confirmed bookings can be moved", 409);
+		case "contact-locked":
+			return fail(
+				"The contact of a booking made from an account can't be edited",
+				409,
+			);
+		case "window-passed":
+			return fail(
+				"It's too close to the start to cancel online; contact the business",
+				409,
+				API_ERROR_CODES.BOOKING_CANCELLATION_WINDOW_PASSED,
+			);
+		case "organization-closing":
+			return fail("This business is closing its Sinwy account", 409);
+		case "not-found":
+			return fail("Not found", 404);
+	}
+};
+
+const parseBody = async <T extends z.ZodType>(c: IReqContext, schema: T) => {
+	const body = schema.safeParse(await c.req.json().catch(() => null));
+	return body.success
+		? ({ ok: true, data: body.data } as const)
+		: ({
+				ok: false,
+				response: fail(body.error.issues[0]?.message ?? "Invalid body", 400),
+			} as const);
+};
+
+// filters repeat (`status=pending&status=confirmed`), so they're read as lists
+const parseQuery = <T extends z.ZodType>(c: IReqContext, schema: T) => {
+	const params = new URL(c.req.url).searchParams;
+	const query = schema.safeParse({
+		...Object.fromEntries(params),
+		serviceId: params.getAll("serviceId"),
+		status: params.getAll("status"),
+	});
+	return query.success
+		? ({ ok: true, data: query.data } as const)
+		: ({
+				ok: false,
+				response: fail(query.error.issues[0]?.message ?? "Invalid query", 400),
+			} as const);
+};
+
+const bookingIdOf = (c: IReqContext) =>
+	(c.req.params as { bookingId: string }).bookingId;
+
+export const createManualBookingHandler: Handler = async (c) => {
+	const body = await parseBody(c, manualBookingSchema);
+	if (!body.ok) return body.response;
+
+	const result = await createManualBooking(
+		membershipFrom(c),
+		sessionFrom(c).user.id,
+		body.data,
+	);
+	return result.ok
+		? ok(result.data, 201, "Booking created")
+		: respondError(result.error);
+};
+
+export const listBookingTimesHandler: Handler = async (c) => {
+	const params = new URL(c.req.url).searchParams;
+	const query = bookingTimesQuery.safeParse(Object.fromEntries(params));
+	if (!query.success)
+		return fail(query.error.issues[0]?.message ?? "Invalid query", 400);
+
+	const result = await listBookingTimes(membershipFrom(c), query.data);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const listBookingsHandler: Handler = async (c) => {
+	const query = parseQuery(c, bookingListQuerySchema);
+	if (!query.ok) return query.response;
+
+	const result = await listBookings(membershipFrom(c), query.data);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const listCalendarBookingsHandler: Handler = async (c) => {
+	const query = parseQuery(c, bookingCalendarQuerySchema);
+	if (!query.ok) return query.response;
+
+	const result = await listCalendarBookings(membershipFrom(c), query.data);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const getOverviewHandler: Handler = async (c) => {
+	const result = await getOverview(membershipFrom(c));
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const getBookingHandler: Handler = async (c) => {
+	const result = await getBooking(membershipFrom(c), bookingIdOf(c));
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+const statusHandler =
+	(to: Exclude<StaffStatusChange, "cancelled">): Handler =>
+	async (c) => {
+		const result = await changeBookingStatus(
+			membershipFrom(c),
+			sessionFrom(c).user.id,
+			bookingIdOf(c),
+			to,
+		);
+		return result.ok ? ok(result.data) : respondError(result.error);
+	};
+
+export const confirmBookingHandler = statusHandler("confirmed");
+export const completeBookingHandler = statusHandler("completed");
+export const markNoShowHandler = statusHandler("no_show");
+
+export const cancelBookingHandler: Handler = async (c) => {
+	const body = await parseBody(c, cancelBookingSchema);
+	if (!body.ok) return body.response;
+
+	const result = await changeBookingStatus(
+		membershipFrom(c),
+		sessionFrom(c).user.id,
+		bookingIdOf(c),
+		"cancelled",
+		body.data.reason,
+	);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const rescheduleBookingHandler: Handler = async (c) => {
+	const body = await parseBody(c, rescheduleBookingSchema);
+	if (!body.ok) return body.response;
+
+	const result = await rescheduleBooking(
+		membershipFrom(c),
+		sessionFrom(c).user.id,
+		bookingIdOf(c),
+		body.data,
+	);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const updateBookingHandler: Handler = async (c) => {
+	const body = await parseBody(c, bookingUpdateSchema);
+	if (!body.ok) return body.response;
+
+	const result = await updateBookingDetails(
+		membershipFrom(c),
+		sessionFrom(c).user.id,
+		bookingIdOf(c),
+		body.data,
+	);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+/** Serves the handler only for an organization whose booking page may be shown. */
+const storefront =
+	(
+		handler: (
+			c: IReqContext,
+			organization: PublicOrganization,
+		) => Promise<Response>,
+	): Handler =>
+	async (c) => {
+		const { slug } = c.req.params as { slug: string };
+		const organization = await findPublicOrganization(slug);
+		return organization
+			? handler(c, organization)
+			: fail("This booking page isn't available", 404);
+	};
+
+export const getStorefrontHandler = storefront(async (_c, organization) =>
+	ok(await getStorefront(organization)),
+);
+
+export const listStorefrontTimesHandler = storefront(
+	async (c, organization) => {
+		const params = new URL(c.req.url).searchParams;
+		const query = bookableTimesQuerySchema.safeParse(
+			Object.fromEntries(params),
+		);
+		if (!query.success)
+			return fail(query.error.issues[0]?.message ?? "Invalid query", 400);
+
+		const { serviceId } = c.req.params as { serviceId: string };
+		const result = await listStorefrontTimes(
+			organization,
+			serviceId,
+			query.data,
+		);
+		return result.ok ? ok(result.data) : respondError(result.error);
+	},
+);
+
+export const createSelfBookingHandler = storefront(async (c, organization) => {
+	const body = await parseBody(c, selfBookingSchema);
+	if (!body.ok) return body.response;
+
+	const { user } = sessionFrom(c);
+	const result = await createSelfBooking(organization, user, body.data);
+	return result.ok
+		? ok(result.data, 201, "Booking created")
+		: respondError(result.error);
+});
+
+export const listCustomerBookingsHandler: Handler = async (c) => {
+	const params = new URL(c.req.url).searchParams;
+	const query = customerBookingListQuerySchema.safeParse(
+		Object.fromEntries(params),
+	);
+	if (!query.success)
+		return fail(query.error.issues[0]?.message ?? "Invalid query", 400);
+	return ok(await listCustomerBookings(sessionFrom(c).user.id, query.data));
+};
+
+export const getCustomerBookingSummaryHandler: Handler = async (c) =>
+	ok(await getCustomerBookingSummary(sessionFrom(c).user.id));
+
+export const getCustomerBookingHandler: Handler = async (c) => {
+	const result = await getCustomerBooking(
+		sessionFrom(c).user.id,
+		bookingIdOf(c),
+	);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const cancelCustomerBookingHandler: Handler = async (c) => {
+	const result = await cancelCustomerBooking(
+		sessionFrom(c).user.id,
+		bookingIdOf(c),
+	);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};

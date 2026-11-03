@@ -28,16 +28,20 @@ const unscheduleOwned = async (now: Date) => {
 	return orgs.length;
 };
 
+export type PurgeHooks = {
+	/** Runs once the repair has scheduled ownerless organizations, as the account deletion would have. */
+	onScheduled?: (organizationIds: string[]) => Promise<unknown>;
+};
+
 /** Its owner is gone, but the account deletion never marked it. */
-const scheduleOwnerless = async (now: Date) => {
+const scheduleOwnerless = async (now: Date, hooks: PurgeHooks) => {
 	const orgs = await findOwnerlessUnscheduledOrganizations(
 		new Date(now.getTime() - IN_FLIGHT_MS),
 	);
 	if (orgs.length === 0) return 0;
-	await scheduleOrganizationsForDeletion(
-		orgs.map((org) => org.id),
-		now,
-	);
+	const ids = orgs.map((org) => org.id);
+	await scheduleOrganizationsForDeletion(ids, now);
+	await hooks.onScheduled?.(ids);
 	for (const { id } of orgs)
 		purgeLogger.warn("Scheduled the deletion of an org without an owner", {
 			organizationId: id,
@@ -76,16 +80,19 @@ const purgeExpired = async (now: Date) => {
  * deletion has run out, after repairing schedules a failed account deletion
  * left wrong. Safe to run again at any time.
  */
-export const purgeScheduledOrganizations = async (now = new Date()) => ({
+export const purgeScheduledOrganizations = async (
+	now = new Date(),
+	hooks: PurgeHooks = {},
+) => ({
 	unscheduled: await unscheduleOwned(now),
-	scheduled: await scheduleOwnerless(now),
+	scheduled: await scheduleOwnerless(now, hooks),
 	purged: await purgeExpired(now),
 });
 
-export const purgeOrganizationsJob: Job<
-	Awaited<ReturnType<typeof purgeScheduledOrganizations>>
-> = {
+export const createPurgeOrganizationsJob = (
+	hooks: PurgeHooks,
+): Job<Awaited<ReturnType<typeof purgeScheduledOrganizations>>> => ({
 	name: "purge-scheduled-organizations",
 	intervalMs: 60 * 60 * 1000,
-	run: () => purgeScheduledOrganizations(),
-};
+	run: () => purgeScheduledOrganizations(new Date(), hooks),
+});

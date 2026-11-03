@@ -42,6 +42,7 @@ function GoodbyePage() {
 				</div>
 				<Button
 					className="mt-6 w-full"
+					nativeButton={false}
 					render={<Link to="/account/settings" />}
 				>
 					Back to settings
@@ -60,7 +61,11 @@ function GoodbyePage() {
 					Thanks for using Sinwy. You're welcome back any time.
 				</p>
 			</div>
-			<Button className="mt-6 w-full" render={<Link to="/" />}>
+			<Button
+				className="mt-6 w-full"
+				nativeButton={false}
+				render={<Link to="/" />}
+			>
 				Go to the homepage
 			</Button>
 		</AuthLayout>

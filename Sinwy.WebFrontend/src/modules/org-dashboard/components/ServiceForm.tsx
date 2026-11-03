@@ -4,6 +4,7 @@ import { ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
 import {
 	BUFFER_OPTIONS,
+	CANCELLATION_WINDOW_OPTIONS,
 	DURATION_OPTIONS,
 	type ServiceFormValues,
 	serviceFormSchema,
@@ -18,6 +19,7 @@ import {
 	CollapsibleTrigger,
 } from "#/shared/components/ui/collapsible";
 import { FieldError } from "#/shared/components/ui/field";
+import { Switch } from "#/shared/components/ui/switch";
 import { useAppForm } from "#/shared/lib/form";
 
 /** `onSubmit` resolves with an error message to show, or null when it worked. */
@@ -110,6 +112,38 @@ export function ServiceForm({
 								)}
 							</form.AppField>
 						</div>
+					</SettingsSection>
+
+					<SettingsSection
+						id="bookings"
+						title="Bookings"
+						description="How bookings customers make themselves start out, and how late they can cancel."
+					>
+						<form.Field name="requiresApproval">
+							{(field) => (
+								<div className="flex items-center gap-3">
+									<Switch
+										id="requires-approval"
+										checked={field.state.value}
+										onCheckedChange={(checked) => field.handleChange(checked)}
+										disabled={readOnly}
+									/>
+									<label htmlFor="requires-approval" className="text-sm">
+										Approve each booking before it's confirmed
+									</label>
+								</div>
+							)}
+						</form.Field>
+						<form.AppField name="cancellationWindowMinutes">
+							{(field) => (
+								<field.SelectField
+									label="Cancellation window"
+									options={CANCELLATION_WINDOW_OPTIONS}
+									description="Customers can't cancel online during this time before the start."
+									disabled={readOnly}
+								/>
+							)}
+						</form.AppField>
 					</SettingsSection>
 
 					<SettingsSection

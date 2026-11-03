@@ -1,4 +1,5 @@
-import { mkdtempSync } from "node:fs";
+import { afterAll } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SQL } from "bun";
@@ -11,6 +12,14 @@ process.env["STORAGE_LOCAL_DIR"] = mkdtempSync(
 	join(tmpdir(), "sinwy-storage-"),
 );
 process.env["EMAIL_OUTBOX_DIR"] = mkdtempSync(join(tmpdir(), "sinwy-emails-"));
+// registered in the preload, so it runs once, after all test files
+afterAll(() => {
+	for (const dir of [
+		process.env["STORAGE_LOCAL_DIR"],
+		process.env["EMAIL_OUTBOX_DIR"],
+	])
+		if (dir) rmSync(dir, { recursive: true, force: true });
+});
 
 // dotenv never overrides already-set vars, so POSTGRES_DB stays "sinwy_test"
 config({ path: join(import.meta.dir, "../.env") });

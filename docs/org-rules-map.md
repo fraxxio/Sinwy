@@ -33,6 +33,12 @@ Organization states [3]
 ├─ Suspended  holds a slot; the owner paused their plan [8]
 ├─ Lapsed     holds a slot; the owner's plan ended [8]
 └─ Scheduled for deletion   its owner deleted their account; purged after 30 days [11]
+
+Pages
+├─ Dashboard     /dashboard/<slug>/…, for members of an active organization [9]
+└─ Booking page  /<slug>, which opens /<slug>/book: the public storefront;
+                 root slugs belong to it, so slugs like dashboard, book, s and
+                 app are reserved
 ```
 
 Past due is not an organization state: the plan still grants access while
@@ -345,16 +351,26 @@ Members' requests to an inactive organization
 │  times answered, writes refused, "organization inactive"
 ├─ managing it (rename, delete, invite, cancel invitations, remove members,
 │  change roles) → refused, "organization inactive"
+├─ bookings: kept and readable; every staff write (create, status change,
+│  reschedule, edit) → refused, "organization inactive"
 ├─ paid features → refused, "upgrade required"
 └─ leaving → allowed
 
+Its customers
+├─ the booking page shows "This booking page isn't available"; no new bookings
+├─ they still see their bookings in Customer Mode and can cancel them within
+│  the cancellation window; the organization is emailed
+└─ scheduled for deletion: their upcoming bookings were already cancelled [11],
+   and cancelling is refused
+
 Public pages, booking pages and custom domains: only for an active organization.
-None are built yet; every new public route must follow this rule.
+Every new public route must follow this rule.
 ```
 
 Enforced in: `Sinwy.Backend/modules/auth/` (`activeOrganization.ts`,
 `requirePermission.ts`, `requireFeature.ts`),
-`modules/organizations/service.ts`, `modules/services/service.ts`; web
+`modules/organizations/service.ts`, `modules/services/service.ts`,
+`modules/bookings/service.ts`; web
 `src/shared/lib/organizations.ts`,
 `src/modules/auth/lib/post-login.ts`,
 `src/modules/org-dashboard/routes/_shell.tsx`,
@@ -421,7 +437,17 @@ Leaving and removal (API only; no screen yet)
 
 Deleting an organization (owner only; API only, no screen yet)
 ├─ active → deleted at once with its data; frees its slot; no billing change (Default 1)
+│   └─ first, its upcoming bookings are cancelled as below and the customers
+│      emailed; then every booking goes with the organization
 └─ inactive or a draft → refused, "organization inactive"
+
+Bookings when an organization closes (deleted at once, or scheduled by the
+owner's account deletion or the purge repair)
+→ pending and confirmed bookings that haven't started → cancelled by the
+  organization, reason "The business closed its Sinwy account", by the
+  system; the customer is emailed, cancellation window or not; a request
+  cancelled this way reads "Cancelled", not "Declined", in Customer Mode
+→ started and past bookings are left as they are until the purge deletes them
 
 Owner account deletion (confirmed from an emailed link, D13)
 → the dialog and the email say the plan ends at once with no refund and that
@@ -430,12 +456,23 @@ Owner account deletion (confirmed from an emailed link, D13)
 → the plan is revoked at once, also when paused or past due; no refund
    └─ Polar refuses → nothing changes; the goodbye page shows the error
 → every owned organization → Scheduled for deletion: its slot freed, pending
-  invitations and open transfers canceled, out of every open session
+  invitations and open transfers canceled, out of every open session; its
+  upcoming bookings are cancelled (above), and the dialog shows how many
 → the Polar customer, if the user ever had one, is anonymized; it keeps the
   deleted user's id as its external id, which no new user gets, so its late
   webhooks are ignored as an unknown user
 A member who isn't an owner deleting their account leaves the organizations
 untouched; their memberships and the offers to them go with them.
+
+Any user's account deletion, as a customer (one function, so regional rules
+can change it later)
+→ the deletion dialog says how many of their own bookings will be cancelled
+→ their pending and confirmed bookings that haven't started → cancelled by the
+  customer, cancellation window or not; each organization's owner and admins
+  are emailed, the customer isn't
+→ every booking keeps its contact snapshot (name, email, phone); the link to
+  the account is cleared, but it stays a self-booking (`bookedBy`), so staff
+  still can't edit its contact
 
 Retention (30 days)
 ├─ hidden from everyone: no opening, reads, writes, invitations or transfers
@@ -447,7 +484,8 @@ Purge (hourly)
 → organizations without an owner, scheduled 30 days ago or more → deleted with
   their data and logo
 → repairs first, skipping anything under an hour old:
-   ├─ without an owner but never scheduled → scheduled now
+   ├─ without an owner but never scheduled → scheduled now, and its upcoming
+   │  bookings cancelled as above (wired in `Sinwy.Backend/jobs.ts`)
    └─ scheduled but still has an owner (the account deletion failed) →
       unscheduled; it comes back inactive, without its slot
 → drafts and inactive organizations with an owner are never purged (Default 5)
@@ -461,7 +499,9 @@ or a lapsed organization without a plan and a free slot.
 Enforced in: `Sinwy.Backend/modules/auth/` (`auth.ts` user deletion and
 organization hooks, `activeOrganization.ts`), `modules/organizations/`
 (`repository.ts`, `purge.ts`), `modules/billing/service.ts` (revocation),
-`modules/transfers/`.
+`modules/transfers/`, `modules/bookings/service.ts`
+(`cancelUpcomingOrganizationBookings`, `handleCustomerAccountDeleted`),
+`Sinwy.Backend/jobs.ts` (the purge's booking hook).
 
 ## 12. Polar's part
 
@@ -573,6 +613,19 @@ Differs from decision:
 - Default 1: an owner can't delete an inactive organization or a draft [11].
 
 Open, product or copy:
+- Booking retention: a deleted customer's bookings keep their name, email and
+  phone until the organization deletes them or closes; there is no per-region
+  rule or erasure request yet [11].
+- A booking whose request passed the open-organization check just before the
+  organization closed can commit after the cancel sweep, so it stays
+  `confirmed` at a scheduled organization (or, on an immediate deletion,
+  goes with the cascade unannounced). The window is milliseconds. A fix:
+  refuse the insert under the organization lock when the organization is
+  scheduled, and take and release that lock before the sweep looks for
+  bookings [11].
+- Customer Mode keeps offering "Book again" and the organization's phone and
+  email on bookings at an organization scheduled for deletion; "Book again"
+  then opens "This booking page isn't available" [11].
 - A recipient with a pending downgrade can accept into a free slot; at the
   period end the transferred organization is the latest-activated, so it
   loses its slot and they are emailed (Default 9) [7, 10].

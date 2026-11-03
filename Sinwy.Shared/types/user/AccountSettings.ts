@@ -35,7 +35,11 @@ export type AccountDeletionPreviewDto = {
 		id: string;
 		name: string;
 		status: OrganizationStatus;
+		/** Pending and confirmed bookings that haven't started; deleting the account cancels them. */
+		upcomingBookings: number;
 	}[];
+	/** The user's own pending and confirmed bookings that haven't started; deleting the account cancels them. */
+	upcomingBookings: number;
 };
 
 export const setPasswordSchema = z.object({ newPassword: passwordSchema });

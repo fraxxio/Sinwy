@@ -5,4 +5,11 @@ export {
 	bookableTimes,
 } from "./bookableTimes";
 export { registerServiceRoutes } from "./routes";
-export { listBookableTimes } from "./service";
+export {
+	type BookableService,
+	findBookableService,
+	listBookableTimes,
+	listPublicServices,
+	openMinutes,
+} from "./service";
+export { todayIn } from "./utils";

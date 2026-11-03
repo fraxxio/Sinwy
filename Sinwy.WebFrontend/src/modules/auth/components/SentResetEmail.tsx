@@ -31,6 +31,7 @@ const SentResetEmail = ({ sentTo, serverError, cooldown, resend }: Props) => {
 			<Button
 				variant="outline"
 				className="mt-2 w-full"
+				nativeButton={false}
 				render={<Link to="/auth/login" />}
 			>
 				Back to sign in

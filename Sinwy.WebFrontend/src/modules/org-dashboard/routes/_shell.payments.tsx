@@ -5,7 +5,9 @@ import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { requirePermission } from "#/shared/lib/auth/protected-route";
 
-export const Route = createFileRoute("/$organizationSlug/_shell/payments")({
+export const Route = createFileRoute(
+	"/dashboard/$organizationSlug/_shell/payments",
+)({
 	beforeLoad: requirePermission(ORG_SECTIONS.payments.permission),
 	staticData: { crumb: "Payments" },
 	component: PaymentsPage,

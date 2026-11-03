@@ -145,7 +145,10 @@ export function AcceptTransferDialog({
 						Cancel
 					</DialogClose>
 					{path?.kind === "suspended" ? (
-						<Button render={<Link to="/account/billing" />}>
+						<Button
+							nativeButton={false}
+							render={<Link to="/account/billing" />}
+						>
 							Go to Billing
 						</Button>
 					) : (

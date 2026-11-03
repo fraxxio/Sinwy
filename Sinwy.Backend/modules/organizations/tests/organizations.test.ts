@@ -231,6 +231,9 @@ test("a name matching a top-level route → suffixed slug", async () => {
 	expect((await createOrg("Settings", cookie)).slug).toMatch(
 		/^settings-[a-z0-9]{6}$/,
 	);
+	expect((await createOrg("Dashboard", cookie)).slug).toMatch(
+		/^dashboard-[a-z0-9]{6}$/,
+	);
 });
 
 test("built-in organization.create endpoint → rejected", async () => {

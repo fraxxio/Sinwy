@@ -17,7 +17,7 @@ import { Skeleton } from "#/shared/components/ui/skeleton";
 import { toast } from "#/shared/components/ui/toast";
 
 export const Route = createFileRoute(
-	"/$organizationSlug/_shell/services/hours",
+	"/dashboard/$organizationSlug/_shell/services/hours",
 )({
 	staticData: { crumb: "Business hours" },
 	component: BusinessHoursPage,

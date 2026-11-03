@@ -35,6 +35,10 @@ export const service = pgTable(
 		bufferBeforeMinutes: integer("buffer_before_minutes").notNull().default(0),
 		bufferAfterMinutes: integer("buffer_after_minutes").notNull().default(0),
 		isActive: boolean("is_active").notNull().default(true),
+		requiresApproval: boolean("requires_approval").notNull().default(false),
+		cancellationWindowMinutes: integer("cancellation_window_minutes")
+			.notNull()
+			.default(0),
 		// archived rather than deleted, so bookings keep a service to point at
 		archivedAt: timestamp("archived_at"),
 		createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -55,6 +59,10 @@ export const service = pgTable(
 			sql`${table.bufferBeforeMinutes} BETWEEN 0 AND 240 AND ${table.bufferAfterMinutes} BETWEEN 0 AND 240`,
 		),
 		check("service_capacity_check", sql`${table.capacity} >= 1`),
+		check(
+			"service_cancellation_window_check",
+			sql`${table.cancellationWindowMinutes} >= 0`,
+		),
 	],
 );
 

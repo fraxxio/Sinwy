@@ -11,6 +11,7 @@
 		"@filesModule": "./modules/files",
 		"@transfersModule": "./modules/transfers",
 		"@servicesModule": "./modules/services",
+		"@bookingsModule": "./modules/bookings",
 		"@backend/*": "./*"
 	}
 }

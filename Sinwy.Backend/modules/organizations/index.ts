@@ -1,5 +1,5 @@
 export {
-	purgeOrganizationsJob,
+	createPurgeOrganizationsJob,
 	purgeScheduledOrganizations,
 } from "./purge";
 export { registerOrganizationRoutes } from "./routes";
@@ -8,7 +8,7 @@ export {
 	completeOrganizationOnboarding,
 	countHeldSlots,
 	createOrganization,
-	getAccountDeletionPreview,
+	findPublicOrganization,
 	getInvitationOrganizationId,
 	getMembershipAccess,
 	getOrganizationAccess,
@@ -20,12 +20,15 @@ export {
 	isOrganizationPublic,
 	isScheduledForDeletion,
 	isSuspended,
+	listOrganizationManagerEmails,
 	listOrganizations,
 	listOwnedOrganizationIds,
+	listSoleOwnedOrganizations,
 	type OrganizationLocale,
 	type OrganizationState,
 	organizationPlanOf,
 	organizationStatusOf,
+	type PublicOrganization,
 	saveOrganizationProfile,
 	scheduleOwnedOrganizationsForDeletion,
 	setOrganizationTimezone,

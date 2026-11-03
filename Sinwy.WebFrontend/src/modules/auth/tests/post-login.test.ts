@@ -34,7 +34,7 @@ const inactive = (id: string, overrides: Partial<OrganizationSummary> = {}) =>
 	org(id, { status: "inactive", plan: null, ...overrides });
 
 const dashboard = (id: string) => ({
-	to: "/$organizationSlug",
+	to: "/dashboard/$organizationSlug",
 	params: { organizationSlug: `slug-${id}` },
 });
 

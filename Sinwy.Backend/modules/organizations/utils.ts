@@ -8,7 +8,7 @@ import {
 } from "@sinwy/shared";
 import z from "zod";
 
-// The dashboard lives at /<slug>/*, so a slug matching a top-level path would
+// The storefront lives at /<slug>/*, so a slug matching a top-level path would
 // shadow it. Reserving eagerly is the cheap side: a slug already handed out
 // can't be taken back when we later want the route.
 export const reservedSlugs = new Set([
@@ -16,17 +16,21 @@ export const reservedSlugs = new Set([
 	"account",
 	"admin",
 	"api",
+	"app",
 	"auth",
 	"billing",
 	"blog",
+	"book",
 	"checkout",
 	"contact",
+	"dashboard",
 	"docs",
 	"help",
 	"login",
 	"organizations",
 	"pricing",
 	"privacy",
+	"s",
 	"settings",
 	"signup",
 	"support",

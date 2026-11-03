@@ -8,6 +8,7 @@ import {
 	type BookableTimesQuery,
 	type ClosureDto,
 	type ClosureInput,
+	type PublicServiceDto,
 	SERVICE_LIMITS,
 	type ServiceDto,
 } from "@sinwy/shared";
@@ -55,6 +56,8 @@ const toServiceDto = (row: ServiceRow): ServiceDto => ({
 	bufferBeforeMinutes: row.bufferBeforeMinutes,
 	bufferAfterMinutes: row.bufferAfterMinutes,
 	isActive: row.isActive,
+	requiresApproval: row.requiresApproval,
+	cancellationWindowMinutes: row.cancellationWindowMinutes,
 	createdAt: row.createdAt.toISOString(),
 	updatedAt: row.updatedAt.toISOString(),
 });
@@ -135,6 +138,8 @@ export const duplicateService = async (
 		capacity: source.capacity,
 		bufferBeforeMinutes: source.bufferBeforeMinutes,
 		bufferAfterMinutes: source.bufferAfterMinutes,
+		requiresApproval: source.requiresApproval,
+		cancellationWindowMinutes: source.cancellationWindowMinutes,
 		isActive: false,
 	});
 	return { ok: true, data: toServiceDto(row) };
@@ -181,6 +186,36 @@ export const getAvailability = async (
 	};
 };
 
+const minutesOfClock = (time: string) => {
+	const [hours = 0, minutes = 0] = time.split(":").map(Number);
+	return hours * 60 + minutes;
+};
+
+/** Minutes of org-wide hours over local dates `from`..`to` (inclusive), skipping closed days; wall-clock, so a DST change doesn't count. */
+export const openMinutes = async (
+	organizationId: string,
+	from: string,
+	to: string,
+) => {
+	const [hours, closures] = await Promise.all([
+		findOrganizationHours(organizationId),
+		findClosedDates(organizationId, from, to),
+	]);
+	const closed = new Set(closures);
+	let total = 0;
+	for (let date = from; date <= to; date = nextDate(date)) {
+		if (closed.has(date)) continue;
+		const weekday = new Date(date).getUTCDay() || 7;
+		for (const row of hours)
+			if (row.weekday === weekday)
+				total += minutesOfClock(row.endTime) - minutesOfClock(row.startTime);
+	}
+	return total;
+};
+
+const nextDate = (date: string) =>
+	new Date(Date.parse(date) + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
 export const saveAvailability = async (
 	membership: Membership,
 	input: AvailabilityInput,
@@ -221,6 +256,59 @@ export const removeClosure = async (
 	return (await deleteClosure(membership.organizationId, closureId))
 		? { ok: true, data: null }
 		: notFound;
+};
+
+/** The services a storefront offers: active and not archived. */
+export const listPublicServices = async (
+	organizationId: string,
+): Promise<PublicServiceDto[]> =>
+	(await findServices(organizationId))
+		.filter((row) => row.isActive)
+		.map((row) => ({
+			id: row.id,
+			name: row.name,
+			description: row.description,
+			durationMinutes: row.durationMinutes,
+			priceMinor: row.priceMinor,
+			currency: row.currency,
+			requiresApproval: row.requiresApproval,
+			cancellationWindowMinutes: row.cancellationWindowMinutes,
+		}));
+
+export type BookableService = Pick<
+	ServiceRow,
+	| "id"
+	| "name"
+	| "durationMinutes"
+	| "bufferBeforeMinutes"
+	| "bufferAfterMinutes"
+	| "priceMinor"
+	| "currency"
+	| "isActive"
+	| "requiresApproval"
+	| "cancellationWindowMinutes"
+>;
+
+/** The fields a booking copies from its service; null when archived or in another org. */
+export const findBookableService = async (
+	organizationId: string,
+	serviceId: string,
+): Promise<BookableService | null> => {
+	const row = await findService(organizationId, serviceId);
+	return (
+		row && {
+			id: row.id,
+			name: row.name,
+			durationMinutes: row.durationMinutes,
+			bufferBeforeMinutes: row.bufferBeforeMinutes,
+			bufferAfterMinutes: row.bufferAfterMinutes,
+			priceMinor: row.priceMinor,
+			currency: row.currency,
+			isActive: row.isActive,
+			requiresApproval: row.requiresApproval,
+			cancellationWindowMinutes: row.cancellationWindowMinutes,
+		}
+	);
 };
 
 /** A service with hours of its own uses only those; otherwise the organization's apply. */

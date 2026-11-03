@@ -10,8 +10,10 @@
 
 import { Route as rootRouteImport } from './root'
 import { Route as IndexRouteImport } from './modules/home/routes/index'
+import { Route as OrganizationSlugRouteRouteImport } from './modules/storefront/routes/route'
 import { Route as AboutRouteImport } from './modules/home/routes/about'
-import { Route as OrganizationSlugShellRouteImport } from './modules/org-dashboard/routes/_shell'
+import { Route as OrganizationSlugIndexRouteImport } from './modules/storefront/routes/index'
+import { Route as OrganizationSlugBookRouteImport } from './modules/storefront/routes/book'
 import { Route as AccountShellRouteImport } from './modules/account-dashboard/routes/_shell'
 import { Route as AuthForgotPasswordRouteImport } from './modules/auth/routes/forgot-password'
 import { Route as AuthGoodbyeRouteImport } from './modules/auth/routes/goodbye'
@@ -21,15 +23,6 @@ import { Route as AuthRegisterRouteImport } from './modules/auth/routes/register
 import { Route as AuthResetPasswordRouteImport } from './modules/auth/routes/reset-password'
 import { Route as CheckoutSuccessRouteImport } from './modules/checkout/routes/success'
 import { Route as OrganizationsNewRouteImport } from './modules/organizations/routes/new'
-import { Route as OrganizationSlugShellDotindexRouteImport } from './modules/org-dashboard/routes/_shell.index'
-import { Route as OrganizationSlugShellDotanalyticsRouteImport } from './modules/org-dashboard/routes/_shell.analytics'
-import { Route as OrganizationSlugShellDotbookingsRouteImport } from './modules/org-dashboard/routes/_shell.bookings'
-import { Route as OrganizationSlugShellDotcustomersRouteImport } from './modules/org-dashboard/routes/_shell.customers'
-import { Route as OrganizationSlugShellDotpagesRouteImport } from './modules/org-dashboard/routes/_shell.pages'
-import { Route as OrganizationSlugShellDotpaymentsRouteImport } from './modules/org-dashboard/routes/_shell.payments'
-import { Route as OrganizationSlugShellDotservicesRouteImport } from './modules/org-dashboard/routes/_shell.services'
-import { Route as OrganizationSlugShellDotsettingsRouteImport } from './modules/org-dashboard/routes/_shell.settings'
-import { Route as OrganizationSlugShellDotteamRouteImport } from './modules/org-dashboard/routes/_shell.team'
 import { Route as AccountShellDotindexRouteImport } from './modules/account-dashboard/routes/_shell.index'
 import { Route as AccountShellDotbillingRouteImport } from './modules/account-dashboard/routes/_shell.billing'
 import { Route as AccountShellDotbookingsRouteImport } from './modules/account-dashboard/routes/_shell.bookings'
@@ -37,25 +30,41 @@ import { Route as AccountShellDotnotificationsRouteImport } from './modules/acco
 import { Route as AccountShellDotorganizationsRouteImport } from './modules/account-dashboard/routes/_shell.organizations'
 import { Route as AccountShellDotpaymentsRouteImport } from './modules/account-dashboard/routes/_shell.payments'
 import { Route as AccountShellDotsettingsRouteImport } from './modules/account-dashboard/routes/_shell.settings'
+import { Route as DashboardOrganizationSlugShellRouteImport } from './modules/org-dashboard/routes/_shell'
 import { Route as OrganizationsIdDotonboardingRouteImport } from './modules/organizations/routes/$id.onboarding'
 import { Route as OrganizationsIdDotplanRouteImport } from './modules/organizations/routes/$id.plan'
-import { Route as OrganizationSlugShellDotbookingsDotindexRouteImport } from './modules/org-dashboard/routes/_shell.bookings.index'
-import { Route as OrganizationSlugShellDotbookingsDotidRouteImport } from './modules/org-dashboard/routes/_shell.bookings.$id'
-import { Route as OrganizationSlugShellDotcustomersDotindexRouteImport } from './modules/org-dashboard/routes/_shell.customers.index'
-import { Route as OrganizationSlugShellDotcustomersDotidRouteImport } from './modules/org-dashboard/routes/_shell.customers.$id'
-import { Route as OrganizationSlugShellDotpagesDotindexRouteImport } from './modules/org-dashboard/routes/_shell.pages.index'
-import { Route as OrganizationSlugShellDotpagesDotidRouteImport } from './modules/org-dashboard/routes/_shell.pages.$id'
-import { Route as OrganizationSlugShellDotservicesDotindexRouteImport } from './modules/org-dashboard/routes/_shell.services.index'
-import { Route as OrganizationSlugShellDotservicesDotidRouteImport } from './modules/org-dashboard/routes/_shell.services.$id'
-import { Route as OrganizationSlugShellDotservicesDothoursRouteImport } from './modules/org-dashboard/routes/_shell.services.hours'
-import { Route as OrganizationSlugShellDotservicesDotnewRouteImport } from './modules/org-dashboard/routes/_shell.services.new'
-import { Route as OrganizationSlugShellDotsettingsDotindexRouteImport } from './modules/org-dashboard/routes/_shell.settings.index'
 import { Route as AccountShellDotbookingsDotindexRouteImport } from './modules/account-dashboard/routes/_shell.bookings.index'
 import { Route as AccountShellDotbookingsDotidRouteImport } from './modules/account-dashboard/routes/_shell.bookings.$id'
+import { Route as DashboardOrganizationSlugShellDotindexRouteImport } from './modules/org-dashboard/routes/_shell.index'
+import { Route as DashboardOrganizationSlugShellDotanalyticsRouteImport } from './modules/org-dashboard/routes/_shell.analytics'
+import { Route as DashboardOrganizationSlugShellDotbookingsRouteImport } from './modules/org-dashboard/routes/_shell.bookings'
+import { Route as DashboardOrganizationSlugShellDotcustomersRouteImport } from './modules/org-dashboard/routes/_shell.customers'
+import { Route as DashboardOrganizationSlugShellDotpagesRouteImport } from './modules/org-dashboard/routes/_shell.pages'
+import { Route as DashboardOrganizationSlugShellDotpaymentsRouteImport } from './modules/org-dashboard/routes/_shell.payments'
+import { Route as DashboardOrganizationSlugShellDotservicesRouteImport } from './modules/org-dashboard/routes/_shell.services'
+import { Route as DashboardOrganizationSlugShellDotsettingsRouteImport } from './modules/org-dashboard/routes/_shell.settings'
+import { Route as DashboardOrganizationSlugShellDotteamRouteImport } from './modules/org-dashboard/routes/_shell.team'
+import { Route as DashboardOrganizationSlugShellDotbookingsDotindexRouteImport } from './modules/org-dashboard/routes/_shell.bookings.index'
+import { Route as DashboardOrganizationSlugShellDotbookingsDotidRouteImport } from './modules/org-dashboard/routes/_shell.bookings.$id'
+import { Route as DashboardOrganizationSlugShellDotbookingsDotnewRouteImport } from './modules/org-dashboard/routes/_shell.bookings.new'
+import { Route as DashboardOrganizationSlugShellDotcustomersDotindexRouteImport } from './modules/org-dashboard/routes/_shell.customers.index'
+import { Route as DashboardOrganizationSlugShellDotcustomersDotidRouteImport } from './modules/org-dashboard/routes/_shell.customers.$id'
+import { Route as DashboardOrganizationSlugShellDotpagesDotindexRouteImport } from './modules/org-dashboard/routes/_shell.pages.index'
+import { Route as DashboardOrganizationSlugShellDotpagesDotidRouteImport } from './modules/org-dashboard/routes/_shell.pages.$id'
+import { Route as DashboardOrganizationSlugShellDotservicesDotindexRouteImport } from './modules/org-dashboard/routes/_shell.services.index'
+import { Route as DashboardOrganizationSlugShellDotservicesDotidRouteImport } from './modules/org-dashboard/routes/_shell.services.$id'
+import { Route as DashboardOrganizationSlugShellDotservicesDothoursRouteImport } from './modules/org-dashboard/routes/_shell.services.hours'
+import { Route as DashboardOrganizationSlugShellDotservicesDotnewRouteImport } from './modules/org-dashboard/routes/_shell.services.new'
+import { Route as DashboardOrganizationSlugShellDotsettingsDotindexRouteImport } from './modules/org-dashboard/routes/_shell.settings.index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrganizationSlugRouteRoute = OrganizationSlugRouteRouteImport.update({
+  id: '/$organizationSlug',
+  path: '/$organizationSlug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -63,10 +72,15 @@ const AboutRoute = AboutRouteImport.update({
   path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OrganizationSlugShellRoute = OrganizationSlugShellRouteImport.update({
-  id: '/$organizationSlug/_shell',
-  path: '/$organizationSlug',
-  getParentRoute: () => rootRouteImport,
+const OrganizationSlugIndexRoute = OrganizationSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OrganizationSlugRouteRoute,
+} as any)
+const OrganizationSlugBookRoute = OrganizationSlugBookRouteImport.update({
+  id: '/book',
+  path: '/book',
+  getParentRoute: () => OrganizationSlugRouteRoute,
 } as any)
 const AccountShellRoute = AccountShellRouteImport.update({
   id: '/account/_shell',
@@ -113,60 +127,6 @@ const OrganizationsNewRoute = OrganizationsNewRouteImport.update({
   path: '/organizations/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OrganizationSlugShellDotindexRoute =
-  OrganizationSlugShellDotindexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => OrganizationSlugShellRoute,
-  } as any)
-const OrganizationSlugShellDotanalyticsRoute =
-  OrganizationSlugShellDotanalyticsRouteImport.update({
-    id: '/analytics',
-    path: '/analytics',
-    getParentRoute: () => OrganizationSlugShellRoute,
-  } as any)
-const OrganizationSlugShellDotbookingsRoute =
-  OrganizationSlugShellDotbookingsRouteImport.update({
-    id: '/bookings',
-    path: '/bookings',
-    getParentRoute: () => OrganizationSlugShellRoute,
-  } as any)
-const OrganizationSlugShellDotcustomersRoute =
-  OrganizationSlugShellDotcustomersRouteImport.update({
-    id: '/customers',
-    path: '/customers',
-    getParentRoute: () => OrganizationSlugShellRoute,
-  } as any)
-const OrganizationSlugShellDotpagesRoute =
-  OrganizationSlugShellDotpagesRouteImport.update({
-    id: '/pages',
-    path: '/pages',
-    getParentRoute: () => OrganizationSlugShellRoute,
-  } as any)
-const OrganizationSlugShellDotpaymentsRoute =
-  OrganizationSlugShellDotpaymentsRouteImport.update({
-    id: '/payments',
-    path: '/payments',
-    getParentRoute: () => OrganizationSlugShellRoute,
-  } as any)
-const OrganizationSlugShellDotservicesRoute =
-  OrganizationSlugShellDotservicesRouteImport.update({
-    id: '/services',
-    path: '/services',
-    getParentRoute: () => OrganizationSlugShellRoute,
-  } as any)
-const OrganizationSlugShellDotsettingsRoute =
-  OrganizationSlugShellDotsettingsRouteImport.update({
-    id: '/settings',
-    path: '/settings',
-    getParentRoute: () => OrganizationSlugShellRoute,
-  } as any)
-const OrganizationSlugShellDotteamRoute =
-  OrganizationSlugShellDotteamRouteImport.update({
-    id: '/team',
-    path: '/team',
-    getParentRoute: () => OrganizationSlugShellRoute,
-  } as any)
 const AccountShellDotindexRoute = AccountShellDotindexRouteImport.update({
   id: '/',
   path: '/',
@@ -204,6 +164,12 @@ const AccountShellDotsettingsRoute = AccountShellDotsettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AccountShellRoute,
 } as any)
+const DashboardOrganizationSlugShellRoute =
+  DashboardOrganizationSlugShellRouteImport.update({
+    id: '/dashboard/$organizationSlug/_shell',
+    path: '/dashboard/$organizationSlug',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const OrganizationsIdDotonboardingRoute =
   OrganizationsIdDotonboardingRouteImport.update({
     id: '/organizations/$id/onboarding',
@@ -215,72 +181,6 @@ const OrganizationsIdDotplanRoute = OrganizationsIdDotplanRouteImport.update({
   path: '/organizations/$id/plan',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OrganizationSlugShellDotbookingsDotindexRoute =
-  OrganizationSlugShellDotbookingsDotindexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => OrganizationSlugShellDotbookingsRoute,
-  } as any)
-const OrganizationSlugShellDotbookingsDotidRoute =
-  OrganizationSlugShellDotbookingsDotidRouteImport.update({
-    id: '/$id',
-    path: '/$id',
-    getParentRoute: () => OrganizationSlugShellDotbookingsRoute,
-  } as any)
-const OrganizationSlugShellDotcustomersDotindexRoute =
-  OrganizationSlugShellDotcustomersDotindexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => OrganizationSlugShellDotcustomersRoute,
-  } as any)
-const OrganizationSlugShellDotcustomersDotidRoute =
-  OrganizationSlugShellDotcustomersDotidRouteImport.update({
-    id: '/$id',
-    path: '/$id',
-    getParentRoute: () => OrganizationSlugShellDotcustomersRoute,
-  } as any)
-const OrganizationSlugShellDotpagesDotindexRoute =
-  OrganizationSlugShellDotpagesDotindexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => OrganizationSlugShellDotpagesRoute,
-  } as any)
-const OrganizationSlugShellDotpagesDotidRoute =
-  OrganizationSlugShellDotpagesDotidRouteImport.update({
-    id: '/$id',
-    path: '/$id',
-    getParentRoute: () => OrganizationSlugShellDotpagesRoute,
-  } as any)
-const OrganizationSlugShellDotservicesDotindexRoute =
-  OrganizationSlugShellDotservicesDotindexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => OrganizationSlugShellDotservicesRoute,
-  } as any)
-const OrganizationSlugShellDotservicesDotidRoute =
-  OrganizationSlugShellDotservicesDotidRouteImport.update({
-    id: '/$id',
-    path: '/$id',
-    getParentRoute: () => OrganizationSlugShellDotservicesRoute,
-  } as any)
-const OrganizationSlugShellDotservicesDothoursRoute =
-  OrganizationSlugShellDotservicesDothoursRouteImport.update({
-    id: '/hours',
-    path: '/hours',
-    getParentRoute: () => OrganizationSlugShellDotservicesRoute,
-  } as any)
-const OrganizationSlugShellDotservicesDotnewRoute =
-  OrganizationSlugShellDotservicesDotnewRouteImport.update({
-    id: '/new',
-    path: '/new',
-    getParentRoute: () => OrganizationSlugShellDotservicesRoute,
-  } as any)
-const OrganizationSlugShellDotsettingsDotindexRoute =
-  OrganizationSlugShellDotsettingsDotindexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => OrganizationSlugShellDotsettingsRoute,
-  } as any)
 const AccountShellDotbookingsDotindexRoute =
   AccountShellDotbookingsDotindexRouteImport.update({
     id: '/',
@@ -293,11 +193,138 @@ const AccountShellDotbookingsDotidRoute =
     path: '/$id',
     getParentRoute: () => AccountShellDotbookingsRoute,
   } as any)
+const DashboardOrganizationSlugShellDotindexRoute =
+  DashboardOrganizationSlugShellDotindexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => DashboardOrganizationSlugShellRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotanalyticsRoute =
+  DashboardOrganizationSlugShellDotanalyticsRouteImport.update({
+    id: '/analytics',
+    path: '/analytics',
+    getParentRoute: () => DashboardOrganizationSlugShellRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotbookingsRoute =
+  DashboardOrganizationSlugShellDotbookingsRouteImport.update({
+    id: '/bookings',
+    path: '/bookings',
+    getParentRoute: () => DashboardOrganizationSlugShellRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotcustomersRoute =
+  DashboardOrganizationSlugShellDotcustomersRouteImport.update({
+    id: '/customers',
+    path: '/customers',
+    getParentRoute: () => DashboardOrganizationSlugShellRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotpagesRoute =
+  DashboardOrganizationSlugShellDotpagesRouteImport.update({
+    id: '/pages',
+    path: '/pages',
+    getParentRoute: () => DashboardOrganizationSlugShellRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotpaymentsRoute =
+  DashboardOrganizationSlugShellDotpaymentsRouteImport.update({
+    id: '/payments',
+    path: '/payments',
+    getParentRoute: () => DashboardOrganizationSlugShellRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotservicesRoute =
+  DashboardOrganizationSlugShellDotservicesRouteImport.update({
+    id: '/services',
+    path: '/services',
+    getParentRoute: () => DashboardOrganizationSlugShellRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotsettingsRoute =
+  DashboardOrganizationSlugShellDotsettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => DashboardOrganizationSlugShellRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotteamRoute =
+  DashboardOrganizationSlugShellDotteamRouteImport.update({
+    id: '/team',
+    path: '/team',
+    getParentRoute: () => DashboardOrganizationSlugShellRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotbookingsDotindexRoute =
+  DashboardOrganizationSlugShellDotbookingsDotindexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => DashboardOrganizationSlugShellDotbookingsRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotbookingsDotidRoute =
+  DashboardOrganizationSlugShellDotbookingsDotidRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => DashboardOrganizationSlugShellDotbookingsRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotbookingsDotnewRoute =
+  DashboardOrganizationSlugShellDotbookingsDotnewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => DashboardOrganizationSlugShellDotbookingsRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotcustomersDotindexRoute =
+  DashboardOrganizationSlugShellDotcustomersDotindexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => DashboardOrganizationSlugShellDotcustomersRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotcustomersDotidRoute =
+  DashboardOrganizationSlugShellDotcustomersDotidRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => DashboardOrganizationSlugShellDotcustomersRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotpagesDotindexRoute =
+  DashboardOrganizationSlugShellDotpagesDotindexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => DashboardOrganizationSlugShellDotpagesRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotpagesDotidRoute =
+  DashboardOrganizationSlugShellDotpagesDotidRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => DashboardOrganizationSlugShellDotpagesRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotservicesDotindexRoute =
+  DashboardOrganizationSlugShellDotservicesDotindexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => DashboardOrganizationSlugShellDotservicesRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotservicesDotidRoute =
+  DashboardOrganizationSlugShellDotservicesDotidRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => DashboardOrganizationSlugShellDotservicesRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotservicesDothoursRoute =
+  DashboardOrganizationSlugShellDotservicesDothoursRouteImport.update({
+    id: '/hours',
+    path: '/hours',
+    getParentRoute: () => DashboardOrganizationSlugShellDotservicesRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotservicesDotnewRoute =
+  DashboardOrganizationSlugShellDotservicesDotnewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => DashboardOrganizationSlugShellDotservicesRoute,
+  } as any)
+const DashboardOrganizationSlugShellDotsettingsDotindexRoute =
+  DashboardOrganizationSlugShellDotsettingsDotindexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => DashboardOrganizationSlugShellDotsettingsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$organizationSlug': typeof OrganizationSlugRouteRouteWithChildren
   '/about': typeof AboutRoute
-  '/$organizationSlug': typeof OrganizationSlugShellRouteWithChildren
+  '/$organizationSlug/book': typeof OrganizationSlugBookRoute
   '/account': typeof AccountShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/goodbye': typeof AuthGoodbyeRoute
@@ -307,41 +334,45 @@ export interface FileRoutesByFullPath {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
-  '/$organizationSlug/analytics': typeof OrganizationSlugShellDotanalyticsRoute
-  '/$organizationSlug/bookings': typeof OrganizationSlugShellDotbookingsRouteWithChildren
-  '/$organizationSlug/customers': typeof OrganizationSlugShellDotcustomersRouteWithChildren
-  '/$organizationSlug/pages': typeof OrganizationSlugShellDotpagesRouteWithChildren
-  '/$organizationSlug/payments': typeof OrganizationSlugShellDotpaymentsRoute
-  '/$organizationSlug/services': typeof OrganizationSlugShellDotservicesRouteWithChildren
-  '/$organizationSlug/settings': typeof OrganizationSlugShellDotsettingsRouteWithChildren
-  '/$organizationSlug/team': typeof OrganizationSlugShellDotteamRoute
+  '/$organizationSlug/': typeof OrganizationSlugIndexRoute
   '/account/billing': typeof AccountShellDotbillingRoute
   '/account/bookings': typeof AccountShellDotbookingsRouteWithChildren
   '/account/notifications': typeof AccountShellDotnotificationsRoute
   '/account/organizations': typeof AccountShellDotorganizationsRoute
   '/account/payments': typeof AccountShellDotpaymentsRoute
   '/account/settings': typeof AccountShellDotsettingsRoute
+  '/dashboard/$organizationSlug': typeof DashboardOrganizationSlugShellRouteWithChildren
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
-  '/$organizationSlug/': typeof OrganizationSlugShellDotindexRoute
   '/account/': typeof AccountShellDotindexRoute
-  '/$organizationSlug/bookings/$id': typeof OrganizationSlugShellDotbookingsDotidRoute
-  '/$organizationSlug/customers/$id': typeof OrganizationSlugShellDotcustomersDotidRoute
-  '/$organizationSlug/pages/$id': typeof OrganizationSlugShellDotpagesDotidRoute
-  '/$organizationSlug/services/$id': typeof OrganizationSlugShellDotservicesDotidRoute
-  '/$organizationSlug/services/hours': typeof OrganizationSlugShellDotservicesDothoursRoute
-  '/$organizationSlug/services/new': typeof OrganizationSlugShellDotservicesDotnewRoute
   '/account/bookings/$id': typeof AccountShellDotbookingsDotidRoute
-  '/$organizationSlug/bookings/': typeof OrganizationSlugShellDotbookingsDotindexRoute
-  '/$organizationSlug/customers/': typeof OrganizationSlugShellDotcustomersDotindexRoute
-  '/$organizationSlug/pages/': typeof OrganizationSlugShellDotpagesDotindexRoute
-  '/$organizationSlug/services/': typeof OrganizationSlugShellDotservicesDotindexRoute
-  '/$organizationSlug/settings/': typeof OrganizationSlugShellDotsettingsDotindexRoute
+  '/dashboard/$organizationSlug/analytics': typeof DashboardOrganizationSlugShellDotanalyticsRoute
+  '/dashboard/$organizationSlug/bookings': typeof DashboardOrganizationSlugShellDotbookingsRouteWithChildren
+  '/dashboard/$organizationSlug/customers': typeof DashboardOrganizationSlugShellDotcustomersRouteWithChildren
+  '/dashboard/$organizationSlug/pages': typeof DashboardOrganizationSlugShellDotpagesRouteWithChildren
+  '/dashboard/$organizationSlug/payments': typeof DashboardOrganizationSlugShellDotpaymentsRoute
+  '/dashboard/$organizationSlug/services': typeof DashboardOrganizationSlugShellDotservicesRouteWithChildren
+  '/dashboard/$organizationSlug/settings': typeof DashboardOrganizationSlugShellDotsettingsRouteWithChildren
+  '/dashboard/$organizationSlug/team': typeof DashboardOrganizationSlugShellDotteamRoute
   '/account/bookings/': typeof AccountShellDotbookingsDotindexRoute
+  '/dashboard/$organizationSlug/': typeof DashboardOrganizationSlugShellDotindexRoute
+  '/dashboard/$organizationSlug/bookings/$id': typeof DashboardOrganizationSlugShellDotbookingsDotidRoute
+  '/dashboard/$organizationSlug/bookings/new': typeof DashboardOrganizationSlugShellDotbookingsDotnewRoute
+  '/dashboard/$organizationSlug/customers/$id': typeof DashboardOrganizationSlugShellDotcustomersDotidRoute
+  '/dashboard/$organizationSlug/pages/$id': typeof DashboardOrganizationSlugShellDotpagesDotidRoute
+  '/dashboard/$organizationSlug/services/$id': typeof DashboardOrganizationSlugShellDotservicesDotidRoute
+  '/dashboard/$organizationSlug/services/hours': typeof DashboardOrganizationSlugShellDotservicesDothoursRoute
+  '/dashboard/$organizationSlug/services/new': typeof DashboardOrganizationSlugShellDotservicesDotnewRoute
+  '/dashboard/$organizationSlug/bookings/': typeof DashboardOrganizationSlugShellDotbookingsDotindexRoute
+  '/dashboard/$organizationSlug/customers/': typeof DashboardOrganizationSlugShellDotcustomersDotindexRoute
+  '/dashboard/$organizationSlug/pages/': typeof DashboardOrganizationSlugShellDotpagesDotindexRoute
+  '/dashboard/$organizationSlug/services/': typeof DashboardOrganizationSlugShellDotservicesDotindexRoute
+  '/dashboard/$organizationSlug/settings/': typeof DashboardOrganizationSlugShellDotsettingsDotindexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/$organizationSlug/book': typeof OrganizationSlugBookRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/goodbye': typeof AuthGoodbyeRoute
   '/auth/login': typeof AuthLoginRoute
@@ -350,9 +381,7 @@ export interface FileRoutesByTo {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
-  '/$organizationSlug/analytics': typeof OrganizationSlugShellDotanalyticsRoute
-  '/$organizationSlug/payments': typeof OrganizationSlugShellDotpaymentsRoute
-  '/$organizationSlug/team': typeof OrganizationSlugShellDotteamRoute
+  '/$organizationSlug': typeof OrganizationSlugIndexRoute
   '/account/billing': typeof AccountShellDotbillingRoute
   '/account/notifications': typeof AccountShellDotnotificationsRoute
   '/account/organizations': typeof AccountShellDotorganizationsRoute
@@ -360,27 +389,32 @@ export interface FileRoutesByTo {
   '/account/settings': typeof AccountShellDotsettingsRoute
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
-  '/$organizationSlug': typeof OrganizationSlugShellDotindexRoute
   '/account': typeof AccountShellDotindexRoute
-  '/$organizationSlug/bookings/$id': typeof OrganizationSlugShellDotbookingsDotidRoute
-  '/$organizationSlug/customers/$id': typeof OrganizationSlugShellDotcustomersDotidRoute
-  '/$organizationSlug/pages/$id': typeof OrganizationSlugShellDotpagesDotidRoute
-  '/$organizationSlug/services/$id': typeof OrganizationSlugShellDotservicesDotidRoute
-  '/$organizationSlug/services/hours': typeof OrganizationSlugShellDotservicesDothoursRoute
-  '/$organizationSlug/services/new': typeof OrganizationSlugShellDotservicesDotnewRoute
   '/account/bookings/$id': typeof AccountShellDotbookingsDotidRoute
-  '/$organizationSlug/bookings': typeof OrganizationSlugShellDotbookingsDotindexRoute
-  '/$organizationSlug/customers': typeof OrganizationSlugShellDotcustomersDotindexRoute
-  '/$organizationSlug/pages': typeof OrganizationSlugShellDotpagesDotindexRoute
-  '/$organizationSlug/services': typeof OrganizationSlugShellDotservicesDotindexRoute
-  '/$organizationSlug/settings': typeof OrganizationSlugShellDotsettingsDotindexRoute
+  '/dashboard/$organizationSlug/analytics': typeof DashboardOrganizationSlugShellDotanalyticsRoute
+  '/dashboard/$organizationSlug/payments': typeof DashboardOrganizationSlugShellDotpaymentsRoute
+  '/dashboard/$organizationSlug/team': typeof DashboardOrganizationSlugShellDotteamRoute
   '/account/bookings': typeof AccountShellDotbookingsDotindexRoute
+  '/dashboard/$organizationSlug': typeof DashboardOrganizationSlugShellDotindexRoute
+  '/dashboard/$organizationSlug/bookings/$id': typeof DashboardOrganizationSlugShellDotbookingsDotidRoute
+  '/dashboard/$organizationSlug/bookings/new': typeof DashboardOrganizationSlugShellDotbookingsDotnewRoute
+  '/dashboard/$organizationSlug/customers/$id': typeof DashboardOrganizationSlugShellDotcustomersDotidRoute
+  '/dashboard/$organizationSlug/pages/$id': typeof DashboardOrganizationSlugShellDotpagesDotidRoute
+  '/dashboard/$organizationSlug/services/$id': typeof DashboardOrganizationSlugShellDotservicesDotidRoute
+  '/dashboard/$organizationSlug/services/hours': typeof DashboardOrganizationSlugShellDotservicesDothoursRoute
+  '/dashboard/$organizationSlug/services/new': typeof DashboardOrganizationSlugShellDotservicesDotnewRoute
+  '/dashboard/$organizationSlug/bookings': typeof DashboardOrganizationSlugShellDotbookingsDotindexRoute
+  '/dashboard/$organizationSlug/customers': typeof DashboardOrganizationSlugShellDotcustomersDotindexRoute
+  '/dashboard/$organizationSlug/pages': typeof DashboardOrganizationSlugShellDotpagesDotindexRoute
+  '/dashboard/$organizationSlug/services': typeof DashboardOrganizationSlugShellDotservicesDotindexRoute
+  '/dashboard/$organizationSlug/settings': typeof DashboardOrganizationSlugShellDotsettingsDotindexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/$organizationSlug': typeof OrganizationSlugRouteRouteWithChildren
   '/about': typeof AboutRoute
-  '/$organizationSlug/_shell': typeof OrganizationSlugShellRouteWithChildren
+  '/$organizationSlug/book': typeof OrganizationSlugBookRoute
   '/account/_shell': typeof AccountShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/goodbye': typeof AuthGoodbyeRoute
@@ -390,44 +424,48 @@ export interface FileRoutesById {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/organizations/new': typeof OrganizationsNewRoute
-  '/$organizationSlug/_shell/analytics': typeof OrganizationSlugShellDotanalyticsRoute
-  '/$organizationSlug/_shell/bookings': typeof OrganizationSlugShellDotbookingsRouteWithChildren
-  '/$organizationSlug/_shell/customers': typeof OrganizationSlugShellDotcustomersRouteWithChildren
-  '/$organizationSlug/_shell/pages': typeof OrganizationSlugShellDotpagesRouteWithChildren
-  '/$organizationSlug/_shell/payments': typeof OrganizationSlugShellDotpaymentsRoute
-  '/$organizationSlug/_shell/services': typeof OrganizationSlugShellDotservicesRouteWithChildren
-  '/$organizationSlug/_shell/settings': typeof OrganizationSlugShellDotsettingsRouteWithChildren
-  '/$organizationSlug/_shell/team': typeof OrganizationSlugShellDotteamRoute
+  '/$organizationSlug/': typeof OrganizationSlugIndexRoute
   '/account/_shell/billing': typeof AccountShellDotbillingRoute
   '/account/_shell/bookings': typeof AccountShellDotbookingsRouteWithChildren
   '/account/_shell/notifications': typeof AccountShellDotnotificationsRoute
   '/account/_shell/organizations': typeof AccountShellDotorganizationsRoute
   '/account/_shell/payments': typeof AccountShellDotpaymentsRoute
   '/account/_shell/settings': typeof AccountShellDotsettingsRoute
+  '/dashboard/$organizationSlug/_shell': typeof DashboardOrganizationSlugShellRouteWithChildren
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
-  '/$organizationSlug/_shell/': typeof OrganizationSlugShellDotindexRoute
   '/account/_shell/': typeof AccountShellDotindexRoute
-  '/$organizationSlug/_shell/bookings/$id': typeof OrganizationSlugShellDotbookingsDotidRoute
-  '/$organizationSlug/_shell/customers/$id': typeof OrganizationSlugShellDotcustomersDotidRoute
-  '/$organizationSlug/_shell/pages/$id': typeof OrganizationSlugShellDotpagesDotidRoute
-  '/$organizationSlug/_shell/services/$id': typeof OrganizationSlugShellDotservicesDotidRoute
-  '/$organizationSlug/_shell/services/hours': typeof OrganizationSlugShellDotservicesDothoursRoute
-  '/$organizationSlug/_shell/services/new': typeof OrganizationSlugShellDotservicesDotnewRoute
   '/account/_shell/bookings/$id': typeof AccountShellDotbookingsDotidRoute
-  '/$organizationSlug/_shell/bookings/': typeof OrganizationSlugShellDotbookingsDotindexRoute
-  '/$organizationSlug/_shell/customers/': typeof OrganizationSlugShellDotcustomersDotindexRoute
-  '/$organizationSlug/_shell/pages/': typeof OrganizationSlugShellDotpagesDotindexRoute
-  '/$organizationSlug/_shell/services/': typeof OrganizationSlugShellDotservicesDotindexRoute
-  '/$organizationSlug/_shell/settings/': typeof OrganizationSlugShellDotsettingsDotindexRoute
+  '/dashboard/$organizationSlug/_shell/analytics': typeof DashboardOrganizationSlugShellDotanalyticsRoute
+  '/dashboard/$organizationSlug/_shell/bookings': typeof DashboardOrganizationSlugShellDotbookingsRouteWithChildren
+  '/dashboard/$organizationSlug/_shell/customers': typeof DashboardOrganizationSlugShellDotcustomersRouteWithChildren
+  '/dashboard/$organizationSlug/_shell/pages': typeof DashboardOrganizationSlugShellDotpagesRouteWithChildren
+  '/dashboard/$organizationSlug/_shell/payments': typeof DashboardOrganizationSlugShellDotpaymentsRoute
+  '/dashboard/$organizationSlug/_shell/services': typeof DashboardOrganizationSlugShellDotservicesRouteWithChildren
+  '/dashboard/$organizationSlug/_shell/settings': typeof DashboardOrganizationSlugShellDotsettingsRouteWithChildren
+  '/dashboard/$organizationSlug/_shell/team': typeof DashboardOrganizationSlugShellDotteamRoute
   '/account/_shell/bookings/': typeof AccountShellDotbookingsDotindexRoute
+  '/dashboard/$organizationSlug/_shell/': typeof DashboardOrganizationSlugShellDotindexRoute
+  '/dashboard/$organizationSlug/_shell/bookings/$id': typeof DashboardOrganizationSlugShellDotbookingsDotidRoute
+  '/dashboard/$organizationSlug/_shell/bookings/new': typeof DashboardOrganizationSlugShellDotbookingsDotnewRoute
+  '/dashboard/$organizationSlug/_shell/customers/$id': typeof DashboardOrganizationSlugShellDotcustomersDotidRoute
+  '/dashboard/$organizationSlug/_shell/pages/$id': typeof DashboardOrganizationSlugShellDotpagesDotidRoute
+  '/dashboard/$organizationSlug/_shell/services/$id': typeof DashboardOrganizationSlugShellDotservicesDotidRoute
+  '/dashboard/$organizationSlug/_shell/services/hours': typeof DashboardOrganizationSlugShellDotservicesDothoursRoute
+  '/dashboard/$organizationSlug/_shell/services/new': typeof DashboardOrganizationSlugShellDotservicesDotnewRoute
+  '/dashboard/$organizationSlug/_shell/bookings/': typeof DashboardOrganizationSlugShellDotbookingsDotindexRoute
+  '/dashboard/$organizationSlug/_shell/customers/': typeof DashboardOrganizationSlugShellDotcustomersDotindexRoute
+  '/dashboard/$organizationSlug/_shell/pages/': typeof DashboardOrganizationSlugShellDotpagesDotindexRoute
+  '/dashboard/$organizationSlug/_shell/services/': typeof DashboardOrganizationSlugShellDotservicesDotindexRoute
+  '/dashboard/$organizationSlug/_shell/settings/': typeof DashboardOrganizationSlugShellDotsettingsDotindexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/about'
     | '/$organizationSlug'
+    | '/about'
+    | '/$organizationSlug/book'
     | '/account'
     | '/auth/forgot-password'
     | '/auth/goodbye'
@@ -437,41 +475,45 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
-    | '/$organizationSlug/analytics'
-    | '/$organizationSlug/bookings'
-    | '/$organizationSlug/customers'
-    | '/$organizationSlug/pages'
-    | '/$organizationSlug/payments'
-    | '/$organizationSlug/services'
-    | '/$organizationSlug/settings'
-    | '/$organizationSlug/team'
+    | '/$organizationSlug/'
     | '/account/billing'
     | '/account/bookings'
     | '/account/notifications'
     | '/account/organizations'
     | '/account/payments'
     | '/account/settings'
+    | '/dashboard/$organizationSlug'
     | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
-    | '/$organizationSlug/'
     | '/account/'
-    | '/$organizationSlug/bookings/$id'
-    | '/$organizationSlug/customers/$id'
-    | '/$organizationSlug/pages/$id'
-    | '/$organizationSlug/services/$id'
-    | '/$organizationSlug/services/hours'
-    | '/$organizationSlug/services/new'
     | '/account/bookings/$id'
-    | '/$organizationSlug/bookings/'
-    | '/$organizationSlug/customers/'
-    | '/$organizationSlug/pages/'
-    | '/$organizationSlug/services/'
-    | '/$organizationSlug/settings/'
+    | '/dashboard/$organizationSlug/analytics'
+    | '/dashboard/$organizationSlug/bookings'
+    | '/dashboard/$organizationSlug/customers'
+    | '/dashboard/$organizationSlug/pages'
+    | '/dashboard/$organizationSlug/payments'
+    | '/dashboard/$organizationSlug/services'
+    | '/dashboard/$organizationSlug/settings'
+    | '/dashboard/$organizationSlug/team'
     | '/account/bookings/'
+    | '/dashboard/$organizationSlug/'
+    | '/dashboard/$organizationSlug/bookings/$id'
+    | '/dashboard/$organizationSlug/bookings/new'
+    | '/dashboard/$organizationSlug/customers/$id'
+    | '/dashboard/$organizationSlug/pages/$id'
+    | '/dashboard/$organizationSlug/services/$id'
+    | '/dashboard/$organizationSlug/services/hours'
+    | '/dashboard/$organizationSlug/services/new'
+    | '/dashboard/$organizationSlug/bookings/'
+    | '/dashboard/$organizationSlug/customers/'
+    | '/dashboard/$organizationSlug/pages/'
+    | '/dashboard/$organizationSlug/services/'
+    | '/dashboard/$organizationSlug/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
+    | '/$organizationSlug/book'
     | '/auth/forgot-password'
     | '/auth/goodbye'
     | '/auth/login'
@@ -480,9 +522,7 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
-    | '/$organizationSlug/analytics'
-    | '/$organizationSlug/payments'
-    | '/$organizationSlug/team'
+    | '/$organizationSlug'
     | '/account/billing'
     | '/account/notifications'
     | '/account/organizations'
@@ -490,26 +530,31 @@ export interface FileRouteTypes {
     | '/account/settings'
     | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
-    | '/$organizationSlug'
     | '/account'
-    | '/$organizationSlug/bookings/$id'
-    | '/$organizationSlug/customers/$id'
-    | '/$organizationSlug/pages/$id'
-    | '/$organizationSlug/services/$id'
-    | '/$organizationSlug/services/hours'
-    | '/$organizationSlug/services/new'
     | '/account/bookings/$id'
-    | '/$organizationSlug/bookings'
-    | '/$organizationSlug/customers'
-    | '/$organizationSlug/pages'
-    | '/$organizationSlug/services'
-    | '/$organizationSlug/settings'
+    | '/dashboard/$organizationSlug/analytics'
+    | '/dashboard/$organizationSlug/payments'
+    | '/dashboard/$organizationSlug/team'
     | '/account/bookings'
+    | '/dashboard/$organizationSlug'
+    | '/dashboard/$organizationSlug/bookings/$id'
+    | '/dashboard/$organizationSlug/bookings/new'
+    | '/dashboard/$organizationSlug/customers/$id'
+    | '/dashboard/$organizationSlug/pages/$id'
+    | '/dashboard/$organizationSlug/services/$id'
+    | '/dashboard/$organizationSlug/services/hours'
+    | '/dashboard/$organizationSlug/services/new'
+    | '/dashboard/$organizationSlug/bookings'
+    | '/dashboard/$organizationSlug/customers'
+    | '/dashboard/$organizationSlug/pages'
+    | '/dashboard/$organizationSlug/services'
+    | '/dashboard/$organizationSlug/settings'
   id:
     | '__root__'
     | '/'
+    | '/$organizationSlug'
     | '/about'
-    | '/$organizationSlug/_shell'
+    | '/$organizationSlug/book'
     | '/account/_shell'
     | '/auth/forgot-password'
     | '/auth/goodbye'
@@ -519,43 +564,46 @@ export interface FileRouteTypes {
     | '/auth/reset-password'
     | '/checkout/success'
     | '/organizations/new'
-    | '/$organizationSlug/_shell/analytics'
-    | '/$organizationSlug/_shell/bookings'
-    | '/$organizationSlug/_shell/customers'
-    | '/$organizationSlug/_shell/pages'
-    | '/$organizationSlug/_shell/payments'
-    | '/$organizationSlug/_shell/services'
-    | '/$organizationSlug/_shell/settings'
-    | '/$organizationSlug/_shell/team'
+    | '/$organizationSlug/'
     | '/account/_shell/billing'
     | '/account/_shell/bookings'
     | '/account/_shell/notifications'
     | '/account/_shell/organizations'
     | '/account/_shell/payments'
     | '/account/_shell/settings'
+    | '/dashboard/$organizationSlug/_shell'
     | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
-    | '/$organizationSlug/_shell/'
     | '/account/_shell/'
-    | '/$organizationSlug/_shell/bookings/$id'
-    | '/$organizationSlug/_shell/customers/$id'
-    | '/$organizationSlug/_shell/pages/$id'
-    | '/$organizationSlug/_shell/services/$id'
-    | '/$organizationSlug/_shell/services/hours'
-    | '/$organizationSlug/_shell/services/new'
     | '/account/_shell/bookings/$id'
-    | '/$organizationSlug/_shell/bookings/'
-    | '/$organizationSlug/_shell/customers/'
-    | '/$organizationSlug/_shell/pages/'
-    | '/$organizationSlug/_shell/services/'
-    | '/$organizationSlug/_shell/settings/'
+    | '/dashboard/$organizationSlug/_shell/analytics'
+    | '/dashboard/$organizationSlug/_shell/bookings'
+    | '/dashboard/$organizationSlug/_shell/customers'
+    | '/dashboard/$organizationSlug/_shell/pages'
+    | '/dashboard/$organizationSlug/_shell/payments'
+    | '/dashboard/$organizationSlug/_shell/services'
+    | '/dashboard/$organizationSlug/_shell/settings'
+    | '/dashboard/$organizationSlug/_shell/team'
     | '/account/_shell/bookings/'
+    | '/dashboard/$organizationSlug/_shell/'
+    | '/dashboard/$organizationSlug/_shell/bookings/$id'
+    | '/dashboard/$organizationSlug/_shell/bookings/new'
+    | '/dashboard/$organizationSlug/_shell/customers/$id'
+    | '/dashboard/$organizationSlug/_shell/pages/$id'
+    | '/dashboard/$organizationSlug/_shell/services/$id'
+    | '/dashboard/$organizationSlug/_shell/services/hours'
+    | '/dashboard/$organizationSlug/_shell/services/new'
+    | '/dashboard/$organizationSlug/_shell/bookings/'
+    | '/dashboard/$organizationSlug/_shell/customers/'
+    | '/dashboard/$organizationSlug/_shell/pages/'
+    | '/dashboard/$organizationSlug/_shell/services/'
+    | '/dashboard/$organizationSlug/_shell/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  OrganizationSlugRouteRoute: typeof OrganizationSlugRouteRouteWithChildren
   AboutRoute: typeof AboutRoute
-  OrganizationSlugShellRoute: typeof OrganizationSlugShellRouteWithChildren
   AccountShellRoute: typeof AccountShellRouteWithChildren
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthGoodbyeRoute: typeof AuthGoodbyeRoute
@@ -565,6 +613,7 @@ export interface RootRouteChildren {
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   CheckoutSuccessRoute: typeof CheckoutSuccessRoute
   OrganizationsNewRoute: typeof OrganizationsNewRoute
+  DashboardOrganizationSlugShellRoute: typeof DashboardOrganizationSlugShellRouteWithChildren
   OrganizationsIdDotonboardingRoute: typeof OrganizationsIdDotonboardingRoute
   OrganizationsIdDotplanRoute: typeof OrganizationsIdDotplanRoute
 }
@@ -578,6 +627,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$organizationSlug': {
+      id: '/$organizationSlug'
+      path: '/$organizationSlug'
+      fullPath: '/$organizationSlug'
+      preLoaderRoute: typeof OrganizationSlugRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -585,12 +641,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/$organizationSlug/_shell': {
-      id: '/$organizationSlug/_shell'
-      path: '/$organizationSlug'
-      fullPath: '/$organizationSlug'
-      preLoaderRoute: typeof OrganizationSlugShellRouteImport
-      parentRoute: typeof rootRouteImport
+    '/$organizationSlug/': {
+      id: '/$organizationSlug/'
+      path: '/'
+      fullPath: '/$organizationSlug/'
+      preLoaderRoute: typeof OrganizationSlugIndexRouteImport
+      parentRoute: typeof OrganizationSlugRouteRoute
+    }
+    '/$organizationSlug/book': {
+      id: '/$organizationSlug/book'
+      path: '/book'
+      fullPath: '/$organizationSlug/book'
+      preLoaderRoute: typeof OrganizationSlugBookRouteImport
+      parentRoute: typeof OrganizationSlugRouteRoute
     }
     '/account/_shell': {
       id: '/account/_shell'
@@ -655,69 +718,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrganizationsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/$organizationSlug/_shell/': {
-      id: '/$organizationSlug/_shell/'
-      path: '/'
-      fullPath: '/$organizationSlug/'
-      preLoaderRoute: typeof OrganizationSlugShellDotindexRouteImport
-      parentRoute: typeof OrganizationSlugShellRoute
-    }
-    '/$organizationSlug/_shell/analytics': {
-      id: '/$organizationSlug/_shell/analytics'
-      path: '/analytics'
-      fullPath: '/$organizationSlug/analytics'
-      preLoaderRoute: typeof OrganizationSlugShellDotanalyticsRouteImport
-      parentRoute: typeof OrganizationSlugShellRoute
-    }
-    '/$organizationSlug/_shell/bookings': {
-      id: '/$organizationSlug/_shell/bookings'
-      path: '/bookings'
-      fullPath: '/$organizationSlug/bookings'
-      preLoaderRoute: typeof OrganizationSlugShellDotbookingsRouteImport
-      parentRoute: typeof OrganizationSlugShellRoute
-    }
-    '/$organizationSlug/_shell/customers': {
-      id: '/$organizationSlug/_shell/customers'
-      path: '/customers'
-      fullPath: '/$organizationSlug/customers'
-      preLoaderRoute: typeof OrganizationSlugShellDotcustomersRouteImport
-      parentRoute: typeof OrganizationSlugShellRoute
-    }
-    '/$organizationSlug/_shell/pages': {
-      id: '/$organizationSlug/_shell/pages'
-      path: '/pages'
-      fullPath: '/$organizationSlug/pages'
-      preLoaderRoute: typeof OrganizationSlugShellDotpagesRouteImport
-      parentRoute: typeof OrganizationSlugShellRoute
-    }
-    '/$organizationSlug/_shell/payments': {
-      id: '/$organizationSlug/_shell/payments'
-      path: '/payments'
-      fullPath: '/$organizationSlug/payments'
-      preLoaderRoute: typeof OrganizationSlugShellDotpaymentsRouteImport
-      parentRoute: typeof OrganizationSlugShellRoute
-    }
-    '/$organizationSlug/_shell/services': {
-      id: '/$organizationSlug/_shell/services'
-      path: '/services'
-      fullPath: '/$organizationSlug/services'
-      preLoaderRoute: typeof OrganizationSlugShellDotservicesRouteImport
-      parentRoute: typeof OrganizationSlugShellRoute
-    }
-    '/$organizationSlug/_shell/settings': {
-      id: '/$organizationSlug/_shell/settings'
-      path: '/settings'
-      fullPath: '/$organizationSlug/settings'
-      preLoaderRoute: typeof OrganizationSlugShellDotsettingsRouteImport
-      parentRoute: typeof OrganizationSlugShellRoute
-    }
-    '/$organizationSlug/_shell/team': {
-      id: '/$organizationSlug/_shell/team'
-      path: '/team'
-      fullPath: '/$organizationSlug/team'
-      preLoaderRoute: typeof OrganizationSlugShellDotteamRouteImport
-      parentRoute: typeof OrganizationSlugShellRoute
-    }
     '/account/_shell/': {
       id: '/account/_shell/'
       path: '/'
@@ -767,6 +767,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountShellDotsettingsRouteImport
       parentRoute: typeof AccountShellRoute
     }
+    '/dashboard/$organizationSlug/_shell': {
+      id: '/dashboard/$organizationSlug/_shell'
+      path: '/dashboard/$organizationSlug'
+      fullPath: '/dashboard/$organizationSlug'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/organizations/$id/onboarding': {
       id: '/organizations/$id/onboarding'
       path: '/organizations/$id/onboarding'
@@ -780,83 +787,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/organizations/$id/plan'
       preLoaderRoute: typeof OrganizationsIdDotplanRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/$organizationSlug/_shell/bookings/': {
-      id: '/$organizationSlug/_shell/bookings/'
-      path: '/'
-      fullPath: '/$organizationSlug/bookings/'
-      preLoaderRoute: typeof OrganizationSlugShellDotbookingsDotindexRouteImport
-      parentRoute: typeof OrganizationSlugShellDotbookingsRoute
-    }
-    '/$organizationSlug/_shell/bookings/$id': {
-      id: '/$organizationSlug/_shell/bookings/$id'
-      path: '/$id'
-      fullPath: '/$organizationSlug/bookings/$id'
-      preLoaderRoute: typeof OrganizationSlugShellDotbookingsDotidRouteImport
-      parentRoute: typeof OrganizationSlugShellDotbookingsRoute
-    }
-    '/$organizationSlug/_shell/customers/': {
-      id: '/$organizationSlug/_shell/customers/'
-      path: '/'
-      fullPath: '/$organizationSlug/customers/'
-      preLoaderRoute: typeof OrganizationSlugShellDotcustomersDotindexRouteImport
-      parentRoute: typeof OrganizationSlugShellDotcustomersRoute
-    }
-    '/$organizationSlug/_shell/customers/$id': {
-      id: '/$organizationSlug/_shell/customers/$id'
-      path: '/$id'
-      fullPath: '/$organizationSlug/customers/$id'
-      preLoaderRoute: typeof OrganizationSlugShellDotcustomersDotidRouteImport
-      parentRoute: typeof OrganizationSlugShellDotcustomersRoute
-    }
-    '/$organizationSlug/_shell/pages/': {
-      id: '/$organizationSlug/_shell/pages/'
-      path: '/'
-      fullPath: '/$organizationSlug/pages/'
-      preLoaderRoute: typeof OrganizationSlugShellDotpagesDotindexRouteImport
-      parentRoute: typeof OrganizationSlugShellDotpagesRoute
-    }
-    '/$organizationSlug/_shell/pages/$id': {
-      id: '/$organizationSlug/_shell/pages/$id'
-      path: '/$id'
-      fullPath: '/$organizationSlug/pages/$id'
-      preLoaderRoute: typeof OrganizationSlugShellDotpagesDotidRouteImport
-      parentRoute: typeof OrganizationSlugShellDotpagesRoute
-    }
-    '/$organizationSlug/_shell/services/': {
-      id: '/$organizationSlug/_shell/services/'
-      path: '/'
-      fullPath: '/$organizationSlug/services/'
-      preLoaderRoute: typeof OrganizationSlugShellDotservicesDotindexRouteImport
-      parentRoute: typeof OrganizationSlugShellDotservicesRoute
-    }
-    '/$organizationSlug/_shell/services/$id': {
-      id: '/$organizationSlug/_shell/services/$id'
-      path: '/$id'
-      fullPath: '/$organizationSlug/services/$id'
-      preLoaderRoute: typeof OrganizationSlugShellDotservicesDotidRouteImport
-      parentRoute: typeof OrganizationSlugShellDotservicesRoute
-    }
-    '/$organizationSlug/_shell/services/hours': {
-      id: '/$organizationSlug/_shell/services/hours'
-      path: '/hours'
-      fullPath: '/$organizationSlug/services/hours'
-      preLoaderRoute: typeof OrganizationSlugShellDotservicesDothoursRouteImport
-      parentRoute: typeof OrganizationSlugShellDotservicesRoute
-    }
-    '/$organizationSlug/_shell/services/new': {
-      id: '/$organizationSlug/_shell/services/new'
-      path: '/new'
-      fullPath: '/$organizationSlug/services/new'
-      preLoaderRoute: typeof OrganizationSlugShellDotservicesDotnewRouteImport
-      parentRoute: typeof OrganizationSlugShellDotservicesRoute
-    }
-    '/$organizationSlug/_shell/settings/': {
-      id: '/$organizationSlug/_shell/settings/'
-      path: '/'
-      fullPath: '/$organizationSlug/settings/'
-      preLoaderRoute: typeof OrganizationSlugShellDotsettingsDotindexRouteImport
-      parentRoute: typeof OrganizationSlugShellDotsettingsRoute
     }
     '/account/_shell/bookings/': {
       id: '/account/_shell/bookings/'
@@ -872,135 +802,169 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountShellDotbookingsDotidRouteImport
       parentRoute: typeof AccountShellDotbookingsRoute
     }
+    '/dashboard/$organizationSlug/_shell/': {
+      id: '/dashboard/$organizationSlug/_shell/'
+      path: '/'
+      fullPath: '/dashboard/$organizationSlug/'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotindexRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellRoute
+    }
+    '/dashboard/$organizationSlug/_shell/analytics': {
+      id: '/dashboard/$organizationSlug/_shell/analytics'
+      path: '/analytics'
+      fullPath: '/dashboard/$organizationSlug/analytics'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotanalyticsRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellRoute
+    }
+    '/dashboard/$organizationSlug/_shell/bookings': {
+      id: '/dashboard/$organizationSlug/_shell/bookings'
+      path: '/bookings'
+      fullPath: '/dashboard/$organizationSlug/bookings'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotbookingsRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellRoute
+    }
+    '/dashboard/$organizationSlug/_shell/customers': {
+      id: '/dashboard/$organizationSlug/_shell/customers'
+      path: '/customers'
+      fullPath: '/dashboard/$organizationSlug/customers'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotcustomersRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellRoute
+    }
+    '/dashboard/$organizationSlug/_shell/pages': {
+      id: '/dashboard/$organizationSlug/_shell/pages'
+      path: '/pages'
+      fullPath: '/dashboard/$organizationSlug/pages'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotpagesRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellRoute
+    }
+    '/dashboard/$organizationSlug/_shell/payments': {
+      id: '/dashboard/$organizationSlug/_shell/payments'
+      path: '/payments'
+      fullPath: '/dashboard/$organizationSlug/payments'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotpaymentsRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellRoute
+    }
+    '/dashboard/$organizationSlug/_shell/services': {
+      id: '/dashboard/$organizationSlug/_shell/services'
+      path: '/services'
+      fullPath: '/dashboard/$organizationSlug/services'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotservicesRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellRoute
+    }
+    '/dashboard/$organizationSlug/_shell/settings': {
+      id: '/dashboard/$organizationSlug/_shell/settings'
+      path: '/settings'
+      fullPath: '/dashboard/$organizationSlug/settings'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotsettingsRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellRoute
+    }
+    '/dashboard/$organizationSlug/_shell/team': {
+      id: '/dashboard/$organizationSlug/_shell/team'
+      path: '/team'
+      fullPath: '/dashboard/$organizationSlug/team'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotteamRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellRoute
+    }
+    '/dashboard/$organizationSlug/_shell/bookings/': {
+      id: '/dashboard/$organizationSlug/_shell/bookings/'
+      path: '/'
+      fullPath: '/dashboard/$organizationSlug/bookings/'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotbookingsDotindexRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotbookingsRoute
+    }
+    '/dashboard/$organizationSlug/_shell/bookings/$id': {
+      id: '/dashboard/$organizationSlug/_shell/bookings/$id'
+      path: '/$id'
+      fullPath: '/dashboard/$organizationSlug/bookings/$id'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotbookingsDotidRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotbookingsRoute
+    }
+    '/dashboard/$organizationSlug/_shell/bookings/new': {
+      id: '/dashboard/$organizationSlug/_shell/bookings/new'
+      path: '/new'
+      fullPath: '/dashboard/$organizationSlug/bookings/new'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotbookingsDotnewRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotbookingsRoute
+    }
+    '/dashboard/$organizationSlug/_shell/customers/': {
+      id: '/dashboard/$organizationSlug/_shell/customers/'
+      path: '/'
+      fullPath: '/dashboard/$organizationSlug/customers/'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotcustomersDotindexRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotcustomersRoute
+    }
+    '/dashboard/$organizationSlug/_shell/customers/$id': {
+      id: '/dashboard/$organizationSlug/_shell/customers/$id'
+      path: '/$id'
+      fullPath: '/dashboard/$organizationSlug/customers/$id'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotcustomersDotidRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotcustomersRoute
+    }
+    '/dashboard/$organizationSlug/_shell/pages/': {
+      id: '/dashboard/$organizationSlug/_shell/pages/'
+      path: '/'
+      fullPath: '/dashboard/$organizationSlug/pages/'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotpagesDotindexRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotpagesRoute
+    }
+    '/dashboard/$organizationSlug/_shell/pages/$id': {
+      id: '/dashboard/$organizationSlug/_shell/pages/$id'
+      path: '/$id'
+      fullPath: '/dashboard/$organizationSlug/pages/$id'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotpagesDotidRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotpagesRoute
+    }
+    '/dashboard/$organizationSlug/_shell/services/': {
+      id: '/dashboard/$organizationSlug/_shell/services/'
+      path: '/'
+      fullPath: '/dashboard/$organizationSlug/services/'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotservicesDotindexRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotservicesRoute
+    }
+    '/dashboard/$organizationSlug/_shell/services/$id': {
+      id: '/dashboard/$organizationSlug/_shell/services/$id'
+      path: '/$id'
+      fullPath: '/dashboard/$organizationSlug/services/$id'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotservicesDotidRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotservicesRoute
+    }
+    '/dashboard/$organizationSlug/_shell/services/hours': {
+      id: '/dashboard/$organizationSlug/_shell/services/hours'
+      path: '/hours'
+      fullPath: '/dashboard/$organizationSlug/services/hours'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotservicesDothoursRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotservicesRoute
+    }
+    '/dashboard/$organizationSlug/_shell/services/new': {
+      id: '/dashboard/$organizationSlug/_shell/services/new'
+      path: '/new'
+      fullPath: '/dashboard/$organizationSlug/services/new'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotservicesDotnewRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotservicesRoute
+    }
+    '/dashboard/$organizationSlug/_shell/settings/': {
+      id: '/dashboard/$organizationSlug/_shell/settings/'
+      path: '/'
+      fullPath: '/dashboard/$organizationSlug/settings/'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotsettingsDotindexRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotsettingsRoute
+    }
   }
 }
 
-interface OrganizationSlugShellDotbookingsRouteChildren {
-  OrganizationSlugShellDotbookingsDotidRoute: typeof OrganizationSlugShellDotbookingsDotidRoute
-  OrganizationSlugShellDotbookingsDotindexRoute: typeof OrganizationSlugShellDotbookingsDotindexRoute
+interface OrganizationSlugRouteRouteChildren {
+  OrganizationSlugBookRoute: typeof OrganizationSlugBookRoute
+  OrganizationSlugIndexRoute: typeof OrganizationSlugIndexRoute
 }
 
-const OrganizationSlugShellDotbookingsRouteChildren: OrganizationSlugShellDotbookingsRouteChildren =
-  {
-    OrganizationSlugShellDotbookingsDotidRoute:
-      OrganizationSlugShellDotbookingsDotidRoute,
-    OrganizationSlugShellDotbookingsDotindexRoute:
-      OrganizationSlugShellDotbookingsDotindexRoute,
-  }
-
-const OrganizationSlugShellDotbookingsRouteWithChildren =
-  OrganizationSlugShellDotbookingsRoute._addFileChildren(
-    OrganizationSlugShellDotbookingsRouteChildren,
-  )
-
-interface OrganizationSlugShellDotcustomersRouteChildren {
-  OrganizationSlugShellDotcustomersDotidRoute: typeof OrganizationSlugShellDotcustomersDotidRoute
-  OrganizationSlugShellDotcustomersDotindexRoute: typeof OrganizationSlugShellDotcustomersDotindexRoute
+const OrganizationSlugRouteRouteChildren: OrganizationSlugRouteRouteChildren = {
+  OrganizationSlugBookRoute: OrganizationSlugBookRoute,
+  OrganizationSlugIndexRoute: OrganizationSlugIndexRoute,
 }
 
-const OrganizationSlugShellDotcustomersRouteChildren: OrganizationSlugShellDotcustomersRouteChildren =
-  {
-    OrganizationSlugShellDotcustomersDotidRoute:
-      OrganizationSlugShellDotcustomersDotidRoute,
-    OrganizationSlugShellDotcustomersDotindexRoute:
-      OrganizationSlugShellDotcustomersDotindexRoute,
-  }
-
-const OrganizationSlugShellDotcustomersRouteWithChildren =
-  OrganizationSlugShellDotcustomersRoute._addFileChildren(
-    OrganizationSlugShellDotcustomersRouteChildren,
-  )
-
-interface OrganizationSlugShellDotpagesRouteChildren {
-  OrganizationSlugShellDotpagesDotidRoute: typeof OrganizationSlugShellDotpagesDotidRoute
-  OrganizationSlugShellDotpagesDotindexRoute: typeof OrganizationSlugShellDotpagesDotindexRoute
-}
-
-const OrganizationSlugShellDotpagesRouteChildren: OrganizationSlugShellDotpagesRouteChildren =
-  {
-    OrganizationSlugShellDotpagesDotidRoute:
-      OrganizationSlugShellDotpagesDotidRoute,
-    OrganizationSlugShellDotpagesDotindexRoute:
-      OrganizationSlugShellDotpagesDotindexRoute,
-  }
-
-const OrganizationSlugShellDotpagesRouteWithChildren =
-  OrganizationSlugShellDotpagesRoute._addFileChildren(
-    OrganizationSlugShellDotpagesRouteChildren,
-  )
-
-interface OrganizationSlugShellDotservicesRouteChildren {
-  OrganizationSlugShellDotservicesDotidRoute: typeof OrganizationSlugShellDotservicesDotidRoute
-  OrganizationSlugShellDotservicesDothoursRoute: typeof OrganizationSlugShellDotservicesDothoursRoute
-  OrganizationSlugShellDotservicesDotnewRoute: typeof OrganizationSlugShellDotservicesDotnewRoute
-  OrganizationSlugShellDotservicesDotindexRoute: typeof OrganizationSlugShellDotservicesDotindexRoute
-}
-
-const OrganizationSlugShellDotservicesRouteChildren: OrganizationSlugShellDotservicesRouteChildren =
-  {
-    OrganizationSlugShellDotservicesDotidRoute:
-      OrganizationSlugShellDotservicesDotidRoute,
-    OrganizationSlugShellDotservicesDothoursRoute:
-      OrganizationSlugShellDotservicesDothoursRoute,
-    OrganizationSlugShellDotservicesDotnewRoute:
-      OrganizationSlugShellDotservicesDotnewRoute,
-    OrganizationSlugShellDotservicesDotindexRoute:
-      OrganizationSlugShellDotservicesDotindexRoute,
-  }
-
-const OrganizationSlugShellDotservicesRouteWithChildren =
-  OrganizationSlugShellDotservicesRoute._addFileChildren(
-    OrganizationSlugShellDotservicesRouteChildren,
-  )
-
-interface OrganizationSlugShellDotsettingsRouteChildren {
-  OrganizationSlugShellDotsettingsDotindexRoute: typeof OrganizationSlugShellDotsettingsDotindexRoute
-}
-
-const OrganizationSlugShellDotsettingsRouteChildren: OrganizationSlugShellDotsettingsRouteChildren =
-  {
-    OrganizationSlugShellDotsettingsDotindexRoute:
-      OrganizationSlugShellDotsettingsDotindexRoute,
-  }
-
-const OrganizationSlugShellDotsettingsRouteWithChildren =
-  OrganizationSlugShellDotsettingsRoute._addFileChildren(
-    OrganizationSlugShellDotsettingsRouteChildren,
-  )
-
-interface OrganizationSlugShellRouteChildren {
-  OrganizationSlugShellDotanalyticsRoute: typeof OrganizationSlugShellDotanalyticsRoute
-  OrganizationSlugShellDotbookingsRoute: typeof OrganizationSlugShellDotbookingsRouteWithChildren
-  OrganizationSlugShellDotcustomersRoute: typeof OrganizationSlugShellDotcustomersRouteWithChildren
-  OrganizationSlugShellDotpagesRoute: typeof OrganizationSlugShellDotpagesRouteWithChildren
-  OrganizationSlugShellDotpaymentsRoute: typeof OrganizationSlugShellDotpaymentsRoute
-  OrganizationSlugShellDotservicesRoute: typeof OrganizationSlugShellDotservicesRouteWithChildren
-  OrganizationSlugShellDotsettingsRoute: typeof OrganizationSlugShellDotsettingsRouteWithChildren
-  OrganizationSlugShellDotteamRoute: typeof OrganizationSlugShellDotteamRoute
-  OrganizationSlugShellDotindexRoute: typeof OrganizationSlugShellDotindexRoute
-}
-
-const OrganizationSlugShellRouteChildren: OrganizationSlugShellRouteChildren = {
-  OrganizationSlugShellDotanalyticsRoute:
-    OrganizationSlugShellDotanalyticsRoute,
-  OrganizationSlugShellDotbookingsRoute:
-    OrganizationSlugShellDotbookingsRouteWithChildren,
-  OrganizationSlugShellDotcustomersRoute:
-    OrganizationSlugShellDotcustomersRouteWithChildren,
-  OrganizationSlugShellDotpagesRoute:
-    OrganizationSlugShellDotpagesRouteWithChildren,
-  OrganizationSlugShellDotpaymentsRoute: OrganizationSlugShellDotpaymentsRoute,
-  OrganizationSlugShellDotservicesRoute:
-    OrganizationSlugShellDotservicesRouteWithChildren,
-  OrganizationSlugShellDotsettingsRoute:
-    OrganizationSlugShellDotsettingsRouteWithChildren,
-  OrganizationSlugShellDotteamRoute: OrganizationSlugShellDotteamRoute,
-  OrganizationSlugShellDotindexRoute: OrganizationSlugShellDotindexRoute,
-}
-
-const OrganizationSlugShellRouteWithChildren =
-  OrganizationSlugShellRoute._addFileChildren(
-    OrganizationSlugShellRouteChildren,
+const OrganizationSlugRouteRouteWithChildren =
+  OrganizationSlugRouteRoute._addFileChildren(
+    OrganizationSlugRouteRouteChildren,
   )
 
 interface AccountShellDotbookingsRouteChildren {
@@ -1043,10 +1007,145 @@ const AccountShellRouteWithChildren = AccountShellRoute._addFileChildren(
   AccountShellRouteChildren,
 )
 
+interface DashboardOrganizationSlugShellDotbookingsRouteChildren {
+  DashboardOrganizationSlugShellDotbookingsDotidRoute: typeof DashboardOrganizationSlugShellDotbookingsDotidRoute
+  DashboardOrganizationSlugShellDotbookingsDotnewRoute: typeof DashboardOrganizationSlugShellDotbookingsDotnewRoute
+  DashboardOrganizationSlugShellDotbookingsDotindexRoute: typeof DashboardOrganizationSlugShellDotbookingsDotindexRoute
+}
+
+const DashboardOrganizationSlugShellDotbookingsRouteChildren: DashboardOrganizationSlugShellDotbookingsRouteChildren =
+  {
+    DashboardOrganizationSlugShellDotbookingsDotidRoute:
+      DashboardOrganizationSlugShellDotbookingsDotidRoute,
+    DashboardOrganizationSlugShellDotbookingsDotnewRoute:
+      DashboardOrganizationSlugShellDotbookingsDotnewRoute,
+    DashboardOrganizationSlugShellDotbookingsDotindexRoute:
+      DashboardOrganizationSlugShellDotbookingsDotindexRoute,
+  }
+
+const DashboardOrganizationSlugShellDotbookingsRouteWithChildren =
+  DashboardOrganizationSlugShellDotbookingsRoute._addFileChildren(
+    DashboardOrganizationSlugShellDotbookingsRouteChildren,
+  )
+
+interface DashboardOrganizationSlugShellDotcustomersRouteChildren {
+  DashboardOrganizationSlugShellDotcustomersDotidRoute: typeof DashboardOrganizationSlugShellDotcustomersDotidRoute
+  DashboardOrganizationSlugShellDotcustomersDotindexRoute: typeof DashboardOrganizationSlugShellDotcustomersDotindexRoute
+}
+
+const DashboardOrganizationSlugShellDotcustomersRouteChildren: DashboardOrganizationSlugShellDotcustomersRouteChildren =
+  {
+    DashboardOrganizationSlugShellDotcustomersDotidRoute:
+      DashboardOrganizationSlugShellDotcustomersDotidRoute,
+    DashboardOrganizationSlugShellDotcustomersDotindexRoute:
+      DashboardOrganizationSlugShellDotcustomersDotindexRoute,
+  }
+
+const DashboardOrganizationSlugShellDotcustomersRouteWithChildren =
+  DashboardOrganizationSlugShellDotcustomersRoute._addFileChildren(
+    DashboardOrganizationSlugShellDotcustomersRouteChildren,
+  )
+
+interface DashboardOrganizationSlugShellDotpagesRouteChildren {
+  DashboardOrganizationSlugShellDotpagesDotidRoute: typeof DashboardOrganizationSlugShellDotpagesDotidRoute
+  DashboardOrganizationSlugShellDotpagesDotindexRoute: typeof DashboardOrganizationSlugShellDotpagesDotindexRoute
+}
+
+const DashboardOrganizationSlugShellDotpagesRouteChildren: DashboardOrganizationSlugShellDotpagesRouteChildren =
+  {
+    DashboardOrganizationSlugShellDotpagesDotidRoute:
+      DashboardOrganizationSlugShellDotpagesDotidRoute,
+    DashboardOrganizationSlugShellDotpagesDotindexRoute:
+      DashboardOrganizationSlugShellDotpagesDotindexRoute,
+  }
+
+const DashboardOrganizationSlugShellDotpagesRouteWithChildren =
+  DashboardOrganizationSlugShellDotpagesRoute._addFileChildren(
+    DashboardOrganizationSlugShellDotpagesRouteChildren,
+  )
+
+interface DashboardOrganizationSlugShellDotservicesRouteChildren {
+  DashboardOrganizationSlugShellDotservicesDotidRoute: typeof DashboardOrganizationSlugShellDotservicesDotidRoute
+  DashboardOrganizationSlugShellDotservicesDothoursRoute: typeof DashboardOrganizationSlugShellDotservicesDothoursRoute
+  DashboardOrganizationSlugShellDotservicesDotnewRoute: typeof DashboardOrganizationSlugShellDotservicesDotnewRoute
+  DashboardOrganizationSlugShellDotservicesDotindexRoute: typeof DashboardOrganizationSlugShellDotservicesDotindexRoute
+}
+
+const DashboardOrganizationSlugShellDotservicesRouteChildren: DashboardOrganizationSlugShellDotservicesRouteChildren =
+  {
+    DashboardOrganizationSlugShellDotservicesDotidRoute:
+      DashboardOrganizationSlugShellDotservicesDotidRoute,
+    DashboardOrganizationSlugShellDotservicesDothoursRoute:
+      DashboardOrganizationSlugShellDotservicesDothoursRoute,
+    DashboardOrganizationSlugShellDotservicesDotnewRoute:
+      DashboardOrganizationSlugShellDotservicesDotnewRoute,
+    DashboardOrganizationSlugShellDotservicesDotindexRoute:
+      DashboardOrganizationSlugShellDotservicesDotindexRoute,
+  }
+
+const DashboardOrganizationSlugShellDotservicesRouteWithChildren =
+  DashboardOrganizationSlugShellDotservicesRoute._addFileChildren(
+    DashboardOrganizationSlugShellDotservicesRouteChildren,
+  )
+
+interface DashboardOrganizationSlugShellDotsettingsRouteChildren {
+  DashboardOrganizationSlugShellDotsettingsDotindexRoute: typeof DashboardOrganizationSlugShellDotsettingsDotindexRoute
+}
+
+const DashboardOrganizationSlugShellDotsettingsRouteChildren: DashboardOrganizationSlugShellDotsettingsRouteChildren =
+  {
+    DashboardOrganizationSlugShellDotsettingsDotindexRoute:
+      DashboardOrganizationSlugShellDotsettingsDotindexRoute,
+  }
+
+const DashboardOrganizationSlugShellDotsettingsRouteWithChildren =
+  DashboardOrganizationSlugShellDotsettingsRoute._addFileChildren(
+    DashboardOrganizationSlugShellDotsettingsRouteChildren,
+  )
+
+interface DashboardOrganizationSlugShellRouteChildren {
+  DashboardOrganizationSlugShellDotanalyticsRoute: typeof DashboardOrganizationSlugShellDotanalyticsRoute
+  DashboardOrganizationSlugShellDotbookingsRoute: typeof DashboardOrganizationSlugShellDotbookingsRouteWithChildren
+  DashboardOrganizationSlugShellDotcustomersRoute: typeof DashboardOrganizationSlugShellDotcustomersRouteWithChildren
+  DashboardOrganizationSlugShellDotpagesRoute: typeof DashboardOrganizationSlugShellDotpagesRouteWithChildren
+  DashboardOrganizationSlugShellDotpaymentsRoute: typeof DashboardOrganizationSlugShellDotpaymentsRoute
+  DashboardOrganizationSlugShellDotservicesRoute: typeof DashboardOrganizationSlugShellDotservicesRouteWithChildren
+  DashboardOrganizationSlugShellDotsettingsRoute: typeof DashboardOrganizationSlugShellDotsettingsRouteWithChildren
+  DashboardOrganizationSlugShellDotteamRoute: typeof DashboardOrganizationSlugShellDotteamRoute
+  DashboardOrganizationSlugShellDotindexRoute: typeof DashboardOrganizationSlugShellDotindexRoute
+}
+
+const DashboardOrganizationSlugShellRouteChildren: DashboardOrganizationSlugShellRouteChildren =
+  {
+    DashboardOrganizationSlugShellDotanalyticsRoute:
+      DashboardOrganizationSlugShellDotanalyticsRoute,
+    DashboardOrganizationSlugShellDotbookingsRoute:
+      DashboardOrganizationSlugShellDotbookingsRouteWithChildren,
+    DashboardOrganizationSlugShellDotcustomersRoute:
+      DashboardOrganizationSlugShellDotcustomersRouteWithChildren,
+    DashboardOrganizationSlugShellDotpagesRoute:
+      DashboardOrganizationSlugShellDotpagesRouteWithChildren,
+    DashboardOrganizationSlugShellDotpaymentsRoute:
+      DashboardOrganizationSlugShellDotpaymentsRoute,
+    DashboardOrganizationSlugShellDotservicesRoute:
+      DashboardOrganizationSlugShellDotservicesRouteWithChildren,
+    DashboardOrganizationSlugShellDotsettingsRoute:
+      DashboardOrganizationSlugShellDotsettingsRouteWithChildren,
+    DashboardOrganizationSlugShellDotteamRoute:
+      DashboardOrganizationSlugShellDotteamRoute,
+    DashboardOrganizationSlugShellDotindexRoute:
+      DashboardOrganizationSlugShellDotindexRoute,
+  }
+
+const DashboardOrganizationSlugShellRouteWithChildren =
+  DashboardOrganizationSlugShellRoute._addFileChildren(
+    DashboardOrganizationSlugShellRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  OrganizationSlugRouteRoute: OrganizationSlugRouteRouteWithChildren,
   AboutRoute: AboutRoute,
-  OrganizationSlugShellRoute: OrganizationSlugShellRouteWithChildren,
   AccountShellRoute: AccountShellRouteWithChildren,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthGoodbyeRoute: AuthGoodbyeRoute,
@@ -1056,6 +1155,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   CheckoutSuccessRoute: CheckoutSuccessRoute,
   OrganizationsNewRoute: OrganizationsNewRoute,
+  DashboardOrganizationSlugShellRoute:
+    DashboardOrganizationSlugShellRouteWithChildren,
   OrganizationsIdDotonboardingRoute: OrganizationsIdDotonboardingRoute,
   OrganizationsIdDotplanRoute: OrganizationsIdDotplanRoute,
 }

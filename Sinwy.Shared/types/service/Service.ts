@@ -10,9 +10,29 @@ export type ServiceDto = {
 	bufferBeforeMinutes: number;
 	bufferAfterMinutes: number;
 	isActive: boolean;
+	/** Self-bookings start `pending` until staff confirm them. */
+	requiresApproval: boolean;
+	/** Minutes before the start in which customers can't cancel a confirmed booking online; 0 means none. */
+	cancellationWindowMinutes: number;
 	createdAt: string;
 	updatedAt: string;
 };
+
+/** What a storefront shows of a service. */
+export type PublicServiceDto = Pick<
+	ServiceDto,
+	| "id"
+	| "name"
+	| "description"
+	| "durationMinutes"
+	| "priceMinor"
+	| "currency"
+	| "requiresApproval"
+	| "cancellationWindowMinutes"
+>;
+
+/** The cancellation windows a service can pick, in minutes. */
+export const CANCELLATION_WINDOW_PRESETS = [0, 120, 720, 1440, 2880] as const;
 
 export const SERVICE_LIMITS = {
 	name: 100,

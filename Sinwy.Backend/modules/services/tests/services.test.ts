@@ -101,6 +101,7 @@ test("create copies the organization's currency and ignores currency and capacit
 		bufferBeforeMinutes: 0,
 		bufferAfterMinutes: 0,
 		isActive: true,
+		requiresApproval: false,
 	});
 	expect(created).not.toHaveProperty("capacity");
 	const [row] = await db
@@ -175,11 +176,66 @@ test("PATCH ignores the organization, currency, slug, capacity and archive field
 	expect(row).toEqual({ organizationId: orgId, capacity: 1, archivedAt: null });
 });
 
+test("requiresApproval round-trips through create, update and duplicate", async () => {
+	const created = await create({ ...haircut, requiresApproval: true });
+	expect(created.requiresApproval).toBe(true);
+
+	const copy = await unwrap<ServiceDto>(
+		await call("POST", `services/${created.id}/duplicate`, ownerCookie),
+	);
+	expect(copy.requiresApproval).toBe(true);
+
+	const res = await call("PATCH", `services/${created.id}`, ownerCookie, {
+		requiresApproval: false,
+	});
+	expect((await unwrap<ServiceDto>(res)).requiresApproval).toBe(false);
+	const fetched = await unwrap<ServiceDto>(
+		await call("GET", `services/${created.id}`, ownerCookie),
+	);
+	expect(fetched.requiresApproval).toBe(false);
+});
+
+test("the cancellation window defaults to none, duplicates and accepts only the presets", async () => {
+	const created = await create();
+	expect(created.cancellationWindowMinutes).toBe(0);
+
+	const res = await call("PATCH", `services/${created.id}`, ownerCookie, {
+		cancellationWindowMinutes: 1440,
+	});
+	expect((await unwrap<ServiceDto>(res)).cancellationWindowMinutes).toBe(1440);
+	const copy = await unwrap<ServiceDto>(
+		await call("POST", `services/${created.id}/duplicate`, ownerCookie),
+	);
+	expect(copy.cancellationWindowMinutes).toBe(1440);
+
+	for (const cancellationWindowMinutes of [60, -120, "1440"]) {
+		const refused = await call("PATCH", `services/${created.id}`, ownerCookie, {
+			cancellationWindowMinutes,
+		});
+		expect(refused.status).toBe(400);
+	}
+	expect(
+		(
+			await call("POST", "services", ownerCookie, {
+				...haircut,
+				cancellationWindowMinutes: 30,
+			})
+		).status,
+	).toBe(400);
+	const fetched = await unwrap<ServiceDto>(
+		await call("GET", `services/${created.id}`, ownerCookie),
+	);
+	expect(fetched.cancellationWindowMinutes).toBe(1440);
+});
+
 test("staff read but never write", async () => {
 	const created = await create();
 	const writes = [
 		call("POST", "services", staffCookie, haircut),
 		call("PATCH", `services/${created.id}`, staffCookie, { isActive: false }),
+		call("PATCH", `services/${created.id}`, staffCookie, {
+			requiresApproval: true,
+		}),
 		call("POST", `services/${created.id}/duplicate`, staffCookie),
 		call("DELETE", `services/${created.id}`, staffCookie),
 	];
@@ -190,10 +246,18 @@ test("staff read but never write", async () => {
 		(await call("GET", `services/${created.id}`, staffCookie)).status,
 	).toBe(200);
 	const [row] = await db
-		.select({ isActive: service.isActive, archivedAt: service.archivedAt })
+		.select({
+			isActive: service.isActive,
+			archivedAt: service.archivedAt,
+			requiresApproval: service.requiresApproval,
+		})
 		.from(service)
 		.where(eq(service.id, created.id));
-	expect(row).toEqual({ isActive: true, archivedAt: null });
+	expect(row).toEqual({
+		isActive: true,
+		archivedAt: null,
+		requiresApproval: false,
+	});
 });
 
 test("another organization's service is 404 on every route", async () => {

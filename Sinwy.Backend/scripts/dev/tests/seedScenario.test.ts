@@ -10,11 +10,13 @@ import {
 	organization,
 	organizationProfile,
 } from "@db/schema/organizationSchema";
+import { serviceAvailability } from "@db/schema/serviceSchema";
 import { user, userSubscription } from "@db/schema/userSchema";
 import {
 	getOrganizationState,
 	registerOrganizationRoutes,
 } from "@organizationsModule";
+import { registerServiceRoutes } from "@servicesModule";
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import { loginAs } from "../loginAs";
@@ -31,6 +33,7 @@ beforeAll(() => {
 	registerAuthRoutes(app);
 	registerOrganizationRoutes(app);
 	registerBillingRoutes(app);
+	registerServiceRoutes(app);
 	server = app.listen(0);
 	base = server.url;
 
@@ -151,6 +154,45 @@ test("subscribed-org: the owner on Starter through the webhook, the org on its s
 		.from(organizationProfile)
 		.where(eq(organizationProfile.organizationId, result.organization.id));
 	expect(profile?.country).toBe("LT");
+});
+
+test("bookable-org: a subscribed org with daily hours and two services", async () => {
+	const result = await seed("bookable-org");
+
+	expect((await orgRow(result.organization.id))?.status).toBe("active");
+	expect(result.organization).toMatchObject({
+		timezone: "Europe/Vilnius",
+		services: [
+			{
+				name: "Haircut",
+				durationMinutes: 30,
+				priceMinor: 2500,
+				requiresApproval: false,
+			},
+			{
+				name: "Colouring",
+				durationMinutes: 90,
+				priceMinor: 8000,
+				requiresApproval: true,
+			},
+		],
+	});
+	const hours = await db
+		.select({
+			weekday: serviceAvailability.weekday,
+			startTime: serviceAvailability.startTime,
+			endTime: serviceAvailability.endTime,
+		})
+		.from(serviceAvailability)
+		.where(eq(serviceAvailability.organizationId, result.organization.id))
+		.orderBy(serviceAvailability.weekday);
+	expect(hours).toEqual(
+		[1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
+			weekday,
+			startTime: "09:00:00",
+			endTime: "17:00:00",
+		})),
+	);
 });
 
 test("org-with-staff: staff members, and every printed email works with login-as", async () => {

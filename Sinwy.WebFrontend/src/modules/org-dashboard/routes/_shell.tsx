@@ -36,7 +36,7 @@ const leaveClosedOrganization = (
 	return redirect({ to: "/account" });
 };
 
-export const Route = createFileRoute("/$organizationSlug/_shell")({
+export const Route = createFileRoute("/dashboard/$organizationSlug/_shell")({
 	ssr: false,
 	beforeLoad: async ({ location, params, context, preload }) => {
 		const ctx = await requireAuth({ location });
@@ -97,7 +97,7 @@ function OrganizationShell() {
 			rootCrumb={{
 				label: organization.name,
 				link: linkOptions({
-					to: "/$organizationSlug",
+					to: "/dashboard/$organizationSlug",
 					params: { organizationSlug: organization.slug },
 				}),
 			}}

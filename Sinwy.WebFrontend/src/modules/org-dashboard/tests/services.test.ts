@@ -4,6 +4,11 @@ import { isRedirect } from "@tanstack/react-router";
 import { takeAccessDenied } from "#/shared/lib/auth/access-denied";
 import { requirePermission } from "#/shared/lib/auth/protected-route";
 import {
+	formatCancellationPolicy,
+	formatCancellationWindow,
+} from "#/shared/lib/cancellation-policy";
+import {
+	CANCELLATION_WINDOW_OPTIONS,
 	formatDuration,
 	NEW_SERVICE_VALUES,
 	serviceFormSchema,
@@ -50,6 +55,8 @@ it("submits the selected minutes as numbers", () => {
 		durationMinutes: 45,
 		bufferBeforeMinutes: 0,
 		bufferAfterMinutes: 10,
+		requiresApproval: false,
+		cancellationWindowMinutes: 0,
 	});
 });
 
@@ -58,6 +65,8 @@ it("loads a saved service back into the same form values", () => {
 		...values("25.50"),
 		durationMinutes: "90",
 		bufferBeforeMinutes: "5",
+		requiresApproval: true,
+		cancellationWindowMinutes: "1440",
 	};
 	const input = toServiceInput(form, "EUR");
 	const dto = {
@@ -71,6 +80,33 @@ it("loads a saved service back into the same form values", () => {
 		updatedAt: "",
 	};
 	expect(toServiceFormValues(dto)).toEqual(form);
+});
+
+it("offers the cancellation window presets and refuses anything else", () => {
+	expect(CANCELLATION_WINDOW_OPTIONS.map((option) => option.label)).toEqual([
+		"None",
+		"2 hours",
+		"12 hours",
+		"24 hours",
+		"48 hours",
+	]);
+	const window = (cancellationWindowMinutes: string) =>
+		serviceFormSchema("EUR").safeParse({
+			...values("10"),
+			cancellationWindowMinutes,
+		}).success;
+	expect(window("2880")).toBe(true);
+	expect(window("60")).toBe(false);
+});
+
+it("words the cancellation policy for the storefront", () => {
+	expect(formatCancellationWindow(120)).toBe("2 hours");
+	expect(formatCancellationPolicy(1440)).toBe(
+		"Free cancellation up to 24 hours before the start",
+	);
+	expect(formatCancellationPolicy(0)).toBe(
+		"You can cancel any time before the start",
+	);
 });
 
 it("formats durations in minutes and hours", () => {

@@ -5,7 +5,9 @@ import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { requirePermission } from "#/shared/lib/auth/protected-route";
 
-export const Route = createFileRoute("/$organizationSlug/_shell/analytics")({
+export const Route = createFileRoute(
+	"/dashboard/$organizationSlug/_shell/analytics",
+)({
 	beforeLoad: requirePermission(ORG_SECTIONS.analytics.permission),
 	staticData: { crumb: "Analytics" },
 	component: AnalyticsPage,

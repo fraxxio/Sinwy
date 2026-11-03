@@ -16,7 +16,7 @@ import {
 import { user } from "@db/schema/userSchema";
 import { eq } from "drizzle-orm";
 import {
-	getAccountDeletionPreview,
+	listSoleOwnedOrganizations,
 	scheduleOwnedOrganizationsForDeletion,
 } from "../service";
 
@@ -89,10 +89,8 @@ test("owned active org: scheduled and its slot freed, its data kept", async () =
 	await invite(orgId, staff.userId, "pending", 1);
 	await invite(orgId, staff.userId, "accepted", 2);
 
-	const preview = await getAccountDeletionPreview(userId);
-	expect(preview.soleOwnedOrganizations).toEqual([
-		{ id: orgId, name: "Solo Co", status: "active" },
-	]);
+	const owned = await listSoleOwnedOrganizations(userId);
+	expect(owned).toEqual([{ id: orgId, name: "Solo Co", status: "active" }]);
 
 	const before = Date.now();
 	await scheduleOwnedOrganizationsForDeletion(userId);
@@ -117,15 +115,15 @@ test("combined role string still counts as owner", async () => {
 	const orgId = await insertOrganization("Combined Co");
 	await joinOrganization(orgId, userId, "owner,admin");
 
-	const preview = await getAccountDeletionPreview(userId);
-	expect(preview.soleOwnedOrganizations.map((org) => org.id)).toEqual([orgId]);
+	const owned = await listSoleOwnedOrganizations(userId);
+	expect(owned.map((org) => org.id)).toEqual([orgId]);
 
 	await scheduleOwnedOrganizationsForDeletion(userId);
 
 	expect((await orgState(orgId))?.deletionScheduledAt).not.toBeNull();
 });
 
-test("org where the user is only admin is not previewed and stays untouched", async () => {
+test("org where the user is only admin is not listed and stays untouched", async () => {
 	const { userId } = await createUserWithSession();
 	const { userId: ownerId } = await createUserWithSession();
 	const orgId = await insertOrganization("Managed Co");
@@ -134,8 +132,8 @@ test("org where the user is only admin is not previewed and stays untouched", as
 	await activateOrganization(orgId, "starter", "sub_managed");
 	await invite(orgId, ownerId, "pending", 1);
 
-	const preview = await getAccountDeletionPreview(userId);
-	expect(preview.soleOwnedOrganizations).toEqual([]);
+	const owned = await listSoleOwnedOrganizations(userId);
+	expect(owned).toEqual([]);
 
 	await scheduleOwnedOrganizationsForDeletion(userId);
 

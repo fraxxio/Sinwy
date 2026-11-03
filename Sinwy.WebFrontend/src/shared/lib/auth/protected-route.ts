@@ -61,7 +61,7 @@ export const requirePermission =
 		if (hasPermission(context.member.roles, permission)) return;
 		if (!preload) raiseAccessDenied();
 		throw redirect({
-			to: "/$organizationSlug",
+			to: "/dashboard/$organizationSlug",
 			params: { organizationSlug: context.organization.slug },
 		});
 	};

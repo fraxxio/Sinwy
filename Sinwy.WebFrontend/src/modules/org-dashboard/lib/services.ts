@@ -1,10 +1,12 @@
 import {
+	CANCELLATION_WINDOW_PRESETS,
 	SERVICE_LIMITS as LIMITS,
 	type ServiceDto,
 	type ServiceInput,
 	serviceSchema,
 } from "@sinwy/shared";
 import { z } from "zod";
+import { formatCancellationWindow } from "#/shared/lib/cancellation-policy";
 import { formatAmountInput, parseMinorUnits } from "#/shared/lib/money";
 
 /** "45 min", "1 h", "1 h 30 min". */
@@ -35,7 +37,14 @@ export const BUFFER_OPTIONS = minuteOptions(
 	option.value === "0" ? { ...option, label: "None" } : option,
 );
 
-/** Every field is the text the input holds; the schema turns them into a `ServiceInput`. */
+export const CANCELLATION_WINDOW_OPTIONS = CANCELLATION_WINDOW_PRESETS.map(
+	(minutes) => ({
+		value: String(minutes),
+		label: minutes === 0 ? "None" : formatCancellationWindow(minutes),
+	}),
+);
+
+/** Text fields hold what the input holds; the schema turns them into a `ServiceInput`. */
 export type ServiceFormValues = {
 	name: string;
 	description: string;
@@ -43,6 +52,8 @@ export type ServiceFormValues = {
 	durationMinutes: string;
 	bufferBeforeMinutes: string;
 	bufferAfterMinutes: string;
+	requiresApproval: boolean;
+	cancellationWindowMinutes: string;
 };
 
 const minutes = (rule: z.ZodNumber) => z.string().transform(Number).pipe(rule);
@@ -67,6 +78,11 @@ export const serviceFormSchema = (currency: string) =>
 		durationMinutes: minutes(serviceSchema.shape.durationMinutes),
 		bufferBeforeMinutes: minutes(serviceSchema.shape.bufferBeforeMinutes),
 		bufferAfterMinutes: minutes(serviceSchema.shape.bufferAfterMinutes),
+		requiresApproval: serviceSchema.shape.requiresApproval,
+		cancellationWindowMinutes: z
+			.string()
+			.transform(Number)
+			.pipe(serviceSchema.shape.cancellationWindowMinutes),
 	});
 
 export function toServiceInput(
@@ -84,6 +100,8 @@ export const NEW_SERVICE_VALUES: ServiceFormValues = {
 	durationMinutes: "30",
 	bufferBeforeMinutes: "0",
 	bufferAfterMinutes: "0",
+	requiresApproval: false,
+	cancellationWindowMinutes: "0",
 };
 
 export const toServiceFormValues = (
@@ -95,4 +113,6 @@ export const toServiceFormValues = (
 	durationMinutes: String(service.durationMinutes),
 	bufferBeforeMinutes: String(service.bufferBeforeMinutes),
 	bufferAfterMinutes: String(service.bufferAfterMinutes),
+	requiresApproval: service.requiresApproval,
+	cancellationWindowMinutes: String(service.cancellationWindowMinutes),
 });

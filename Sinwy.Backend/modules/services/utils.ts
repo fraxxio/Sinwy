@@ -13,6 +13,9 @@ export const createServiceBody = serviceSchema.extend({
 	description,
 	bufferBeforeMinutes: serviceSchema.shape.bufferBeforeMinutes.default(0),
 	bufferAfterMinutes: serviceSchema.shape.bufferAfterMinutes.default(0),
+	requiresApproval: serviceSchema.shape.requiresApproval.default(false),
+	cancellationWindowMinutes:
+		serviceSchema.shape.cancellationWindowMinutes.default(0),
 });
 
 export const updateServiceBody = serviceSchema
