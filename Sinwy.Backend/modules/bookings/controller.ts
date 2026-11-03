@@ -23,6 +23,7 @@ import {
 	createManualBooking,
 	createSelfBooking,
 	getBooking,
+	getOverview,
 	getStorefront,
 	listBookings,
 	listBookingTimes,
@@ -149,6 +150,11 @@ export const listCalendarBookingsHandler: Handler = async (c) => {
 	if (!query.ok) return query.response;
 
 	const result = await listCalendarBookings(membershipFrom(c), query.data);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const getOverviewHandler: Handler = async (c) => {
+	const result = await getOverview(membershipFrom(c));
 	return result.ok ? ok(result.data) : respondError(result.error);
 };
 

@@ -3,6 +3,7 @@ import type {
 	BookingDetailDto,
 	BookingDto,
 	BookingListDto,
+	BookingOverviewDto,
 	BookingSort,
 	BookingStatus,
 	BookingUpdateInput,
@@ -49,6 +50,8 @@ export const bookingKeys = {
 		[...bookingKeys.all(organizationId), "detail", bookingId] as const,
 	times: (organizationId: string, params: BookingTimesParams) =>
 		[...bookingKeys.all(organizationId), "times", params] as const,
+	overview: (organizationId: string) =>
+		[...bookingKeys.all(organizationId), "overview"] as const,
 };
 
 export type BookingTimesParams = {
@@ -106,6 +109,18 @@ export const bookingQuery = (organizationId: string, bookingId: string) =>
 		queryFn: async () => {
 			const res = await api<BookingDetailDto>(
 				bookingsPath(organizationId, `/${bookingId}`),
+			);
+			if (!res.isSuccess) throw new Error(res.message);
+			return res.data;
+		},
+	});
+
+export const bookingOverviewQuery = (organizationId: string) =>
+	queryOptions({
+		queryKey: bookingKeys.overview(organizationId),
+		queryFn: async () => {
+			const res = await api<BookingOverviewDto>(
+				bookingsPath(organizationId, "/overview"),
 			);
 			if (!res.isSuccess) throw new Error(res.message);
 			return res.data;

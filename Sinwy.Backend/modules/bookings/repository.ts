@@ -15,10 +15,12 @@ import {
 	count,
 	desc,
 	eq,
+	gt,
 	gte,
 	ilike,
 	inArray,
 	lt,
+	lte,
 	ne,
 	or,
 	type SQL,
@@ -332,3 +334,95 @@ export const findBookingEmailContext = async (bookingId: string) => {
 export type BookingEmailContext = NonNullable<
 	Awaited<ReturnType<typeof findBookingEmailContext>>
 >;
+
+const total = (
+	column: SQL | typeof booking.priceMinor,
+	where: SQL | undefined,
+) =>
+	sql<number>`coalesce(sum(${column}) filter (where ${where}), 0)::int`.mapWith(
+		Number,
+	);
+
+const durationMinutes = sql`extract(epoch from ${booking.endsAt} - ${booking.startsAt}) / 60`;
+
+/** Booked value and booked minutes of the bookings starting in `[start, end)`. */
+export const sumBookingsBetween = async (
+	organizationId: string,
+	start: Date,
+	end: Date,
+) => {
+	const [row] = await db
+		.select({
+			bookedMinor: total(
+				booking.priceMinor,
+				inArray(booking.status, ["confirmed", "completed"]),
+			),
+			completedMinor: total(
+				booking.priceMinor,
+				eq(booking.status, "completed"),
+			),
+			bookedMinutes: total(durationMinutes, ne(booking.status, "cancelled")),
+		})
+		.from(booking)
+		.where(
+			and(
+				eq(booking.organizationId, organizationId),
+				gte(booking.startsAt, start),
+				lt(booking.startsAt, end),
+			),
+		);
+	return row ?? { bookedMinor: 0, completedMinor: 0, bookedMinutes: 0 };
+};
+
+const upcomingRequests = (organizationId: string, now: Date) =>
+	and(
+		eq(booking.organizationId, organizationId),
+		eq(booking.status, "pending"),
+		gt(booking.startsAt, now),
+	);
+
+/** Requests still waiting for an answer, oldest request first. */
+export const findPendingRequests = async (
+	organizationId: string,
+	now: Date,
+	limit: number,
+) => {
+	const [rows, [counted]] = await Promise.all([
+		db
+			.select(withServiceName)
+			.from(booking)
+			.innerJoin(service, eq(service.id, booking.serviceId))
+			.where(upcomingRequests(organizationId, now))
+			.orderBy(asc(booking.createdAt), asc(booking.id))
+			.limit(limit),
+		db
+			.select({ total: count() })
+			.from(booking)
+			.where(upcomingRequests(organizationId, now)),
+	]);
+	return { rows, total: counted?.total ?? 0 };
+};
+
+const countWhere = (where: SQL) =>
+	sql<number>`count(*) filter (where ${where})::int`.mapWith(Number);
+
+/** Started confirmed bookings with no outcome, and started requests nobody answered. */
+export const countNeedingAttention = async (
+	organizationId: string,
+	now: Date,
+) => {
+	const [row] = await db
+		.select({
+			unresolved: countWhere(eq(booking.status, "confirmed")),
+			expiredRequests: countWhere(eq(booking.status, "pending")),
+		})
+		.from(booking)
+		.where(
+			and(
+				eq(booking.organizationId, organizationId),
+				inArray(booking.status, ACTIVE_BOOKING_STATUSES),
+				lte(booking.startsAt, now),
+			),
+		);
+	return row ?? { unresolved: 0, expiredRequests: 0 };
+};

@@ -7,6 +7,7 @@ import {
 	createManualBookingHandler,
 	createSelfBookingHandler,
 	getBookingHandler,
+	getOverviewHandler,
 	getStorefrontHandler,
 	listBookingsHandler,
 	listBookingTimesHandler,
@@ -38,6 +39,9 @@ export const registerBookingRoutes = (app: IApp) => {
 			routeMiddlewares: read,
 		},
 	);
+	app.route(organizationPath("bookings/overview"), getOverviewHandler, {
+		routeMiddlewares: read,
+	});
 	app.route(organizationPath("bookings/:bookingId"), getBookingHandler, {
 		routeMiddlewares: read,
 	});

@@ -131,7 +131,7 @@ export function BookingActions({
 	);
 }
 
-function CancelDialog({
+export function CancelDialog({
 	action,
 	booking,
 	pending,

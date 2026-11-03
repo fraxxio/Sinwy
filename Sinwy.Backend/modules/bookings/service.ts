@@ -8,6 +8,7 @@ import {
 	findBookableService,
 	listBookableTimes,
 	listPublicServices,
+	openMinutes,
 	todayIn,
 } from "@servicesModule";
 import {
@@ -23,6 +24,7 @@ import {
 	type BookingEventDto,
 	type BookingListDto,
 	type BookingListQuery,
+	type BookingOverviewDto,
 	type BookingStatus,
 	type BookingUpdateInput,
 	type CustomerBookingDto,
@@ -40,11 +42,14 @@ import {
 	type BookingRow,
 	changeBooking,
 	countBookings,
+	countNeedingAttention,
 	findBooking,
 	findBookingEvents,
 	findBookings,
 	findBusyIntervals,
+	findPendingRequests,
 	insertBookingIfFree,
+	sumBookingsBetween,
 } from "./repository";
 import {
 	addDaysToDate,
@@ -479,6 +484,69 @@ export const getBooking = async (
 		data: {
 			...toBookingDto(row.booking, row.serviceName),
 			history: events.map((event) => toEventDto(event.event, event.actorName)),
+		},
+	};
+};
+
+const OVERVIEW_PENDING_ROWS = 5;
+
+/** Monday to Sunday of the ISO week holding `date`. */
+const isoWeekOf = (date: string) => {
+	const weekday = new Date(date).getUTCDay() || 7;
+	const from = addDaysToDate(date, 1 - weekday);
+	return { from, to: addDaysToDate(from, 6) };
+};
+
+export const getOverview = async (
+	membership: Membership,
+	now = new Date(),
+): Promise<Result<BookingOverviewDto>> => {
+	const { organizationId } = membership;
+	const locale = await getOrganizationLocale(organizationId);
+	if (!locale) return fail("not-found");
+
+	const { timezone } = locale;
+	const today = todayIn(timezone, now);
+	const week = isoWeekOf(today);
+	const weekStart = startOfLocalDate(week.from, timezone);
+	const weekEnd = startOfLocalDate(addDaysToDate(week.to, 1), timezone);
+
+	const [todayRows, sums, open, pending, attention] = await Promise.all([
+		findBookings(
+			organizationId,
+			toFilters(
+				{ from: today, to: today, status: [], serviceId: [], q: undefined },
+				timezone,
+			),
+			"startsAt",
+		),
+		sumBookingsBetween(organizationId, weekStart, weekEnd),
+		openMinutes(organizationId, week.from, week.to),
+		findPendingRequests(organizationId, now, OVERVIEW_PENDING_ROWS),
+		countNeedingAttention(organizationId, now),
+	]);
+	const toDto = (row: { booking: BookingRow; serviceName: string }) =>
+		toBookingDto(row.booking, row.serviceName);
+	return {
+		ok: true,
+		data: {
+			timezone,
+			currency: locale.currency,
+			today,
+			week,
+			todayBookings: todayRows.map(toDto),
+			revenue: {
+				bookedMinor: sums.bookedMinor,
+				completedMinor: sums.completedMinor,
+			},
+			pending: { total: pending.total, oldest: pending.rows.map(toDto) },
+			occupancy: {
+				bookedMinutes: sums.bookedMinutes,
+				openMinutes: open,
+				percent:
+					open > 0 ? Math.round((sums.bookedMinutes / open) * 100) : null,
+			},
+			needsAttention: attention,
 		},
 	};
 };

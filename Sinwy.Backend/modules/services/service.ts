@@ -184,6 +184,36 @@ export const getAvailability = async (
 	};
 };
 
+const minutesOfClock = (time: string) => {
+	const [hours = 0, minutes = 0] = time.split(":").map(Number);
+	return hours * 60 + minutes;
+};
+
+/** Minutes of org-wide hours over local dates `from`..`to` (inclusive), skipping closed days; wall-clock, so a DST change doesn't count. */
+export const openMinutes = async (
+	organizationId: string,
+	from: string,
+	to: string,
+) => {
+	const [hours, closures] = await Promise.all([
+		findOrganizationHours(organizationId),
+		findClosedDates(organizationId, from, to),
+	]);
+	const closed = new Set(closures);
+	let total = 0;
+	for (let date = from; date <= to; date = nextDate(date)) {
+		if (closed.has(date)) continue;
+		const weekday = new Date(date).getUTCDay() || 7;
+		for (const row of hours)
+			if (row.weekday === weekday)
+				total += minutesOfClock(row.endTime) - minutesOfClock(row.startTime);
+	}
+	return total;
+};
+
+const nextDate = (date: string) =>
+	new Date(Date.parse(date) + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
 export const saveAvailability = async (
 	membership: Membership,
 	input: AvailabilityInput,

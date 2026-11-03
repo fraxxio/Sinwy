@@ -391,3 +391,55 @@ Emails go to the local outbox; nothing else is simulated.
     - `booking_event.payload` is double-encoded jsonb (reproduced inline: `jsonb_typeof` is `string` for `rescheduled` and `contact_updated`). It comes from Phase 4 and is left for later (standing note).
     - A past manual booking with an email still sends "Booking confirmed", as the email matrix says.
   - Not checked: Resend delivery and rendering, the "Not found" state of an unknown booking id, and read-only users (every role has `bookings:write`).
+
+---
+
+## Phase 8: Overview page
+
+**Goal:** `/dashboard/<slug>/` shows today's bookings, this week's booked value, pending requests with inline approve and decline, occupancy, and needs-attention counts.
+
+**Files:**
+- `Sinwy.Backend/modules/bookings/`: `getOverview(membership, now?)` in `service.ts`, queries in `repository.ts`, and `GET organizationPath("bookings/overview")` (`bookings:read`) in `routes.ts`, registered before `bookings/:bookingId` as `times` and `calendar` are. Tests next to `tests/bookings.test.ts`.
+- `Sinwy.Backend/modules/services/`: export `openMinutes(organizationId, from, to)` through `index.ts` (local dates; weekly hours minus closures, in the org zone), next to the bookable-times inputs it already reads.
+- `Sinwy.Shared/types/booking/Booking.ts`: `BookingOverviewDto`.
+- Web: `org-dashboard/routes/_shell.index.tsx` (replace the placeholder), `org-dashboard/lib/booking-queries.ts` (`bookingKeys.overview` under `bookingKeys.all`, and the overview query), new `org-dashboard/components/overview/`.
+- Approve and Decline: `changeBookingStatus` and `invalidateBookings` from `booking-queries.ts`, and export `CancelDialog` from `components/bookings/BookingActions.tsx`. `BookingStatusBadge`, `formatMinorUnits` and `formatTimeIn` render the rows.
+
+**Steps:**
+- Follow the Decision's definitions exactly. "This week" is the ISO week containing today in the org zone. One SQL round-trip per figure is fine.
+- Occupancy is a percentage rounded to whole numbers; with 0 open minutes it returns null, and the web shows "Set your business hours" linking to `/dashboard/<slug>/services/hours`.
+- Revenue uses the booking's own `priceMinor` and the org currency.
+- Approve and Decline on the overview reuse the Phase 7 write functions and dialog.
+- Each needs-attention item links to the list with the matching filters (e.g. `?view=list&status=confirmed&to=<yesterday>`).
+
+**Tests that matter:**
+- Revenue counts `confirmed` + `completed` in this week only, and leaves out `pending`, `cancelled` and `no_show`. Week boundaries are in the org zone (a booking Sunday 23:30 local in a UTC+2 org counts).
+- Occupancy: 7 days × 8h open with one 90-minute `no_show` and one 30-minute cancelled → 90 / 3360. A closure day removes its minutes.
+- Needs attention counts past `confirmed` bookings and expired `pending` ones only.
+
+**Done when:**
+- The overview shows correct figures for the seeded data, and approving from it updates the figures without a reload.
+
+**Verify:** Seed `bookable-org`. Create through the API: a confirmed Haircut today in an hour's time (€25), a completed Haircut earlier this week (€25), a pending Colouring tomorrow (€80) and a no-show Colouring yesterday (€80).
+1. The overview shows today's booking, "Booked this week €50" with "€25 from completed" (if yesterday was in this week), 1 pending request, and occupancy matching (30+30+90+90 if all in this week) / open minutes.
+2. Approve the pending request inline: pending drops to 0, booked rises by €80 if it's in this week, and the customer gets "Booking confirmed" in the outbox.
+
+Nothing else is simulated.
+
+### Log (2026-11-03, `feat(backend, web): add the bookings overview`)
+- Shipped:
+  - `GET organizationPath("bookings/overview")` (`bookings:read`) → `BookingOverviewDto` from `getOverview(membership, now?)`. It returns `timezone`, `currency`, `today`, `week`, `todayBookings`, `revenue`, `pending { total, oldest }`, `occupancy { bookedMinutes, openMinutes, percent }` and `needsAttention { unresolved, expiredRequests }`.
+  - The queries are `sumBookingsBetween` (booked value and minutes in one query, using `filter` sums), `findPendingRequests` and `countNeedingAttention` in the repository.
+  - `openMinutes(organizationId, from, to)` from `@servicesModule`: org-wide hours over local dates, minus full-day closures. It counts wall-clock minutes, so a DST night doesn't change it.
+  - Web: `_shell.index.tsx` and `components/overview/` (`OverviewStats`, `TodayBookings`, `PendingRequests`), plus `bookingOverviewQuery` under `bookingKeys.all`. `CancelDialog` is now exported from `BookingActions.tsx`.
+  - Tests: `bookings/tests/overview.test.ts`. They call `getOverview` with a fixed `now`, cover week boundaries in a UTC+2 org and across the October DST change, and check that the route answers non-members with 404.
+- Differs from plan:
+  - "Pending requests" counts only requests that haven't started. Started ones can't be approved, so they count under Needs attention as expired requests. The boundary matches `canTransition`: the start instant counts as started.
+  - Occupancy's booked minutes are each booking's own `endsAt − startsAt`, not the service's current duration.
+  - The needs-attention links use `to=<today>` rather than `<yesterday>`, so bookings that started earlier today are in the list too. The list can also show later bookings from today.
+  - The test of the overview route expects 404 for a non-member, which is the existing rule, not 403.
+- Checked in the running app (e2e subagent, both Verify steps passed):
+  - Before approving, the overview showed €50.00 booked, €25.00 from completed, 1 pending, 7% (240 of 3,360 open minutes) and Needs attention 0, with today's Haircut listed.
+  - Approving inline updated the page without a reload to €130.00, 0 pending and "All caught up". The DB row became `confirmed`, and the customer got "Booking confirmed". The console and logs had no errors.
+  - Finding: `tabular-nums` made "€130.00" render as "€1 30.00" in the stat font. This is fixed (the class was removed) but wasn't re-checked in the browser.
+  - Not checked: inline Decline and its dialog (the same `CancelDialog` as on the detail page), the "Set your business hours" state, the needs-attention links with data, and read-only users.

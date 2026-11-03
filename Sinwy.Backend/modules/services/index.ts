@@ -10,5 +10,6 @@ export {
 	findBookableService,
 	listBookableTimes,
 	listPublicServices,
+	openMinutes,
 } from "./service";
 export { todayIn } from "./utils";

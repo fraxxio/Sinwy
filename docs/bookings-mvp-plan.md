@@ -15,7 +15,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 5 | Storefront module and the public booking flow | 4 | done | `feat(backend, web): add the storefront and public self-booking` |
 | 6 | Bookings calendar and list (web) | 3 | done | `feat(web): add the bookings calendar and list` |
 | 7 | Booking detail, manual booking and reschedule (web) | 4, 5, 6 | done | `feat(web): add the booking detail, manual booking and reschedule` |
-| 8 | Overview page | 4 | todo | |
+| 8 | Overview page | 4 | done | `feat(backend, web): add the bookings overview` |
 | 9 | Cancellation window | 4, 5 | todo | |
 | 10 | Customer Mode bookings | 4, 5, 9 | todo | |
 | 11 | Account overview | 10 | todo | |
@@ -187,41 +187,13 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **e2e quirk:** `page.ts` lists Base UI toasts as `Dialog:`.
 - **TanStack search schemas:** a Zod key whose input type is `unknown` (e.g. `z.preprocess`) makes `search` required on every `Link` to the route. Keep each key's input optional (`.optional()` before `.transform`/`.catch`).
 - **Browser zone in e2e:** `playwright-cli open --config <copy of .playwright/cli.config.json>` with `contextOptions.timezoneId` added. Don't edit the real config.
+- **Overview (Phase 8):**
+  - `getOverview` in `bookings/service.ts` and `GET bookings/overview`; `bookingOverviewQuery` sits under `bookingKeys.all`, so every booking write refreshes it.
+  - "Pending" means not started (`startsAt > now`); started `pending` and `confirmed` bookings count as needs attention.
+  - `openMinutes` from `@servicesModule` counts wall-clock minutes of org-wide hours.
+  - Phase 11's `/account/` cards can copy the card layout in `org-dashboard/components/overview/`.
+  - See log Phase 8.
 - **The fall-back hour** of a DST-end day offers only the first pass of the repeated hour. Fine for the MVP.
-
----
-
-## Phase 8: Overview page
-
-**Goal:** `/dashboard/<slug>/` shows today's bookings, this week's booked value, pending requests with inline approve and decline, occupancy, and needs-attention counts.
-
-**Files:**
-- `Sinwy.Backend/modules/bookings/`: `getOverview(membership, now?)` in `service.ts`, queries in `repository.ts`, and `GET organizationPath("bookings/overview")` (`bookings:read`) in `routes.ts`, registered before `bookings/:bookingId` as `times` and `calendar` are. Tests next to `tests/bookings.test.ts`.
-- `Sinwy.Backend/modules/services/`: export `openMinutes(organizationId, from, to)` through `index.ts` (local dates; weekly hours minus closures, in the org zone), next to the bookable-times inputs it already reads.
-- `Sinwy.Shared/types/booking/Booking.ts`: `BookingOverviewDto`.
-- Web: `org-dashboard/routes/_shell.index.tsx` (replace the placeholder), `org-dashboard/lib/booking-queries.ts` (`bookingKeys.overview` under `bookingKeys.all`, and the overview query), new `org-dashboard/components/overview/`.
-- Approve and Decline: `changeBookingStatus` and `invalidateBookings` from `booking-queries.ts`, and export `CancelDialog` from `components/bookings/BookingActions.tsx`. `BookingStatusBadge`, `formatMinorUnits` and `formatTimeIn` render the rows.
-
-**Steps:**
-- Follow the Decision's definitions exactly. "This week" is the ISO week containing today in the org zone. One SQL round-trip per figure is fine.
-- Occupancy is a percentage rounded to whole numbers; with 0 open minutes it returns null, and the web shows "Set your business hours" linking to `/dashboard/<slug>/services/hours`.
-- Revenue uses the booking's own `priceMinor` and the org currency.
-- Approve and Decline on the overview reuse the Phase 7 write functions and dialog.
-- Each needs-attention item links to the list with the matching filters (e.g. `?view=list&status=confirmed&to=<yesterday>`).
-
-**Tests that matter:**
-- Revenue counts `confirmed` + `completed` in this week only, and leaves out `pending`, `cancelled` and `no_show`. Week boundaries are in the org zone (a booking Sunday 23:30 local in a UTC+2 org counts).
-- Occupancy: 7 days × 8h open with one 90-minute `no_show` and one 30-minute cancelled → 90 / 3360. A closure day removes its minutes.
-- Needs attention counts past `confirmed` bookings and expired `pending` ones only.
-
-**Done when:**
-- The overview shows correct figures for the seeded data, and approving from it updates the figures without a reload.
-
-**Verify:** Seed `bookable-org`. Create through the API: a confirmed Haircut today in an hour's time (€25), a completed Haircut earlier this week (€25), a pending Colouring tomorrow (€80) and a no-show Colouring yesterday (€80).
-1. The overview shows today's booking, "Booked this week €50" with "€25 from completed" (if yesterday was in this week), 1 pending request, and occupancy matching (30+30+90+90 if all in this week) / open minutes.
-2. Approve the pending request inline: pending drops to 0, booked rises by €80 if it's in this week, and the customer gets "Booking confirmed" in the outbox.
-
-Nothing else is simulated.
 
 ---
 
@@ -229,12 +201,17 @@ Nothing else is simulated.
 
 **Goal:** Each service has a cancellation window, every booking copies it, and the storefront shows the policy before booking.
 
-**Files:**
+**Files:** `requiresApproval` already takes the same path from the column to the UI, so follow it (`grep -rl requiresApproval Sinwy.Backend Sinwy.Shared Sinwy.WebFrontend/src --exclude-dir=node_modules --exclude-dir=drizzle`).
 - `Sinwy.Backend/db/schema/serviceSchema.ts` and `bookingSchema.ts`: `cancellationWindowMinutes` integer, not null, default 0 (so existing rows backfill), with a `>= 0` check. Migration `cancellation_window`.
-- `Sinwy.Shared/types/service/` (`ServiceSchema.ts`, `Service.ts`): the field, limited to `CANCELLATION_WINDOW_PRESETS` (0, 120, 720, 1440, 2880), and the public services DTO from Phase 5.
-- `Sinwy.Shared/types/booking/BookingStatus.ts`: `customerCancelDeadline(booking)` and `customerCanCancel(booking, now?)` next to `canTransition`; `Booking.ts`: the field on `BookingDto`.
-- `Sinwy.Backend/modules/services/service.ts`: create, update, Duplicate, `findBookableService`, `listPublicServices`. `modules/bookings/`: `createBooking` copies the field.
-- Web: `org-dashboard/components/ServiceForm.tsx` and `org-dashboard/lib/services.ts` (a select under the approval switch); `storefront/routes/book.tsx` (the notice on the confirm step); `formatCancellationPolicy` in `src/shared/lib/` for the storefront and Customer Mode.
+- `Sinwy.Shared/types/service/` (`ServiceSchema.ts`, `Service.ts`): the field, limited to `CANCELLATION_WINDOW_PRESETS` (0, 120, 720, 1440, 2880), and on `PublicServiceDto`.
+- `Sinwy.Shared/types/booking/BookingStatus.ts`: `customerCancelDeadline(booking)` and `customerCanCancel(booking, now?)` next to `canTransition`. `Booking.ts`: the field on `BookingDto` (and so on `CustomerBookingDto`'s pick list, for Phase 10). Their tests go in `bookings/tests/transitions.test.ts`, because Shared has no test runner.
+- `Sinwy.Backend/modules/services/`: `utils.ts` (`createServiceBody` default 0), `service.ts` (create, update, Duplicate, `findBookableService`, `listPublicServices`), `tests/services.test.ts`.
+- `Sinwy.Backend/modules/bookings/service.ts`: `createBooking` copies the field from `BookableService`, and `toBookingDto` maps it.
+- `Sinwy.Backend/scripts/dev/seedScenario.ts` (and its test), if the seeded services should carry a window. The Verify sets it through the UI, so the default of 0 is enough.
+- Web:
+  - `org-dashboard/components/ServiceForm.tsx` and `org-dashboard/lib/services.ts`: a select under the approval switch. `org-dashboard/tests/services.test.ts` covers the form mapping.
+  - `storefront/components/ConfirmStep.tsx`: the notice. `ServiceList.tsx` reads `PublicServiceDto`.
+  - `formatCancellationPolicy` in `src/shared/lib/`, for the storefront and Customer Mode.
 
 **Steps:**
 - `customerCanCancel` is `canTransition(status, "cancelled", "customer", startsAt, now)` and, for `confirmed`, `now < startsAt − window`. `customerCancelDeadline` returns that instant, or null for `pending` and a 0 window. `canTransition` stays a pure status table.

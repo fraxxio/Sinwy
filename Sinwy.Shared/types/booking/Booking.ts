@@ -91,3 +91,25 @@ export type BookingEventDto = {
 };
 
 export type BookingDetailDto = BookingDto & { history: BookingEventDto[] };
+
+/** The dashboard overview. Dates are local "YYYY-MM-DD" in `timezone`; the week is the ISO week holding `today`. */
+export type BookingOverviewDto = {
+	timezone: string;
+	currency: string;
+	today: string;
+	week: { from: string; to: string };
+	/** Today's bookings in time order, without cancelled. */
+	todayBookings: BookingDto[];
+	/** Prices of this week's confirmed and completed bookings. */
+	revenue: { bookedMinor: number; completedMinor: number };
+	/** Pending requests that haven't started, oldest request first. */
+	pending: { total: number; oldest: BookingDto[] };
+	/** Null when the week has no open minutes. */
+	occupancy: {
+		bookedMinutes: number;
+		openMinutes: number;
+		percent: number | null;
+	};
+	/** Started bookings still waiting for an outcome or an answer. */
+	needsAttention: { unresolved: number; expiredRequests: number };
+};
