@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { SERVICE_LIMITS as LIMITS } from "./Service";
+import {
+	CANCELLATION_WINDOW_PRESETS,
+	SERVICE_LIMITS as LIMITS,
+} from "./Service";
 
 const buffer = (label: string) =>
 	z
@@ -40,6 +43,10 @@ export const serviceSchema = z.object({
 	bufferBeforeMinutes: buffer("Buffer before"),
 	bufferAfterMinutes: buffer("Buffer after"),
 	requiresApproval: z.boolean(),
+	cancellationWindowMinutes: z.literal(
+		CANCELLATION_WINDOW_PRESETS,
+		"Pick a cancellation window",
+	),
 });
 
 export type ServiceInput = z.infer<typeof serviceSchema>;

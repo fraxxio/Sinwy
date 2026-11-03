@@ -42,6 +42,9 @@ export const booking = pgTable(
 		// copied from the service, so later edits don't move or reprice the booking
 		bufferBeforeMinutes: integer("buffer_before_minutes").notNull(),
 		bufferAfterMinutes: integer("buffer_after_minutes").notNull(),
+		cancellationWindowMinutes: integer("cancellation_window_minutes")
+			.notNull()
+			.default(0),
 		priceMinor: integer("price_minor").notNull(),
 		currency: char("currency", { length: 3 }).notNull(),
 		status: text("status").notNull(),
@@ -79,6 +82,10 @@ export const booking = pgTable(
 		check(
 			"booking_buffers_check",
 			sql`${table.bufferBeforeMinutes} >= 0 AND ${table.bufferAfterMinutes} >= 0`,
+		),
+		check(
+			"booking_cancellation_window_check",
+			sql`${table.cancellationWindowMinutes} >= 0`,
 		),
 	],
 );

@@ -443,3 +443,59 @@ Nothing else is simulated.
   - Approving inline updated the page without a reload to €130.00, 0 pending and "All caught up". The DB row became `confirmed`, and the customer got "Booking confirmed". The console and logs had no errors.
   - Finding: `tabular-nums` made "€130.00" render as "€1 30.00" in the stat font. This is fixed (the class was removed) but wasn't re-checked in the browser.
   - Not checked: inline Decline and its dialog (the same `CancelDialog` as on the detail page), the "Set your business hours" state, the needs-attention links with data, and read-only users.
+
+
+## Phase 9: Cancellation window
+
+**Goal:** Each service has a cancellation window, every booking copies it, and the storefront shows the policy before booking.
+
+**Files:** `requiresApproval` already takes the same path from the column to the UI, so follow it (`grep -rl requiresApproval Sinwy.Backend Sinwy.Shared Sinwy.WebFrontend/src --exclude-dir=node_modules --exclude-dir=drizzle`).
+- `Sinwy.Backend/db/schema/serviceSchema.ts` and `bookingSchema.ts`: `cancellationWindowMinutes` integer, not null, default 0 (so existing rows backfill), with a `>= 0` check. Migration `cancellation_window`.
+- `Sinwy.Shared/types/service/` (`ServiceSchema.ts`, `Service.ts`): the field, limited to `CANCELLATION_WINDOW_PRESETS` (0, 120, 720, 1440, 2880), and on `PublicServiceDto`.
+- `Sinwy.Shared/types/booking/BookingStatus.ts`: `customerCancelDeadline(booking)` and `customerCanCancel(booking, now?)` next to `canTransition`. `Booking.ts`: the field on `BookingDto` (and so on `CustomerBookingDto`'s pick list, for Phase 10). Their tests go in `bookings/tests/transitions.test.ts`, because Shared has no test runner.
+- `Sinwy.Backend/modules/services/`: `utils.ts` (`createServiceBody` default 0), `service.ts` (create, update, Duplicate, `findBookableService`, `listPublicServices`), `tests/services.test.ts`.
+- `Sinwy.Backend/modules/bookings/service.ts`: `createBooking` copies the field from `BookableService`, and `toBookingDto` maps it.
+- `Sinwy.Backend/scripts/dev/seedScenario.ts` (and its test), if the seeded services should carry a window. The Verify sets it through the UI, so the default of 0 is enough.
+- Web:
+  - `org-dashboard/components/ServiceForm.tsx` and `org-dashboard/lib/services.ts`: a select under the approval switch. `org-dashboard/tests/services.test.ts` covers the form mapping.
+  - `storefront/components/ConfirmStep.tsx`: the notice. `ServiceList.tsx` reads `PublicServiceDto`.
+  - `formatCancellationPolicy` in `src/shared/lib/`, for the storefront and Customer Mode.
+
+**Steps:**
+- `customerCanCancel` is `canTransition(status, "cancelled", "customer", startsAt, now)` and, for `confirmed`, `now < startsAt − window`. `customerCancelDeadline` returns that instant, or null for `pending` and a 0 window. `canTransition` stays a pure status table.
+- Every booking copies the window, manual ones included, so the rule has one source.
+- Editor select: "None", "2 hours", "12 hours", "24 hours", "48 hours", with the help text "Customers can't cancel online during this time before the start." Read-only users see it disabled.
+- Storefront confirm step: "Free cancellation up to 24 hours before the start", or "You can cancel any time before the start" with no window.
+
+**Tests that matter:**
+- `customerCanCancel`: `pending` is always allowed. A `confirmed` booking with a 24-hour window can be cancelled 24h01m before the start, but not 24h before or later. A 0 window allows cancelling until the start. A started booking can't be cancelled.
+- Editing a service's window leaves existing bookings' copies alone; Duplicate copies it; a value outside the presets → 400.
+
+**Done when:**
+- The editor saves the window, new bookings carry it, and the storefront shows the policy.
+
+**Verify:** Seed `bookable-org` and a `user` customer.
+1. As the owner, set Haircut's window to 24 hours; reopening the editor keeps it. Duplicate Haircut: the copy has 24 hours.
+2. On the storefront, Haircut's confirm step says "Free cancellation up to 24 hours before the start"; Colouring's says "You can cancel any time before the start".
+3. Book Haircut as the customer: `psql service=sinwy_ro -c "select cancellation_window_minutes from booking where organization_id = '<id>' limit 5"` shows 1440. Change Haircut to 2 hours: the booking still shows 1440.
+
+Nothing is simulated.
+
+### Log (2026-11-03, `feat(backend, web): add the service cancellation window`)
+- Shipped:
+  - `service.cancellation_window_minutes` and `booking.cancellation_window_minutes` (integer, default 0, `>= 0` check), migration `0021_cancellation_window`. Create defaults it to 0, update and Duplicate carry it, `findBookableService` and `listPublicServices` return it, and `createBooking` copies it onto every booking, manual ones included.
+  - `CANCELLATION_WINDOW_PRESETS` and the schema field `z.literal(presets)` ("Pick a cancellation window"); values outside the presets are 400.
+  - `customerCancelDeadline` and `customerCanCancel` next to `canTransition` in `BookingStatus.ts`.
+  - Web: the "Cancellation window" select under the approval switch in the service editor (disabled for read-only users), `CANCELLATION_WINDOW_OPTIONS` in `org-dashboard/lib/services.ts`, `src/shared/lib/cancellation-policy.ts`, and the policy line on the storefront confirm step.
+  - Tests: `customerCanCancel` cases in `bookings/tests/transitions.test.ts`, the service round-trip and 400s in `services/tests/services.test.ts`, "a booking keeps the cancellation window it was made with" in `bookings/tests/bookings.test.ts`, and the form mapping and policy copy in `org-dashboard/tests/services.test.ts`.
+- Differs from plan:
+  - DTOs type the window as `number`, not the preset union, so DB rows map without casts. The schema still allows only the presets.
+  - The confirm step adds "This time is already that close, so once it's confirmed you can't cancel it online." when the picked start is already inside the window, following the decision that such a booking can't be cancelled by the customer. It shows for approval services too, because the window applies once the request is confirmed.
+  - The seed keeps the default of 0; the Verify sets the window through the UI.
+- Checked in the running app (e2e subagent; every Verify step passed):
+  - Haircut set to 24 hours kept the value after reopening and after a reload, and the Duplicate also had 1440.
+  - The confirm step showed the 24-hour text for Haircut and the "any time" text for Colouring. A Haircut time less than 24 hours away showed the extra sentence.
+  - The customer's Haircut booking stored 1440 and kept it after Haircut changed to 2 hours.
+  - There were no console errors and nothing new in the logs.
+  - The select's help text shows only while the field is focused (shared `SelectField` behaviour).
+  - Not checked: the read-only (staff) view of the select, and the confirmation email's content (the email doesn't mention the window).

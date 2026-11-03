@@ -88,6 +88,7 @@ const toBookingDto = (row: BookingRow, serviceName: string): BookingDto => ({
 	endsAt: row.endsAt.toISOString(),
 	bufferBeforeMinutes: row.bufferBeforeMinutes,
 	bufferAfterMinutes: row.bufferAfterMinutes,
+	cancellationWindowMinutes: row.cancellationWindowMinutes,
 	priceMinor: row.priceMinor,
 	currency: row.currency,
 	status: row.status as BookingDto["status"],
@@ -131,7 +132,7 @@ export type CreateBookingInput = {
 	upcomingLimit?: number;
 };
 
-/** Every way into the calendar: copies the service's price and buffers and refuses a taken window. */
+/** Every way into the calendar: copies the service's price, buffers and cancellation window, and refuses a taken window. */
 export const createBooking = async (
 	input: CreateBookingInput,
 	now = new Date(),
@@ -145,6 +146,7 @@ export const createBooking = async (
 		endsAt: addMinutes(input.startsAt, service.durationMinutes),
 		bufferBeforeMinutes: service.bufferBeforeMinutes,
 		bufferAfterMinutes: service.bufferAfterMinutes,
+		cancellationWindowMinutes: service.cancellationWindowMinutes,
 		priceMinor: service.priceMinor,
 		currency: service.currency,
 		status: input.status,
@@ -653,6 +655,7 @@ export const createSelfBooking = async (
 			cancelledBy: data.cancelledBy,
 			cancellationReason: data.cancellationReason,
 			customerNote: data.customerNote,
+			cancellationWindowMinutes: data.cancellationWindowMinutes,
 			createdAt: data.createdAt,
 			organization: {
 				name: organization.name,

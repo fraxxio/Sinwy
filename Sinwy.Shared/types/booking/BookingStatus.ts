@@ -94,3 +94,31 @@ export const canTransition = (
 				(transition.timing === "afterStart") === started),
 	);
 };
+
+type CustomerCancellable = {
+	status: BookingStatus;
+	startsAt: string | Date;
+	cancellationWindowMinutes: number;
+};
+
+/** The last instant a customer may cancel online, or null when only the start limits it. */
+export const customerCancelDeadline = (booking: CustomerCancellable) => {
+	if (booking.status !== "confirmed" || booking.cancellationWindowMinutes === 0)
+		return null;
+	return new Date(
+		new Date(booking.startsAt).getTime() -
+			booking.cancellationWindowMinutes * 60_000,
+	);
+};
+
+/** Customer cancels follow the transition table, and a confirmed booking also its cancellation window. */
+export const customerCanCancel = (
+	booking: CustomerCancellable,
+	now: Date = new Date(),
+) => {
+	const startsAt = new Date(booking.startsAt);
+	if (!canTransition(booking.status, "cancelled", "customer", startsAt, now))
+		return false;
+	const deadline = customerCancelDeadline(booking);
+	return deadline === null || now.getTime() < deadline.getTime();
+};

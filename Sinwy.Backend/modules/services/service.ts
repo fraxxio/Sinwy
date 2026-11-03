@@ -57,6 +57,7 @@ const toServiceDto = (row: ServiceRow): ServiceDto => ({
 	bufferAfterMinutes: row.bufferAfterMinutes,
 	isActive: row.isActive,
 	requiresApproval: row.requiresApproval,
+	cancellationWindowMinutes: row.cancellationWindowMinutes,
 	createdAt: row.createdAt.toISOString(),
 	updatedAt: row.updatedAt.toISOString(),
 });
@@ -138,6 +139,7 @@ export const duplicateService = async (
 		bufferBeforeMinutes: source.bufferBeforeMinutes,
 		bufferAfterMinutes: source.bufferAfterMinutes,
 		requiresApproval: source.requiresApproval,
+		cancellationWindowMinutes: source.cancellationWindowMinutes,
 		isActive: false,
 	});
 	return { ok: true, data: toServiceDto(row) };
@@ -270,6 +272,7 @@ export const listPublicServices = async (
 			priceMinor: row.priceMinor,
 			currency: row.currency,
 			requiresApproval: row.requiresApproval,
+			cancellationWindowMinutes: row.cancellationWindowMinutes,
 		}));
 
 export type BookableService = Pick<
@@ -283,6 +286,7 @@ export type BookableService = Pick<
 	| "currency"
 	| "isActive"
 	| "requiresApproval"
+	| "cancellationWindowMinutes"
 >;
 
 /** The fields a booking copies from its service; null when archived or in another org. */
@@ -302,6 +306,7 @@ export const findBookableService = async (
 			currency: row.currency,
 			isActive: row.isActive,
 			requiresApproval: row.requiresApproval,
+			cancellationWindowMinutes: row.cancellationWindowMinutes,
 		}
 	);
 };

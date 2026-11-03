@@ -1,5 +1,6 @@
 import {
 	BOOKING_LIMITS,
+	customerCancelDeadline,
 	customerNoteSchema,
 	customerPhoneSchema,
 	type PublicServiceDto,
@@ -10,6 +11,7 @@ import { z } from "zod";
 import { ContentBox } from "#/shared/components/ContentBox";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
+import { formatCancellationPolicy } from "#/shared/lib/cancellation-policy";
 import { formatDateIn, formatTimeIn } from "#/shared/lib/date";
 import { useAppForm } from "#/shared/lib/form";
 import { formatMinorUnits } from "#/shared/lib/money";
@@ -42,6 +44,13 @@ export function ConfirmStep({
 	onPickAnotherTime: () => void;
 }) {
 	const [error, setError] = useState<ConfirmError | null>(null);
+	const cancelDeadline = customerCancelDeadline({
+		status: "confirmed",
+		startsAt,
+		cancellationWindowMinutes: service.cancellationWindowMinutes,
+	});
+	const insideWindow =
+		cancelDeadline !== null && Date.now() >= cancelDeadline.getTime();
 	const form = useAppForm({
 		defaultValues: { customerPhone: "", customerNote: "" },
 		validationLogic: revalidateLogic({ mode: "change" }),
@@ -79,6 +88,11 @@ export function ConfirmStep({
 						get an email when they do.
 					</p>
 				)}
+				<p className="text-sm text-muted-foreground">
+					{formatCancellationPolicy(service.cancellationWindowMinutes)}.
+					{insideWindow &&
+						" This time is already that close, so once it's confirmed you can't cancel it online."}
+				</p>
 				<form.AppField name="customerPhone">
 					{(field) => (
 						<field.TextField

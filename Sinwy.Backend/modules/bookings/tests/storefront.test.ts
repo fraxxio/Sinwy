@@ -212,6 +212,7 @@ test("the booking page lists active services with what a customer needs", async 
 			priceMinor: 8000,
 			currency: "EUR",
 			requiresApproval: true,
+			cancellationWindowMinutes: 0,
 		},
 		{
 			id: haircutId,
@@ -221,6 +222,7 @@ test("the booking page lists active services with what a customer needs", async 
 			priceMinor: 2500,
 			currency: "EUR",
 			requiresApproval: false,
+			cancellationWindowMinutes: 0,
 		},
 	]);
 });

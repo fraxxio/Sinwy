@@ -47,6 +47,8 @@ export type BookingDto = {
 	endsAt: string;
 	bufferBeforeMinutes: number;
 	bufferAfterMinutes: number;
+	/** Copied from the service at creation; see `customerCanCancel`. */
+	cancellationWindowMinutes: number;
 	priceMinor: number;
 	currency: string;
 	status: BookingStatus;
@@ -72,6 +74,7 @@ export type CustomerBookingDto = Pick<
 	| "cancelledBy"
 	| "cancellationReason"
 	| "customerNote"
+	| "cancellationWindowMinutes"
 	| "createdAt"
 > & {
 	organization: { name: string; slug: string; timezone: string };

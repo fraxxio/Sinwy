@@ -195,6 +195,39 @@ test("requiresApproval round-trips through create, update and duplicate", async 
 	expect(fetched.requiresApproval).toBe(false);
 });
 
+test("the cancellation window defaults to none, duplicates and accepts only the presets", async () => {
+	const created = await create();
+	expect(created.cancellationWindowMinutes).toBe(0);
+
+	const res = await call("PATCH", `services/${created.id}`, ownerCookie, {
+		cancellationWindowMinutes: 1440,
+	});
+	expect((await unwrap<ServiceDto>(res)).cancellationWindowMinutes).toBe(1440);
+	const copy = await unwrap<ServiceDto>(
+		await call("POST", `services/${created.id}/duplicate`, ownerCookie),
+	);
+	expect(copy.cancellationWindowMinutes).toBe(1440);
+
+	for (const cancellationWindowMinutes of [60, -120, "1440"]) {
+		const refused = await call("PATCH", `services/${created.id}`, ownerCookie, {
+			cancellationWindowMinutes,
+		});
+		expect(refused.status).toBe(400);
+	}
+	expect(
+		(
+			await call("POST", "services", ownerCookie, {
+				...haircut,
+				cancellationWindowMinutes: 30,
+			})
+		).status,
+	).toBe(400);
+	const fetched = await unwrap<ServiceDto>(
+		await call("GET", `services/${created.id}`, ownerCookie),
+	);
+	expect(fetched.cancellationWindowMinutes).toBe(1440);
+});
+
 test("staff read but never write", async () => {
 	const created = await create();
 	const writes = [

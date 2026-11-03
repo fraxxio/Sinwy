@@ -169,6 +169,25 @@ test("a manual booking copies the service, starts confirmed and records who crea
 	expect(event?.actorUserId).toBe(ownerId);
 });
 
+test("a booking keeps the cancellation window it was made with", async () => {
+	const service = await createService();
+	const setWindow = (cancellationWindowMinutes: number) =>
+		call("PATCH", `services/${service.id}`, ownerCookie, {
+			cancellationWindowMinutes,
+		});
+	expect((await setWindow(1440)).status).toBe(200);
+	const created = await unwrap<BookingDto>(
+		await book(service.id, "2099-03-01T10:00:00+02:00"),
+	);
+	expect(created.cancellationWindowMinutes).toBe(1440);
+
+	expect((await setWindow(120)).status).toBe(200);
+	const detail = await unwrap<BookingDetailDto>(
+		await call("GET", `bookings/${created.id}`, ownerCookie),
+	);
+	expect(detail.cancellationWindowMinutes).toBe(1440);
+});
+
 test("two bookings racing for the same window: one is created, the other is refused", async () => {
 	const service = await createService();
 	const [first, second] = await Promise.all([

@@ -4,6 +4,7 @@ import { ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
 import {
 	BUFFER_OPTIONS,
+	CANCELLATION_WINDOW_OPTIONS,
 	DURATION_OPTIONS,
 	type ServiceFormValues,
 	serviceFormSchema,
@@ -116,7 +117,7 @@ export function ServiceForm({
 					<SettingsSection
 						id="bookings"
 						title="Bookings"
-						description="How bookings customers make themselves start out."
+						description="How bookings customers make themselves start out, and how late they can cancel."
 					>
 						<form.Field name="requiresApproval">
 							{(field) => (
@@ -133,6 +134,16 @@ export function ServiceForm({
 								</div>
 							)}
 						</form.Field>
+						<form.AppField name="cancellationWindowMinutes">
+							{(field) => (
+								<field.SelectField
+									label="Cancellation window"
+									options={CANCELLATION_WINDOW_OPTIONS}
+									description="Customers can't cancel online during this time before the start."
+									disabled={readOnly}
+								/>
+							)}
+						</form.AppField>
 					</SettingsSection>
 
 					<SettingsSection
