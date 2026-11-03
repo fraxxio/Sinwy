@@ -4,4 +4,11 @@ export {
 	registerBookingRoutes,
 	registerStorefrontRoutes,
 } from "./routes";
-export { createBooking, listBusyIntervals } from "./service";
+export {
+	cancelUpcomingOrganizationBookings,
+	countUpcomingOrganizationBookings,
+	createBooking,
+	handleCustomerAccountDeleted,
+	listBusyIntervals,
+	ORGANIZATION_CLOSED_REASON,
+} from "./service";

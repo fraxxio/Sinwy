@@ -4,10 +4,11 @@ import {
 	keyFromFileUrl,
 	storageClient,
 } from "@backend/infrastructure/storage";
+import { countUpcomingOrganizationBookings } from "@bookingsModule";
 import {
-	getAccountDeletionPreview as getSoleOwnedOrganizationsPreview,
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
+	listSoleOwnedOrganizations,
 } from "@organizationsModule";
 import {
 	type AccountDeletionPreviewDto,
@@ -75,7 +76,17 @@ export const removeAvatar = async (headers: Headers, user: SessionUser) => {
 	await deleteStoredAvatar(user.image);
 };
 
-export const getAccountDeletionPreview = (
+export const getAccountDeletionPreview = async (
 	userId: string,
-): Promise<AccountDeletionPreviewDto> =>
-	getSoleOwnedOrganizationsPreview(userId);
+): Promise<AccountDeletionPreviewDto> => {
+	const orgs = await listSoleOwnedOrganizations(userId);
+	const upcoming = await countUpcomingOrganizationBookings(
+		orgs.map((org) => org.id),
+	);
+	return {
+		soleOwnedOrganizations: orgs.map((org) => ({
+			...org,
+			upcomingBookings: upcoming.get(org.id) ?? 0,
+		})),
+	};
+};

@@ -334,17 +334,20 @@ export const completeOrganizationOnboarding = async (
 	return { ok: true, data: { completedAt: completedAt.toISOString() } };
 };
 
-export const getAccountDeletionPreview = async (
+type SoleOwnedOrganization = Omit<
+	AccountDeletionPreviewDto["soleOwnedOrganizations"][number],
+	"upcomingBookings"
+>;
+
+export const listSoleOwnedOrganizations = async (
 	userId: string,
-): Promise<AccountDeletionPreviewDto> => {
+): Promise<SoleOwnedOrganization[]> => {
 	const rows = await findSoleOwnedOrganizations(userId);
-	return {
-		soleOwnedOrganizations: rows.map((row) => ({
-			id: row.id,
-			name: row.name,
-			status: organizationStatusOf(row),
-		})),
-	};
+	return rows.map((row) => ({
+		id: row.id,
+		name: row.name,
+		status: organizationStatusOf(row),
+	}));
 };
 
 /** Post-login prompts: the oldest owned draft while there is no plan to pay for it. */
@@ -354,12 +357,9 @@ export const getUnpaidOwnedOrganizationId = findUnpaidOwnedOrganization;
 export const getUnfinishedOnboardingOrganizationId = async (userId: string) =>
 	findUnfinishedOnboardingOrganization(userId, await hasFreeSlot(userId));
 
-/** Takes every owned organization out of service for the retention period. */
+/** Takes every owned organization out of service for the retention period and returns their ids. */
 export const scheduleOwnedOrganizationsForDeletion = async (userId: string) => {
-	const orgs = await findSoleOwnedOrganizations(userId);
-	if (orgs.length === 0) return;
-	await scheduleOrganizationsForDeletion(
-		orgs.map((org) => org.id),
-		new Date(),
-	);
+	const ids = (await findSoleOwnedOrganizations(userId)).map((org) => org.id);
+	if (ids.length > 0) await scheduleOrganizationsForDeletion(ids, new Date());
+	return ids;
 };

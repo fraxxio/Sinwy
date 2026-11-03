@@ -632,3 +632,75 @@ Nothing is simulated.
   - After cancelling Haircut on its detail page and going back, "Next booking" was the pending Colouring, and Haircut stayed under "Book again". The DB had `cancelled_by = customer`.
   - After the owner archived Colouring, "Book again" listed only Haircut. Colouring's pending booking stays as "Next booking", as decided.
   - No console or server log errors. The outbox wasn't checked (the brief doesn't ask for it). The archive dialog still gives no upcoming-bookings warning; that's Phase 12.
+
+
+## Phase 12: Bookings when an org, account or service goes away
+
+**Goal:** Org deletion and customer account deletion handle upcoming bookings per the lifecycle decision, the deletion and archive dialogs show the counts, and the rules map describes bookings.
+
+**Files:**
+- `Sinwy.Backend/modules/bookings/`: export `cancelUpcomingOrganizationBookings(organizationIds, tx?)` and `handleCustomerAccountDeleted(userId, tx?)`, plus count helpers, from `index.ts`. Status writes go through `changeBooking` / `statusChange()` in `repository.ts` and `service.ts`. Emails: `findBookingEmailContext` + `sendBookingEmails` in `dispatch.ts`. Tests: copy the `tests/account.test.ts` harness.
+- `Sinwy.Backend/modules/auth/auth.ts`: `deleteUser.beforeDelete` (~178; after `scheduleOwnedOrganizationsForDeletion`, call `handleCustomerAccountDeleted`) and a new `beforeDeleteOrganization` in `organizationHooks` (~313).
+- `Sinwy.Backend/modules/organizations/service.ts`: `getAccountDeletionPreview` (~337) and `scheduleOwnedOrganizationsForDeletion` (~358). Cancel the scheduled orgs' upcoming bookings there, and add an upcoming-bookings count per org to `AccountDeletionPreviewDto` (`Sinwy.Shared/types/user/AccountSettings.ts` ~33).
+- Web: the account deletion dialog is `account-dashboard/components/settings/DangerZone.tsx` (query in `account-dashboard/lib/account-queries.ts`). The archive dialog is in `org-dashboard/components/ServiceActions.tsx` (~143). Its count comes from a new `upcomingCount` in the service detail DTO or from a bookings endpoint.
+- `docs/org-rules-map.md` §1, §9, §11 and §14; `docs/user-flow-map.md` for the storefront, Customer Mode bookings and the account overview.
+
+**Steps:**
+- **Org deletion cancels upcoming bookings:** `pending`/`confirmed` with `startsAt >= now`, `cancelledBy: "organization"`, the reason "The business closed its Sinwy account", the actor `system`. Customer emails dispatch after commit.
+  - Immediate deletion runs this from `beforeDeleteOrganization`, so the emails go before the cascade deletes the rows: load what the emails need first.
+  - Scheduled deletion runs it inside the scheduling flow.
+- **Customer account deletion:** `handleCustomerAccountDeleted` cancels the user's upcoming bookings as the customer and dispatches the org emails. The FK nulls `customerUserId` when the user row goes.
+  - Keep every retention choice inside this function; a comment says it's the one place to change for regional rules.
+  - This also runs for owners, after their orgs were scheduled, so their own bookings elsewhere are cancelled too.
+- Both flows ignore the cancellation window: `customerCanCancel` is only for cancels the customer starts.
+- **Import cycle:** `auth.ts` already imports `@organizationsModule`. Make sure importing `@bookingsModule` there doesn't create an import cycle that breaks module loading; if it does, call it through the organizations module or a lazy import.
+- **Deletion preview:** show "N upcoming bookings will be cancelled" per org in the dialog. The archive dialog says "N upcoming bookings stay booked".
+- **Rules map:**
+  - §1: the storefront owns root slugs, and the dashboard is under `/dashboard/`.
+  - §9: inactive orgs keep their bookings, staff writes are refused, customers can cancel, and the storefront is offline.
+  - §11: deletion cancels upcoming bookings, and customer deletion keeps the snapshot.
+  - §14: retention is still a gap to revisit per region.
+
+**Tests that matter:**
+- Owner account deletion: a scheduled org's upcoming bookings are cancelled by the organization, past bookings are untouched, and customers get emails.
+- Immediate org deletion (`/organization/delete`): the customer emails are sent and the rows are gone afterwards.
+- Customer deletion: their upcoming bookings are cancelled by the customer, including ones inside their cancellation window, the org is emailed, and the snapshot is still there with `customer_user_id` null.
+- The deletion preview count matches upcoming active bookings only.
+
+**Done when:**
+- The three lifecycle flows behave as decided, the dialogs show counts, and the rules map is updated.
+
+**Verify:** Seed `bookable-org` and two `user` customers. Customer A books a Haircut tomorrow; customer B books a Colouring the day after.
+1. Customer A deletes their account (`/account/settings`, confirm via the outbox link): A's booking is `cancelled` with `cancelled_by = 'customer'` and `customer_user_id` null, the name and email are still there, and the owner gets "Booking cancelled by customer".
+2. Archive Haircut: the dialog warns about upcoming bookings (0 now); archive Colouring → "1 upcoming booking stays booked".
+3. The owner starts account deletion: the dialog lists the org with "1 upcoming booking will be cancelled". Confirm via the outbox link: B's booking is cancelled by the organization, and B gets "Booking cancelled" with the closing reason.
+
+Polar revocation uses the seeded subscription as in the `e2e-test` skill; emails go to the local outbox.
+
+### Log (2026-11-03, `feat(backend, web): cancel bookings when an org or account goes away`)
+- Shipped:
+  - Backend (`bookings/service.ts`): `cancelUpcomingOrganizationBookings(orgIds)` (actor `system`, `cancelledBy: "organization"`, `ORGANIZATION_CLOSED_REASON`), `handleCustomerAccountDeleted(userId)` (actor `customer`, `cancelledBy: "customer"`, event payload `{ accountDeleted: true }`) and `countUpcomingOrganizationBookings(orgIds)`. Both cancels share the private `cancelNotStarted`: `findNotStartedBookings` (`pending`/`confirmed`, `startsAt >= now`), then one `changeBooking` per booking that re-checks the status under the row lock and dispatches after commit. They skip `canTransition` and the cancellation window. `statusChange()` now takes a nullable actor user id and a payload.
+  - Emails (`dispatch.ts`): a customer cancel with `accountDeleted` emails only the org. System cancels send the customer no booking link, since the booking goes with the org.
+  - Hooks (`auth.ts`): `beforeDelete` runs `scheduleOwnedOrganizationsForDeletion` (it now returns the ids), cancels those orgs' bookings, then `handleCustomerAccountDeleted`. The new `beforeDeleteOrganization` cancels and emails before Better Auth deletes the org.
+  - Preview: `AccountDeletionPreviewDto` orgs gain `upcomingBookings`. Organizations now exports `listSoleOwnedOrganizations` (no counts) instead of `getAccountDeletionPreview`, and `user/service.ts` joins in the counts from `@bookingsModule`.
+  - Web: the deletion dialog shows "<org>: N upcoming bookings will be cancelled", and the archive dialog appends "N upcoming bookings stay booked". Both leave the count out at 0. The archive count is the list endpoint's `total` (`pageSize: 1`, `pending`+`confirmed`, from today), queried only while the dialog is open; `BookingListParams` gained `pageSize`. Staff history shows "Cancelled when the customer deleted their account".
+  - Docs: `org-rules-map.md` §1 (pages and reserved slugs), §9 (inactive orgs and bookings), §11 (closing orgs, customer deletion) and §14 (retention, purge-repair gap); `user-flow-map.md` §9–11 (storefront, Customer Mode bookings, account deletion).
+  - Tests: `bookings/tests/lifecycle.test.ts` (owner deletion through the emailed link, immediate `/organization/delete`, customer deletion inside a window, the count), plus the updated preview and `accountDeletion` tests.
+- Differs from plan:
+  - The scheduled orgs' bookings are cancelled in `auth.ts` after scheduling, not inside `scheduleOwnedOrganizationsForDeletion`, because organizations can't import bookings (a cycle).
+  - `auth.ts` imports `@bookingsModule` lazily (`await import`). A static import made `services/routes.ts` read `requireAuth` before it was initialized (a ReferenceError at load).
+  - Immediate deletion doesn't need `findBookingEmailContext` + `sendBookingEmails`: the before-hook awaits the cancel and its dispatch while the rows still exist.
+  - No `tx?` parameters: each booking is cancelled in its own transaction.
+  - At 0, the archive dialog shows no count line.
+  - Customer-deletion cancels are actor `customer` with the payload flag, not `system`, so staff history names the customer.
+- Checked in the running app (e2e subagent; all 3 Verify steps passed; email went to the outbox, sign-in was via `dev:login-as`, and the Polar subscription was seeded, so no revoke ran):
+  - A's deletion: the booking was `cancelled`/`customer`, with `customer_user_id` null and the name and email kept. The owner got "Booking cancelled by customer" and A got nothing. Staff history read "Cancelled when the customer deleted their account".
+  - Archive dialogs: Haircut had no count line, and Colouring showed "1 upcoming booking stays booked."
+  - Owner deletion: the dialog read "Seed …: 1 upcoming booking will be cancelled". B's pending booking was cancelled by the organization with the reason and an actor of `system`. B's email had the reason and no link.
+  - Findings left for Phase 13:
+    - After the customer deletes their account, `ContactCard` shows "Added by your team" with Edit, because the web and `updateBookingDetails` (`contact-locked`) treat `customerUserId === null` as manual.
+    - B's Customer Mode line says "Declined by …" for a pending booking the closing org cancelled (`customer-booking.ts:69`).
+    - A customer's deletion dialog doesn't mention their own upcoming bookings.
+    - The payloads are double-encoded (known).
+    - A console error on `/auth/goodbye` (Base UI `nativeButton` in `goodbye.tsx`).
+  - Not checked: a real Resend send, and a real Polar revoke together with the cancels.

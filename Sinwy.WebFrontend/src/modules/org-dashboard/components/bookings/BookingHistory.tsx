@@ -44,6 +44,8 @@ function describe(event: BookingEventDto, timezone: string) {
 				case "confirmed":
 					return `Confirmed${by}`;
 				case "cancelled":
+					if (event.payload["accountDeleted"])
+						return "Cancelled when the customer deleted their account";
 					return event.fromStatus === "pending" && event.actorType === "member"
 						? `Declined${by}`
 						: `Cancelled${by}`;

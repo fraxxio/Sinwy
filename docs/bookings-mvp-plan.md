@@ -19,7 +19,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 9 | Cancellation window | 4, 5 | done | `feat(backend, web): add the service cancellation window` |
 | 10 | Customer Mode bookings | 4, 5, 9 | done | `feat(backend, web): add Customer Mode bookings` |
 | 11 | Account overview | 10 | done | `feat(backend, web): add the account overview` |
-| 12 | Bookings when an org, account or service goes away | 4, 9 | todo | |
+| 12 | Bookings when an org, account or service goes away | 4, 9 | done | `feat(backend, web): cancel bookings when an org or account goes away` |
 | 13 | Code review | 1–12 | todo | |
 
 ## Decisions
@@ -133,10 +133,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Migrations:** edit `Sinwy.Backend/db/schema/`, export from `db/schema/index.ts`, then `bun run db:generate --name <name>` and `bun run db:migrate`. Latest is `drizzle/0021_cancellation_window.sql`. Status-style checks use `oneOf` from `@db/oneOf` (see `availability_exception`).
 - **Drizzle quirks:** queries are thenables (`expect(query).rejects` fails; use `query.then(() => null, (e) => e)`). `exactOptionalPropertyTypes` is on, so partial update types spell out `| undefined`.
 - **Email:** locally, mail lands in the outbox (`readOutboxEmails`, `bun run Sinwy.Backend/scripts/dev/lastEmail.ts`). Loggers: `createLogger("bookings")` from `@logger`.
-- **Deletion hooks:**
-  - Owner account deletion runs `beforeDelete` → `scheduleOwnedOrganizationsForDeletion(user.id)` and `afterDelete` → `cleanupDeletedUser` (`modules/auth/auth.ts` ~168–195, `deletedUserCleanup.ts`).
-  - Immediate org deletion is Better Auth's `/organization/delete`; `organizationHooks` sits in `auth.ts` ~313, and there's no delete hook yet.
-  - The deletion dialog's data is `getAccountDeletionPreview` (`modules/organizations/service.ts` ~310, `GET /api/user/deletion-preview`).
+- **Lifecycle (Phase 12):** `auth.ts` `beforeDelete` → schedule owned orgs → `cancelUpcomingOrganizationBookings` → `handleCustomerAccountDeleted`; `beforeDeleteOrganization` cancels before the cascade. `auth.ts` must import `@bookingsModule` lazily (static import breaks module load). Organizations can't import bookings, so the purge repair's `scheduleOwnerless` cancels nothing (gap, `org-rules-map.md` §14). Deletion-preview counts are joined in `user/service.ts`. See log Phase 12.
 - **Backend tests:** `bun:test` with a real DB, using the helpers in `Sinwy.Backend/test/helpers.ts` (`createUserWithSession` gives `<userId>@test.dev`, `insertOrganization`, `givePlan`, `holdSlot`, `activateOrganization`, `joinOrganization`, `fakeCtx`). For booking HTTP tests, copy the harness in `modules/bookings/tests/changes.test.ts` (`book`, `selfBook` via `createBooking` with a customer actor, `action`, `sentTo`, an org in `Europe/Vilnius`). The outbox is shared across tests: filter by a fresh recipient, and compare outbox ids to prove that nothing was sent. Stub failures with `spyOn(emailClient, "send")`. An org becomes inactive with `slotHeldAt: null`.
 - **Seeds:** `bun run dev:seed-scenario <user|owner-with-org|subscribed-org|org-with-staff>` (`Sinwy.Backend/scripts/dev/seedScenario.ts`, `scenarios` array). `subscribed-org` returns an active, onboarded org with its owner's credentials. See the `e2e-test` skill.
 - **Web routing:**
@@ -162,7 +159,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Bookings API (Phase 3):** `GET|POST organizationPath("bookings")`, `GET bookings/times?serviceId&from&to&excludeBookingId`, `GET bookings/calendar` (returns `BookingDto[]`, no timezone) and `GET bookings/:bookingId` (`BookingDetailDto` with `history`). Filters are repeatable `serviceId` and `status`; no `status` means everything but cancelled, and a list without `from`/`to` starts today in the org zone. Schemas: `manualBookingSchema`, `bookingListQuerySchema`, `bookingCalendarQuerySchema` in `@sinwy/shared`.
 - **One way in:** `createBooking(input)` in `bookings/service.ts` (`BookableService`, `startsAt`, contact, notes, status, actor) returns `Result<BookingDto>` with `time-taken` → 409 `BOOKING_TIME_TAKEN`, and dispatches its emails. Its transaction is `insertBookingIfFree` in the repository; `upcomingLimit` turns on the per-customer cap (`limit-reached` → 409 `BOOKING_LIMIT_REACHED` 40921), checked before the overlap. Next free error code: 40923.
 - **Booking writes (Phase 4):** every change goes through `changeBooking(scope, bookingId, decide, { lockOrganization? })` in the repository. The scope is `{ organizationId }` or `{ customerUserId }`, and only an organization scope can take the organization lock. It takes the row lock, then `decide` returns `values`, `event` and an optional `window` to check. The service's `committed()` dispatches its events after commit. Status changes go through `changeBookingStatus` (staff) and `cancelCustomerBooking`, which share `statusChange()`.
-- **Booking emails:** after commit, `dispatchBookingEvent(event)`. Phase 12 can load `findBookingEmailContext(bookingId)` before the cascade and call `sendBookingEmails(event, context)`. The matrix is all in `dispatch.ts`, including self-bookings (actor `customer`) and customer cancels (`cancelledBy: "customer"`). Org emails go to `listOrganizationManagerEmails` from `@organizationsModule`. Subjects start with the matrix label ("Request received: …", "New booking request: …").
+- **Booking emails:** after commit, `dispatchBookingEvent(event)`. The matrix is all in `dispatch.ts`, including self-bookings (actor `customer`) and customer cancels (`cancelledBy: "customer"`). Org emails go to `listOrganizationManagerEmails` from `@organizationsModule`. Subjects start with the matrix label ("Request received: …", "New booking request: …").
 - **Overlap check:** `lockOrganization(tx, organizationId)` (repository-private) then `isTimeTaken(tx, organizationId, window, excludeBookingId?)` (exported from `@bookingsModule`); `paddedWindow(booking)` in `bookings/utils.ts` builds the window. Removing the lock makes the race test fail, so it is a real guard (log Phase 3).
 - **Local dates → instants:** `startOfLocalDate`, `localDateRange` and `addDaysToDate` in `bookings/utils.ts` (DST-tested in `tests/utils.test.ts`). Raw `sql` comparisons pass instants as ISO strings cast `::timestamptz` (`instant()` in the repository).
 - **Storefront API (Phase 5):** `registerStorefrontRoutes` in `bookings/routes.ts` serves `GET /api/public/organizations/:slug` (`StorefrontDto`), `GET …/services/:serviceId/times?from&to` and `POST …/bookings` (`requireAuth`, `selfBookingSchema`, returns `CustomerBookingDto`); unknown or non-active orgs are 404 "This booking page isn't available".
@@ -174,7 +171,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Forms over shared nullish schemas:** a text field can't take `customerPhoneSchema` directly (its input allows null); pipe it through `fromText` from `src/shared/lib/text-schema.ts`. A cross-field `.refine` takes `when: () => true` so its error shows next to field errors (`lib/booking-forms.ts`).
 - **Dependencies:** `bun add` re-resolves the lockfile and bumps TanStack packages, leaving two `query-core` versions that break `router.tsx` types. Add the dependency to `package.json` and the workspace block of `bun.lock` by hand, then `bun install --frozen-lockfile`. After new deps, vite's first page load gives 504 "Outdated Optimize Dep"; a reload clears it.
 - **Vite reads `src/routes.ts` only at startup**: restart it after changing mounts, or a route-file edit regenerates the tree from the old config.
-- **Running servers:** the backend runs on :3001 (`bun run start:server`, log `/tmp/sinwy-backend.log`, last restarted in Phase 11 with the user's OK) and vite on :3000 (`bun run start:web`, log `/tmp/sinwy-web.log`). Check that they're up before relying on them. The auto-mode classifier blocks killing them without the user's approval, so ask first. Phase 13 stops them.
+- **Running servers:** the backend runs on :3001 (`bun run start:server`, log `/tmp/sinwy-backend.log`, last restarted in Phase 12 with the user's OK) and vite on :3000 (`bun run start:web`, log `/tmp/sinwy-web.log`). Check that they're up before relying on them. The auto-mode classifier blocks killing them without the user's approval, so ask first. Phase 13 stops them.
 - **Web bookings page (Phase 6):**
   - `org-dashboard/lib/booking-queries.ts` keys start `["bookings", organizationId]` (`bookingKeys.all`); invalidate that prefix after writes. List and calendar queries use `keepPreviousData`.
   - `src/shared/components/booking/BookingStatusBadge.tsx` (moved there in Phase 10) exports `BOOKING_STATUS_LABELS`, `BOOKING_STATUS_STYLES` and `isExpiredRequest`. The badge already reads "Expired request" for a past `pending`.
@@ -206,62 +203,23 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 ---
 
-## Phase 12: Bookings when an org, account or service goes away
-
-**Goal:** Org deletion and customer account deletion handle upcoming bookings per the lifecycle decision, the deletion and archive dialogs show the counts, and the rules map describes bookings.
-
-**Files:**
-- `Sinwy.Backend/modules/bookings/`: export `cancelUpcomingOrganizationBookings(organizationIds, tx?)` and `handleCustomerAccountDeleted(userId, tx?)`, plus count helpers, from `index.ts`. Status writes go through `changeBooking` / `statusChange()` in `repository.ts` and `service.ts`. Emails: `findBookingEmailContext` + `sendBookingEmails` in `dispatch.ts`. Tests: copy the `tests/account.test.ts` harness.
-- `Sinwy.Backend/modules/auth/auth.ts`: `deleteUser.beforeDelete` (~178; after `scheduleOwnedOrganizationsForDeletion`, call `handleCustomerAccountDeleted`) and a new `beforeDeleteOrganization` in `organizationHooks` (~313).
-- `Sinwy.Backend/modules/organizations/service.ts`: `getAccountDeletionPreview` (~337) and `scheduleOwnedOrganizationsForDeletion` (~358). Cancel the scheduled orgs' upcoming bookings there, and add an upcoming-bookings count per org to `AccountDeletionPreviewDto` (`Sinwy.Shared/types/user/AccountSettings.ts` ~33).
-- Web: the account deletion dialog is `account-dashboard/components/settings/DangerZone.tsx` (query in `account-dashboard/lib/account-queries.ts`). The archive dialog is in `org-dashboard/components/ServiceActions.tsx` (~143). Its count comes from a new `upcomingCount` in the service detail DTO or from a bookings endpoint.
-- `docs/org-rules-map.md` §1, §9, §11 and §14; `docs/user-flow-map.md` for the storefront, Customer Mode bookings and the account overview.
-
-**Steps:**
-- **Org deletion cancels upcoming bookings:** `pending`/`confirmed` with `startsAt >= now`, `cancelledBy: "organization"`, the reason "The business closed its Sinwy account", the actor `system`. Customer emails dispatch after commit.
-  - Immediate deletion runs this from `beforeDeleteOrganization`, so the emails go before the cascade deletes the rows: load what the emails need first.
-  - Scheduled deletion runs it inside the scheduling flow.
-- **Customer account deletion:** `handleCustomerAccountDeleted` cancels the user's upcoming bookings as the customer and dispatches the org emails. The FK nulls `customerUserId` when the user row goes.
-  - Keep every retention choice inside this function; a comment says it's the one place to change for regional rules.
-  - This also runs for owners, after their orgs were scheduled, so their own bookings elsewhere are cancelled too.
-- Both flows ignore the cancellation window: `customerCanCancel` is only for cancels the customer starts.
-- **Import cycle:** `auth.ts` already imports `@organizationsModule`. Make sure importing `@bookingsModule` there doesn't create an import cycle that breaks module loading; if it does, call it through the organizations module or a lazy import.
-- **Deletion preview:** show "N upcoming bookings will be cancelled" per org in the dialog. The archive dialog says "N upcoming bookings stay booked".
-- **Rules map:**
-  - §1: the storefront owns root slugs, and the dashboard is under `/dashboard/`.
-  - §9: inactive orgs keep their bookings, staff writes are refused, customers can cancel, and the storefront is offline.
-  - §11: deletion cancels upcoming bookings, and customer deletion keeps the snapshot.
-  - §14: retention is still a gap to revisit per region.
-
-**Tests that matter:**
-- Owner account deletion: a scheduled org's upcoming bookings are cancelled by the organization, past bookings are untouched, and customers get emails.
-- Immediate org deletion (`/organization/delete`): the customer emails are sent and the rows are gone afterwards.
-- Customer deletion: their upcoming bookings are cancelled by the customer, including ones inside their cancellation window, the org is emailed, and the snapshot is still there with `customer_user_id` null.
-- The deletion preview count matches upcoming active bookings only.
-
-**Done when:**
-- The three lifecycle flows behave as decided, the dialogs show counts, and the rules map is updated.
-
-**Verify:** Seed `bookable-org` and two `user` customers. Customer A books a Haircut tomorrow; customer B books a Colouring the day after.
-1. Customer A deletes their account (`/account/settings`, confirm via the outbox link): A's booking is `cancelled` with `cancelled_by = 'customer'` and `customer_user_id` null, the name and email are still there, and the owner gets "Booking cancelled by customer".
-2. Archive Haircut: the dialog warns about upcoming bookings (0 now); archive Colouring → "1 upcoming booking stays booked".
-3. The owner starts account deletion: the dialog lists the org with "1 upcoming booking will be cancelled". Confirm via the outbox link: B's booking is cancelled by the organization, and B gets "Booking cancelled" with the closing reason.
-
-Polar revocation uses the seeded subscription as in the `e2e-test` skill; emails go to the local outbox.
-
----
-
 ## Phase 13: Code review
 
 **Goal:** The bookings work is reviewed for races, authorization leaks, timezone bugs and lifecycle gaps, and the findings are fixed.
 
-**Files:** Everything changed in Phases 1–12 (`git diff master...HEAD --stat`).
+**Files:** Everything changed in Phases 1–12 (`git diff master...HEAD --stat`). Starting points for the known findings (log Phase 12):
+- "Manual booking" is `customerUserId === null` in `updateBookingDetails` (`contact-locked`, `bookings/service.ts`), `org-dashboard/components/bookings/ContactCard.tsx:38` and `routes/_shell.bookings.$id.tsx:141`; a deleted customer's booking now matches it too.
+- `account-dashboard/lib/customer-booking.ts:69` calls every org cancel of a `pending` booking "Declined", including the system closing cancel.
+- `account-dashboard/components/settings/DangerZone.tsx` (no line for the user's own upcoming bookings) and `organizations/purge.ts` `scheduleOwnerless` (cancels nothing).
+- The `booking_event.payload` double encoding (`Sinwy.Backend/db/index.ts`), and `goodbye.tsx`'s Base UI `nativeButton` console error.
 
 **Steps:**
 - **Races:** every path that creates or moves a booking takes the org advisory lock before reading overlaps. Status changes lock the row.
 - **Authorization:** each route's middleware matches its permission; customer endpoints filter on the session user; public endpoints never return `internalNote`, other customers' data or inactive orgs; another org's ids are 404.
 - **Time:** every conversion between a local date and an instant goes through the org zone, nothing uses the browser zone for booking times, and the DST tests exist for the calendar and overview.
 - **Lifecycle:** emails dispatch only after commit; org deletion emails go out before the cascade; no booking is left `pending`/`confirmed` at a scheduled org.
+  - A booking from a since-deleted account must not count as manual. Telling them apart needs a stored source, since `customerUserId` is nulled. Ask before changing the "Detail page edits" decision.
+  - The closing cancel shouldn't read "Declined" to the customer. Decide whether a customer's deletion dialog should name their own upcoming bookings.
 - **Cancellation window:** the server and the web both use `customerCanCancel`; only customer-started cancels check it.
 - **Docs:** `org-rules-map.md` and `user-flow-map.md` match the code; prune this plan's standing notes; move the finished phases to the log.
 - **Final step:** stop every dev server started during the plan's work unless the user asked to keep it running, and delete temporary files and artifacts from the plan's work (probe scripts, screenshots, browser console logs, scratch data).

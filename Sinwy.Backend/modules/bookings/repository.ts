@@ -471,6 +471,35 @@ export const findRebookServices = (customerUserId: string) => {
 		.orderBy(desc(lastBookedAt), asc(service.id));
 };
 
+/** Whose bookings a lifecycle flow reaches: closing organizations or a leaving customer. */
+export type BookingOwner =
+	| { organizationIds: string[] }
+	| { customerUserId: string };
+
+/** Pending or confirmed and not yet started: what a closing org or a leaving customer cancels. */
+const notStartedOf = (owner: BookingOwner, now: Date) =>
+	and(
+		"organizationIds" in owner
+			? inArray(booking.organizationId, owner.organizationIds)
+			: eq(booking.customerUserId, owner.customerUserId),
+		inArray(booking.status, [...ACTIVE_BOOKING_STATUSES]),
+		gte(booking.startsAt, now),
+	);
+
+export const findNotStartedBookings = (owner: BookingOwner, now: Date) =>
+	db
+		.select({ id: booking.id, organizationId: booking.organizationId })
+		.from(booking)
+		.where(notStartedOf(owner, now))
+		.orderBy(asc(booking.startsAt), asc(booking.id));
+
+export const countNotStartedBookings = (organizationIds: string[], now: Date) =>
+	db
+		.select({ organizationId: booking.organizationId, count: count() })
+		.from(booking)
+		.where(notStartedOf({ organizationIds }, now))
+		.groupBy(booking.organizationId);
+
 /** What a booking email needs, loaded after the change commits. */
 export const findBookingEmailContext = async (bookingId: string) => {
 	const [row] = await db

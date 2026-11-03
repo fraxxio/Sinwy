@@ -46,10 +46,12 @@ const emailsFor = (
 				return { customer: BookingConfirmedEmail };
 			if (event.toStatus !== "cancelled") return {};
 			if (context.booking.cancelledBy === "customer")
-				return {
-					customer: CancellationConfirmedEmail,
-					organization: BookingCancelledByCustomerEmail,
-				};
+				return event.payload["accountDeleted"]
+					? { organization: BookingCancelledByCustomerEmail }
+					: {
+							customer: CancellationConfirmedEmail,
+							organization: BookingCancelledByCustomerEmail,
+						};
 			return event.fromStatus === "pending" && event.actorType === "member"
 				? { customer: BookingRequestDeclinedEmail }
 				: { customer: BookingCancelledEmail };
@@ -102,10 +104,12 @@ export const sendBookingEmails = async (
 	if (emails.customer && booking.customerEmail)
 		await send(booking.customerEmail, emails.customer, {
 			...props,
-			// manual bookings have no account to open the booking in
-			bookingUrl: booking.customerUserId
-				? url(`/account/bookings/${booking.id}`)
-				: null,
+			// manual bookings have no account to open the booking in, and a
+			// system cancel closes the organization, which takes the booking with it
+			bookingUrl:
+				booking.customerUserId && event.actorType !== "system"
+					? url(`/account/bookings/${booking.id}`)
+					: null,
 		});
 	if (emails.organization) {
 		const template = emails.organization;

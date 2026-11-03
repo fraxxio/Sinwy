@@ -31,6 +31,7 @@ export type BookingListParams = {
 	q?: string | undefined;
 	sort: BookingSort;
 	page: number;
+	pageSize?: number | undefined;
 };
 
 export type BookingCalendarParams = {

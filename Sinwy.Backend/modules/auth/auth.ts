@@ -49,6 +49,9 @@ import { refuseOwnerRole } from "./singleOwner";
 const authLogger = createLogger("auth");
 
 // better-auth only type-checks name; apply the shared length/character rule
+// imported on use: the bookings module's routes need this module loaded first
+const bookingsModule = () => import("@bookingsModule");
+
 const validName = (name: unknown) => {
 	const result = profileSchema.safeParse({ name });
 	if (!result.success) {
@@ -187,7 +190,10 @@ export const auth = betterAuth({
 						).toString(),
 					});
 				}
-				await scheduleOwnedOrganizationsForDeletion(user.id);
+				const closing = await scheduleOwnedOrganizationsForDeletion(user.id);
+				const bookings = await bookingsModule();
+				await bookings.cancelUpcomingOrganizationBookings(closing);
+				await bookings.handleCustomerAccountDeleted(user.id);
 			},
 			afterDelete: async (user) => {
 				await cleanupDeletedUser(user);
@@ -323,6 +329,11 @@ export const auth = betterAuth({
 					refuseOwnerRole(member.role, newRole),
 				afterRemoveMember: ({ member }) =>
 					cancelTransfersToMember(member.organizationId, member.userId),
+				// the emails go out before the deletion cascades the bookings away
+				beforeDeleteOrganization: async ({ organization }) => {
+					const bookings = await bookingsModule();
+					await bookings.cancelUpcomingOrganizationBookings([organization.id]);
+				},
 			},
 			schema: {
 				organization: {

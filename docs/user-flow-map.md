@@ -133,3 +133,47 @@ everyone else → Account with the reason
 ```
 
 Rules: [org-rules-map.md](org-rules-map.md) §6–§10.
+
+## 9. Booking as a customer (storefront)
+
+```text
+/<slug> → /<slug>/book (unknown or inactive org → "This booking page isn't available")
+├─ pick a service → a date (today to 60 days ahead) → a free time
+├─ confirm step: summary, price, cancellation policy, optional phone and note
+│   ├─ signed out → login or sign-up → back to the confirm step (phone and note are lost)
+│   └─ signed in → Book
+│       ├─ service needs approval → "Request sent" (pending); both sides emailed
+│       ├─ otherwise → "Booking confirmed"; both sides emailed
+│       ├─ time taken meanwhile → pick another time
+│       └─ 5 upcoming bookings at this org already → refused
+└─ members may book their own organization
+```
+
+## 10. Customer Mode bookings
+
+```text
+/account → next upcoming booking and up to 3 "Book again" services
+/account/bookings → Upcoming (pending, confirmed) | Past (the rest), 20 per page
+├─ empty → explains bookings are made on a business's booking page
+└─ a booking → org (link to its booking page, city, country), service, time,
+   price, status, own note, decline or cancel reason, timeline
+    ├─ Cancel → dialog with the policy → cancelled; both sides emailed
+    │   └─ inside the cancellation window → no Cancel; the org's phone and email instead
+    ├─ Add to calendar (.ics)
+    └─ Book again → the org's booking page with the service picked
+Only the user's own bookings; a manual booking with the same email never shows.
+```
+
+## 11. Account deletion
+
+```text
+Account → Settings → Delete account → dialog
+├─ owned organizations listed, each with "N upcoming bookings will be cancelled"
+└─ type the email → link emailed → click it
+    → plan revoked, owned orgs scheduled for deletion, their upcoming bookings
+      cancelled and their customers emailed
+    → the user's own upcoming bookings cancelled; the businesses emailed
+    → goodbye page
+```
+
+Rules: [org-rules-map.md](org-rules-map.md) §9 and §11.

@@ -117,7 +117,11 @@ export function DangerZone({ user }: { user: SessionUser }) {
 										</p>
 										<ul className="list-inside list-disc">
 											{orgs.map((org) => (
-												<li key={org.id}>{org.name}</li>
+												<li key={org.id}>
+													{org.name}
+													{org.upcomingBookings > 0 &&
+														`: ${org.upcomingBookings} upcoming ${org.upcomingBookings === 1 ? "booking" : "bookings"} will be cancelled`}
+												</li>
 											))}
 										</ul>
 										<p>

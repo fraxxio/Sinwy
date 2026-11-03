@@ -1,8 +1,9 @@
 import type { ServiceDto } from "@sinwy/shared";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArchiveIcon, CopyIcon, EllipsisIcon, PencilIcon } from "lucide-react";
 import { useState } from "react";
+import { bookingListQuery } from "#/modules/org-dashboard/lib/booking-queries";
 import {
 	archiveService,
 	duplicateService,
@@ -53,6 +54,17 @@ export function ServiceActions({
 	const navigate = useNavigate();
 	const unwrap = useUnwrapWrite();
 	const [confirmOpen, setConfirmOpen] = useState(false);
+	const upcoming = useQuery({
+		...bookingListQuery(organizationId, {
+			serviceId: [service.id],
+			status: ["pending", "confirmed"],
+			sort: "startsAt",
+			page: 1,
+			pageSize: 1,
+		}),
+		enabled: confirmOpen,
+	});
+	const upcomingCount = upcoming.data?.total ?? 0;
 	const invalidate = () =>
 		queryClient.invalidateQueries({
 			queryKey: serviceKeys.all(organizationId),
@@ -147,6 +159,8 @@ export function ServiceActions({
 						<AlertDialogTitle>Archive {service.name}?</AlertDialogTitle>
 						<AlertDialogDescription>
 							It leaves your services list and customers can no longer book it.
+							{upcomingCount > 0 &&
+								` ${upcomingCount} upcoming ${upcomingCount === 1 ? "booking stays" : "bookings stay"} booked.`}
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

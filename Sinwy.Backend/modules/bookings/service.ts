@@ -48,14 +48,17 @@ import {
 import { addMinutes } from "date-fns";
 import { dispatchBookingEvent } from "./dispatch";
 import {
+	type BookingChange,
 	type BookingEventRow,
 	type BookingFilters,
+	type BookingOwner,
 	type BookingRow,
 	type CustomerBookingRow,
 	changeBooking,
 	countBookings,
 	countCustomerBookings,
 	countNeedingAttention,
+	countNotStartedBookings,
 	findBooking,
 	findBookingEvents,
 	findBookings,
@@ -63,6 +66,7 @@ import {
 	findCustomerBooking,
 	findCustomerBookings,
 	findNextCustomerBooking,
+	findNotStartedBookings,
 	findPendingRequests,
 	findRebookServices,
 	insertBookingIfFree,
@@ -206,8 +210,9 @@ const committed = async (
 const statusChange = (
 	row: BookingRow,
 	to: BookingStatus,
-	actor: { type: BookingEventActorType; userId: string },
+	actor: { type: BookingEventActorType; userId: string | null },
 	cancellation: { cancelledBy: BookingCanceller; reason: string | null },
+	payload: Record<string, unknown> = {},
 ) =>
 	({
 		ok: true,
@@ -225,6 +230,7 @@ const statusChange = (
 			toStatus: to,
 			actorType: actor.type,
 			actorUserId: actor.userId,
+			payload,
 		},
 	}) as const;
 
@@ -842,4 +848,81 @@ export const cancelCustomerBooking = async (
 		ok: true,
 		data: toCustomerBookingDto({ ...current, booking: result.booking }),
 	};
+};
+
+export const ORGANIZATION_CLOSED_REASON =
+	"The business closed its Sinwy account";
+
+/** Cancels each booking that hasn't started under its own row lock and sends its emails. Ignores cancellation windows. */
+const cancelNotStarted = async (
+	owner: BookingOwner,
+	cancel: (row: BookingRow) => BookingChange<BookingError>,
+	now: Date,
+) => {
+	const bookings = await findNotStartedBookings(owner, now);
+	for (const { id, organizationId } of bookings) {
+		const result = await changeBooking<BookingError>(
+			{ organizationId },
+			id,
+			(row) =>
+				isActiveStatus(row.status) && row.startsAt >= now
+					? cancel(row)
+					: fail("illegal-transition"),
+		);
+		if (result.ok) await dispatchAll(result.events);
+	}
+	return bookings.length;
+};
+
+/** The organizations are closing: their customers' upcoming bookings are cancelled by the organization. */
+export const cancelUpcomingOrganizationBookings = (
+	organizationIds: string[],
+	now = new Date(),
+) =>
+	organizationIds.length === 0
+		? Promise.resolve(0)
+		: cancelNotStarted(
+				{ organizationIds },
+				(row) =>
+					statusChange(
+						row,
+						"cancelled",
+						{ type: "system", userId: null },
+						{ cancelledBy: "organization", reason: ORGANIZATION_CLOSED_REASON },
+					),
+				now,
+			);
+
+/**
+ * What happens to a customer's bookings when they delete their account. This
+ * is the one place to change for regional retention rules. Upcoming bookings
+ * are cancelled by the customer and their organizations are told; the
+ * contact snapshot stays, and the foreign key nulls `customerUserId` once the
+ * user row goes.
+ */
+export const handleCustomerAccountDeleted = (
+	customerUserId: string,
+	now = new Date(),
+) =>
+	cancelNotStarted(
+		{ customerUserId },
+		(row) =>
+			statusChange(
+				row,
+				"cancelled",
+				{ type: "customer", userId: customerUserId },
+				{ cancelledBy: "customer", reason: null },
+				{ accountDeleted: true },
+			),
+		now,
+	);
+
+/** Bookings each organization's closing would cancel, keyed by organization id. */
+export const countUpcomingOrganizationBookings = async (
+	organizationIds: string[],
+	now = new Date(),
+) => {
+	if (organizationIds.length === 0) return new Map<string, number>();
+	const rows = await countNotStartedBookings(organizationIds, now);
+	return new Map(rows.map((row) => [row.organizationId, row.count]));
 };
