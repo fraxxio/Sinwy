@@ -1,7 +1,7 @@
 import type { BookingDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
-import { BOOKING_STATUS_STYLES } from "#/modules/org-dashboard/components/bookings/BookingStatusBadge";
 import { groupByStartDate } from "#/modules/org-dashboard/lib/calendar";
+import { BOOKING_STATUS_STYLES } from "#/shared/components/booking/BookingStatusBadge";
 import { formatTimeIn } from "#/shared/lib/date";
 import { cn } from "#/shared/lib/utils";
 

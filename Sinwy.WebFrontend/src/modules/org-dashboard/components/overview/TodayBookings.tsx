@@ -1,6 +1,6 @@
 import type { BookingDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
-import { BookingStatusBadge } from "#/modules/org-dashboard/components/bookings/BookingStatusBadge";
+import { BookingStatusBadge } from "#/shared/components/booking/BookingStatusBadge";
 import {
 	Card,
 	CardContent,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BOOKING_LIMITS as LIMITS } from "./Booking";
+import { CUSTOMER_BOOKING_TABS, BOOKING_LIMITS as LIMITS } from "./Booking";
 import { BOOKING_STATUSES } from "./BookingStatus";
 
 const optionalText = (max: number, label: string) =>
@@ -171,6 +171,11 @@ export const bookingCalendarQuerySchema = bookingFilters
 		{ message: `Pick at most ${LIMITS.calendarDays} days`, path: ["to"] },
 	);
 
+export const customerBookingListQuerySchema = z.object({
+	tab: z.enum(CUSTOMER_BOOKING_TABS).default("upcoming"),
+	page: z.coerce.number().int().min(1).default(1),
+});
+
 export type BookingContactInput = z.infer<typeof bookingContactSchema>;
 export type ManualBookingInput = z.infer<typeof manualBookingSchema>;
 export type SelfBookingInput = z.infer<typeof selfBookingSchema>;
@@ -179,3 +184,6 @@ export type CancelBookingInput = z.infer<typeof cancelBookingSchema>;
 export type BookingUpdateInput = z.infer<typeof bookingUpdateSchema>;
 export type BookingListQuery = z.infer<typeof bookingListQuerySchema>;
 export type BookingCalendarQuery = z.infer<typeof bookingCalendarQuerySchema>;
+export type CustomerBookingListQuery = z.infer<
+	typeof customerBookingListQuerySchema
+>;

@@ -1,7 +1,7 @@
 import { BOOKING_LIMITS, type BookingListDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import { BookingStatusBadge } from "#/modules/org-dashboard/components/bookings/BookingStatusBadge";
+import { BookingStatusBadge } from "#/shared/components/booking/BookingStatusBadge";
 import { Button } from "#/shared/components/ui/button";
 import {
 	Table,

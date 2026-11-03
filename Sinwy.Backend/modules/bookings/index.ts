@@ -1,3 +1,7 @@
 export { isTimeTaken } from "./repository";
-export { registerBookingRoutes, registerStorefrontRoutes } from "./routes";
+export {
+	registerAccountBookingRoutes,
+	registerBookingRoutes,
+	registerStorefrontRoutes,
+} from "./routes";
 export { createBooking, listBusyIntervals } from "./service";

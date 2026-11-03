@@ -2,16 +2,19 @@ import { organizationPath, requireAuth, requirePermission } from "@authModule";
 import type { IApp } from "@backend/lib/app/types";
 import {
 	cancelBookingHandler,
+	cancelCustomerBookingHandler,
 	completeBookingHandler,
 	confirmBookingHandler,
 	createManualBookingHandler,
 	createSelfBookingHandler,
 	getBookingHandler,
+	getCustomerBookingHandler,
 	getOverviewHandler,
 	getStorefrontHandler,
 	listBookingsHandler,
 	listBookingTimesHandler,
 	listCalendarBookingsHandler,
+	listCustomerBookingsHandler,
 	listStorefrontTimesHandler,
 	markNoShowHandler,
 	rescheduleBookingHandler,
@@ -73,6 +76,22 @@ export const registerStorefrontRoutes = (app: IApp) => {
 		listStorefrontTimesHandler,
 	);
 	app.route(`${STOREFRONT}/bookings`, createSelfBookingHandler, {
+		method: "POST",
+		routeMiddlewares: [requireAuth],
+	});
+};
+
+const ACCOUNT = "/api/account/bookings";
+
+/** Customer Mode: the session user's own bookings, wherever they were made. */
+export const registerAccountBookingRoutes = (app: IApp) => {
+	app.route(ACCOUNT, listCustomerBookingsHandler, {
+		routeMiddlewares: [requireAuth],
+	});
+	app.route(`${ACCOUNT}/:bookingId`, getCustomerBookingHandler, {
+		routeMiddlewares: [requireAuth],
+	});
+	app.route(`${ACCOUNT}/:bookingId/cancel`, cancelCustomerBookingHandler, {
 		method: "POST",
 		routeMiddlewares: [requireAuth],
 	});

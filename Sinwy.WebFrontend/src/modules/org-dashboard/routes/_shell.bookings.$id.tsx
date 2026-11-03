@@ -8,10 +8,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { BookingActions } from "#/modules/org-dashboard/components/bookings/BookingActions";
 import { BookingHistory } from "#/modules/org-dashboard/components/bookings/BookingHistory";
-import {
-	BookingStatusBadge,
-	isExpiredRequest,
-} from "#/modules/org-dashboard/components/bookings/BookingStatusBadge";
 import { ContactCard } from "#/modules/org-dashboard/components/bookings/ContactCard";
 import {
 	bookingQuery,
@@ -23,6 +19,10 @@ import {
 	useUnwrapWrite,
 } from "#/modules/org-dashboard/lib/service-queries";
 import { formatDuration } from "#/modules/org-dashboard/lib/services";
+import {
+	BookingStatusBadge,
+	isExpiredRequest,
+} from "#/shared/components/booking/BookingStatusBadge";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { Button } from "#/shared/components/ui/button";
 import {

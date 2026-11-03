@@ -1,6 +1,7 @@
 import type { Membership } from "@authModule";
 import {
 	getOrganizationLocale,
+	isScheduledForDeletion,
 	type PublicOrganization,
 } from "@organizationsModule";
 import {
@@ -18,6 +19,7 @@ import {
 	type BookableTimesDto,
 	type BookableTimesQuery,
 	type BookingCalendarQuery,
+	type BookingCanceller,
 	type BookingDetailDto,
 	type BookingDto,
 	type BookingEventActorType,
@@ -27,8 +29,14 @@ import {
 	type BookingOverviewDto,
 	type BookingStatus,
 	type BookingUpdateInput,
+	type CustomerBookingDetailDto,
 	type CustomerBookingDto,
+	type CustomerBookingEventActor,
+	type CustomerBookingEventDto,
+	type CustomerBookingListDto,
+	type CustomerBookingListQuery,
 	canTransition,
+	customerCanCancel,
 	type ManualBookingInput,
 	type RescheduleBookingInput,
 	type SelfBookingInput,
@@ -40,13 +48,17 @@ import {
 	type BookingEventRow,
 	type BookingFilters,
 	type BookingRow,
+	type CustomerBookingRow,
 	changeBooking,
 	countBookings,
+	countCustomerBookings,
 	countNeedingAttention,
 	findBooking,
 	findBookingEvents,
 	findBookings,
 	findBusyIntervals,
+	findCustomerBooking,
+	findCustomerBookings,
 	findPendingRequests,
 	insertBookingIfFree,
 	sumBookingsBetween,
@@ -68,7 +80,9 @@ type BookingError =
 	| "limit-reached"
 	| "illegal-transition"
 	| "not-reschedulable"
-	| "contact-locked";
+	| "contact-locked"
+	| "window-passed"
+	| "organization-closing";
 export type Result<T> =
 	| { ok: true; data: T }
 	| { ok: false; error: BookingError };
@@ -184,6 +198,31 @@ const committed = async (
 	return { ok: true, data: toBookingDto(result.booking, result.serviceName) };
 };
 
+const statusChange = (
+	row: BookingRow,
+	to: BookingStatus,
+	actor: { type: BookingEventActorType; userId: string },
+	cancellation: { cancelledBy: BookingCanceller; reason: string | null },
+) =>
+	({
+		ok: true,
+		values:
+			to === "cancelled"
+				? {
+						status: to,
+						cancelledBy: cancellation.cancelledBy,
+						cancellationReason: cancellation.reason,
+					}
+				: { status: to },
+		event: {
+			type: "status_changed",
+			fromStatus: row.status,
+			toStatus: to,
+			actorType: actor.type,
+			actorUserId: actor.userId,
+		},
+	}) as const;
+
 export type StaffStatusChange = Exclude<BookingStatus, "pending">;
 
 /** Staff move a booking through the transition table; a cancel records the organization and its reason. */
@@ -197,30 +236,25 @@ export const changeBookingStatus = async (
 ): Promise<Result<BookingDto>> => {
 	if (membership.status !== "active") return fail("inactive");
 	const result = await changeBooking<BookingError>(
-		membership.organizationId,
+		{ organizationId: membership.organizationId },
 		bookingId,
 		(row) => {
-			const from = row.status as BookingStatus;
-			if (!canTransition(from, to, "organization", row.startsAt, now))
+			if (
+				!canTransition(
+					row.status as BookingStatus,
+					to,
+					"organization",
+					row.startsAt,
+					now,
+				)
+			)
 				return fail("illegal-transition");
-			return {
-				ok: true,
-				values:
-					to === "cancelled"
-						? {
-								status: to,
-								cancelledBy: "organization",
-								cancellationReason: reason,
-							}
-						: { status: to },
-				event: {
-					type: "status_changed",
-					fromStatus: from,
-					toStatus: to,
-					actorType: "member",
-					actorUserId: memberUserId,
-				},
-			};
+			return statusChange(
+				row,
+				to,
+				{ type: "member", userId: memberUserId },
+				{ cancelledBy: "organization", reason },
+			);
 		},
 	);
 	return committed(result);
@@ -239,7 +273,7 @@ export const rescheduleBooking = async (
 	if (membership.status !== "active") return fail("inactive");
 	const startsAt = new Date(input.startsAt);
 	const result = await changeBooking<BookingError>(
-		membership.organizationId,
+		{ organizationId: membership.organizationId },
 		bookingId,
 		(row) => {
 			if (!isActiveStatus(row.status)) return fail("not-reschedulable");
@@ -295,7 +329,7 @@ export const updateBookingDetails = async (
 					customerPhone: input.customerPhone ?? null,
 				};
 	const result = await changeBooking<BookingError>(
-		membership.organizationId,
+		{ organizationId: membership.organizationId },
 		bookingId,
 		(row) => {
 			if (contact && row.customerUserId) return fail("contact-locked");
@@ -640,28 +674,139 @@ export const createSelfBooking = async (
 		now,
 	);
 	if (!created.ok) return created;
-	const { data } = created;
+	const row = await findCustomerBooking(customer.id, created.data.id);
+	if (!row) throw new Error("A new self-booking wasn't found");
+	return { ok: true, data: toCustomerBookingDto(row) };
+};
+
+const toCustomerBookingDto = ({
+	booking: row,
+	serviceName,
+	organization,
+}: CustomerBookingRow): CustomerBookingDto => ({
+	id: row.id,
+	serviceId: row.serviceId,
+	serviceName,
+	startsAt: row.startsAt.toISOString(),
+	endsAt: row.endsAt.toISOString(),
+	priceMinor: row.priceMinor,
+	currency: row.currency,
+	status: row.status as BookingStatus,
+	cancelledBy: row.cancelledBy as BookingCanceller | null,
+	cancellationReason: row.cancellationReason,
+	customerNote: row.customerNote,
+	cancellationWindowMinutes: row.cancellationWindowMinutes,
+	createdAt: row.createdAt.toISOString(),
+	organization,
+});
+
+const CUSTOMER_ACTORS: Record<
+	BookingEventActorType,
+	CustomerBookingEventActor
+> = { customer: "customer", member: "organization", system: "system" };
+
+/** The customer's view of the history: no member names, no contact edits, and of the payload only the old and new start. */
+const toCustomerEventDtos = (events: BookingEventRow[]) =>
+	events.flatMap((event): CustomerBookingEventDto[] => {
+		if (event.type === "contact_updated") return [];
+		const from = event.payload["previousStartsAt"];
+		const to = event.payload["startsAt"];
+		return [
+			{
+				id: event.id,
+				type: event.type as CustomerBookingEventDto["type"],
+				fromStatus: event.fromStatus as BookingStatus | null,
+				toStatus: event.toStatus as BookingStatus | null,
+				actor: CUSTOMER_ACTORS[event.actorType as BookingEventActorType],
+				moved:
+					typeof from === "string" && typeof to === "string"
+						? { from, to }
+						: null,
+				occurredAt: event.occurredAt.toISOString(),
+			},
+		];
+	});
+
+/** The session user's own bookings across organizations; manual bookings with their email never count. */
+export const listCustomerBookings = async (
+	customerUserId: string,
+	{ tab, page }: CustomerBookingListQuery,
+	now = new Date(),
+): Promise<CustomerBookingListDto> => {
+	const limit = BOOKING_LIMITS.customerListPageSize;
+	const [rows, total] = await Promise.all([
+		findCustomerBookings(
+			customerUserId,
+			tab,
+			{ limit, offset: (page - 1) * limit },
+			now,
+		),
+		countCustomerBookings(customerUserId, tab, now),
+	]);
+	return { items: rows.map(toCustomerBookingDto), total };
+};
+
+export const getCustomerBooking = async (
+	customerUserId: string,
+	bookingId: string,
+): Promise<Result<CustomerBookingDetailDto>> => {
+	const row = await findCustomerBooking(customerUserId, bookingId);
+	if (!row) return fail("not-found");
+	const events = await findBookingEvents(bookingId);
 	return {
 		ok: true,
 		data: {
-			id: data.id,
-			serviceId: data.serviceId,
-			serviceName: data.serviceName,
-			startsAt: data.startsAt,
-			endsAt: data.endsAt,
-			priceMinor: data.priceMinor,
-			currency: data.currency,
-			status: data.status,
-			cancelledBy: data.cancelledBy,
-			cancellationReason: data.cancellationReason,
-			customerNote: data.customerNote,
-			cancellationWindowMinutes: data.cancellationWindowMinutes,
-			createdAt: data.createdAt,
-			organization: {
-				name: organization.name,
-				slug: organization.slug,
-				timezone: organization.timezone,
-			},
+			...toCustomerBookingDto(row),
+			history: toCustomerEventDtos(events.map(({ event }) => event)),
 		},
+	};
+};
+
+/**
+ * The customer cancels their own booking within the transition table and its
+ * cancellation window. It needs no membership, so it works at an inactive
+ * organization, but not at one that is closing down.
+ */
+export const cancelCustomerBooking = async (
+	customerUserId: string,
+	bookingId: string,
+	now = new Date(),
+): Promise<Result<CustomerBookingDto>> => {
+	const current = await findCustomerBooking(customerUserId, bookingId);
+	if (!current) return fail("not-found");
+	if (await isScheduledForDeletion(current.booking.organizationId))
+		return fail("organization-closing");
+
+	const result = await changeBooking<BookingError>(
+		{ customerUserId },
+		bookingId,
+		(row) => {
+			const status = row.status as BookingStatus;
+			if (!canTransition(status, "cancelled", "customer", row.startsAt, now))
+				return fail("illegal-transition");
+			if (
+				!customerCanCancel(
+					{
+						status,
+						startsAt: row.startsAt,
+						cancellationWindowMinutes: row.cancellationWindowMinutes,
+					},
+					now,
+				)
+			)
+				return fail("window-passed");
+			return statusChange(
+				row,
+				"cancelled",
+				{ type: "customer", userId: customerUserId },
+				{ cancelledBy: "customer", reason: null },
+			);
+		},
+	);
+	if (!result.ok) return result;
+	await dispatchAll(result.events);
+	return {
+		ok: true,
+		data: toCustomerBookingDto({ ...current, booking: result.booking }),
 	};
 };

@@ -13,21 +13,25 @@ import {
 	bookingListQuerySchema,
 	bookingUpdateSchema,
 	cancelBookingSchema,
+	customerBookingListQuerySchema,
 	manualBookingSchema,
 	rescheduleBookingSchema,
 	selfBookingSchema,
 } from "@sinwy/shared";
 import type { z } from "zod";
 import {
+	cancelCustomerBooking,
 	changeBookingStatus,
 	createManualBooking,
 	createSelfBooking,
 	getBooking,
+	getCustomerBooking,
 	getOverview,
 	getStorefront,
 	listBookings,
 	listBookingTimes,
 	listCalendarBookings,
+	listCustomerBookings,
 	listStorefrontTimes,
 	type Result,
 	rescheduleBooking,
@@ -79,6 +83,14 @@ const respondError = (error: BookingError) => {
 				"The contact of a booking made from an account can't be edited",
 				409,
 			);
+		case "window-passed":
+			return fail(
+				"It's too close to the start to cancel online; contact the business",
+				409,
+				API_ERROR_CODES.BOOKING_CANCELLATION_WINDOW_PASSED,
+			);
+		case "organization-closing":
+			return fail("This business is closing its Sinwy account", 409);
 		case "not-found":
 			return fail("Not found", 404);
 	}
@@ -268,3 +280,29 @@ export const createSelfBookingHandler = storefront(async (c, organization) => {
 		? ok(result.data, 201, "Booking created")
 		: respondError(result.error);
 });
+
+export const listCustomerBookingsHandler: Handler = async (c) => {
+	const params = new URL(c.req.url).searchParams;
+	const query = customerBookingListQuerySchema.safeParse(
+		Object.fromEntries(params),
+	);
+	if (!query.success)
+		return fail(query.error.issues[0]?.message ?? "Invalid query", 400);
+	return ok(await listCustomerBookings(sessionFrom(c).user.id, query.data));
+};
+
+export const getCustomerBookingHandler: Handler = async (c) => {
+	const result = await getCustomerBooking(
+		sessionFrom(c).user.id,
+		bookingIdOf(c),
+	);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const cancelCustomerBookingHandler: Handler = async (c) => {
+	const result = await cancelCustomerBooking(
+		sessionFrom(c).user.id,
+		bookingIdOf(c),
+	);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};

@@ -499,3 +499,81 @@ Nothing is simulated.
   - There were no console errors and nothing new in the logs.
   - The select's help text shows only while the field is focused (shared `SelectField` behaviour).
   - Not checked: the read-only (staff) view of the select, and the confirmation email's content (the email doesn't mention the window).
+
+## Phase 10: Customer Mode bookings
+
+**Goal:** A customer sees their bookings across organizations at `/account/bookings`, opens one with its location and timeline, cancels it within the policy, adds it to their calendar, or books again.
+
+**Files:**
+- `Sinwy.Backend/modules/bookings/`:
+  - `routes.ts`: a `registerAccountBookingRoutes` (or extend `registerBookingRoutes`) with `GET /api/account/bookings?tab&page`, `GET /api/account/bookings/:bookingId` and `POST /api/account/bookings/:bookingId/cancel`, all `requireAuth`. Other `/api/account/*` routes: `modules/billing/routes.ts`, `modules/organizations/routes.ts` ~43.
+  - `repository.ts`: `changeBooking` (~186) filters on `organizationId`; add a customer scope (`customerUserId`) for the cancel. List and detail queries filter on `customerUserId` and join `organization` + `organization_profile`.
+  - `service.ts`: `changeBookingStatus` (~190) takes a `Membership` and checks `canTransition` as `organization`; the customer cancel is a sibling that checks `customerCanCancel(row, now)` instead, with `cancelledBy: "customer"` and actor `customer`. `selfBook` (~600) builds today's `CustomerBookingDto`; move that mapping into one `toCustomerBookingDto`.
+  - Tests: copy the harness in `tests/changes.test.ts`.
+- `Sinwy.Backend/modules/organizations/`: the profile's `city`, `country`, `phone` and `email` are columns of `organization_profile` (`db/schema/organizationSchema.ts` ~41–45). Export what the DTO needs through `index.ts`, and the scheduled-deletion check (`findOrganizationAccess`).
+- `Sinwy.Shared/types/booking/Booking.ts` (`CustomerBookingDto` already has `cancellationWindowMinutes`; add the org's city, country, phone and email, `CustomerBookingDetailDto`, `CustomerBookingEventDto`); `types/api/ApiResponse.ts` (`BOOKING_CANCELLATION_WINDOW_PASSED: 40922`).
+- Web:
+  - `modules/account-dashboard/routes/_shell.bookings.index.tsx` and `_shell.bookings.$id.tsx` replace the placeholders (`_shell.bookings.tsx` is the layout).
+  - New `account-dashboard/lib/booking-queries.ts` (copy `org-dashboard/lib/booking-queries.ts`), `account-dashboard/lib/ics.ts`, and `account-dashboard/components/bookings/`.
+  - Policy copy: `formatCancellationWindow` and `formatCancellationPolicy` in `src/shared/lib/cancellation-policy.ts`; the deadline from `customerCancelDeadline` in `@sinwy/shared`. Status badge styles: `org-dashboard/components/bookings/BookingStatusBadge.tsx` (another module's: move it to `shared/` if both need it).
+
+**Steps:**
+- Filter strictly on `customerUserId = session user`; a missing or another user's booking is 404.
+- The DTO has:
+  - the org's name, slug, timezone, city, country, phone and email (from `organization_profile`);
+  - the service name, times, price and status;
+  - `customerNote`, `cancelledBy`, `cancellationReason` and `cancellationWindowMinutes`.
+
+  It never includes `internalNote` or the booking's contact fields.
+- **Timeline** (detail only): the `created`, `status_changed` and `rescheduled` events. The actor shows as "You", the org name, or nothing for `system`. Never send member names, `contact_updated` events, or payload fields other than the old and new times.
+- **Cancel** goes through `changeBookingStatus` with the actor `customer`, checks `customerCanCancel` and dispatches "Cancellation confirmed" plus "Booking cancelled by customer".
+  - Inside the window → 409 `BOOKING_CANCELLATION_WINDOW_PASSED`.
+  - It works even when the org is inactive (the customer isn't a member, so there's no membership check). It's refused when the org is scheduled for deletion (Phase 12 has already cancelled the booking anyway).
+- **Web:** Upcoming and Past tabs as a search param, rows formatted in each booking's org zone with the zone label.
+  - Detail: the "Waiting for {org} to confirm" copy, the city and country, the timeline, and "Book again" linking to `/<slug>/book?service=<id>`.
+  - Policy notice:
+    - Before the deadline: "You can cancel until {deadline in the org zone}", and Cancel opens a confirm dialog.
+    - Inside the window: no Cancel button, and "Cancellations within {window} of the start aren't possible online. Contact {org} at {phone} or {email}." Show whichever contacts exist, or just "Contact {org}."
+  - **Add to calendar** on upcoming `pending`/`confirmed` bookings. `bookingToIcs(booking, detailUrl)` in `ics.ts` builds the file in the browser and downloads it as an `.ics`; there's no backend route.
+    - Fields: UTC `DTSTART`/`DTEND`, `UID:<id>@sinwy`, `SUMMARY:{service} at {org}`, `LOCATION:{city}, {country}`, `URL` to the detail page, and `STATUS` `TENTATIVE` (pending) or `CONFIRMED`.
+    - Format: CRLF line endings, with RFC 5545 escaping and 75-octet line folding.
+  - Empty Upcoming tab: "No upcoming bookings", explaining that bookings are made on a business's booking page, with no link (see the decision).
+
+**Tests that matter:**
+- User B can't read or cancel user A's booking (404). A manual booking with user A's email never appears for A.
+- A customer cancels a confirmed booking after its start → 409. A cancelled booking can't be cancelled again.
+- Inside the window a confirmed booking's cancel → 409 and nothing changes; a `pending` request inside the window can still be withdrawn.
+- `internalNote` is absent from both read endpoints' JSON, and the timeline has no member names or contact events.
+- A booking at an inactive org can still be read and cancelled by its customer.
+- `ics.ts`: escaping of `,`, `;`, `\` and newlines, folding of long lines, and UTC times for a booking on a DST-change day.
+
+**Done when:**
+- A customer sees, opens and cancels their bookings in the browser within the policy, downloads a valid `.ics`, and the org receives the email.
+
+**Verify:** Seed `bookable-org` and a `user` customer. Give the org a city and country in its settings if the seed has none. The owner sets Haircut's window to 48 hours. The customer books Haircut tomorrow and Haircut in 5 days on the storefront, and the owner adds an internal note to the 5-day one.
+1. As the customer, `/account/bookings` → Upcoming lists both in the org zone. Open the 5-day one: the city and country, a "Booked" timeline entry, and "You can cancel until …". There's no internal note on the page, and the API response has no `internalNote`.
+2. Add to calendar: the downloaded file's `DTSTART` is the booking's start in UTC (10:00 Vilnius → 07:00 or 08:00 UTC).
+3. Cancel it → the status is cancelled, it moves to Past, the timeline shows "Cancelled by you", and the outbox has "Cancellation confirmed" (customer) and "Booking cancelled by customer" (owner).
+4. Open tomorrow's: no Cancel button, and the contact message shows. `POST /api/account/bookings/<id>/cancel` as the customer → 409 `BOOKING_CANCELLATION_WINDOW_PASSED`.
+5. "Book again" opens `/<slug>/book?service=<id>` with Haircut selected.
+6. A second `user` with no bookings sees the empty state.
+
+Nothing is simulated.
+
+### Log (2026-11-03, `feat(backend, web): add Customer Mode bookings`)
+- Shipped:
+  - Backend: `registerAccountBookingRoutes` (list with `tab` and `page`, 20 per page; detail with a customer timeline; cancel), `changeBooking` scoped by organization or customer, `cancelCustomerBooking` (`customerCanCancel`, `window-passed` → 409 40922, refused at an org scheduled for deletion), and one `toCustomerBookingDto` that `createSelfBooking` also uses. `CustomerBookingDto.organization` gained city, country, phone and email.
+  - Web: `/account/bookings` (Upcoming and Past as a search param, each row in its org's zone) and `/account/bookings/$id` (status line, policy notice, Cancel confirm dialog, Add to calendar, Book again, Appointment and Business cards, timeline). `lib/ics.ts` builds the `.ics` file. `BookingStatusBadge` moved to `src/shared/components/booking/`.
+  - Tests: `bookings/tests/account.test.ts` (11, covering every "Tests that matter" item plus the scheduled-deletion refusal and tab order), `account-dashboard/tests/ics.test.ts` and `customer-booking.test.ts`.
+- Differs from plan:
+  - "Upcoming" means `pending`/`confirmed` with `endsAt > now`, so a booking in progress stays under Upcoming. Everything else is Past.
+  - The timeline sends `moved: { from, to }` instead of the raw payload, and the actor as `customer` | `organization` | `system`. Contact events are dropped on the server.
+  - A cancel at an org scheduled for deletion is 409 "This business is closing its Sinwy account" with no error code.
+  - The customer cancel takes no reason.
+  - When no window deadline applies, the policy line reads "You can cancel any time before the start." or "You can withdraw this request any time."
+- Checked in the running app (e2e subagent; all 6 Verify steps passed, nothing simulated beyond sign-in and the outbox):
+  - Both bookings were listed in the Vilnius zone. The 5-day detail showed "Vilnius, LT", "Booked by you" and "You can cancel until Friday, 6 November 2026, 10:00 (Europe/Vilnius)." Neither the page nor the API JSON had the internal note.
+  - The `.ics` had `DTSTART:20261108T080000Z`, CRLF line endings and a correctly folded URL line.
+  - The cancel set `cancelled_by = customer`, moved the booking to Past and added "Cancelled by you" to the timeline. The outbox had "Cancellation confirmed" (customer) and "Booking cancelled by customer" (owner).
+  - Tomorrow's booking had no Cancel button and showed the contact message, and the API cancel returned 409 with code 40922. Book again opened `/<slug>/book?service=<id>` with Haircut selected. A second user saw the empty state and got 404 on the first user's booking.
+  - There were no console or log errors. The customer's "Cancellation confirmed" email has no link (Phase 4 template). Not checked: a real Resend delivery.

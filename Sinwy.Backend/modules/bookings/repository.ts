@@ -1,6 +1,9 @@
 import db from "@db";
 import { booking, bookingEvent } from "@db/schema/bookingSchema";
-import { organization } from "@db/schema/organizationSchema";
+import {
+	organization,
+	organizationProfile,
+} from "@db/schema/organizationSchema";
 import { service } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
 import type { BusyInterval } from "@servicesModule";
@@ -8,6 +11,7 @@ import {
 	ACTIVE_BOOKING_STATUSES,
 	type BookingSort,
 	type BookingStatus,
+	type CustomerBookingTab,
 } from "@sinwy/shared";
 import {
 	and,
@@ -22,6 +26,7 @@ import {
 	lt,
 	lte,
 	ne,
+	not,
 	or,
 	type SQL,
 	sql,
@@ -179,28 +184,37 @@ export type BookingChange<E extends string> =
 			window?: BusyInterval;
 	  };
 
+/** Staff reach their organization's bookings; customers reach the bookings made from their account. */
+export type BookingScope =
+	| { organizationId: string }
+	| { customerUserId: string };
+
+const inScope = (scope: BookingScope) =>
+	"organizationId" in scope
+		? eq(booking.organizationId, scope.organizationId)
+		: eq(booking.customerUserId, scope.customerUserId);
+
 /**
  * Locks the booking row, lets `decide` turn its current state into a change, then writes it with its event.
  * `lockOrganization` takes the organization lock first, as every write that moves a booking must.
  */
 export const changeBooking = <E extends string>(
-	organizationId: string,
+	scope: BookingScope,
 	bookingId: string,
 	decide: (row: BookingRow) => BookingChange<E>,
 	options: { lockOrganization?: boolean } = {},
 ) =>
 	db.transaction(async (tx) => {
-		if (options.lockOrganization) await lockOrganization(tx, organizationId);
+		if (options.lockOrganization) {
+			if (!("organizationId" in scope))
+				throw new Error("Only an organization scope can lock the organization");
+			await lockOrganization(tx, scope.organizationId);
+		}
 		const [current] = await tx
 			.select(withServiceName)
 			.from(booking)
 			.innerJoin(service, eq(service.id, booking.serviceId))
-			.where(
-				and(
-					eq(booking.organizationId, organizationId),
-					eq(booking.id, bookingId),
-				),
-			)
+			.where(and(inScope(scope), eq(booking.id, bookingId)))
 			.for("update", { of: booking });
 		if (!current) return { ok: false, error: "not-found" } as const;
 
@@ -208,7 +222,12 @@ export const changeBooking = <E extends string>(
 		if (!change.ok) return change;
 		if (
 			change.window &&
-			(await isTimeTaken(tx, organizationId, change.window, bookingId))
+			(await isTimeTaken(
+				tx,
+				current.booking.organizationId,
+				change.window,
+				bookingId,
+			))
 		)
 			return { ok: false, error: "time-taken" } as const;
 
@@ -311,6 +330,99 @@ export const findBookingEvents = (bookingId: string) =>
 		.leftJoin(user, eq(user.id, bookingEvent.actorUserId))
 		.where(eq(bookingEvent.bookingId, bookingId))
 		.orderBy(asc(bookingEvent.occurredAt), asc(bookingEvent.id));
+
+const customerBookingFields = {
+	booking,
+	serviceName: service.name,
+	organization: {
+		name: organization.name,
+		slug: organization.slug,
+		timezone: organization.timezone,
+		city: organizationProfile.city,
+		country: organizationProfile.country,
+		phone: organizationProfile.phone,
+		email: organizationProfile.email,
+	},
+};
+
+export type CustomerBookingRow = NonNullable<
+	Awaited<ReturnType<typeof findCustomerBooking>>
+>;
+
+/** Pending or confirmed and not yet over: what the customer still has ahead of them. */
+const upcomingFor = (now: Date) =>
+	and(
+		inArray(booking.status, [...ACTIVE_BOOKING_STATUSES]),
+		gt(booking.endsAt, now),
+	);
+
+const customerTab = (
+	customerUserId: string,
+	tab: CustomerBookingTab,
+	now: Date,
+) =>
+	and(
+		eq(booking.customerUserId, customerUserId),
+		tab === "upcoming" ? upcomingFor(now) : not(upcomingFor(now) as SQL),
+	);
+
+export const findCustomerBookings = (
+	customerUserId: string,
+	tab: CustomerBookingTab,
+	page: { limit: number; offset: number },
+	now: Date,
+) =>
+	db
+		.select(customerBookingFields)
+		.from(booking)
+		.innerJoin(service, eq(service.id, booking.serviceId))
+		.innerJoin(organization, eq(organization.id, booking.organizationId))
+		.leftJoin(
+			organizationProfile,
+			eq(organizationProfile.organizationId, booking.organizationId),
+		)
+		.where(customerTab(customerUserId, tab, now))
+		.orderBy(
+			...(tab === "upcoming"
+				? [asc(booking.startsAt), asc(booking.id)]
+				: [desc(booking.startsAt), desc(booking.id)]),
+		)
+		.limit(page.limit)
+		.offset(page.offset);
+
+export const countCustomerBookings = async (
+	customerUserId: string,
+	tab: CustomerBookingTab,
+	now: Date,
+) => {
+	const [row] = await db
+		.select({ total: count() })
+		.from(booking)
+		.where(customerTab(customerUserId, tab, now));
+	return row?.total ?? 0;
+};
+
+export const findCustomerBooking = async (
+	customerUserId: string,
+	bookingId: string,
+) => {
+	const [row] = await db
+		.select(customerBookingFields)
+		.from(booking)
+		.innerJoin(service, eq(service.id, booking.serviceId))
+		.innerJoin(organization, eq(organization.id, booking.organizationId))
+		.leftJoin(
+			organizationProfile,
+			eq(organizationProfile.organizationId, booking.organizationId),
+		)
+		.where(
+			and(
+				eq(booking.customerUserId, customerUserId),
+				eq(booking.id, bookingId),
+			),
+		);
+	return row ?? null;
+};
 
 /** What a booking email needs, loaded after the change commits. */
 export const findBookingEmailContext = async (bookingId: string) => {

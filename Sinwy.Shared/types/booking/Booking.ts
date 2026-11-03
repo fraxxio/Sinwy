@@ -32,6 +32,7 @@ export const BOOKING_LIMITS = {
 	selfBookingDays: 60,
 	/** Pending or confirmed upcoming self-bookings a customer may hold in one organization. */
 	upcomingSelfBookings: 5,
+	customerListPageSize: 20,
 } as const;
 
 /** What staff see. Times are ISO instants; prices are in the currency's smallest unit. */
@@ -77,7 +78,41 @@ export type CustomerBookingDto = Pick<
 	| "cancellationWindowMinutes"
 	| "createdAt"
 > & {
-	organization: { name: string; slug: string; timezone: string };
+	organization: {
+		name: string;
+		slug: string;
+		timezone: string;
+		city: string | null;
+		country: string | null;
+		phone: string | null;
+		email: string | null;
+	};
+};
+
+/** Who acted, as the customer sees it: themselves, the business, or nobody in particular. */
+export type CustomerBookingEventActor = "customer" | "organization" | "system";
+
+export type CustomerBookingEventDto = {
+	id: string;
+	type: Exclude<BookingEventType, "contact_updated">;
+	fromStatus: BookingStatus | null;
+	toStatus: BookingStatus | null;
+	actor: CustomerBookingEventActor;
+	/** The old and new start, on `rescheduled`. */
+	moved: { from: string; to: string } | null;
+	occurredAt: string;
+};
+
+export type CustomerBookingDetailDto = CustomerBookingDto & {
+	history: CustomerBookingEventDto[];
+};
+
+export const CUSTOMER_BOOKING_TABS = ["upcoming", "past"] as const;
+export type CustomerBookingTab = (typeof CUSTOMER_BOOKING_TABS)[number];
+
+export type CustomerBookingListDto = {
+	items: CustomerBookingDto[];
+	total: number;
 };
 
 export type BookingListDto = { items: BookingDto[]; total: number };

@@ -2,7 +2,6 @@ import type { AvailabilityDto, BookingDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
 import { format, parseISO } from "date-fns";
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { BOOKING_STATUS_STYLES } from "#/modules/org-dashboard/components/bookings/BookingStatusBadge";
 import {
 	bookingSpan,
 	closedSpans,
@@ -11,6 +10,7 @@ import {
 	gridRows,
 	instantAt,
 } from "#/modules/org-dashboard/lib/calendar";
+import { BOOKING_STATUS_STYLES } from "#/shared/components/booking/BookingStatusBadge";
 import { formatTimeIn } from "#/shared/lib/date";
 import { cn } from "#/shared/lib/utils";
 

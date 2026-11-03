@@ -7,8 +7,8 @@ import {
 } from "@sinwy/shared";
 import { ChevronDownIcon, SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { BOOKING_STATUS_LABELS } from "#/modules/org-dashboard/components/bookings/BookingStatusBadge";
 import type { BookingsSearch } from "#/modules/org-dashboard/lib/booking-search";
+import { BOOKING_STATUS_LABELS } from "#/shared/components/booking/BookingStatusBadge";
 import { Button } from "#/shared/components/ui/button";
 import {
 	DropdownMenu,
