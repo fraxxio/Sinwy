@@ -18,7 +18,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 8 | Overview page | 4 | done | `feat(backend, web): add the bookings overview` |
 | 9 | Cancellation window | 4, 5 | done | `feat(backend, web): add the service cancellation window` |
 | 10 | Customer Mode bookings | 4, 5, 9 | done | `feat(backend, web): add Customer Mode bookings` |
-| 11 | Account overview | 10 | todo | |
+| 11 | Account overview | 10 | done | `feat(backend, web): add the account overview` |
 | 12 | Bookings when an org, account or service goes away | 4, 9 | todo | |
 | 13 | Code review | 1–12 | todo | |
 
@@ -174,7 +174,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Forms over shared nullish schemas:** a text field can't take `customerPhoneSchema` directly (its input allows null); pipe it through `fromText` from `src/shared/lib/text-schema.ts`. A cross-field `.refine` takes `when: () => true` so its error shows next to field errors (`lib/booking-forms.ts`).
 - **Dependencies:** `bun add` re-resolves the lockfile and bumps TanStack packages, leaving two `query-core` versions that break `router.tsx` types. Add the dependency to `package.json` and the workspace block of `bun.lock` by hand, then `bun install --frozen-lockfile`. After new deps, vite's first page load gives 504 "Outdated Optimize Dep"; a reload clears it.
 - **Vite reads `src/routes.ts` only at startup**: restart it after changing mounts, or a route-file edit regenerates the tree from the old config.
-- **Running servers:** the backend runs on :3001 (`bun run start:server`, log `/tmp/sinwy-backend.log`, last restarted in Phase 10 with the user's OK) and vite on :3000 (`bun run start:web`, log `/tmp/sinwy-web.log`). Check that they're up before relying on them. The auto-mode classifier blocks killing them without the user's approval, so ask first. Phase 13 stops them.
+- **Running servers:** the backend runs on :3001 (`bun run start:server`, log `/tmp/sinwy-backend.log`, last restarted in Phase 11 with the user's OK) and vite on :3000 (`bun run start:web`, log `/tmp/sinwy-web.log`). Check that they're up before relying on them. The auto-mode classifier blocks killing them without the user's approval, so ask first. Phase 13 stops them.
 - **Web bookings page (Phase 6):**
   - `org-dashboard/lib/booking-queries.ts` keys start `["bookings", organizationId]` (`bookingKeys.all`); invalidate that prefix after writes. List and calendar queries use `keepPreviousData`.
   - `src/shared/components/booking/BookingStatusBadge.tsx` (moved there in Phase 10) exports `BOOKING_STATUS_LABELS`, `BOOKING_STATUS_STYLES` and `isExpiredRequest`. The badge already reads "Expired request" for a past `pending`.
@@ -191,7 +191,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - `getOverview` in `bookings/service.ts` and `GET bookings/overview`; `bookingOverviewQuery` sits under `bookingKeys.all`, so every booking write refreshes it.
   - "Pending" means not started (`startsAt > now`); started `pending` and `confirmed` bookings count as needs attention.
   - `openMinutes` from `@servicesModule` counts wall-clock minutes of org-wide hours.
-  - Phase 11's `/account/` cards can copy the card layout in `org-dashboard/components/overview/`.
   - See log Phase 8.
 - **Cancellation window (Phase 9):** `CANCELLATION_WINDOW_PRESETS` (0, 120, 720, 1440, 2880) in `Sinwy.Shared/types/service/Service.ts`; the schema field is `z.literal(presets)`, and DTOs type it as `number`. `service` and `booking` have `cancellation_window_minutes` (default 0); `createBooking` copies it from `BookableService`, and `BookingDto`, `CustomerBookingDto` and `PublicServiceDto` carry it.
   - `customerCanCancel(booking, now?)` and `customerCancelDeadline(booking)` in `BookingStatus.ts` take `{ status, startsAt (string or Date), cancellationWindowMinutes }`. The deadline itself is already too late (`now < deadline`).
@@ -202,51 +201,8 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - "Upcoming" is `upcomingFor(now)` in the repository (`pending`/`confirmed` and `endsAt > now`, so in-progress bookings count). The web mirror is `isUpcoming` in `account-dashboard/lib/customer-booking.ts`.
   - The timeline DTO is `CustomerBookingEventDto` (`actor`: `customer` | `organization` | `system`, plus `moved: { from, to }`). Contact events are dropped.
   - Web: `account-dashboard/lib/booking-queries.ts` keys start `["account-bookings"]` (`accountBookingKeys.all`), and `invalidateAccountBookings` invalidates that prefix. `customer-booking.ts` has `cancelPolicyOf`, `windowPassedMessage` and `statusLineOf`. Reusable components: `components/bookings/AddToCalendarButton.tsx` (`downloadBookingIcs` in `lib/ics.ts`) and `CustomerBookingList.tsx`. See log Phase 10.
+- **Account overview (Phase 11):** `GET /api/account/bookings/summary` (`getCustomerBookingSummary`, `CustomerBookingSummaryDto` = `next` + `rebook`) and `accountBookingSummaryQuery` under `accountBookingKeys.all`. The `account.test.ts` harness has `selfBook(startsAt, { serviceId, organizationId, by, status, windowMinutes })` and `addService(name, organizationId?)` (a direct insert, so any org can have services).
 - **The fall-back hour** of a DST-end day offers only the first pass of the repeated hour. Fine for the MVP.
-
----
-
-## Phase 11: Account overview
-
-**Goal:** `/account/` shows the customer's next booking and quick "Book again" links.
-
-**Files:**
-- `Sinwy.Backend/modules/bookings/`:
-  - `routes.ts`: add `GET ${ACCOUNT}/summary` to `registerAccountBookingRoutes` before `${ACCOUNT}/:bookingId`, the way `bookings/overview` comes before `bookings/:bookingId`.
-  - `repository.ts`: `next` reuses `customerBookingFields` and `upcomingFor(now)` (soonest `startsAt` first, limit 1). `rebook` joins `service` and keeps `isActive` and `archivedAt IS NULL` (`db/schema/serviceSchema.ts` ~37–43).
-  - `service.ts`: map `next` with `toCustomerBookingDto`. For "public org", call `findPublicOrganization(slug)` from `@organizationsModule` per distinct org (at most 3), or `isOrganizationPublic`.
-  - Tests: copy the harness in `tests/account.test.ts`, which already has `selfBook(startsAt, { status, windowMinutes, by })` and an org profile.
-- `Sinwy.Shared/types/booking/Booking.ts`: `CustomerBookingSummaryDto`, next to `CustomerBookingListDto`.
-- Web:
-  - `account-dashboard/routes/_shell.index.tsx` replaces the placeholder.
-  - `account-dashboard/lib/booking-queries.ts`: key the summary under `accountBookingKeys.all`, so the cancel's `invalidateAccountBookings` already refreshes it.
-  - `account-dashboard/components/bookings/` already has `AddToCalendarButton` and `CustomerBookingList`. The card layout to copy is in `org-dashboard/components/overview/`.
-  - "Book again" links use `<Link to="/$organizationSlug/book" params search={{ service }}>`, as on `_shell.bookings.$id.tsx`.
-
-**Steps:**
-- `next`: the session user's soonest upcoming `pending`/`confirmed` booking as a `CustomerBookingDto`, or null.
-- `rebook`: up to 3 distinct services from the user's bookings, newest booking first, any status.
-  - Only services that are active and not archived, at orgs that pass `findPublicOrganization`.
-  - Each item has the org name and slug, plus the service id, name, duration and current price (not the booking's).
-- Web: a "Next booking" card with the time in the org zone and its label, the org, the service and the status. It links to the detail page and offers Add to calendar from Phase 10.
-  - A "Book again" list links to `/<slug>/book?service=<id>`.
-  - With neither, keep the existing empty state.
-- Cancelling on the detail page invalidates the summary key.
-
-**Tests that matter:**
-- `next` leaves out cancelled, past and other users' bookings, and manual bookings with the user's email.
-- `rebook` leaves out archived or inactive services and non-public orgs, lists a service booked twice once, and stops at 3.
-
-**Done when:**
-- The overview shows the right next booking and rebook links, and updates after a cancel.
-
-**Verify:** Seed `bookable-org` and a `user` customer.
-1. Before booking, `/account/` shows the empty state.
-2. Book Colouring in 3 days and Haircut tomorrow: "Next booking" is Haircut tomorrow in the org zone, and "Book again" lists Haircut and Colouring with their prices.
-3. Cancel the Haircut on its detail page and go back: "Next booking" is Colouring, and Haircut is still under "Book again".
-4. The owner archives Colouring: "Book again" lists only Haircut.
-
-Nothing is simulated.
 
 ---
 
@@ -255,10 +211,10 @@ Nothing is simulated.
 **Goal:** Org deletion and customer account deletion handle upcoming bookings per the lifecycle decision, the deletion and archive dialogs show the counts, and the rules map describes bookings.
 
 **Files:**
-- `Sinwy.Backend/modules/bookings/`: export `cancelUpcomingOrganizationBookings(organizationIds, tx?)` and `handleCustomerAccountDeleted(userId, tx?)`, plus count helpers.
-- `Sinwy.Backend/modules/auth/auth.ts`: `deleteUser.beforeDelete` (after `scheduleOwnedOrganizationsForDeletion`, call `handleCustomerAccountDeleted`) and a new `organizationHooks.beforeDeleteOrganization`.
-- `Sinwy.Backend/modules/organizations/service.ts` (`scheduleOwnedOrganizationsForDeletion`, `getAccountDeletionPreview`): cancel the scheduled orgs' upcoming bookings and add an upcoming-bookings count per org to the preview DTO in `@sinwy/shared`.
-- Web: the account deletion dialog (find it with `grep -rn "deletion-preview" Sinwy.WebFrontend/src`) and the archive dialog in `org-dashboard/components/ServiceActions.tsx`. The archive count comes from a new `upcomingCount` in the service detail DTO or a bookings endpoint.
+- `Sinwy.Backend/modules/bookings/`: export `cancelUpcomingOrganizationBookings(organizationIds, tx?)` and `handleCustomerAccountDeleted(userId, tx?)`, plus count helpers, from `index.ts`. Status writes go through `changeBooking` / `statusChange()` in `repository.ts` and `service.ts`. Emails: `findBookingEmailContext` + `sendBookingEmails` in `dispatch.ts`. Tests: copy the `tests/account.test.ts` harness.
+- `Sinwy.Backend/modules/auth/auth.ts`: `deleteUser.beforeDelete` (~178; after `scheduleOwnedOrganizationsForDeletion`, call `handleCustomerAccountDeleted`) and a new `beforeDeleteOrganization` in `organizationHooks` (~313).
+- `Sinwy.Backend/modules/organizations/service.ts`: `getAccountDeletionPreview` (~337) and `scheduleOwnedOrganizationsForDeletion` (~358). Cancel the scheduled orgs' upcoming bookings there, and add an upcoming-bookings count per org to `AccountDeletionPreviewDto` (`Sinwy.Shared/types/user/AccountSettings.ts` ~33).
+- Web: the account deletion dialog is `account-dashboard/components/settings/DangerZone.tsx` (query in `account-dashboard/lib/account-queries.ts`). The archive dialog is in `org-dashboard/components/ServiceActions.tsx` (~143). Its count comes from a new `upcomingCount` in the service detail DTO or from a bookings endpoint.
 - `docs/org-rules-map.md` §1, §9, §11 and §14; `docs/user-flow-map.md` for the storefront, Customer Mode bookings and the account overview.
 
 **Steps:**

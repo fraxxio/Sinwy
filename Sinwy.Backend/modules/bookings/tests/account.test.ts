@@ -14,6 +14,7 @@ import {
 	organization,
 	organizationProfile,
 } from "@db/schema/organizationSchema";
+import { service as serviceTable } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
 import { findBookableService, registerServiceRoutes } from "@servicesModule";
 import {
@@ -23,6 +24,7 @@ import {
 	type CustomerBookingDetailDto,
 	type CustomerBookingDto,
 	type CustomerBookingListDto,
+	type CustomerBookingSummaryDto,
 	type ServiceDto,
 } from "@sinwy/shared";
 import type { Server } from "bun";
@@ -122,13 +124,19 @@ const selfBook = async (
 		status?: "pending" | "confirmed";
 		windowMinutes?: number;
 		by?: Session;
+		serviceId?: string;
+		organizationId?: string;
 	} = {},
 ) => {
-	const service = await findBookableService(orgId, serviceId);
+	const organizationId = options.organizationId ?? orgId;
+	const service = await findBookableService(
+		organizationId,
+		options.serviceId ?? serviceId,
+	);
 	if (!service) throw new Error("service missing");
 	const by = options.by ?? customer;
 	const result = await createBooking({
-		organizationId: orgId,
+		organizationId,
 		service: {
 			...service,
 			cancellationWindowMinutes: options.windowMinutes ?? 0,
@@ -416,4 +424,102 @@ test("the account routes need a session", async () => {
 	expect((await fetch(new URL("/api/account/bookings", base))).status).toBe(
 		401,
 	);
+});
+
+const summary = (as: Session) =>
+	account(as, "GET", "/summary").then(unwrap<CustomerBookingSummaryDto>);
+
+/** A service inserted straight into the table, so any organization can have one. */
+const addService = async (name: string, organizationId = orgId) => {
+	const id = crypto.randomUUID();
+	await db.insert(serviceTable).values({
+		id,
+		organizationId,
+		name,
+		slug: id,
+		durationMinutes: 45,
+		priceMinor: 4000,
+		currency: "EUR",
+	});
+	return id;
+};
+
+test("the next booking is the soonest upcoming one of the session user's own", async () => {
+	const later = await selfBook(hoursFromNow(72), { status: "pending" });
+	const cancelled = await selfBook(hoursFromNow(24));
+	await cancel(customer, cancelled.id);
+	await selfBook(hoursFromNow(-24));
+	await selfBook(hoursFromNow(12), { by: await createUserWithSession() });
+	await staff("POST", "bookings", {
+		serviceId,
+		startsAt: hoursFromNow(6).toISOString(),
+		customerName: "Bea",
+		customerEmail: `${customer.userId}@test.dev`,
+	});
+
+	const { next } = await summary(customer);
+	expect(next?.id).toBe(later.id);
+	expect(next?.status).toBe("pending");
+	expect(next?.organization.timezone).toBe("Europe/Vilnius");
+
+	await cancel(customer, later.id);
+	expect((await summary(customer)).next).toBeNull();
+});
+
+test("book again lists each still-bookable service once, newest first, at public organizations, at most 3", async () => {
+	const archived = await addService("Archived");
+	const inactive = await addService("Inactive");
+	const colouring = await addService("Colouring");
+	const shave = await addService("Shave");
+	const closedOrg = await insertOrganization("Closed");
+	await activateOrganization(closedOrg);
+	const elsewhere = await addService("Elsewhere", closedOrg);
+
+	await selfBook(hoursFromNow(-48));
+	await selfBook(hoursFromNow(30), { serviceId: archived });
+	await selfBook(hoursFromNow(31), { serviceId: inactive });
+	await selfBook(hoursFromNow(32), { serviceId: shave });
+	await selfBook(hoursFromNow(33), { serviceId: colouring });
+	await selfBook(hoursFromNow(34), {
+		serviceId: elsewhere,
+		organizationId: closedOrg,
+	});
+	await selfBook(hoursFromNow(35));
+	await db
+		.update(serviceTable)
+		.set({ archivedAt: new Date() })
+		.where(eq(serviceTable.id, archived));
+	await db
+		.update(serviceTable)
+		.set({ isActive: false, priceMinor: 9900 })
+		.where(eq(serviceTable.id, inactive));
+	await db
+		.update(serviceTable)
+		.set({ priceMinor: 2700 })
+		.where(eq(serviceTable.id, serviceId));
+	await db
+		.update(organization)
+		.set({ slotHeldAt: null })
+		.where(eq(organization.id, closedOrg));
+
+	const { rebook } = await summary(customer);
+	expect(rebook).toEqual([
+		{
+			organization: { name: "Salon", slug: expect.any(String) },
+			serviceId,
+			serviceName: "Haircut",
+			durationMinutes: 30,
+			priceMinor: 2700,
+			currency: expect.any(String),
+		},
+		expect.objectContaining({ serviceId: colouring }),
+		expect.objectContaining({ serviceId: shave }),
+	]);
+	expect((await summary(await createUserWithSession())).rebook).toEqual([]);
+});
+
+test("the summary needs a session", async () => {
+	expect(
+		(await fetch(new URL("/api/account/bookings/summary", base))).status,
+	).toBe(401);
 });

@@ -577,3 +577,58 @@ Nothing is simulated.
   - The cancel set `cancelled_by = customer`, moved the booking to Past and added "Cancelled by you" to the timeline. The outbox had "Cancellation confirmed" (customer) and "Booking cancelled by customer" (owner).
   - Tomorrow's booking had no Cancel button and showed the contact message, and the API cancel returned 409 with code 40922. Book again opened `/<slug>/book?service=<id>` with Haircut selected. A second user saw the empty state and got 404 on the first user's booking.
   - There were no console or log errors. The customer's "Cancellation confirmed" email has no link (Phase 4 template). Not checked: a real Resend delivery.
+
+## Phase 11: Account overview
+
+**Goal:** `/account/` shows the customer's next booking and quick "Book again" links.
+
+**Files:**
+- `Sinwy.Backend/modules/bookings/`:
+  - `routes.ts`: add `GET ${ACCOUNT}/summary` to `registerAccountBookingRoutes` before `${ACCOUNT}/:bookingId`, the way `bookings/overview` comes before `bookings/:bookingId`.
+  - `repository.ts`: `next` reuses `customerBookingFields` and `upcomingFor(now)` (soonest `startsAt` first, limit 1). `rebook` joins `service` and keeps `isActive` and `archivedAt IS NULL` (`db/schema/serviceSchema.ts` ~37–43).
+  - `service.ts`: map `next` with `toCustomerBookingDto`. For "public org", call `findPublicOrganization(slug)` from `@organizationsModule` per distinct org (at most 3), or `isOrganizationPublic`.
+  - Tests: copy the harness in `tests/account.test.ts`, which already has `selfBook(startsAt, { status, windowMinutes, by })` and an org profile.
+- `Sinwy.Shared/types/booking/Booking.ts`: `CustomerBookingSummaryDto`, next to `CustomerBookingListDto`.
+- Web:
+  - `account-dashboard/routes/_shell.index.tsx` replaces the placeholder.
+  - `account-dashboard/lib/booking-queries.ts`: key the summary under `accountBookingKeys.all`, so the cancel's `invalidateAccountBookings` already refreshes it.
+  - `account-dashboard/components/bookings/` already has `AddToCalendarButton` and `CustomerBookingList`. The card layout to copy is in `org-dashboard/components/overview/`.
+  - "Book again" links use `<Link to="/$organizationSlug/book" params search={{ service }}>`, as on `_shell.bookings.$id.tsx`.
+
+**Steps:**
+- `next`: the session user's soonest upcoming `pending`/`confirmed` booking as a `CustomerBookingDto`, or null.
+- `rebook`: up to 3 distinct services from the user's bookings, newest booking first, any status.
+  - Only services that are active and not archived, at orgs that pass `findPublicOrganization`.
+  - Each item has the org name and slug, plus the service id, name, duration and current price (not the booking's).
+- Web: a "Next booking" card with the time in the org zone and its label, the org, the service and the status. It links to the detail page and offers Add to calendar from Phase 10.
+  - A "Book again" list links to `/<slug>/book?service=<id>`.
+  - With neither, keep the existing empty state.
+- Cancelling on the detail page invalidates the summary key.
+
+**Tests that matter:**
+- `next` leaves out cancelled, past and other users' bookings, and manual bookings with the user's email.
+- `rebook` leaves out archived or inactive services and non-public orgs, lists a service booked twice once, and stops at 3.
+
+**Done when:**
+- The overview shows the right next booking and rebook links, and updates after a cancel.
+
+**Verify:** Seed `bookable-org` and a `user` customer.
+1. Before booking, `/account/` shows the empty state.
+2. Book Colouring in 3 days and Haircut tomorrow: "Next booking" is Haircut tomorrow in the org zone, and "Book again" lists Haircut and Colouring with their prices.
+3. Cancel the Haircut on its detail page and go back: "Next booking" is Colouring, and Haircut is still under "Book again".
+4. The owner archives Colouring: "Book again" lists only Haircut.
+
+Nothing is simulated.
+
+### Log (2026-11-03, `feat(backend, web): add the account overview`)
+- Shipped:
+  - Backend: `GET /api/account/bookings/summary` (registered before `/:bookingId`) → `getCustomerBookingSummary`. `next` is `findNextCustomerBooking` (`upcomingFor(now)`, soonest first) mapped with `toCustomerBookingDto`. `rebook` is `findRebookServices`: services grouped and ordered by their latest `booking.createdAt`, keeping only active, non-archived services. Each distinct org then goes through `findPublicOrganization`, stopping at `BOOKING_LIMITS.rebookServices` (3).
+  - Shared: `CustomerBookingSummaryDto` and `CustomerRebookServiceDto` (org name and slug, service id, name, duration, current price and currency).
+  - Web: `/account/` shows a "Next booking" card (org zone with its label, status badge, Add to calendar, link to the detail page) and a "Book again" card (links to `/<slug>/book?service=<id>`), or the old empty state when it has neither. The cards are in `account-dashboard/components/overview/`, and `accountBookingSummaryQuery` sits under `accountBookingKeys.all`.
+  - Tests: 3 new tests in `bookings/tests/account.test.ts`. They cover `next` (skips cancelled, past, other users' and manual same-email bookings), `rebook` (skips archived and inactive services and non-public orgs, lists a service booked twice once, shows the current price, stops at 3) and the 401 without a session. The harness's `selfBook` gained `serviceId`/`organizationId`, and there's a new `addService`.
+- Differs from plan: "Next booking" uses `upcomingFor`, so a booking already in progress still counts as next. The rebook org name is the current public name. The duration shows as "30 min", as on the storefront.
+- Checked in the running app (e2e subagent, browser in America/New_York; all 4 Verify steps passed, nothing simulated beyond seeding and sign-in):
+  - The empty state showed before booking. After the bookings, "Next booking" was Haircut on Wednesday, 4 November 2026, 10:00–10:30, "Times in Europe/Vilnius", Confirmed. "Book again" listed Haircut €25.00 and Colouring €80.00.
+  - After cancelling Haircut on its detail page and going back, "Next booking" was the pending Colouring, and Haircut stayed under "Book again". The DB had `cancelled_by = customer`.
+  - After the owner archived Colouring, "Book again" listed only Haircut. Colouring's pending booking stays as "Next booking", as decided.
+  - No console or server log errors. The outbox wasn't checked (the brief doesn't ask for it). The archive dialog still gives no upcoming-bookings warning; that's Phase 12.

@@ -2,6 +2,7 @@ import type {
 	CustomerBookingDetailDto,
 	CustomerBookingDto,
 	CustomerBookingListDto,
+	CustomerBookingSummaryDto,
 	CustomerBookingTab,
 } from "@sinwy/shared";
 import {
@@ -17,7 +18,20 @@ export const accountBookingKeys = {
 		[...accountBookingKeys.all, "list", { tab, page }] as const,
 	detail: (bookingId: string) =>
 		[...accountBookingKeys.all, "detail", bookingId] as const,
+	summary: () => [...accountBookingKeys.all, "summary"] as const,
 };
+
+export const accountBookingSummaryQuery = () =>
+	queryOptions({
+		queryKey: accountBookingKeys.summary(),
+		queryFn: async () => {
+			const res = await api<CustomerBookingSummaryDto>(
+				"/account/bookings/summary",
+			);
+			if (!res.isSuccess) throw new Error(res.message);
+			return res.data;
+		},
+	});
 
 export const accountBookingsQuery = (tab: CustomerBookingTab, page: number) =>
 	queryOptions({

@@ -26,6 +26,7 @@ import {
 	createSelfBooking,
 	getBooking,
 	getCustomerBooking,
+	getCustomerBookingSummary,
 	getOverview,
 	getStorefront,
 	listBookings,
@@ -290,6 +291,9 @@ export const listCustomerBookingsHandler: Handler = async (c) => {
 		return fail(query.error.issues[0]?.message ?? "Invalid query", 400);
 	return ok(await listCustomerBookings(sessionFrom(c).user.id, query.data));
 };
+
+export const getCustomerBookingSummaryHandler: Handler = async (c) =>
+	ok(await getCustomerBookingSummary(sessionFrom(c).user.id));
 
 export const getCustomerBookingHandler: Handler = async (c) => {
 	const result = await getCustomerBooking(

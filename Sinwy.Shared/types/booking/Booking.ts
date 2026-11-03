@@ -33,6 +33,8 @@ export const BOOKING_LIMITS = {
 	/** Pending or confirmed upcoming self-bookings a customer may hold in one organization. */
 	upcomingSelfBookings: 5,
 	customerListPageSize: 20,
+	/** Services offered under "Book again" on the account overview. */
+	rebookServices: 3,
 } as const;
 
 /** What staff see. Times are ISO instants; prices are in the currency's smallest unit. */
@@ -113,6 +115,21 @@ export type CustomerBookingTab = (typeof CUSTOMER_BOOKING_TABS)[number];
 export type CustomerBookingListDto = {
 	items: CustomerBookingDto[];
 	total: number;
+};
+
+/** A service the customer booked before, at its current price, at an organization that is still public. */
+export type CustomerRebookServiceDto = {
+	organization: { name: string; slug: string };
+	serviceId: string;
+	serviceName: string;
+	durationMinutes: number;
+	priceMinor: number;
+	currency: string;
+};
+
+export type CustomerBookingSummaryDto = {
+	next: CustomerBookingDto | null;
+	rebook: CustomerRebookServiceDto[];
 };
 
 export type BookingListDto = { items: BookingDto[]; total: number };

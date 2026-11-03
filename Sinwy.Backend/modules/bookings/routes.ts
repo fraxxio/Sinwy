@@ -9,6 +9,7 @@ import {
 	createSelfBookingHandler,
 	getBookingHandler,
 	getCustomerBookingHandler,
+	getCustomerBookingSummaryHandler,
 	getOverviewHandler,
 	getStorefrontHandler,
 	listBookingsHandler,
@@ -86,6 +87,9 @@ const ACCOUNT = "/api/account/bookings";
 /** Customer Mode: the session user's own bookings, wherever they were made. */
 export const registerAccountBookingRoutes = (app: IApp) => {
 	app.route(ACCOUNT, listCustomerBookingsHandler, {
+		routeMiddlewares: [requireAuth],
+	});
+	app.route(`${ACCOUNT}/summary`, getCustomerBookingSummaryHandler, {
 		routeMiddlewares: [requireAuth],
 	});
 	app.route(`${ACCOUNT}/:bookingId`, getCustomerBookingHandler, {

@@ -23,8 +23,10 @@ import {
 	gte,
 	ilike,
 	inArray,
+	isNull,
 	lt,
 	lte,
+	max,
 	ne,
 	not,
 	or,
@@ -422,6 +424,51 @@ export const findCustomerBooking = async (
 			),
 		);
 	return row ?? null;
+};
+
+export const findNextCustomerBooking = async (
+	customerUserId: string,
+	now: Date,
+) => {
+	const [row] = await db
+		.select(customerBookingFields)
+		.from(booking)
+		.innerJoin(service, eq(service.id, booking.serviceId))
+		.innerJoin(organization, eq(organization.id, booking.organizationId))
+		.leftJoin(
+			organizationProfile,
+			eq(organizationProfile.organizationId, booking.organizationId),
+		)
+		.where(and(eq(booking.customerUserId, customerUserId), upcomingFor(now)))
+		.orderBy(asc(booking.startsAt), asc(booking.id))
+		.limit(1);
+	return row ?? null;
+};
+
+/** Each still-bookable service the customer booked, once, most recently booked first. */
+export const findRebookServices = (customerUserId: string) => {
+	const lastBookedAt = max(booking.createdAt);
+	return db
+		.select({
+			serviceId: service.id,
+			serviceName: service.name,
+			durationMinutes: service.durationMinutes,
+			priceMinor: service.priceMinor,
+			currency: service.currency,
+			organizationSlug: organization.slug,
+		})
+		.from(booking)
+		.innerJoin(service, eq(service.id, booking.serviceId))
+		.innerJoin(organization, eq(organization.id, booking.organizationId))
+		.where(
+			and(
+				eq(booking.customerUserId, customerUserId),
+				eq(service.isActive, true),
+				isNull(service.archivedAt),
+			),
+		)
+		.groupBy(service.id, organization.id)
+		.orderBy(desc(lastBookedAt), asc(service.id));
 };
 
 /** What a booking email needs, loaded after the change commits. */

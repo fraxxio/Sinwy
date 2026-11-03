@@ -1,5 +1,6 @@
 import type { Membership } from "@authModule";
 import {
+	findPublicOrganization,
 	getOrganizationLocale,
 	isScheduledForDeletion,
 	type PublicOrganization,
@@ -35,6 +36,8 @@ import {
 	type CustomerBookingEventDto,
 	type CustomerBookingListDto,
 	type CustomerBookingListQuery,
+	type CustomerBookingSummaryDto,
+	type CustomerRebookServiceDto,
 	canTransition,
 	customerCanCancel,
 	type ManualBookingInput,
@@ -59,7 +62,9 @@ import {
 	findBusyIntervals,
 	findCustomerBooking,
 	findCustomerBookings,
+	findNextCustomerBooking,
 	findPendingRequests,
+	findRebookServices,
 	insertBookingIfFree,
 	sumBookingsBetween,
 } from "./repository";
@@ -744,6 +749,34 @@ export const listCustomerBookings = async (
 		countCustomerBookings(customerUserId, tab, now),
 	]);
 	return { items: rows.map(toCustomerBookingDto), total };
+};
+
+/** The account overview: the next booking, and services to book again at organizations that still take bookings. */
+export const getCustomerBookingSummary = async (
+	customerUserId: string,
+	now = new Date(),
+): Promise<CustomerBookingSummaryDto> => {
+	const [next, services] = await Promise.all([
+		findNextCustomerBooking(customerUserId, now),
+		findRebookServices(customerUserId),
+	]);
+	const organizations = new Map<string, Promise<PublicOrganization | null>>();
+	const publicOrganization = (slug: string) => {
+		const found = organizations.get(slug) ?? findPublicOrganization(slug);
+		organizations.set(slug, found);
+		return found;
+	};
+	const rebook: CustomerRebookServiceDto[] = [];
+	for (const { organizationSlug, ...item } of services) {
+		if (rebook.length === BOOKING_LIMITS.rebookServices) break;
+		const organization = await publicOrganization(organizationSlug);
+		if (organization)
+			rebook.push({
+				organization: { name: organization.name, slug: organization.slug },
+				...item,
+			});
+	}
+	return { next: next && toCustomerBookingDto(next), rebook };
 };
 
 export const getCustomerBooking = async (
