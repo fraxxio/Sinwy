@@ -6,10 +6,11 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import {
 	createFileRoute,
+	Link,
 	stripSearchParams,
 	useRouter,
 } from "@tanstack/react-router";
-import { CalendarDaysIcon, ListIcon } from "lucide-react";
+import { CalendarDaysIcon, ListIcon, PlusIcon } from "lucide-react";
 import { BookingFilters } from "#/modules/org-dashboard/components/bookings/BookingFilters";
 import { BookingsCalendar } from "#/modules/org-dashboard/components/bookings/BookingsCalendar";
 import { BookingsList } from "#/modules/org-dashboard/components/bookings/BookingsList";
@@ -46,7 +47,7 @@ export const Route = createFileRoute(
 });
 
 function BookingsPage() {
-	const { organization } = Route.useRouteContext();
+	const { organization, member } = Route.useRouteContext();
 	const search = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const availability = useQuery(availabilityQuery(organization.id));
@@ -82,7 +83,25 @@ function BookingsPage() {
 			<PageHeader
 				title="Bookings"
 				description="Every appointment your customers have booked with you."
-				action={viewToggle}
+				action={
+					<div className="flex items-center gap-2">
+						{hasPermission(member.roles, "bookings:write") && (
+							<Button
+								nativeButton={false}
+								render={
+									<Link
+										to="/dashboard/$organizationSlug/bookings/new"
+										params={{ organizationSlug: organization.slug }}
+									/>
+								}
+							>
+								<PlusIcon />
+								New booking
+							</Button>
+						)}
+						{viewToggle}
+					</div>
+				}
 			/>
 			{availability.isPending ? (
 				<Skeleton className="h-[60vh] rounded-xl" />

@@ -46,9 +46,16 @@ export function shiftDate(view: CalendarView, date: string, step: 1 | -1) {
 	return format(addMonths(parseISO(date), step), "yyyy-MM-dd");
 }
 
-/** The first instant of a local date; a midnight DST skip starts the day when the clocks jump. */
-export function startOfLocalDate(date: string, timezone: string) {
-	const wall = Date.parse(date);
+/**
+ * The instant a wall-clock time ("HH:mm") on a local date reads in `timezone`.
+ * A time the clocks skip moves forward past the jump; a repeated one takes its first pass.
+ */
+export function instantOfWallTime(
+	date: string,
+	time: string,
+	timezone: string,
+) {
+	const wall = Date.parse(`${date}T${time}Z`);
 	const offsetAt = (instant: number) =>
 		tzOffset(timezone, new Date(instant)) * MINUTE_MS;
 	const instants = [wall - DAY_MS, wall + DAY_MS].map(
@@ -59,6 +66,10 @@ export function startOfLocalDate(date: string, timezone: string) {
 	);
 	return matching.length > 0 ? Math.min(...matching) : Math.max(...instants);
 }
+
+/** The first instant of a local date; a midnight DST skip starts the day when the clocks jump. */
+export const startOfLocalDate = (date: string, timezone: string) =>
+	instantOfWallTime(date, "00:00", timezone);
 
 type HourSlot = { key: string; start: number };
 

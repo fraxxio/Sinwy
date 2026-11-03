@@ -322,3 +322,72 @@ Nothing is simulated.
   - In the week and day views, the blocks sit on the 10:00 and 13:00 gutter rows (480px and 624px). Clicking 15:30 goes to `new?start=2026-11-04T13:30:00.000Z`, which 404s until Phase 7.
   - The list defaults to 2 upcoming rows. Status `pending` gives 1 row, the customer's email gives 2, `q=walkin` gives the cancelled row (with cancelled included), and "Newest booked" reverses the order.
   - After a refresh, the list filters and sort, and the calendar's week, date and `showCancelled`, are all kept. The backend and web logs and the browser console have no errors.
+
+---
+
+## Phase 7: Booking detail, manual booking and reschedule (web)
+
+**Goal:** Staff open a booking and act on it, create phone and walk-in bookings, and reschedule with the shared picker or a custom time.
+
+**Files:**
+- `org-dashboard/routes/_shell.bookings.$id.tsx` (replace the placeholder); new `_shell.bookings.new.tsx` with `validateSearch` for `start` (`z.iso.datetime({ offset: true }).optional().catch(undefined)`, as `storefront/routes/book.tsx` does). The calendar already links to both.
+- `org-dashboard/lib/booking-queries.ts`: add `bookingKeys.detail` and `bookingKeys.times` under `bookingKeys.all`, a detail query (`GET bookings/:bookingId` → `BookingDetailDto`), a times query (`GET bookings/times?serviceId&from&to&excludeBookingId` → `BookableTimesDto`) and the writes: `POST bookings` (`ManualBookingInput`), `PATCH bookings/:bookingId` (`BookingUpdateInput`), and `POST bookings/:bookingId/{confirm|cancel|complete|no-show|reschedule}` (`cancelBookingSchema`, `rescheduleBookingSchema`). Copy `useUnwrapWrite` from `service-queries.ts`, or import it from there.
+- New in `org-dashboard/components/bookings/`: `BookingActions`, `RescheduleDialog`, `ManualBookingForm`, `BookingHistory` and `ContactCard`. Reuse `BookingStatusBadge` and `BOOKING_STATUS_LABELS`.
+- The action mapping is a pure function in a new `org-dashboard/lib/booking-actions.ts` over `canTransition`, with a test in `org-dashboard/tests/`.
+- The custom-time conversion uses `startOfLocalDate` from `lib/calendar.ts` plus the wall minutes; it's not in the browser zone.
+- `src/shared/components/booking/BookableTimesPicker.tsx` (from Phase 5). Org timezone and hours come from `availabilityQuery`, and services from `servicesQuery`, both in `service-queries.ts`.
+- `org-dashboard/routes/_shell.bookings.index.tsx`: the "New booking" header button, next to the Calendar/List toggle.
+
+**Steps:**
+- **Detail layout:** status badge and the allowed actions at the top (from `canTransition`, not hard-coded). Then customer, service with time and price, `customerNote` read-only and an editable `internalNote`. History at the bottom.
+  - A past `pending` booking reads "Expired request" and offers only Cancel.
+- **Actions:** Confirm, Complete and No-show are single buttons. Cancel/Decline open a dialog with an optional reason ("Decline" on pending, "Cancel booking" on confirmed). Correction buttons ("Mark as completed" / "Mark as no-show") appear on finished bookings.
+- **Contact card:** editable inline for manual bookings, read-only with "From the customer's account" for self-bookings.
+- **Manual booking** at `/dashboard/<slug>/bookings/new?start=`:
+  - Pick a service, then the picker (dashboard times endpoint) or a "Custom time" toggle (date + `<input type="time">`, any minute).
+  - Contact fields (name required, email or phone required) and an internal note.
+  - Prefill the date and time from `?start=` (the calendar click). With a prefilled start that isn't a bookable time, switch to custom time automatically.
+  - On success, go to the new booking's detail page.
+  - Add a "New booking" button to the bookings page header for `bookings:write`.
+- **Reschedule dialog:** the same picker against `bookings/times?excludeBookingId=`, plus the custom-time toggle. A 409 shows "That time was just taken".
+- Read-only users (without `bookings:write`) see no actions; all three roles have it today, but gate it anyway.
+- After writes, invalidate the booking keys (detail, list, calendar) and the overview key (Phase 8 adds it; invalidate the prefix).
+
+**Tests that matter:**
+- The manual form schema: name required, email or phone required, custom time → ISO in the org zone (not the browser's).
+- The action buttons shown match `canTransition` for each status and time combination (unit test of the mapping).
+
+**Done when:**
+- Every status action, reschedule and manual booking works in the browser and shows up in the history.
+
+**Verify:** Seed `bookable-org`; as a `user` customer, book a pending Colouring tomorrow 13:00 on the storefront.
+1. As the owner, open it from the calendar: "Confirm" and "Decline" are shown.
+2. Decline with the reason "Fully booked": status `cancelled`, `cancelled_by = 'organization'`, the outbox has "Request declined" with the reason, and the history shows it.
+3. Create a manual booking from a week-view click at tomorrow 15:00, Haircut, name "Walk-in Ana", phone only: status `confirmed`, no customer email in the outbox.
+4. Try a manual booking at 15:15 with a custom time: 409 "That time was just taken".
+5. Reschedule the walk-in to 16:00 with the picker; the history shows old → new.
+6. Edit the walk-in's phone; the history shows a contact update. On a self-booking, the contact is read-only.
+7. Create a manual booking for yesterday 11:00 with a custom time, then mark it Completed, then correct it to No-show.
+
+Emails go to the local outbox; nothing else is simulated.
+
+### Log (2026-11-03, `feat(web): add the booking detail, manual booking and reschedule`)
+- Shipped:
+  - The booking detail page (status and actions, appointment, contact card, notes, history), `/bookings/new` with the picker or a custom time and the `?start=` prefill, the reschedule dialog, and the "New booking" button on the bookings page.
+  - Pure logic in `lib/booking-actions.ts` and `lib/booking-forms.ts`, with 8 new web tests: the actions match `canTransition` for every status and time, and the form schemas cover name, email or phone, and typed times read in the org zone, including both DST days and a skipped hour.
+  - `fromText` moved from `storefront/components/ConfirmStep.tsx` to `src/shared/lib/text-schema.ts`.
+- Differs from plan:
+  - A custom time converts with the new `instantOfWallTime(date, time, timezone)` in `lib/calendar.ts`, not `startOfLocalDate` plus minutes, which is an hour off after a DST change on that day. `startOfLocalDate` is now `instantOfWallTime(date, "00:00", …)`. A skipped wall time moves forward past the jump, and a repeated one takes its first pass.
+  - An expired request's only action is labelled "Cancel request", and it can't be rescheduled. Confirmed bookings that have started keep Cancel booking and Reschedule next to Complete and No-show, as the transition table allows.
+  - The "From the customer" note shows only on self-bookings, because manual bookings have no customer note.
+  - A picked time that stops being free after the service changes is dropped. Only the `?start=` prefill switches to a custom time.
+- Checked in the running app (e2e subagent, all 7 Verify steps passed):
+  - Declining with "Fully booked" stored `cancelled_by = organization` and the reason, and sent "Request declined" with the reason. The history reads "Declined by Seed Owner / Reason: Fully booked".
+  - A week-view click at 15:00 opened `new?start=…13:00Z` with 15:00 preselected for Haircut. The phone-only walk-in was `confirmed` and sent no email. A custom 15:15 got 409 "That time was just taken".
+  - Rescheduling showed "Moved from … 15:00 to … 16:00", and the phone edit logged "Contact phone updated". A self-booking's contact had no Edit.
+  - A past custom-time booking went Completed and then No-show, with the matching history.
+  - The backend and web logs had no errors. The browser console had only the expected 409.
+  - Findings:
+    - `booking_event.payload` is double-encoded jsonb (reproduced inline: `jsonb_typeof` is `string` for `rescheduled` and `contact_updated`). It comes from Phase 4 and is left for later (standing note).
+    - A past manual booking with an email still sends "Booking confirmed", as the email matrix says.
+  - Not checked: Resend delivery and rendering, the "Not found" state of an unknown booking id, and read-only users (every role has `bookings:write`).

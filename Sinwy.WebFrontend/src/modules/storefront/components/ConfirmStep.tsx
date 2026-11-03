@@ -13,15 +13,7 @@ import { FieldError } from "#/shared/components/ui/field";
 import { formatDateIn, formatTimeIn } from "#/shared/lib/date";
 import { useAppForm } from "#/shared/lib/form";
 import { formatMinorUnits } from "#/shared/lib/money";
-
-// the shared schemas also take null and undefined, which a text input never sends
-const fromText = <T extends z.ZodType<unknown, string | null | undefined>>(
-	schema: T,
-) =>
-	z
-		.string()
-		.transform((value): string | null | undefined => value)
-		.pipe(schema);
+import { fromText } from "#/shared/lib/text-schema";
 
 const confirmSchema = z.object({
 	customerPhone: fromText(customerPhoneSchema),

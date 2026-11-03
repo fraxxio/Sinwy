@@ -14,7 +14,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 4 | Status changes, reschedule, edits and booking emails | 3 | done | `feat(backend): add booking status changes, reschedule, edits and emails` |
 | 5 | Storefront module and the public booking flow | 4 | done | `feat(backend, web): add the storefront and public self-booking` |
 | 6 | Bookings calendar and list (web) | 3 | done | `feat(web): add the bookings calendar and list` |
-| 7 | Booking detail, manual booking and reschedule (web) | 4, 5, 6 | todo | |
+| 7 | Booking detail, manual booking and reschedule (web) | 4, 5, 6 | done | `feat(web): add the booking detail, manual booking and reschedule` |
 | 8 | Overview page | 4 | todo | |
 | 9 | Cancellation window | 4, 5 | todo | |
 | 10 | Customer Mode bookings | 4, 5, 9 | todo | |
@@ -171,66 +171,23 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Free times for any caller go through `findFreeTimes` in `bookings/service.ts` (busy intervals a day either side, then `listBookableTimes`).
 - **Web storefront (Phase 5):** `modules/storefront/` mounts at `/$organizationSlug` (last in `src/routes.ts`); `route.tsx` at a physical mount's root is that path's layout. It is `ssr: false`, loads `storefrontQuery(slug)` (null on 404) and children read it with `useSuspenseQuery`. Query keys start `["storefront", slug]`. `/<slug>/book` steps follow the search params `service`, `date` and `start`; the confirm step is `components/ConfirmStep.tsx`. Phone and note typed before the login redirect are lost (log Phase 5).
 - **Web booking helpers:** `src/shared/lib/date.ts` has `todayIn`, `addDaysToDate`, `localDateOf`, `formatTimeIn` and `formatDateIn` (org zone via `@date-fns/tz`). `BookableTimesPicker` in `src/shared/components/booking/` takes `timezone`, `date`/`onDateChange`, `minDate`/`maxDate`, `times`, `value`/`onChange`, `loading` and `emptyMessage`.
-- **Forms over shared nullish schemas:** a text field can't take `customerPhoneSchema` directly (its input allows null); pipe it as `fromText` in `ConfirmStep.tsx` does.
+- **Forms over shared nullish schemas:** a text field can't take `customerPhoneSchema` directly (its input allows null); pipe it through `fromText` from `src/shared/lib/text-schema.ts`. A cross-field `.refine` takes `when: () => true` so its error shows next to field errors (`lib/booking-forms.ts`).
 - **Dependencies:** `bun add` re-resolves the lockfile and bumps TanStack packages, leaving two `query-core` versions that break `router.tsx` types. Add the dependency to `package.json` and the workspace block of `bun.lock` by hand, then `bun install --frozen-lockfile`. After new deps, vite's first page load gives 504 "Outdated Optimize Dep"; a reload clears it.
 - **Vite reads `src/routes.ts` only at startup**: restart it after changing mounts, or a route-file edit regenerates the tree from the old config.
-- **Running servers:** Phase 6 started the backend on :3001 (`bun run start:server`, log `/tmp/sinwy-backend.log`) and vite on :3000 (`bun run start:web`, log `/tmp/sinwy-web.log`). Check that they're up before relying on them. Phase 13 stops them.
+- **Running servers:** Phase 7 started the backend on :3001 (`bun run start:server`, log `/tmp/sinwy-backend.log`) and vite on :3000 (`bun run start:web`, log `/tmp/sinwy-web.log`). Check that they're up before relying on them. Phase 13 stops them.
 - **Web bookings page (Phase 6):**
   - `org-dashboard/lib/booking-queries.ts` keys start `["bookings", organizationId]` (`bookingKeys.all`); invalidate that prefix after writes. List and calendar queries use `keepPreviousData`.
   - `components/bookings/BookingStatusBadge.tsx` exports `BOOKING_STATUS_LABELS`, `BOOKING_STATUS_STYLES` and `isExpiredRequest`. The badge already reads "Expired request" for a past `pending`.
   - Calendar maths is in `lib/calendar.ts` (`startOfLocalDate`, `dayColumn`, `gridRows`, `instantAt`; see log Phase 6 for the DST rows). Search params are `bookingsSearchSchema` in `lib/booking-search.ts`. Links into the list can use plain params (`?view=list&status=confirmed&to=<date>`).
-  - An empty-spot click navigates with `router.navigate({ href: ".../bookings/new?start=<UTC ISO>" })`.
+- **Web booking detail (Phase 7):**
+  - `booking-queries.ts` has `bookingQuery` (detail), `bookingTimesQuery` (one local date, optional `excludeBookingId`), the writes (`createManualBooking`, `updateBooking`, `changeBookingStatus(org, id, to, body?)`, `rescheduleBooking`) and `invalidateBookings(queryClient, organizationId)`, which invalidates `bookingKeys.all`. Key new booking queries under `bookingKeys.all` so every write refreshes them.
+  - `lib/booking-actions.ts`: `statusActions(booking, now?)` (labels and targets from `canTransition`) and `canReschedule`. `components/bookings/BookingActions.tsx` renders them, with a private `CancelDialog` (reason).
+  - `lib/booking-forms.ts`: `bookingTimeSchema(timezone)` (picked time or typed wall time → ISO), `contactFormSchema`, `manualBookingFormSchema`. `BookingTimeField` is the picker plus the Custom time switch. Wall time → instant is `instantOfWallTime(date, "HH:mm", timezone)` in `lib/calendar.ts`.
+- **`booking_event.payload` is stored double-encoded** (a jsonb string) when it has content: the `bun-sql` driver encodes it twice. The app reads it back fine, but `payload->>'startsAt'` is null in SQL. Fix it before any SQL reads the payload (Phase 13 at the latest), and migrate existing rows then (log Phase 7).
+- **e2e quirk:** `page.ts` lists Base UI toasts as `Dialog:`.
 - **TanStack search schemas:** a Zod key whose input type is `unknown` (e.g. `z.preprocess`) makes `search` required on every `Link` to the route. Keep each key's input optional (`.optional()` before `.transform`/`.catch`).
 - **Browser zone in e2e:** `playwright-cli open --config <copy of .playwright/cli.config.json>` with `contextOptions.timezoneId` added. Don't edit the real config.
 - **The fall-back hour** of a DST-end day offers only the first pass of the repeated hour. Fine for the MVP.
-
----
-
-## Phase 7: Booking detail, manual booking and reschedule (web)
-
-**Goal:** Staff open a booking and act on it, create phone and walk-in bookings, and reschedule with the shared picker or a custom time.
-
-**Files:**
-- `org-dashboard/routes/_shell.bookings.$id.tsx` (replace the placeholder); new `_shell.bookings.new.tsx` with `validateSearch` for `start` (`z.iso.datetime({ offset: true }).optional().catch(undefined)`, as `storefront/routes/book.tsx` does). The calendar already links to both.
-- `org-dashboard/lib/booking-queries.ts`: add `bookingKeys.detail` and `bookingKeys.times` under `bookingKeys.all`, a detail query (`GET bookings/:bookingId` → `BookingDetailDto`), a times query (`GET bookings/times?serviceId&from&to&excludeBookingId` → `BookableTimesDto`) and the writes: `POST bookings` (`ManualBookingInput`), `PATCH bookings/:bookingId` (`BookingUpdateInput`), and `POST bookings/:bookingId/{confirm|cancel|complete|no-show|reschedule}` (`cancelBookingSchema`, `rescheduleBookingSchema`). Copy `useUnwrapWrite` from `service-queries.ts`, or import it from there.
-- New in `org-dashboard/components/bookings/`: `BookingActions`, `RescheduleDialog`, `ManualBookingForm`, `BookingHistory` and `ContactCard`. Reuse `BookingStatusBadge` and `BOOKING_STATUS_LABELS`.
-- The action mapping is a pure function in a new `org-dashboard/lib/booking-actions.ts` over `canTransition`, with a test in `org-dashboard/tests/`.
-- The custom-time conversion uses `startOfLocalDate` from `lib/calendar.ts` plus the wall minutes; it's not in the browser zone.
-- `src/shared/components/booking/BookableTimesPicker.tsx` (from Phase 5). Org timezone and hours come from `availabilityQuery`, and services from `servicesQuery`, both in `service-queries.ts`.
-- `org-dashboard/routes/_shell.bookings.index.tsx`: the "New booking" header button, next to the Calendar/List toggle.
-
-**Steps:**
-- **Detail layout:** status badge and the allowed actions at the top (from `canTransition`, not hard-coded). Then customer, service with time and price, `customerNote` read-only and an editable `internalNote`. History at the bottom.
-  - A past `pending` booking reads "Expired request" and offers only Cancel.
-- **Actions:** Confirm, Complete and No-show are single buttons. Cancel/Decline open a dialog with an optional reason ("Decline" on pending, "Cancel booking" on confirmed). Correction buttons ("Mark as completed" / "Mark as no-show") appear on finished bookings.
-- **Contact card:** editable inline for manual bookings, read-only with "From the customer's account" for self-bookings.
-- **Manual booking** at `/dashboard/<slug>/bookings/new?start=`:
-  - Pick a service, then the picker (dashboard times endpoint) or a "Custom time" toggle (date + `<input type="time">`, any minute).
-  - Contact fields (name required, email or phone required) and an internal note.
-  - Prefill the date and time from `?start=` (the calendar click). With a prefilled start that isn't a bookable time, switch to custom time automatically.
-  - On success, go to the new booking's detail page.
-  - Add a "New booking" button to the bookings page header for `bookings:write`.
-- **Reschedule dialog:** the same picker against `bookings/times?excludeBookingId=`, plus the custom-time toggle. A 409 shows "That time was just taken".
-- Read-only users (without `bookings:write`) see no actions; all three roles have it today, but gate it anyway.
-- After writes, invalidate the booking keys (detail, list, calendar) and the overview key (Phase 8 adds it; invalidate the prefix).
-
-**Tests that matter:**
-- The manual form schema: name required, email or phone required, custom time → ISO in the org zone (not the browser's).
-- The action buttons shown match `canTransition` for each status and time combination (unit test of the mapping).
-
-**Done when:**
-- Every status action, reschedule and manual booking works in the browser and shows up in the history.
-
-**Verify:** Seed `bookable-org`; as a `user` customer, book a pending Colouring tomorrow 13:00 on the storefront.
-1. As the owner, open it from the calendar: "Confirm" and "Decline" are shown.
-2. Decline with the reason "Fully booked": status `cancelled`, `cancelled_by = 'organization'`, the outbox has "Request declined" with the reason, and the history shows it.
-3. Create a manual booking from a week-view click at tomorrow 15:00, Haircut, name "Walk-in Ana", phone only: status `confirmed`, no customer email in the outbox.
-4. Try a manual booking at 15:15 with a custom time: 409 "That time was just taken".
-5. Reschedule the walk-in to 16:00 with the picker; the history shows old → new.
-6. Edit the walk-in's phone; the history shows a contact update. On a self-booking, the contact is read-only.
-7. Create a manual booking for yesterday 11:00 with a custom time, then mark it Completed, then correct it to No-show.
-
-Emails go to the local outbox; nothing else is simulated.
 
 ---
 
@@ -239,9 +196,11 @@ Emails go to the local outbox; nothing else is simulated.
 **Goal:** `/dashboard/<slug>/` shows today's bookings, this week's booked value, pending requests with inline approve and decline, occupancy, and needs-attention counts.
 
 **Files:**
-- `Sinwy.Backend/modules/bookings/`: `getOverview(membership, now?)` and `GET organizationPath("bookings/overview")` (`bookings:read`).
-- `Sinwy.Backend/modules/services/`: export `openMinutes(organizationId, from, to)` (local dates; weekly hours minus closures, in the org zone), next to the bookable-times inputs it already reads.
-- Web: `org-dashboard/routes/_shell.index.tsx` (replace the placeholder), `org-dashboard/lib/booking-queries.ts` (overview query), new `org-dashboard/components/overview/`.
+- `Sinwy.Backend/modules/bookings/`: `getOverview(membership, now?)` in `service.ts`, queries in `repository.ts`, and `GET organizationPath("bookings/overview")` (`bookings:read`) in `routes.ts`, registered before `bookings/:bookingId` as `times` and `calendar` are. Tests next to `tests/bookings.test.ts`.
+- `Sinwy.Backend/modules/services/`: export `openMinutes(organizationId, from, to)` through `index.ts` (local dates; weekly hours minus closures, in the org zone), next to the bookable-times inputs it already reads.
+- `Sinwy.Shared/types/booking/Booking.ts`: `BookingOverviewDto`.
+- Web: `org-dashboard/routes/_shell.index.tsx` (replace the placeholder), `org-dashboard/lib/booking-queries.ts` (`bookingKeys.overview` under `bookingKeys.all`, and the overview query), new `org-dashboard/components/overview/`.
+- Approve and Decline: `changeBookingStatus` and `invalidateBookings` from `booking-queries.ts`, and export `CancelDialog` from `components/bookings/BookingActions.tsx`. `BookingStatusBadge`, `formatMinorUnits` and `formatTimeIn` render the rows.
 
 **Steps:**
 - Follow the Decision's definitions exactly. "This week" is the ISO week containing today in the org zone. One SQL round-trip per figure is fine.
