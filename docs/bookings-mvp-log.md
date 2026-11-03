@@ -268,3 +268,57 @@ Emails go to the local outbox; nothing else is simulated.
   - A taken start is 409 40919, and a POST without a session is 401.
   - Found: phone and note typed before the login redirect are lost (minor, not in the brief).
   - Not checked: real Resend delivery of the four templates. The web server's own log during the run wasn't captured.
+
+## Phase 6: Bookings calendar and list (web)
+
+**Goal:** `/dashboard/<slug>/bookings` shows a month, week and day calendar by default and a filterable, sortable, paginated list, both in the org's timezone.
+
+**Files:**
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.bookings.index.tsx` (replace the placeholder; `_shell.bookings.tsx` is its layout).
+- New `org-dashboard/lib/booking-queries.ts`: copy `service-queries.ts` (keys, `queryOptions`, `useUnwrapWrite`). Endpoints: `GET /organizations/:id/bookings` → `BookingListDto` and `GET …/bookings/calendar` → `BookingDto[]`, with repeatable `serviceId`/`status` params; query schemas `bookingListQuerySchema`/`bookingCalendarQuerySchema` and `BOOKING_SORTS` are in `@sinwy/shared`.
+- New `org-dashboard/lib/calendar.ts` (pure date maths in the org zone), built on `todayIn`, `addDaysToDate`, `formatTimeIn` and `formatDateIn` in `src/shared/lib/date.ts`; `date-fns` and `@date-fns/tz` are already installed.
+- New `org-dashboard/components/bookings/` (`BookingsCalendar`, `MonthView`, `TimeGridView`, `BookingsList`, `BookingFilters`, `BookingStatusBadge`).
+- Business hours come from `availabilityQuery` in `service-queries.ts`; the service filter's options from `servicesQuery`. Prices with `formatMinorUnits` in `src/shared/lib/money.ts`.
+- Web tests use `bun test` next to the code (`*.test.ts`), as the existing 26 web test files do.
+
+**Steps:**
+- Search params: `view` (`calendar` | `list`), `calendarView` (`month` | `week` | `day`), `date`, plus the list filters, `sort` and `page`. Validate them with Zod, falling back to the defaults.
+- **Calendar maths** lives in `calendar.ts`: the visible range, the day columns, and minute offsets from local midnight, all with `@date-fns/tz` in the org zone. It's pure and unit-tested; no component does zone maths itself.
+- **Month view:** up to 3 bookings per day plus "+N more" (which switches to the day view).
+- **Week and day views:** positioned blocks, no overlap layout (bookings never overlap), closed hours shaded from the weekly hours, scrolled to the earliest opening time.
+- Hide `cancelled` unless "Show cancelled" is on; show `no_show` muted. Clicking a booking goes to `/dashboard/<slug>/bookings/<id>`.
+- Clicking an empty week or day spot goes to `/dashboard/<slug>/bookings/new?start=<ISO>` (Phase 7 builds that route; until then the link may 404).
+- **List:** `table` with the columns date and time, customer, service, status and price (`money.ts`), a filter bar (date inputs, service and status multi-select, debounced search) and page controls with the total.
+- The "Times in {zone}" label sits on both views.
+
+**Tests that matter:**
+- `calendar.ts`: week ranges start Monday in the org zone; a booking across local midnight is handled consistently; DST-change days give 23/25-hour grids without shifting the blocks.
+- Search params round-trip, and invalid values fall back to the defaults.
+
+**Done when:**
+- Bookings created in Phase 5 appear on the right day and time in all three views and in the list, and the filters and paging work.
+
+**Verify:** Seed `bookable-org`. Create bookings by API or by booking on the storefront as in Phase 5: two tomorrow (10:00 Haircut confirmed, 13:00 Colouring pending) and one next week (then cancel it with `POST …/cancel`).
+1. As the owner, open `/dashboard/<slug>/bookings`: month view, tomorrow shows 2 bookings, and the cancelled one is hidden until "Show cancelled" is on.
+2. Switch to week and day: the blocks sit at 10:00 and 13:00 in the org zone, whatever the browser's zone (set Playwright's `timezoneId` to something else, e.g. `America/New_York`).
+3. Switch to List: the default shows the upcoming non-cancelled bookings. Filter by status `pending` → 1 row, search the customer's email → the matching rows, sort by created → newest first.
+4. Refresh: the view and filters are kept.
+
+Nothing is simulated.
+
+### Log (2026-11-03, `feat(web): add the bookings calendar and list`)
+- Shipped:
+  - `/dashboard/<slug>/bookings` with Calendar (month, week, day) and List views, all in the org zone with a "Times in {zone}" label. The month view shows 3 bookings a day plus "+N more" (opens the day). Week and day views shade closed hours and closures, and scroll to the earliest opening. Clicking a booking opens its detail page, and clicking an empty spot (`bookings:write` only) goes to `bookings/new?start=<UTC ISO>`.
+  - The list has search, From/To dates, service and status multi-selects, three sorts, paging with the total, and "Clear filters".
+  - `lib/calendar.ts` (pure zone maths), `lib/booking-search.ts` (search schema, defaults, query strings), `lib/booking-queries.ts`, `components/bookings/`, and `formatShortDateIn` in `src/shared/lib/date.ts`. 24 new web tests.
+- Differs from plan:
+  - DST: the time grid's rows are wall-clock hours, the union over the visible dates. A repeated hour gets its own row (`03:00#1`), and an hour a date skips is shaded in that column, so 10:00 sits on the same row in every column of a DST week. A booking past local midnight is split across both columns. The month view lists it on its start date only.
+  - Added `showCancelled` to the search params. The calendar's filters are the service filter and that switch; the status, search and date-range filters are list-only, and the calendar ignores them while they stay in the URL.
+  - The calendar query filters on `startsAt`, so a booking that starts before the first visible date and runs past its midnight doesn't show in the first column. Accepted for the MVP.
+  - Array params are written in TanStack's JSON form (`status=%5B%22pending%22%5D`). Plain and repeated params (`?status=pending&status=cancelled`) are read too.
+  - The Phase 5 servers weren't running anymore, so this phase started them again.
+- Checked in the running app (e2e subagent, all 4 Verify steps passed, browser in `America/New_York`):
+  - The month view shows both bookings for tomorrow. "Show cancelled" reveals next week's cancelled booking, muted and struck through.
+  - In the week and day views, the blocks sit on the 10:00 and 13:00 gutter rows (480px and 624px). Clicking 15:30 goes to `new?start=2026-11-04T13:30:00.000Z`, which 404s until Phase 7.
+  - The list defaults to 2 upcoming rows. Status `pending` gives 1 row, the customer's email gives 2, `q=walkin` gives the cancelled row (with cancelled included), and "Newest booked" reverses the order.
+  - After a refresh, the list filters and sort, and the calendar's week, date and `showCancelled`, are all kept. The backend and web logs and the browser console have no errors.

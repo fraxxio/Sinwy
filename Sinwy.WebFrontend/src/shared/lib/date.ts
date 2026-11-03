@@ -27,3 +27,7 @@ export const formatTimeIn = (iso: string, timezone: string) =>
 /** "Tuesday, 3 November 2026" in `timezone`. */
 export const formatDateIn = (iso: string, timezone: string) =>
 	format(new Date(iso), "EEEE, d MMMM yyyy", { in: tz(timezone) });
+
+/** "Wed 4 Nov 2026" in `timezone`. */
+export const formatShortDateIn = (iso: string, timezone: string) =>
+	format(new Date(iso), "EEE d MMM yyyy", { in: tz(timezone) });
