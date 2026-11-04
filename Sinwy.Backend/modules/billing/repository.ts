@@ -1,4 +1,4 @@
-import db from "@db";
+import db, { type Tx } from "@db";
 import { user, userSubscription } from "@db/schema/userSchema";
 import {
 	fitSlotsToCap,
@@ -8,8 +8,6 @@ import {
 } from "@organizationsModule";
 import type { PlanSlug } from "@sinwy/shared";
 import { eq, sql } from "drizzle-orm";
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export const findUserSubscription = async (userId: string) => {
 	const [row] = await db

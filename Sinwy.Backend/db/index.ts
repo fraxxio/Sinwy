@@ -7,4 +7,7 @@ import * as schema from "./schema";
 const client = new SQL(appConfig.DB_URL);
 
 // schema is required for better-auth's drizzle adapter to resolve models
-export default drizzle(client, { schema });
+const db = drizzle(client, { schema });
+export default db;
+
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];

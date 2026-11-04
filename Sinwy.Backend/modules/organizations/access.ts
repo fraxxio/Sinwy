@@ -1,12 +1,10 @@
-import db from "@db";
+import db, { type Tx } from "@db";
 import { memberHasRole } from "@db/memberRole";
 import { session } from "@db/schema/authSchema";
 import { member, organization } from "@db/schema/organizationSchema";
 import { userSubscription } from "@db/schema/userSchema";
 import { and, eq, exists, inArray, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-
-export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 // correlated on the outer query's `organization`
 const ofOwner = <T>(column: AnyPgColumn) =>

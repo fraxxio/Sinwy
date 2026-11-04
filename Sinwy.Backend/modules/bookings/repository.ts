@@ -1,4 +1,4 @@
-import db from "@db";
+import db, { type Tx } from "@db";
 import { booking, bookingEvent } from "@db/schema/bookingSchema";
 import {
 	organization,
@@ -6,6 +6,7 @@ import {
 } from "@db/schema/organizationSchema";
 import { service } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
+import { createBookingPayment, voidBookingPayment } from "@paymentsModule";
 import type { BusyInterval } from "@servicesModule";
 import {
 	ACTIVE_BOOKING_STATUSES,
@@ -37,8 +38,6 @@ import { containsPattern } from "./utils";
 
 export type BookingRow = typeof booking.$inferSelect;
 export type BookingEventRow = typeof bookingEvent.$inferSelect;
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
 export type BookingFilters = {
 	start?: Date | undefined;
 	end?: Date | undefined;
@@ -154,6 +153,7 @@ export const insertBookingIfFree = (
 			.values({ ...values, id: crypto.randomUUID() })
 			.returning();
 		if (!row) throw new Error("Booking insert returned no row");
+		await createBookingPayment(tx, row);
 		const events = await tx
 			.insert(bookingEvent)
 			.values({ ...event, id: crypto.randomUUID(), bookingId: row.id })
@@ -239,6 +239,8 @@ export const changeBooking = <E extends string>(
 			.where(eq(booking.id, bookingId))
 			.returning();
 		if (!row) throw new Error("Booking update returned no row");
+		if (row.status === "cancelled" && current.booking.status !== "cancelled")
+			await voidBookingPayment(tx, bookingId);
 		const events = change.event
 			? await tx
 					.insert(bookingEvent)
