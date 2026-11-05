@@ -3,6 +3,7 @@ export * from "./api";
 export * from "./auth";
 export * from "./booking";
 export * from "./organization";
+export * from "./payment";
 export * from "./plan";
 export * from "./service";
 export * from "./user";

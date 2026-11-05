@@ -1,3 +1,4 @@
+import type { Tx } from "@db";
 import db from "@db";
 import { memberHasRole } from "@db/memberRole";
 import {
@@ -22,12 +23,7 @@ import {
 	or,
 	sql,
 } from "drizzle-orm";
-import {
-	clearFromSessions,
-	organizationAccess,
-	ownedBy,
-	type Tx,
-} from "./access";
+import { clearFromSessions, organizationAccess, ownedBy } from "./access";
 import { countHeldSlots, slotLimit } from "./slots";
 
 export const isSlugTaken = async (slug: string) => {

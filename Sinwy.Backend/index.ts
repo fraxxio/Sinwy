@@ -11,6 +11,10 @@ import {
 import appConfig from "@config";
 import { registerFileRoutes } from "@filesModule";
 import { registerOrganizationRoutes } from "@organizationsModule";
+import {
+	registerAccountPaymentRoutes,
+	registerPaymentRoutes,
+} from "@paymentsModule";
 import { registerServiceRoutes } from "@servicesModule";
 import { registerTransferRoutes } from "@transfersModule";
 import { registerUserRoutes } from "@userModule";
@@ -25,6 +29,8 @@ registerServiceRoutes(app);
 registerBookingRoutes(app);
 registerStorefrontRoutes(app);
 registerAccountBookingRoutes(app);
+registerPaymentRoutes(app);
+registerAccountPaymentRoutes(app);
 registerUserRoutes(app);
 registerFileRoutes(app);
 

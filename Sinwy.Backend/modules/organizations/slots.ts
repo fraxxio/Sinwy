@@ -1,10 +1,11 @@
+import type { Tx } from "@db";
 import db from "@db";
 import { memberHasRole } from "@db/memberRole";
 import { member, organization } from "@db/schema/organizationSchema";
 import { userSubscription } from "@db/schema/userSchema";
 import { PLAN_ORGANIZATION_LIMITS, toPlanSlug } from "@sinwy/shared";
 import { and, asc, count, eq, inArray, isNotNull, isNull } from "drizzle-orm";
-import { clearFromSessions, ownedBy, type Tx } from "./access";
+import { clearFromSessions, ownedBy } from "./access";
 
 // Every write to a slot or to ownership lives here. Each locks the plan rows
 // first, by user id, then the organization rows.

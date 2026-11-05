@@ -4,6 +4,7 @@ import {
 	type OrganizationProfileInput,
 	reservedSlugs,
 } from "@backend/modules/organizations/utils";
+import type { Tx } from "@db";
 import db from "@db";
 import {
 	type AccountDeletionPreviewDto,
@@ -22,7 +23,7 @@ import {
 	parseMemberRoles,
 	toPlanSlug,
 } from "@sinwy/shared";
-import { clearFromSessions, type OrganizationAccess, type Tx } from "./access";
+import { clearFromSessions, type OrganizationAccess } from "./access";
 import {
 	countOwnedHeldSlots,
 	findDeletionScheduledAt,

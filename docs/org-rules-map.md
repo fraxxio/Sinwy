@@ -8,7 +8,7 @@ change to these rules. The user's path through the screens is in
 Decisions (D1–D15) and Defaults (1–11) were settled with the product owner;
 they are cited where a rule comes from one. **Differs from decision** marks
 where the code does something else; both versions are given, and
-[14](#14-known-gaps) lists them.
+[15](#15-known-gaps) lists them.
 
 ## 1. Terms
 
@@ -53,7 +53,7 @@ Enforced in: `Sinwy.Shared/types/` (`access/`, `plan/`, `organization/`),
 Exactly one owner per organization; any number of admins and staff
 ├─ owner → everything, billing included
 ├─ admin → everything but billing: bookings, services, customers, pages,
-│          payments (read), analytics, people (invite, remove, change roles), settings
+│          payments (read, mark as paid), analytics, people (invite, remove, change roles), settings
 └─ staff → bookings and customers; services and pages read-only
 
 The one owner
@@ -353,6 +353,8 @@ Members' requests to an inactive organization
 │  change roles) → refused, "organization inactive"
 ├─ bookings: kept and readable; every staff write (create, status change,
 │  reschedule, edit) → refused, "organization inactive"
+├─ payments: list, totals and CSV readable; mark as paid → refused,
+│  "organization inactive" [14]
 ├─ paid features → refused, "upgrade required"
 └─ leaving → allowed
 
@@ -605,7 +607,50 @@ Enforced in: `Sinwy.Shared/types/api/ApiResponse.ts`,
 `Sinwy.Backend/modules/billing/`, `organizations/` and `transfers/`;
 `modules/auth/activeOrganization.ts`, `modules/billing/checkoutGuard.ts`.
 
-## 14. Known gaps
+## 14. Payments
+
+Records only: Sinwy moves no money yet. Each payment is the record of what a
+booking's customer owes the business and whether the business has been paid.
+
+```text
+Where payments come from
+├─ a booking with a price → one pending payment, provider "manual", the
+│  booking's amount and currency, in the same transaction as the booking
+├─ a free booking → none
+├─ the booking is cancelled → a pending payment turns void; a paid one stays paid
+├─ completed and no-show → the payment is left as it is
+└─ refunded exists but nothing sets it yet; there is no failed status
+
+Mark as paid (owner and admin, payments:write)
+├─ pending → paid, with the time it was marked; no undo
+├─ paid, void or refunded → refused, "payment status change not allowed" (409)
+├─ another organization's or an unknown payment → not found
+└─ an inactive organization → refused, "organization inactive" [9]
+
+The organization's list (owner and admin, payments:read; staff → 403)
+├─ a range of org-local dates, inclusive, on when the payment was created;
+│  without one, the current month up to today
+├─ newest first, paged; totals for the whole range, per currency: collected
+│  (paid), outstanding (pending) and a count, all without void payments
+└─ the CSV export: the same range unpaged; cells that could start a
+   spreadsheet formula are prefixed with '
+
+The customer (Customer Mode)
+├─ sees the payments of bookings made from their account, void ones left out;
+│  a booking staff entered with their email isn't theirs
+├─ another customer's payment, or a void one → not found
+└─ the detail is a printable receipt once paid, a payment summary until then
+
+Deleting the organization or the booking deletes its payments; deleting the
+customer's account leaves them [11].
+```
+
+Enforced in: `Sinwy.Shared/types/payment/`, `Sinwy.Shared/types/access/`,
+`Sinwy.Backend/modules/payments/` (`service.ts`, `repository.ts`, `csv.ts`,
+`routes.ts`), `modules/bookings/repository.ts` (`insertBookingIfFree`,
+`changeBooking`), `db/schema/paymentSchema.ts`.
+
+## 15. Known gaps
 
 Differs from decision:
 - D7: a once-activated organization that never finished setup is a draft
