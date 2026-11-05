@@ -1,5 +1,10 @@
 import type { Membership } from "@authModule";
 import {
+	addDaysToDate,
+	localDateRange,
+	startOfLocalDate,
+} from "@backend/lib/localDate";
+import {
 	findPublicOrganization,
 	getOrganizationLocale,
 	isScheduledForDeletion,
@@ -73,13 +78,7 @@ import {
 	insertBookingIfFree,
 	sumBookingsBetween,
 } from "./repository";
-import {
-	addDaysToDate,
-	type BookingTimesQuery,
-	localDateRange,
-	paddedWindow,
-	startOfLocalDate,
-} from "./utils";
+import { type BookingTimesQuery, paddedWindow } from "./utils";
 
 type BookingError =
 	| "not-found"

@@ -14,6 +14,7 @@ export const ROLE_PERMISSIONS: Record<OrgRole, readonly Permission[]> = {
 		"pages:read",
 		"pages:write",
 		"payments:read",
+		"payments:write",
 		"analytics:read",
 		"people:manage",
 		"settings:manage",

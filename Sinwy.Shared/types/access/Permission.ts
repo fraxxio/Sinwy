@@ -5,7 +5,7 @@ export const PERMISSION_STATEMENTS = {
 	services: ["read", "write"],
 	customers: ["read", "write"],
 	pages: ["read", "write"],
-	payments: ["read"],
+	payments: ["read", "write"],
 	analytics: ["read"],
 	people: ["manage"],
 	billing: ["manage"],

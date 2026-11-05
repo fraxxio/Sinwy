@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
 import { readOutboxEmails } from "@backend/infrastructure/email";
 import createApp from "@backend/lib/app";
+import { addDaysToDate, startOfLocalDate } from "@backend/lib/localDate";
 import {
 	activateOrganization,
 	createUserWithSession,
@@ -25,7 +26,6 @@ import {
 import type { Server } from "bun";
 import { eq } from "drizzle-orm";
 import { registerBookingRoutes, registerStorefrontRoutes } from "../routes";
-import { addDaysToDate, startOfLocalDate } from "../utils";
 
 const TIMEZONE = "Europe/Vilnius";
 
