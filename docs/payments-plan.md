@@ -10,7 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Payment table and booking sync | – | done | `feat(backend): add the payment table and sync it with bookings` |
 | 2 | Payments API and permission | 1 | done | `feat(backend): add the payments API and the payments:write permission` |
-| 3 | Org payments page | 2 | todo | |
+| 3 | Org payments page | 2 | done | `feat(web): add the org payments page` |
 | 4 | Customer receipts | 2 | todo | |
 | 5 | Code review and cleanup | 3, 4 | todo | |
 
@@ -48,54 +48,14 @@ Settled with the product owner. Ask before changing any of them.
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
 - Payments are created and voided only by the bookings repository (`insertBookingIfFree`, `changeBooking`); the sync tests are in `modules/bookings/tests/payments.test.ts`, the API tests in `modules/payments/tests/payments.test.ts` (rows inserted directly through `@db/schema`; payments never imports `@bookingsModule`).
-- The API (phase 2 log): `GET /api/organizations/<id>/payments?from&to&page&pageSize` returns `PaymentListDto` (`items`, `total`, `totals[]` of `{currency, paidMinor, pendingMinor, count}`, and the resolved `from`/`to`, which default to the 1st of the month through today in the org timezone). `GET …/payments/export?from&to` returns the CSV. `POST …/payments/<id>/mark-paid` returns the updated `PaymentDto`, or 409 with `PAYMENT_STATUS_CHANGE_NOT_ALLOWED` (40923) / `ORGANIZATION_INACTIVE` (4091). `GET /api/account/payments?page` returns `CustomerPaymentListDto`, and `GET /api/account/payments/<id>` returns `CustomerPaymentDetailDto` (adds `customerName`; `organization` has `name`, `slug`, `timezone`). Types and `PAYMENT_LIMITS` (`listPageSize` 25, `customerListPageSize` 20) are in `Sinwy.Shared/types/payment/`.
-- `payments:write` is held by owner and admin; staff have neither payments permission (403). Non-members get 404 on org routes, as elsewhere. `docs/org-rules-map.md` §14 describes the payment rules (Known gaps is now §15).
-- CSV cells are all quoted, and dates are ISO with the org offset (`2026-11-05T17:44:19+02:00`), so a frontend test of the export only needs to build the URL.
+- The API (phase 2 log): `GET /api/organizations/<id>/payments?from&to&page&pageSize` returns `PaymentListDto`, `GET …/payments/export?from&to` the CSV, `POST …/payments/<id>/mark-paid` the updated `PaymentDto` or 409 (`PAYMENT_STATUS_CHANGE_NOT_ALLOWED` 40923 / `ORGANIZATION_INACTIVE` 4091). `GET /api/account/payments?page` returns `CustomerPaymentListDto`, and `GET /api/account/payments/<id>` returns `CustomerPaymentDetailDto` (adds `customerName`; `organization` has `name`, `slug`, `timezone`, so the receipt needs no other query). Types and `PAYMENT_LIMITS` (`customerListPageSize` 20) are in `Sinwy.Shared/types/payment/`.
+- `payments:write` is held by owner and admin; staff have neither payments permission (403). `docs/org-rules-map.md` §14 describes the payment rules (Known gaps is §15).
 - `payment` timestamps are `timestamptz`, but `booking.created_at` is a UTC `timestamp`; the backfill converts it with `AT TIME ZONE 'UTC'`. Migration `Sinwy.Backend/drizzle/0023_payments.sql` (phase 5 reviews it).
-- Inactive orgs can't open the org dashboard at all: the shell redirects them. The UI needs no inactive check; the backend refusal plus `handleOrganizationInactive` (`src/shared/lib/auth/organization-inactive.ts`, reacts to 4091) is the backstop.
-- Frontend shared vs module split: `src/shared/components/booking/BookingStatusBadge.tsx` (shared badge and labels) vs `src/modules/*/components/bookings/`. `src/shared/` must never import from `src/modules/`. Money is formatted with `formatMinorUnits` (`src/shared/lib/money.ts`), and dates with `formatDateIn` and `formatTimeIn` (`src/shared/lib/date.ts`).
-- The frontend API client `api` (`src/shared/lib/api.ts`) parses JSON only. In the browser `/api` is same-origin with the cookie, so the CSV can be downloaded with a plain link or `window.location.assign("/api/…/payments/export?…")`.
-- Query and search patterns to copy: `src/modules/org-dashboard/lib/booking-queries.ts` and `booking-search.ts` (`validateSearch` in `_shell.bookings.index.tsx:44`). The date inputs are in `components/bookings/BookingFilters.tsx` (L182, L197, `type="date"`). Permission checks in the UI use `hasPermission(member.roles, "…")`, as in `_shell.bookings.$id.tsx:53`. The payments nav item and its `payments:read` guard already exist (`lib/sections.ts:24`).
-- The phase 1 servers had stopped; phase 2 restarted them (`bun run start:server` on :3001, `bun run start:web` on :3000, logs `/tmp/sinwy-server.log`, `/tmp/sinwy-web.log`). Reuse them; phase 5 stops them. Seeded by phase 2: `bookable-org` `seed-f38dbb3a` (owner `webdevrokas+seed-f38dbb3a-owner@gmail.com`) and customer `webdevrokas+seed-02e0ef19-user@gmail.com`, with one Haircut payment already `paid`. Sessions come from `bun run dev:login-as`.
-- Seeds: `bun run dev:seed-scenario bookable-org` creates an active org (Europe/Vilnius, "Haircut" €25 auto-confirmed, "Colouring" €80 needs approval) but no bookings; `bun run dev:seed-scenario user` creates a customer. Bookings created through the UI or API get their payment automatically. After 17:00 Vilnius time today has no free slots; book the next day.
-
----
-
-## Phase 3: Org payments page
-
-**Goal:** `/dashboard/<slug>/payments` shows the notice, the date-range filter, the totals, the transaction table with status badges and "Mark as paid", and a CSV download.
-
-**Files:**
-- `Sinwy.WebFrontend/src/shared/components/ui/alert.tsx` (new, via the shadcn MCP or CLI; `alert-dialog.tsx`, `card.tsx`, `table.tsx`, `badge.tsx` already exist).
-- `Sinwy.WebFrontend/src/shared/components/payment/` (new): `PaymentStatusBadge.tsx` (with `PAYMENT_STATUS_LABELS: Record<PaymentStatus, …>`, like `shared/components/booking/BookingStatusBadge.tsx`) and `PaymentsNotice.tsx` (an `audience: "organization" | "customer"` prop, `print:hidden`).
-- `Sinwy.WebFrontend/src/modules/org-dashboard/lib/payment-queries.ts` and `payment-search.ts` (new; copy `booking-queries.ts` and `booking-search.ts`). Types come from `@sinwy/shared` (`PaymentListDto`, `PaymentDto`, `PAYMENT_LIMITS`).
-- `Sinwy.WebFrontend/src/modules/org-dashboard/components/payments/` (new): `PaymentFilters.tsx` (date inputs as in `components/bookings/BookingFilters.tsx`), `PaymentTotals.tsx`, `PaymentsTable.tsx` and `MarkPaidDialog.tsx`.
-- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.payments.tsx` (replace the stub; it already has the `payments:read` `beforeLoad` and crumb).
-- `Sinwy.WebFrontend/src/modules/org-dashboard/tests/` (new `payment-search.test.ts`, next to `booking-search.test.ts`).
-
-**Steps:**
-- The search params are `from`, `to` and `page`, validated with zod. When they're missing, the page shows the range the API returned.
-- Totals are one card per currency: Collected (paid), Outstanding (pending) and the payment count.
-- Table columns: created, customer, service, appointment, amount, status badge, paid on, and an actions column. The row links to the booking detail.
-- "Mark as paid" shows only on `pending` rows when `hasPermission(member.roles, "payments:write")`. It uses `alert-dialog`. On success, invalidate the list query. On error, run it through `handleOrganizationInactive` first, then show a toast.
-- The "Export CSV" button points to `/api/organizations/<id>/payments/export?from&to` as a download link.
-- The notice always sits under the `PageHeader`. When the range has no payments, `EmptyState` sits under the notice.
-
-**Tests that matter:**
-- Unit tests in `src/modules/org-dashboard/tests/` for the search schema defaults and the export URL builder.
-- Badge labels cover every `PAYMENT_STATUSES` value, enforced as a `Record<PaymentStatus, …>`.
-
-**Done when:**
-- The page renders all parts with seeded data, the button is hidden for admins without `payments:write` (none exist) and for staff, who can't open the page at all, and `bun run verify` passes.
-
-**Verify:** Seed `bookable-org` and `user`. As the customer, book "Haircut" and "Colouring". As the owner, open `/dashboard/<slug>/payments`:
-1. The notice is shown, with two rows (Haircut `pending` €25, Colouring `pending` €80) and Outstanding €105.
-2. Mark Haircut as paid. The badge turns green, Collected shows €25, Outstanding €80, and the DB row is `paid`.
-3. Set a range that excludes today. The table is empty with the notice still shown.
-4. Click Export CSV. The file downloads with the rows in range.
-5. Cancel the Colouring booking from bookings. Back on payments it shows `void`, and Outstanding is €0.
-
-Log in as staff (`org-with-staff`): the Payments nav item is hidden and the route is refused. Nothing is simulated.
+- Shared payment UI from phase 3: `PaymentStatusBadge` (`status` prop), `PAYMENT_PROVIDER_LABELS`, and `PaymentsNotice audience="customer"` (already `print:hidden`) in `src/shared/components/payment/`. `src/shared/` must never import from `src/modules/`. Money is formatted with `formatMinorUnits` (`src/shared/lib/money.ts`), and dates with `formatDateIn`, `formatShortDateIn` and `formatTimeIn` (`src/shared/lib/date.ts`).
+- Search schemas: TanStack Router merges a route's validated search over the parent's raw URL params, so a schema that drops a key must set it to `undefined`. Bun's `toEqual` ignores `undefined` keys; use `toStrictEqual` to test that (phase 3 log).
+- The shadcn CLI (`bunx --bun shadcn@latest add …`) adds a bogus npm `cn` dependency and bumps unrelated lockfile entries. Revert `package.json` and `bun.lock`, and import `cn` from `@/shared/lib/utils` as the other ui files do.
+- Servers: `bun run start:server` on :3001 and `bun run start:web` on :3000 (logs `/tmp/sinwy-server.log`, `/tmp/sinwy-web.log`) were started in phase 2. Reuse them; phase 5 stops them. Seeded: `seed-f38dbb3a` (owner `webdevrokas+seed-f38dbb3a-owner@gmail.com`, customer `webdevrokas+seed-02e0ef19-user@gmail.com`, one Haircut `paid`), `seed-ac470bf6` (owner `webdevrokas+seed-ac470bf6-owner@gmail.com`, customer `webdevrokas+seed-4587e97f-user@gmail.com`, Haircut `paid` and Colouring `void`), and `org-with-staff` `seed-ab1d5b8d`. Sessions come from `bun run dev:login-as`.
+- Seeds: `bun run dev:seed-scenario bookable-org` creates an active org (Europe/Vilnius, "Haircut" €25 auto-confirmed, "Colouring" €80 needs approval) but no bookings; `bun run dev:seed-scenario user` creates a customer. Bookings made at `/<slug>/book` get their payment automatically. After 17:00 Vilnius time today has no free slots; book the next day. A pending request is cancelled with "Decline", not "Cancel booking".
 
 ---
 
@@ -104,11 +64,11 @@ Log in as staff (`org-with-staff`): the Payments nav item is hidden and the rout
 **Goal:** `/account/payments` lists the customer's payments, and `/account/payments/$paymentId` shows a printable receipt.
 
 **Files:**
-- `Sinwy.WebFrontend/src/modules/account-dashboard/lib/payment-queries.ts` (new; copy `booking-queries.ts`).
-- `Sinwy.WebFrontend/src/modules/account-dashboard/components/payments/` (new): `CustomerPaymentList.tsx` and `Receipt.tsx`.
-- `Sinwy.WebFrontend/src/modules/account-dashboard/routes/`: mirror the bookings split (`_shell.bookings.tsx` layout, `_shell.bookings.index.tsx` list, `_shell.bookings.$id.tsx` detail). The `_shell.payments.tsx` stub becomes the layout, and `_shell.payments.index.tsx` and `_shell.payments.$paymentId.tsx` are new.
-- The print CSS lives in `Sinwy.WebFrontend/src/styles.css`, or comes from Tailwind `print:` variants on the account shell (`src/shared/components/shell/`). Hide the sidebar, header and notice.
-- `Sinwy.WebFrontend/src/shared/components/payment/` (from phase 3).
+- `Sinwy.WebFrontend/src/modules/account-dashboard/lib/payment-queries.ts` (new; copy `lib/booking-queries.ts`). Put the receipt heading and number helpers in a small `lib/receipt.ts`, tested in `tests/receipt.test.ts` (next to `customer-booking.test.ts`).
+- `Sinwy.WebFrontend/src/modules/account-dashboard/components/payments/` (new): `CustomerPaymentList.tsx` (copy `components/bookings/CustomerBookingList.tsx`) and `Receipt.tsx`.
+- `Sinwy.WebFrontend/src/modules/account-dashboard/routes/`: mirror the bookings split (`_shell.bookings.tsx` layout, `_shell.bookings.index.tsx` list with `BOOKING_LIMITS.customerListPageSize` at L39, `_shell.bookings.$id.tsx` detail). The `_shell.payments.tsx` stub becomes the layout, and `_shell.payments.index.tsx` and `_shell.payments.$paymentId.tsx` are new.
+- Print: Tailwind `print:hidden` on the sidebar and header in `src/shared/components/shell/AppShell.tsx` (or print CSS in `src/styles.css`).
+- `Sinwy.WebFrontend/src/shared/components/payment/` (from phase 3; reuse as is).
 
 **Steps:**
 - List columns: date, business, service, amount and status badge. Each row links to the detail. Pagination works like the customer bookings list.

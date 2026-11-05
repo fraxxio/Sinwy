@@ -89,3 +89,44 @@ Booking emails go to the local outbox. No external services are involved.
 - Shipped: `payments:write` (owner and admin) and `PAYMENT_STATUS_CHANGE_NOT_ALLOWED: 40923`. Shared `Payment.ts` (`PaymentDto`, `PaymentTotalsDto`, `PaymentListDto`, `CustomerPaymentDto`, `CustomerPaymentListDto`, `CustomerPaymentDetailDto`, `PAYMENT_LIMITS`) and `PaymentSchema.ts` (list, export and customer list queries). The payments module gained `service.ts`, `controller.ts`, `routes.ts`, `csv.ts` and the list, count, grouped totals, mark-paid and customer queries in `repository.ts`, and its routes are registered in `index.ts`. `startOfLocalDate`, `localDateRange` and `addDaysToDate` moved to `Sinwy.Backend/lib/localDate.ts`, with their test in `lib/tests/localDate.test.ts`. `org-rules-map.md` has a new §14 Payments (Known gaps is §15), and the roles and inactive-org sections mention payments. The 11 tests in `modules/payments/tests/payments.test.ts` cover every item in "Tests that matter", plus a reversed range (400), a void-only currency missing from the totals, and an unauthenticated account request (401).
 - Differs from plan: the list DTO also echoes `from`/`to`. When only one end of the range is given, `to` defaults to today and `from` to the 1st of `to`'s month. Mark as paid is a single conditional `UPDATE … WHERE status = 'pending'` rather than a `SELECT … FOR UPDATE`; when it updates nothing, an existence check decides between 404 and 409. The CSV header uses capitalised column names and CRLF line endings, and amounts use the currency's own decimals (`Intl`), so `25.00` for EUR and `0` decimals for JPY. Totals leave out a currency whose payments in the range are all void.
 - Checked in the running app: the phase 1 dev servers had stopped, so they were restarted. On a fresh `bookable-org` (`seed-f38dbb3a`), the customer booked Haircut on `/<slug>/book` in the browser, which created a `pending` 2500 EUR payment. With the owner's cookie, the list returned it with `pendingMinor: 2500` and the default range 2026-11-01 to 2026-11-05. Mark as paid set `paid` and `paid_at` in the DB, and a second call returned 409 with 40923. The export returned the CSV with the right headers and the row in org-local ISO times. The customer list and detail returned it. The customer got 404 on org routes, the owner got 404 on the customer's detail, and a request without a cookie got 401. The server, web and console logs were clean. Not checked in the running app: the staff 403 and the inactive-org refusal (both covered by the tests).
+
+## Phase 3: Org payments page
+
+**Goal:** `/dashboard/<slug>/payments` shows the notice, the date-range filter, the totals, the transaction table with status badges and "Mark as paid", and a CSV download.
+
+**Files:**
+- `Sinwy.WebFrontend/src/shared/components/ui/alert.tsx` (new, via the shadcn MCP or CLI; `alert-dialog.tsx`, `card.tsx`, `table.tsx`, `badge.tsx` already exist).
+- `Sinwy.WebFrontend/src/shared/components/payment/` (new): `PaymentStatusBadge.tsx` (with `PAYMENT_STATUS_LABELS: Record<PaymentStatus, …>`, like `shared/components/booking/BookingStatusBadge.tsx`) and `PaymentsNotice.tsx` (an `audience: "organization" | "customer"` prop, `print:hidden`).
+- `Sinwy.WebFrontend/src/modules/org-dashboard/lib/payment-queries.ts` and `payment-search.ts` (new; copy `booking-queries.ts` and `booking-search.ts`). Types come from `@sinwy/shared` (`PaymentListDto`, `PaymentDto`, `PAYMENT_LIMITS`).
+- `Sinwy.WebFrontend/src/modules/org-dashboard/components/payments/` (new): `PaymentFilters.tsx` (date inputs as in `components/bookings/BookingFilters.tsx`), `PaymentTotals.tsx`, `PaymentsTable.tsx` and `MarkPaidDialog.tsx`.
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.payments.tsx` (replace the stub; it already has the `payments:read` `beforeLoad` and crumb).
+- `Sinwy.WebFrontend/src/modules/org-dashboard/tests/` (new `payment-search.test.ts`, next to `booking-search.test.ts`).
+
+**Steps:**
+- The search params are `from`, `to` and `page`, validated with zod. When they're missing, the page shows the range the API returned.
+- Totals are one card per currency: Collected (paid), Outstanding (pending) and the payment count.
+- Table columns: created, customer, service, appointment, amount, status badge, paid on, and an actions column. The row links to the booking detail.
+- "Mark as paid" shows only on `pending` rows when `hasPermission(member.roles, "payments:write")`. It uses `alert-dialog`. On success, invalidate the list query. On error, run it through `handleOrganizationInactive` first, then show a toast.
+- The "Export CSV" button points to `/api/organizations/<id>/payments/export?from&to` as a download link.
+- The notice always sits under the `PageHeader`. When the range has no payments, `EmptyState` sits under the notice.
+
+**Tests that matter:**
+- Unit tests in `src/modules/org-dashboard/tests/` for the search schema defaults and the export URL builder.
+- Badge labels cover every `PAYMENT_STATUSES` value, enforced as a `Record<PaymentStatus, …>`.
+
+**Done when:**
+- The page renders all parts with seeded data, the button is hidden for admins without `payments:write` (none exist) and for staff, who can't open the page at all, and `bun run verify` passes.
+
+**Verify:** Seed `bookable-org` and `user`. As the customer, book "Haircut" and "Colouring". As the owner, open `/dashboard/<slug>/payments`:
+1. The notice is shown, with two rows (Haircut `pending` €25, Colouring `pending` €80) and Outstanding €105.
+2. Mark Haircut as paid. The badge turns green, Collected shows €25, Outstanding €80, and the DB row is `paid`.
+3. Set a range that excludes today. The table is empty with the notice still shown.
+4. Click Export CSV. The file downloads with the rows in range.
+5. Cancel the Colouring booking from bookings. Back on payments it shows `void`, and Outstanding is €0.
+
+Log in as staff (`org-with-staff`): the Payments nav item is hidden and the route is refused. Nothing is simulated.
+
+### Log (2026-11-05, `feat(web): add the org payments page`)
+- Shipped: `ui/alert.tsx` (shadcn), shared `payment/PaymentStatusBadge.tsx` (`PAYMENT_STATUS_LABELS`, `PAYMENT_PROVIDER_LABELS`) and `payment/PaymentsNotice.tsx` (`role="note"`, `print:hidden`). In `org-dashboard`: `lib/payment-search.ts` (schema, `changeRange`, `paymentsPath`, `paymentsExportUrl`), `lib/payment-queries.ts` (`paymentKeys`, `paymentListQuery`, `markPaymentPaid`), and `components/payments/` (`PaymentFilters`, `PaymentTotals`, `PaymentsTable`, `MarkPaidDialog`). `_shell.payments.tsx` replaces the stub. `tests/payment-search.test.ts` has 7 tests: schema defaults and fallbacks, a reversed or one-sided range, `changeRange`, the export URL, and a label for every status.
+- Differs from plan: the filters sit between the notice and the EmptyState, so an empty range can still be changed. The totals cards are hidden when the range is empty. Export CSV is a plain `<a download>` with `buttonVariants`, so it keeps the link role (the Base UI `Button` with `render` gave it `role="button"`). The file name comes from the server's `Content-Disposition` (`payments-<from>-to-<to>.csv`). The org timezone comes from `availabilityQuery`, as on the bookings pages. Mark-paid errors go through `useUnwrapWrite`, which runs `handleOrganizationInactive` first. The e2e run found that typing a From after To got a 400 and left the page with only the error. Now `changeRange` moves the other end along, and the schema clears a reversed or one-sided range. TanStack Router merges each route's validated search over the parent's raw URL params, so the schema has to set `from`/`to` to `undefined`; leaving the keys out keeps them.
+- Checked in the running app (e2e subagent, fresh `bookable-org` `seed-ac470bf6`, customer `webdevrokas+seed-4587e97f-user@gmail.com`, `org-with-staff` `seed-ab1d5b8d`): all five Verify steps passed. The Colouring request was cancelled with Decline, since a pending request has no "Cancel booking". The CSV was captured as a download, with header-only output for an empty range. Day-boundary ranges were checked with curl, and the export returned 401 without a cookie. Staff had no nav item, were redirected away from the route and got 403 from the API. Console and server logs were clean. The reversed-range fix was rechecked inline in the browser. Not checked: CSV download in Firefox or Safari (headless Chromium only).
