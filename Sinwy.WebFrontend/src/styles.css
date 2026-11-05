@@ -698,6 +698,13 @@ body {
 	}
 }
 
+/* Unlayered so it beats the sidebar's responsive display utilities. */
+@media print {
+	[data-slot="sidebar"] {
+		display: none;
+	}
+}
+
 /* ------------------------------------------------------------------ */
 /* Landing-page composition classes (built on the material system)     */
 /* ------------------------------------------------------------------ */

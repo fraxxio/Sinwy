@@ -130,3 +130,40 @@ Log in as staff (`org-with-staff`): the Payments nav item is hidden and the rout
 - Shipped: `ui/alert.tsx` (shadcn), shared `payment/PaymentStatusBadge.tsx` (`PAYMENT_STATUS_LABELS`, `PAYMENT_PROVIDER_LABELS`) and `payment/PaymentsNotice.tsx` (`role="note"`, `print:hidden`). In `org-dashboard`: `lib/payment-search.ts` (schema, `changeRange`, `paymentsPath`, `paymentsExportUrl`), `lib/payment-queries.ts` (`paymentKeys`, `paymentListQuery`, `markPaymentPaid`), and `components/payments/` (`PaymentFilters`, `PaymentTotals`, `PaymentsTable`, `MarkPaidDialog`). `_shell.payments.tsx` replaces the stub. `tests/payment-search.test.ts` has 7 tests: schema defaults and fallbacks, a reversed or one-sided range, `changeRange`, the export URL, and a label for every status.
 - Differs from plan: the filters sit between the notice and the EmptyState, so an empty range can still be changed. The totals cards are hidden when the range is empty. Export CSV is a plain `<a download>` with `buttonVariants`, so it keeps the link role (the Base UI `Button` with `render` gave it `role="button"`). The file name comes from the server's `Content-Disposition` (`payments-<from>-to-<to>.csv`). The org timezone comes from `availabilityQuery`, as on the bookings pages. Mark-paid errors go through `useUnwrapWrite`, which runs `handleOrganizationInactive` first. The e2e run found that typing a From after To got a 400 and left the page with only the error. Now `changeRange` moves the other end along, and the schema clears a reversed or one-sided range. TanStack Router merges each route's validated search over the parent's raw URL params, so the schema has to set `from`/`to` to `undefined`; leaving the keys out keeps them.
 - Checked in the running app (e2e subagent, fresh `bookable-org` `seed-ac470bf6`, customer `webdevrokas+seed-4587e97f-user@gmail.com`, `org-with-staff` `seed-ab1d5b8d`): all five Verify steps passed. The Colouring request was cancelled with Decline, since a pending request has no "Cancel booking". The CSV was captured as a download, with header-only output for an empty range. Day-boundary ranges were checked with curl, and the export returned 401 without a cookie. Staff had no nav item, were redirected away from the route and got 403 from the API. Console and server logs were clean. The reversed-range fix was rechecked inline in the browser. Not checked: CSV download in Firefox or Safari (headless Chromium only).
+
+## Phase 4: Customer receipts
+
+**Goal:** `/account/payments` lists the customer's payments, and `/account/payments/$paymentId` shows a printable receipt.
+
+**Files:**
+- `Sinwy.WebFrontend/src/modules/account-dashboard/lib/payment-queries.ts` (new; copy `lib/booking-queries.ts`). Put the receipt heading and number helpers in a small `lib/receipt.ts`, tested in `tests/receipt.test.ts` (next to `customer-booking.test.ts`).
+- `Sinwy.WebFrontend/src/modules/account-dashboard/components/payments/` (new): `CustomerPaymentList.tsx` (copy `components/bookings/CustomerBookingList.tsx`) and `Receipt.tsx`.
+- `Sinwy.WebFrontend/src/modules/account-dashboard/routes/`: mirror the bookings split (`_shell.bookings.tsx` layout, `_shell.bookings.index.tsx` list with `BOOKING_LIMITS.customerListPageSize` at L39, `_shell.bookings.$id.tsx` detail). The `_shell.payments.tsx` stub becomes the layout, and `_shell.payments.index.tsx` and `_shell.payments.$paymentId.tsx` are new.
+- Print: Tailwind `print:hidden` on the sidebar and header in `src/shared/components/shell/AppShell.tsx` (or print CSS in `src/styles.css`).
+- `Sinwy.WebFrontend/src/shared/components/payment/` (from phase 3; reuse as is).
+
+**Steps:**
+- List columns: date, business, service, amount and status badge. Each row links to the detail. Pagination works like the customer bookings list.
+- The receipt shows the business name, receipt number, customer name, service, appointment (in the org timezone), amount, status, paid on and provider label. The heading changes with the status.
+- The "Print" button calls `window.print()` and is itself `print:hidden`.
+- The notice shows on the list page and the detail page.
+
+**Tests that matter:**
+- A unit test for the receipt heading and receipt number helper: paid vs pending, and the 8-character uppercase id.
+
+**Done when:**
+- Both routes render with seeded data, the print preview shows only the receipt, and `bun run verify` passes.
+
+**Verify:** Seed `bookable-org` and `user`. As the customer, book "Haircut". As the owner, mark it as paid on `/dashboard/<slug>/payments`. As the customer:
+1. Open `/account/payments`. The notice and one row are shown, with a green Paid badge.
+2. Open the row. The heading reads "Receipt", and the business, service, €25 and paid date are shown.
+3. Print preview (Playwright `page.emulateMedia({ media: "print" })` with a screenshot) shows no sidebar, notice or Print button.
+4. Book "Colouring". Its detail reads "Payment summary · Not paid yet".
+5. Opening another user's payment id shows not found.
+
+Nothing is simulated.
+
+### Log (2026-11-05, `feat(web): add the customer payments list and receipt`)
+- Shipped: in `account-dashboard`: `lib/payment-queries.ts` (`accountPaymentKeys`, `accountPaymentsQuery`, `accountPaymentQuery` returning null on 404), `lib/receipt.ts` (`receiptHeadingOf`, `receiptNumberOf`) with `tests/receipt.test.ts`, `components/payments/CustomerPaymentList.tsx` and `Receipt.tsx`. `_shell.payments.tsx` is now the layout (crumb "Payments"), with `_shell.payments.index.tsx` (list, notice, `page` search like bookings) and `_shell.payments.$paymentId.tsx` (heading from `receiptHeadingOf`, `print:hidden` Print button, notice, receipt; "Payment not found" for null). In print, `AppShell`'s header and banner are `print:hidden`, and an unlayered `@media print` rule in `styles.css` hides `[data-slot="sidebar"]`.
+- Differs from plan: the list's date column is the appointment start in the org timezone, the same as the bookings list; rows are still ordered by `createdAt desc`. The receipt shows "Payment method" (the provider label) only when the payment is paid, since "Paid at the business" would be wrong on a pending payment. For pending payments, "Paid on" reads "Not paid yet" and the total reads "Amount due". Any status other than paid or pending gets the heading "Payment summary"; void is never shown, because the customer endpoints return 404 for it. The detail crumb is "Payment" so it fits pending and not-found pages too. The e2e run found the sidebar still showing in print at widths of 768px or more: a print rule inside `@layer base` loses to the sidebar's `md:block` utility. The rule now sits outside any layer.
+- Checked in the running app (e2e subagent; fresh `bookable-org` `seed-64cf6437`, customer `webdevrokas+seed-b4727f33-user@gmail.com`): steps 1, 2, 4 and 5 passed. Another user's payment and an unknown id show "Payment not found", and the API returns 404 for both. Step 3 failed at first (sidebar in print). After the fix, I reproduced it and rechecked it inline with system Chromium: at 1280px wide in print media, the sidebar, header, notice and Print button all compute to `display: none`, and the screenshot shows only the receipt. Console and server logs were clean apart from the expected 404s. Not checked: a real print dialog or PDF render, and Firefox or Safari.

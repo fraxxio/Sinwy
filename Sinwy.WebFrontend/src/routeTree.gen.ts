@@ -35,6 +35,8 @@ import { Route as OrganizationsIdDotonboardingRouteImport } from './modules/orga
 import { Route as OrganizationsIdDotplanRouteImport } from './modules/organizations/routes/$id.plan'
 import { Route as AccountShellDotbookingsDotindexRouteImport } from './modules/account-dashboard/routes/_shell.bookings.index'
 import { Route as AccountShellDotbookingsDotidRouteImport } from './modules/account-dashboard/routes/_shell.bookings.$id'
+import { Route as AccountShellDotpaymentsDotindexRouteImport } from './modules/account-dashboard/routes/_shell.payments.index'
+import { Route as AccountShellDotpaymentsDotpaymentIdRouteImport } from './modules/account-dashboard/routes/_shell.payments.$paymentId'
 import { Route as DashboardOrganizationSlugShellDotindexRouteImport } from './modules/org-dashboard/routes/_shell.index'
 import { Route as DashboardOrganizationSlugShellDotanalyticsRouteImport } from './modules/org-dashboard/routes/_shell.analytics'
 import { Route as DashboardOrganizationSlugShellDotbookingsRouteImport } from './modules/org-dashboard/routes/_shell.bookings'
@@ -193,6 +195,18 @@ const AccountShellDotbookingsDotidRoute =
     path: '/$id',
     getParentRoute: () => AccountShellDotbookingsRoute,
   } as any)
+const AccountShellDotpaymentsDotindexRoute =
+  AccountShellDotpaymentsDotindexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AccountShellDotpaymentsRoute,
+  } as any)
+const AccountShellDotpaymentsDotpaymentIdRoute =
+  AccountShellDotpaymentsDotpaymentIdRouteImport.update({
+    id: '/$paymentId',
+    path: '/$paymentId',
+    getParentRoute: () => AccountShellDotpaymentsRoute,
+  } as any)
 const DashboardOrganizationSlugShellDotindexRoute =
   DashboardOrganizationSlugShellDotindexRouteImport.update({
     id: '/',
@@ -339,13 +353,14 @@ export interface FileRoutesByFullPath {
   '/account/bookings': typeof AccountShellDotbookingsRouteWithChildren
   '/account/notifications': typeof AccountShellDotnotificationsRoute
   '/account/organizations': typeof AccountShellDotorganizationsRoute
-  '/account/payments': typeof AccountShellDotpaymentsRoute
+  '/account/payments': typeof AccountShellDotpaymentsRouteWithChildren
   '/account/settings': typeof AccountShellDotsettingsRoute
   '/dashboard/$organizationSlug': typeof DashboardOrganizationSlugShellRouteWithChildren
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
   '/account/': typeof AccountShellDotindexRoute
   '/account/bookings/$id': typeof AccountShellDotbookingsDotidRoute
+  '/account/payments/$paymentId': typeof AccountShellDotpaymentsDotpaymentIdRoute
   '/dashboard/$organizationSlug/analytics': typeof DashboardOrganizationSlugShellDotanalyticsRoute
   '/dashboard/$organizationSlug/bookings': typeof DashboardOrganizationSlugShellDotbookingsRouteWithChildren
   '/dashboard/$organizationSlug/customers': typeof DashboardOrganizationSlugShellDotcustomersRouteWithChildren
@@ -355,6 +370,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/$organizationSlug/settings': typeof DashboardOrganizationSlugShellDotsettingsRouteWithChildren
   '/dashboard/$organizationSlug/team': typeof DashboardOrganizationSlugShellDotteamRoute
   '/account/bookings/': typeof AccountShellDotbookingsDotindexRoute
+  '/account/payments/': typeof AccountShellDotpaymentsDotindexRoute
   '/dashboard/$organizationSlug/': typeof DashboardOrganizationSlugShellDotindexRoute
   '/dashboard/$organizationSlug/bookings/$id': typeof DashboardOrganizationSlugShellDotbookingsDotidRoute
   '/dashboard/$organizationSlug/bookings/new': typeof DashboardOrganizationSlugShellDotbookingsDotnewRoute
@@ -385,16 +401,17 @@ export interface FileRoutesByTo {
   '/account/billing': typeof AccountShellDotbillingRoute
   '/account/notifications': typeof AccountShellDotnotificationsRoute
   '/account/organizations': typeof AccountShellDotorganizationsRoute
-  '/account/payments': typeof AccountShellDotpaymentsRoute
   '/account/settings': typeof AccountShellDotsettingsRoute
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
   '/account': typeof AccountShellDotindexRoute
   '/account/bookings/$id': typeof AccountShellDotbookingsDotidRoute
+  '/account/payments/$paymentId': typeof AccountShellDotpaymentsDotpaymentIdRoute
   '/dashboard/$organizationSlug/analytics': typeof DashboardOrganizationSlugShellDotanalyticsRoute
   '/dashboard/$organizationSlug/payments': typeof DashboardOrganizationSlugShellDotpaymentsRoute
   '/dashboard/$organizationSlug/team': typeof DashboardOrganizationSlugShellDotteamRoute
   '/account/bookings': typeof AccountShellDotbookingsDotindexRoute
+  '/account/payments': typeof AccountShellDotpaymentsDotindexRoute
   '/dashboard/$organizationSlug': typeof DashboardOrganizationSlugShellDotindexRoute
   '/dashboard/$organizationSlug/bookings/$id': typeof DashboardOrganizationSlugShellDotbookingsDotidRoute
   '/dashboard/$organizationSlug/bookings/new': typeof DashboardOrganizationSlugShellDotbookingsDotnewRoute
@@ -429,13 +446,14 @@ export interface FileRoutesById {
   '/account/_shell/bookings': typeof AccountShellDotbookingsRouteWithChildren
   '/account/_shell/notifications': typeof AccountShellDotnotificationsRoute
   '/account/_shell/organizations': typeof AccountShellDotorganizationsRoute
-  '/account/_shell/payments': typeof AccountShellDotpaymentsRoute
+  '/account/_shell/payments': typeof AccountShellDotpaymentsRouteWithChildren
   '/account/_shell/settings': typeof AccountShellDotsettingsRoute
   '/dashboard/$organizationSlug/_shell': typeof DashboardOrganizationSlugShellRouteWithChildren
   '/organizations/$id/onboarding': typeof OrganizationsIdDotonboardingRoute
   '/organizations/$id/plan': typeof OrganizationsIdDotplanRoute
   '/account/_shell/': typeof AccountShellDotindexRoute
   '/account/_shell/bookings/$id': typeof AccountShellDotbookingsDotidRoute
+  '/account/_shell/payments/$paymentId': typeof AccountShellDotpaymentsDotpaymentIdRoute
   '/dashboard/$organizationSlug/_shell/analytics': typeof DashboardOrganizationSlugShellDotanalyticsRoute
   '/dashboard/$organizationSlug/_shell/bookings': typeof DashboardOrganizationSlugShellDotbookingsRouteWithChildren
   '/dashboard/$organizationSlug/_shell/customers': typeof DashboardOrganizationSlugShellDotcustomersRouteWithChildren
@@ -445,6 +463,7 @@ export interface FileRoutesById {
   '/dashboard/$organizationSlug/_shell/settings': typeof DashboardOrganizationSlugShellDotsettingsRouteWithChildren
   '/dashboard/$organizationSlug/_shell/team': typeof DashboardOrganizationSlugShellDotteamRoute
   '/account/_shell/bookings/': typeof AccountShellDotbookingsDotindexRoute
+  '/account/_shell/payments/': typeof AccountShellDotpaymentsDotindexRoute
   '/dashboard/$organizationSlug/_shell/': typeof DashboardOrganizationSlugShellDotindexRoute
   '/dashboard/$organizationSlug/_shell/bookings/$id': typeof DashboardOrganizationSlugShellDotbookingsDotidRoute
   '/dashboard/$organizationSlug/_shell/bookings/new': typeof DashboardOrganizationSlugShellDotbookingsDotnewRoute
@@ -487,6 +506,7 @@ export interface FileRouteTypes {
     | '/organizations/$id/plan'
     | '/account/'
     | '/account/bookings/$id'
+    | '/account/payments/$paymentId'
     | '/dashboard/$organizationSlug/analytics'
     | '/dashboard/$organizationSlug/bookings'
     | '/dashboard/$organizationSlug/customers'
@@ -496,6 +516,7 @@ export interface FileRouteTypes {
     | '/dashboard/$organizationSlug/settings'
     | '/dashboard/$organizationSlug/team'
     | '/account/bookings/'
+    | '/account/payments/'
     | '/dashboard/$organizationSlug/'
     | '/dashboard/$organizationSlug/bookings/$id'
     | '/dashboard/$organizationSlug/bookings/new'
@@ -526,16 +547,17 @@ export interface FileRouteTypes {
     | '/account/billing'
     | '/account/notifications'
     | '/account/organizations'
-    | '/account/payments'
     | '/account/settings'
     | '/organizations/$id/onboarding'
     | '/organizations/$id/plan'
     | '/account'
     | '/account/bookings/$id'
+    | '/account/payments/$paymentId'
     | '/dashboard/$organizationSlug/analytics'
     | '/dashboard/$organizationSlug/payments'
     | '/dashboard/$organizationSlug/team'
     | '/account/bookings'
+    | '/account/payments'
     | '/dashboard/$organizationSlug'
     | '/dashboard/$organizationSlug/bookings/$id'
     | '/dashboard/$organizationSlug/bookings/new'
@@ -576,6 +598,7 @@ export interface FileRouteTypes {
     | '/organizations/$id/plan'
     | '/account/_shell/'
     | '/account/_shell/bookings/$id'
+    | '/account/_shell/payments/$paymentId'
     | '/dashboard/$organizationSlug/_shell/analytics'
     | '/dashboard/$organizationSlug/_shell/bookings'
     | '/dashboard/$organizationSlug/_shell/customers'
@@ -585,6 +608,7 @@ export interface FileRouteTypes {
     | '/dashboard/$organizationSlug/_shell/settings'
     | '/dashboard/$organizationSlug/_shell/team'
     | '/account/_shell/bookings/'
+    | '/account/_shell/payments/'
     | '/dashboard/$organizationSlug/_shell/'
     | '/dashboard/$organizationSlug/_shell/bookings/$id'
     | '/dashboard/$organizationSlug/_shell/bookings/new'
@@ -802,6 +826,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountShellDotbookingsDotidRouteImport
       parentRoute: typeof AccountShellDotbookingsRoute
     }
+    '/account/_shell/payments/': {
+      id: '/account/_shell/payments/'
+      path: '/'
+      fullPath: '/account/payments/'
+      preLoaderRoute: typeof AccountShellDotpaymentsDotindexRouteImport
+      parentRoute: typeof AccountShellDotpaymentsRoute
+    }
+    '/account/_shell/payments/$paymentId': {
+      id: '/account/_shell/payments/$paymentId'
+      path: '/$paymentId'
+      fullPath: '/account/payments/$paymentId'
+      preLoaderRoute: typeof AccountShellDotpaymentsDotpaymentIdRouteImport
+      parentRoute: typeof AccountShellDotpaymentsRoute
+    }
     '/dashboard/$organizationSlug/_shell/': {
       id: '/dashboard/$organizationSlug/_shell/'
       path: '/'
@@ -983,12 +1021,29 @@ const AccountShellDotbookingsRouteWithChildren =
     AccountShellDotbookingsRouteChildren,
   )
 
+interface AccountShellDotpaymentsRouteChildren {
+  AccountShellDotpaymentsDotpaymentIdRoute: typeof AccountShellDotpaymentsDotpaymentIdRoute
+  AccountShellDotpaymentsDotindexRoute: typeof AccountShellDotpaymentsDotindexRoute
+}
+
+const AccountShellDotpaymentsRouteChildren: AccountShellDotpaymentsRouteChildren =
+  {
+    AccountShellDotpaymentsDotpaymentIdRoute:
+      AccountShellDotpaymentsDotpaymentIdRoute,
+    AccountShellDotpaymentsDotindexRoute: AccountShellDotpaymentsDotindexRoute,
+  }
+
+const AccountShellDotpaymentsRouteWithChildren =
+  AccountShellDotpaymentsRoute._addFileChildren(
+    AccountShellDotpaymentsRouteChildren,
+  )
+
 interface AccountShellRouteChildren {
   AccountShellDotbillingRoute: typeof AccountShellDotbillingRoute
   AccountShellDotbookingsRoute: typeof AccountShellDotbookingsRouteWithChildren
   AccountShellDotnotificationsRoute: typeof AccountShellDotnotificationsRoute
   AccountShellDotorganizationsRoute: typeof AccountShellDotorganizationsRoute
-  AccountShellDotpaymentsRoute: typeof AccountShellDotpaymentsRoute
+  AccountShellDotpaymentsRoute: typeof AccountShellDotpaymentsRouteWithChildren
   AccountShellDotsettingsRoute: typeof AccountShellDotsettingsRoute
   AccountShellDotindexRoute: typeof AccountShellDotindexRoute
 }
@@ -998,7 +1053,7 @@ const AccountShellRouteChildren: AccountShellRouteChildren = {
   AccountShellDotbookingsRoute: AccountShellDotbookingsRouteWithChildren,
   AccountShellDotnotificationsRoute: AccountShellDotnotificationsRoute,
   AccountShellDotorganizationsRoute: AccountShellDotorganizationsRoute,
-  AccountShellDotpaymentsRoute: AccountShellDotpaymentsRoute,
+  AccountShellDotpaymentsRoute: AccountShellDotpaymentsRouteWithChildren,
   AccountShellDotsettingsRoute: AccountShellDotsettingsRoute,
   AccountShellDotindexRoute: AccountShellDotindexRoute,
 }
