@@ -167,3 +167,39 @@ Nothing is simulated.
 - Shipped: in `account-dashboard`: `lib/payment-queries.ts` (`accountPaymentKeys`, `accountPaymentsQuery`, `accountPaymentQuery` returning null on 404), `lib/receipt.ts` (`receiptHeadingOf`, `receiptNumberOf`) with `tests/receipt.test.ts`, `components/payments/CustomerPaymentList.tsx` and `Receipt.tsx`. `_shell.payments.tsx` is now the layout (crumb "Payments"), with `_shell.payments.index.tsx` (list, notice, `page` search like bookings) and `_shell.payments.$paymentId.tsx` (heading from `receiptHeadingOf`, `print:hidden` Print button, notice, receipt; "Payment not found" for null). In print, `AppShell`'s header and banner are `print:hidden`, and an unlayered `@media print` rule in `styles.css` hides `[data-slot="sidebar"]`.
 - Differs from plan: the list's date column is the appointment start in the org timezone, the same as the bookings list; rows are still ordered by `createdAt desc`. The receipt shows "Payment method" (the provider label) only when the payment is paid, since "Paid at the business" would be wrong on a pending payment. For pending payments, "Paid on" reads "Not paid yet" and the total reads "Amount due". Any status other than paid or pending gets the heading "Payment summary"; void is never shown, because the customer endpoints return 404 for it. The detail crumb is "Payment" so it fits pending and not-found pages too. The e2e run found the sidebar still showing in print at widths of 768px or more: a print rule inside `@layer base` loses to the sidebar's `md:block` utility. The rule now sits outside any layer.
 - Checked in the running app (e2e subagent; fresh `bookable-org` `seed-64cf6437`, customer `webdevrokas+seed-b4727f33-user@gmail.com`): steps 1, 2, 4 and 5 passed. Another user's payment and an unknown id show "Payment not found", and the API returns 404 for both. Step 3 failed at first (sidebar in print). After the fix, I reproduced it and rechecked it inline with system Chromium: at 1280px wide in print media, the sidebar, header, notice and Print button all compute to `display: none`, and the screenshot shows only the receipt. Console and server logs were clean apart from the expected 404s. Not checked: a real print dialog or PDF render, and Firefox or Safari.
+
+## Phase 5: Code review and cleanup
+
+**Goal:** The payments work is reviewed for scoping, permission and money correctness, the findings are fixed, and the plan is closed out.
+
+**Files:**
+- Backend: `Sinwy.Backend/modules/payments/` (`repository.ts`: `ownedBy` and the org queries, the totals `filter (where status <> 'void')`; `service.ts`; `controller.ts`; `routes.ts`; `csv.ts`; `tests/payments.test.ts`), the payment calls in `modules/bookings/repository.ts` (`insertBookingIfFree`, `changeBooking`) with `modules/bookings/tests/payments.test.ts`, the migration `Sinwy.Backend/drizzle/0023_payments.sql`, and the `payments:write` permission files.
+- Shared: `Sinwy.Shared/types/payment/` (`Payment.ts`, `PaymentSchema.ts`, `PaymentStatus.ts`).
+- Frontend: `src/shared/components/payment/`, `src/shared/components/ui/alert.tsx`, `org-dashboard` (`lib/payment-search.ts`, `lib/payment-queries.ts`, `components/payments/`, `routes/_shell.payments.tsx`), `account-dashboard` (`lib/payment-queries.ts`, `lib/receipt.ts`, `components/payments/`, `routes/_shell.payments*.tsx`), the print changes in `src/shared/components/shell/AppShell.tsx` and `src/styles.css`.
+- Docs: `docs/org-rules-map.md` §14.
+
+**Steps:**
+- Review against the Decisions:
+  - every query scoped by org or by `customerUserId`
+  - no Drizzle row leaks into the DTOs
+  - mark-paid only from `pending`
+  - totals exclude `void`
+  - CSV escaping
+  - payments never imports from `@bookingsModule`
+  - the migration backfill is correct
+- Fix the findings, then run `bun run verify` once.
+- Update `org-rules-map.md` if a review change touched the rules. Move the finished phases to `payments-log.md`.
+- Final step: stop every dev server started during the plan's work unless the user asked to keep it running. Delete the temporary files the work created (probe scripts, screenshots, browser console logs, scratch data).
+
+**Tests that matter:**
+- Any missing scoping or permission test the review turns up.
+
+**Done when:**
+- The review findings are fixed or recorded as deferred, `bun run verify` passes, the plan shows every phase done, and the leftover processes and files are gone.
+
+**Verify:** None.
+
+### Log (2026-11-05, `fix(backend): neutralise tab-led CSV cells and test outsider payment access`)
+- Shipped: the review checked each Decisions item. Org queries are scoped by `organizationId`, customer queries by `booking.customerUserId` (`ownedBy`). The DTO mappers build every field explicitly, so no Drizzle row leaks. `markPaymentPaid` is one conditional update on `status = 'pending'`. Totals exclude `void` (including currencies with only void rows). Payments never imports `@bookingsModule`. The migration backfill matches the decision (`void` for cancelled bookings, `created_at AT TIME ZONE 'UTC'`, `price_minor > 0`). Bookings can't change `priceMinor` after insert, so a payment's amount can't drift from its booking. Two findings were fixed. `csv.ts` now also neutralises cells starting with a tab or CR (OWASP CSV injection list), and the CSV test covers `\t@SUM(A1)`. A new test checks that a member of another organization gets 404 on the list, export and mark-paid routes and the payment stays pending. `bun run verify` exit 0 (702 server, 232 web, 15 scripts tests).
+- Differs from plan: the cleanup step wasn't done. Auto mode refused stopping the dev servers (`bun run start:server` / `start:web`, ports 3001/3000) and deleting `/tmp/e2e-*`, `/tmp/sinwy-*.log` and the `.playwright-cli/` output (auth session files, console logs, page snapshots). They are left for the user. The rules map needed no change: §14's CSV line ("cells that could start a spreadsheet formula are prefixed with '") still holds.
+- Checked in the running app: nothing; this phase changed only the CSV escaping and a test.

@@ -16,7 +16,7 @@ const HEADER = [
 ];
 
 /** Spreadsheets run a cell starting with one of these as a formula. */
-const FORMULA_START = /^[=+\-@]/;
+const FORMULA_START = /^[=+\-@\t\r]/;
 
 const cell = (value: string) => {
 	const safe = FORMULA_START.test(value) ? `'${value}` : value;

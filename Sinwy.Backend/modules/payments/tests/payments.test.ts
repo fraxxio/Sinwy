@@ -251,7 +251,7 @@ test("a reversed range is refused", async () => {
 });
 
 test("the CSV export lists the range with escaped and neutralised cells", async () => {
-	const at = (day: number) => new Date(Date.UTC(2026, 2, day, 12));
+	const at = (day: number, hour = 12) => new Date(Date.UTC(2026, 2, day, hour));
 	await insertPayment({
 		createdAt: at(2),
 		status: "paid",
@@ -259,6 +259,7 @@ test("the CSV export lists the range with escaped and neutralised cells", async 
 	});
 	await insertPayment({ createdAt: at(3), customerName: "=HYPERLINK(1)" });
 	await insertPayment({ createdAt: at(4), customerName: "-1+2" });
+	await insertPayment({ createdAt: at(4, 13), customerName: "\t@SUM(A1)" });
 	await insertPayment({ createdAt: new Date(Date.UTC(2026, 3, 2, 12)) });
 	await insertPayment({ organizationId: otherOrgId, createdAt: at(5) });
 
@@ -271,6 +272,7 @@ test("the CSV export lists the range with escaped and neutralised cells", async 
 	const lines = (await res.text()).trimEnd().split("\r\n");
 	expect(lines).toEqual([
 		'"Created","Paid on","Customer","Service","Appointment","Amount","Currency","Status","Provider","Reference"',
+		`"2026-03-04T15:00:00+02:00","","'\t@SUM(A1)","Haircut","2026-12-01T12:00:00+02:00","25.00","EUR","pending","manual",""`,
 		`"2026-03-04T14:00:00+02:00","","'-1+2","Haircut","2026-12-01T12:00:00+02:00","25.00","EUR","pending","manual",""`,
 		`"2026-03-03T14:00:00+02:00","","'=HYPERLINK(1)","Haircut","2026-12-01T12:00:00+02:00","25.00","EUR","pending","manual",""`,
 		`"2026-03-02T14:00:00+02:00","2026-03-02T14:00:00+02:00","Ada ""The Count"" Lovelace","Haircut","2026-12-01T12:00:00+02:00","25.00","EUR","paid","manual",""`,
@@ -342,6 +344,20 @@ test("staff can't read or mark payments; admins can mark them as paid", async ()
 
 	expect((await org(admin, "POST", `/${id}/mark-paid`)).status).toBe(200);
 	expect((await statusOf(id))?.status).toBe("paid");
+});
+
+test("someone outside the organization can't read or mark its payments", async () => {
+	const id = await insertPayment();
+	const outsider = await createUserWithSession();
+	await createOrganization("Elsewhere", outsider.userId);
+
+	for (const res of await Promise.all([
+		org(outsider, "GET", ""),
+		org(outsider, "GET", "/export"),
+		org(outsider, "POST", `/${id}/mark-paid`),
+	]))
+		expect(res.status).toBe(404);
+	expect((await statusOf(id))?.status).toBe("pending");
 });
 
 test("customers see their own non-void payments, newest first", async () => {
