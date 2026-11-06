@@ -169,6 +169,13 @@
       "when": 1793818490066,
       "tag": "0023_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793982356647,
+      "tag": "0024_pages",
+      "breakpoints": true
     }
   ]
 }
