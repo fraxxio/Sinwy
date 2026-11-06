@@ -3,7 +3,9 @@ import {
 	FEATURES,
 	featuresFor,
 	hasFeature,
+	limitsFor,
 	PLAN_FEATURES,
+	PLAN_LIMITS,
 	PLAN_ORGANIZATION_LIMITS,
 	PLAN_SLUGS,
 	toPlanSlug,
@@ -28,6 +30,20 @@ test("organization caps are pinned: Starter 1, Professional 2, Enterprise 5", ()
 		professional: 2,
 		enterprise: 5,
 	});
+});
+
+test("page limits are pinned: Starter 1, Professional 5, Enterprise 25", () => {
+	expect(PLAN_LIMITS).toEqual({
+		starter: { pages: 1 },
+		professional: { pages: 5 },
+		enterprise: { pages: 25 },
+	});
+});
+
+test("page limits never decrease with the tier, and no plan allows none", () => {
+	const pages = PLAN_SLUGS.map((plan) => PLAN_LIMITS[plan].pages);
+	expect(pages).toEqual([...pages].sort((a, b) => a - b));
+	expect(limitsFor(null).pages).toBe(0);
 });
 
 test("starter ⊂ professional ⊂ enterprise", () => {
