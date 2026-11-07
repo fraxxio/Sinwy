@@ -86,15 +86,15 @@ function Block({
 			) : null;
 		}
 		case "gallery": {
-			const images = list(props, "images").flatMap((image) => {
+			const images = list(props, "images").flatMap((image, position) => {
 				const src = imageSrc(str(image, "src"));
-				return src ? [{ src, alt: str(image, "alt") ?? "" }] : [];
+				return src ? [{ position, src, alt: str(image, "alt") ?? "" }] : [];
 			});
 			return images.length ? (
 				<div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
 					{images.map((image) => (
 						<Img
-							key={image.src}
+							key={image.position}
 							src={image.src}
 							alt={image.alt}
 							className="aspect-square w-full rounded-lg object-cover"
@@ -104,14 +104,14 @@ function Block({
 			) : null;
 		}
 		case "testimonials": {
-			const items = list(props, "items").flatMap((item) => {
+			const items = list(props, "items").flatMap((item, position) => {
 				const quote = str(item, "quote");
-				return quote ? [{ quote, author: str(item, "author") }] : [];
+				return quote ? [{ position, quote, author: str(item, "author") }] : [];
 			});
 			return items.length ? (
 				<div className="grid gap-4 sm:grid-cols-2">
 					{items.map((item) => (
-						<figure key={item.quote} className="rounded-xl border p-4">
+						<figure key={item.position} className="rounded-xl border p-4">
 							<blockquote className="text-sm">“{item.quote}”</blockquote>
 							{item.author && (
 								<figcaption className="mt-2 text-muted-foreground text-sm">

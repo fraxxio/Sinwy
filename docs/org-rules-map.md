@@ -36,16 +36,19 @@ Organization states [3]
 
 Pages
 ├─ Dashboard     /dashboard/<slug>/…, for members of an active organization [9]
-└─ Booking page  /<slug>, which opens /<slug>/book: the public storefront;
-                 root slugs belong to it, so slugs like dashboard, book, s and
-                 app are reserved
+├─ Booking page  /<slug>, which opens /<slug>/book: the public storefront;
+│                root slugs belong to it, so slugs like dashboard, book, s and
+│                app are reserved
+└─ Public page   /<slug>/<page slug>: a page the organization published [5];
+                 page slugs are lowercase letters, digits and hyphens, unique in
+                 the organization, and can't take a storefront route (book, s)
 ```
 
 Past due is not an organization state: the plan still grants access while
 Polar retries the charge [8].
 
-Enforced in: `Sinwy.Shared/types/` (`access/`, `plan/`, `organization/`),
-`Sinwy.Backend/modules/organizations/service.ts`.
+Enforced in: `Sinwy.Shared/types/` (`access/`, `plan/`, `organization/`,
+`page/`), `Sinwy.Backend/modules/organizations/service.ts`.
 
 ## 2. Roles
 
@@ -183,6 +186,23 @@ Features
 ├─ an inactive organization has none
 └─ using a feature the tier lacks → refused, "upgrade required"
 
+Pages (every tier has them, up to a limit per organization)
+├─ limit: Starter 1, Professional 5, Enterprise 25; an inactive organization 0
+├─ every page counts, drafts included; creating one at or over the limit →
+│  refused, "page limit reached"; deleting a page frees its place
+├─ the page builder feature gates only premium templates (landing, services
+│  showcase) and premium blocks (gallery, testimonials), not pages themselves
+│   ├─ a premium template or a new premium block without it → refused,
+│   │  "upgrade required"
+│   └─ a premium block the page's latest version already has stays editable,
+│      so a downgraded page can still be saved
+├─ content is versioned: every save is a new version; publishing pins the
+│  latest one, so later saves stay private until the next publish
+├─ publishing is always allowed; unpublishing makes the page a draft again
+└─ over the limit (after a downgrade): no page is deleted or unpublished; only
+   the oldest published pages by creation, up to the limit, are served
+   publicly, and the dashboard shows the rest "Published, not live"
+
 Buying a plan (checkout, Account → Billing)
 ├─ the plan is always the buyer's own; it can't name an organization
 ├─ the user already has one (active, trialing, past due or paused) → refused:
@@ -197,9 +217,12 @@ One trial per user (D10)
    (email and card) refuses a second trial
 ```
 
-Enforced in: `Sinwy.Shared/types/plan/`, `Sinwy.Backend/modules/billing/`
-(`checkoutGuard.ts`, `projection.ts`), `modules/auth/auth.ts` (checkout hook),
-`modules/auth/requireFeature.ts`.
+Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages),
+`Sinwy.Shared/types/page/` (block and template registries),
+`Sinwy.Backend/modules/billing/` (`checkoutGuard.ts`, `projection.ts`),
+`modules/auth/auth.ts` (checkout hook), `modules/auth/requireFeature.ts`,
+`modules/pages/` (`service.ts`, and `repository.ts` for the limit count and
+the served set).
 
 ## 6. Slots
 
@@ -355,11 +378,17 @@ Members' requests to an inactive organization
 │  reschedule, edit) → refused, "organization inactive"
 ├─ payments: list, totals and CSV readable; mark as paid → refused,
 │  "organization inactive" [14]
+├─ pages: list, detail and preview readable, with a limit of 0 so none shows
+│  as live; create, edit, publish, unpublish and delete → refused,
+│  "organization inactive"
 ├─ paid features → refused, "upgrade required"
 └─ leaving → allowed
 
 Its customers
 ├─ the booking page shows "This booking page isn't available"; no new bookings
+├─ its public pages show "This page isn't available" (HTTP 404), the same as
+│  an unknown page, a draft or one over the limit; no page changes, so they
+│  are served again as soon as the organization is active
 ├─ they still see their bookings in Customer Mode and can cancel them within
 │  the cancellation window; the organization is emailed
 └─ scheduled for deletion: their upcoming bookings were already cancelled [11],
@@ -372,7 +401,7 @@ Every new public route must follow this rule.
 Enforced in: `Sinwy.Backend/modules/auth/` (`activeOrganization.ts`,
 `requirePermission.ts`, `requireFeature.ts`),
 `modules/organizations/service.ts`, `modules/services/service.ts`,
-`modules/bookings/service.ts`; web
+`modules/bookings/service.ts`, `modules/pages/service.ts`; web
 `src/shared/lib/organizations.ts`,
 `src/modules/auth/lib/post-login.ts`,
 `src/modules/org-dashboard/routes/_shell.tsx`,
@@ -439,8 +468,9 @@ Leaving and removal (API only; no screen yet)
 
 Deleting an organization (owner only; API only, no screen yet)
 ├─ active → deleted at once with its data; frees its slot; no billing change (Default 1)
-│   └─ first, its upcoming bookings are cancelled as below and the customers
-│      emailed; then every booking goes with the organization
+│   ├─ first, its upcoming bookings are cancelled as below and the customers
+│   │  emailed; then every booking goes with the organization
+│   └─ its pages and all their versions go with it, as they do in the purge
 └─ inactive or a draft → refused, "organization inactive"
 
 Bookings when an organization closes (deleted at once, or scheduled by the
@@ -464,7 +494,8 @@ Owner account deletion (confirmed from an emailed link, D13)
   deleted user's id as its external id, which no new user gets, so its late
   webhooks are ignored as an unknown user
 A member who isn't an owner deleting their account leaves the organizations
-untouched; their memberships and the offers to them go with them.
+untouched; their memberships and the offers to them go with them. Page
+versions they saved stay, without an author.
 
 Any user's account deletion, as a customer (one function, so regional rules
 can change it later)

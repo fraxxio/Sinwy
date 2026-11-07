@@ -193,3 +193,37 @@ Finished phases of the [CMS pages plan](cms-pages-plan.md), each with its spec a
 - Shipped: the `/$organizationSlug` layout (`storefront/routes/route.tsx`) is now a server-rendered `<main>` wrapper. `book.tsx` took over `ssr: false`, the storefront loader, the org header and the "This booking page isn't available" state. `index.tsx` keeps its redirect, which now runs on the server (307 to `/book`). New `$pageSlug.tsx` with `publicPageQuery` in `storefront-queries.ts`: SSR'd `PageRenderer` content under a small org-name link to `/book`, and `head` sets `<title>` to the resolved SEO title plus `<meta name="description">` when there is one. A miss throws `notFound()`, so the server answers HTTP 404 with "This page isn't available" (title "Page not available"). Also fixed "stay"/"stays" in the over-limit alert (`PageUsage.tsx`).
 - Differs from plan: the storefront header and data moved off the layout into `book.tsx`. Otherwise an inactive org's page would show the booking page's unavailable state, and every page view would also fetch the storefront. `book.tsx` keeps `ssr: false` because it reads the session (`authClient.useSession`) and today's date in the org's timezone, which would mismatch on hydration. The plan didn't ask for the 404 status; it was added after the Verify flagged the soft 404.
 - Checked in the running app: the full Verify brief passed in a subagent (`pro-org` `seed-1a47f321`; booking flow on `bookable-org` `seed-68dd2a58`). curl of page A had one `<title>`, the meta description and the heading. A rendered signed out with no hydration warnings. The booking flow went from service to time to Confirm, then login and back, and booked. After the downgrade to Starter, A stayed live, B and C were unavailable, and the dashboard marked them "Published, not live". After the plan was revoked, all three were unavailable, `/book` showed its own unavailable state, and the `page` rows were unchanged. The downgrade used `subscription.active --plan starter`, since the `subscription.updated` fixture is a cancellation. The 404 status was rechecked inline with curl and the browser (no hydration errors). Not checked: a real Polar sandbox downgrade. `bun run verify` exit 0 (740 server, 242 web tests).
+
+## Phase 7: Docs and code review
+
+**Goal:** the rules are documented and the plan's work is reviewed for gating, access and deletion bugs.
+
+**Files:**
+- `docs/org-rules-map.md`: §1 Pages (the public page URL), §5 the page limits and `page-builder`'s scope, §9 inactive organizations' pages, plus the over-limit rule and the "Enforced in" paths.
+- Review scope, everything from `git diff ac66bb2~1`:
+  - Shared: `Sinwy.Shared/types/page/` (contracts, content tree, block and template registries) and `types/plan/` (`PLAN_LIMITS`).
+  - Backend: `Sinwy.Backend/modules/pages/` (routes, controller, service, repository, tests), `db/schema/pageSchema.ts` with migration `0024_pages.sql`, `findPublicOrganizationPlan` in `modules/organizations/`, and the `pro-org` seed in `scripts/dev/`.
+  - Web: `org-dashboard/routes/_shell.pages*.tsx`, `org-dashboard/components/pages/`, `org-dashboard/lib/page-queries.ts` and `pages.ts`, `shared/components/page-content/PageRenderer.tsx`, and `storefront/routes/` with `storefront/lib/storefront-queries.ts`.
+
+**Steps:**
+- Update `org-rules-map.md` first, then review with the `/code-review` command at high effort. Focus: limit bypass (races, template/block gates), cross-organization access by id, draft content leaking through the public endpoint or the storefront DTO, inactive and scheduled-for-deletion organizations, and cascade behaviour on page and organization deletion.
+- Fix confirmed findings in this phase's commit.
+- Last step: stop every dev server started during the plan's work unless the user asked to keep it, and delete temporary files (probe scripts, screenshots, browser console logs, scratch data).
+
+**Tests that matter:**
+- A regression test for each confirmed finding.
+
+**Done when:** the review's findings are fixed or recorded as accepted, the docs match the code, and `bun run verify` passes.
+
+**Verify:** None.
+
+### Log (2026-11-07, `docs, fix(web): document the page rules and fix the pages review findings`)
+- Shipped: `docs/org-rules-map.md` now covers pages. §1 has the public page URL and slug rules; §5 has the page limits, the `page-builder` scope (premium templates and blocks only), versioning, publishing and the over-limit served set; §9 says what an inactive organization's pages do for members and customers; §11 has the cascades on organization and user deletion. "Enforced in" lists `Sinwy.Shared/types/page/` and `modules/pages/`. Review findings:
+  - Fixed: `PageRenderer` keyed gallery images by `src` and testimonials by quote, so a repeated image or quote gave duplicate React keys (wrong items on a client re-render of the preview or on hydration). They are now keyed by their position in the props.
+  - Accepted: page creation takes the same advisory lock key as bookings (`hashtext(organizationId)`), so creating a page and a booking in one organization wait for each other. The locks never nest, so it's only a short wait.
+  - Accepted: a `//host` link passes the renderer's root-path check, but it's external like the allowed `https:` links, so no new risk.
+  - Accepted: after a publish, unpublish or delete, other pages' cached details can show a stale "live" flag until they refetch on mount (the list refetches at once).
+  - No finding: limit races (count and insert under the organization lock), template and block gates (free templates use free blocks only, and a premium block passes only if the page's latest version already has it), cross-organization ids (every query is scoped by organization, which `requireMember` checks), draft leaks (the public endpoint joins the pinned version; the storefront DTO didn't change), inactive and scheduled-for-deletion organizations (`findPublicOrganizationPlan` plus the services' status check), and the cascades.
+  - New tests in `pages.test.ts`: deleting a published page removes its pinned version and the public address; deleting an organization removes its pages and every version, while another organization's stay; deleting a user who saved a version keeps the version with a null author.
+- Differs from plan: the review ran inline, since `/code-review` isn't a skill available to this session. The renderer fix has no regression test: server rendering doesn't warn on duplicate keys, and the web workspace has no DOM renderer. The dev servers from phase 4 were left running because the session wasn't allowed to stop them. `.playwright-cli/auth/` (saved logins) and `/tmp/sinwy-logs/` were also kept; the stray page snapshots were deleted.
+- Checked in the running app: nothing (Verify was None). `bun run verify` exit 0 (743 server, 242 web, 15 script tests); every logged WARN/ERROR came from an error-path test, none from pages.

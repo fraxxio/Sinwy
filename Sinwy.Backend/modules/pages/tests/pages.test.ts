@@ -408,6 +408,77 @@ test("delete: the page and its versions go, and the place frees up", async () =>
 	await create();
 });
 
+const versionsOf = (pageId: string) =>
+	db
+		.select({ id: pageContent.id })
+		.from(pageContent)
+		.where(eq(pageContent.pageId, pageId));
+
+test("delete: a published page and its pinned version go, and the public address stops answering", async () => {
+	const created = await create({ slug: "welcome" });
+	await publish(created.id);
+
+	expect((await call("DELETE", `pages/${created.id}`)).status).toBe(200);
+	expect(await versionsOf(created.id)).toHaveLength(0);
+	expect(await publicStatus("welcome")).toBe(404);
+});
+
+test("deleting the organization removes its pages and every version; another organization's stay", async () => {
+	await setPlan("professional");
+	const published = await create();
+	await publish(published.id);
+	await save(published.id, 1);
+	const draft = await create();
+	const other = await seedOrg("Other", "professional");
+	const kept = await unwrap<PageDetailDto>(
+		await call(
+			"POST",
+			"pages",
+			other.ownerCookie,
+			{ templateId: "blank", title: "Kept", slug: "kept" },
+			other.orgId,
+		),
+	);
+
+	await db.delete(organization).where(eq(organization.id, org.orgId));
+
+	expect(
+		await db.select().from(page).where(eq(page.organizationId, org.orgId)),
+	).toHaveLength(0);
+	expect(await versionsOf(published.id)).toHaveLength(0);
+	expect(await versionsOf(draft.id)).toHaveLength(0);
+	expect(await versionsOf(kept.id)).toHaveLength(1);
+});
+
+test("deleting the user who saved a version keeps the version, without an author", async () => {
+	const editor = await createUserWithSession();
+	await joinOrganization(org.orgId, editor.userId, "admin");
+	const created = await create();
+	expect(
+		(
+			await call("PUT", `pages/${created.id}/content`, editor.cookie, {
+				baseVersion: 1,
+				content: content("heading"),
+			})
+		).status,
+	).toBe(200);
+
+	await db.delete(user).where(eq(user.id, editor.userId));
+
+	const versions = await db
+		.select({
+			version: pageContent.version,
+			author: pageContent.createdByUserId,
+		})
+		.from(pageContent)
+		.where(eq(pageContent.pageId, created.id))
+		.orderBy(asc(pageContent.version));
+	expect(versions).toEqual([
+		{ version: 1, author: org.ownerId },
+		{ version: 2, author: null },
+	]);
+});
+
 test("staff: reads answer, writes → 403", async () => {
 	const created = await create();
 	const writes = [
