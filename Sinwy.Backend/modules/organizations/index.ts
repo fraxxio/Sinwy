@@ -9,6 +9,7 @@ export {
 	countHeldSlots,
 	createOrganization,
 	findPublicOrganization,
+	findPublicOrganizationPlan,
 	getInvitationOrganizationId,
 	getMembershipAccess,
 	getOrganizationAccess,

@@ -184,3 +184,61 @@ export const deletePage = async (organizationId: string, pageId: string) => {
 		.returning({ id: page.id });
 	return rows.length > 0;
 };
+
+/** Pins the latest version under the page lock, so a concurrent save can't slip between reading and pinning it. */
+export const publishPage = (organizationId: string, pageId: string) =>
+	db.transaction(async (tx) => {
+		const [locked] = await tx
+			.select({ id: page.id })
+			.from(page)
+			.where(byId(organizationId, pageId))
+			.for("update");
+		if (!locked) return null;
+
+		const latest = await latestVersionOf(tx, pageId);
+		if (!latest) throw new Error(`Page ${pageId} has no content version`);
+		const [row] = await tx
+			.update(page)
+			.set({
+				status: "published",
+				publishedAt: new Date(),
+				publishedVersionId: latest.id,
+			})
+			.where(eq(page.id, pageId))
+			.returning();
+		return row ?? null;
+	});
+
+export const unpublishPage = async (organizationId: string, pageId: string) => {
+	const [row] = await db
+		.update(page)
+		.set({ status: "draft", publishedAt: null, publishedVersionId: null })
+		.where(byId(organizationId, pageId))
+		.returning();
+	return row ?? null;
+};
+
+/** A published page with its pinned content; never the draft. */
+export const findPublishedPageBySlug = async (
+	organizationId: string,
+	slug: string,
+) => {
+	const [row] = await db
+		.select({
+			id: page.id,
+			title: page.title,
+			seoTitle: page.seoTitle,
+			seoDescription: page.seoDescription,
+			content: pageContent.content,
+		})
+		.from(page)
+		.innerJoin(pageContent, eq(pageContent.id, page.publishedVersionId))
+		.where(
+			and(
+				eq(page.organizationId, organizationId),
+				eq(page.slug, slug),
+				eq(page.status, "published"),
+			),
+		);
+	return row ?? null;
+};

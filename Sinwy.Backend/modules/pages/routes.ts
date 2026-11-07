@@ -4,8 +4,11 @@ import {
 	createPageHandler,
 	deletePageHandler,
 	getPageHandler,
+	getPublicPageHandler,
 	listPagesHandler,
+	publishPageHandler,
 	savePageContentHandler,
+	unpublishPageHandler,
 	updatePageHandler,
 } from "./controller";
 
@@ -35,4 +38,19 @@ export const registerPageRoutes = (app: IApp) => {
 		method: "PUT",
 		routeMiddlewares: write,
 	});
+	app.route(organizationPath("pages/:pageId/publish"), publishPageHandler, {
+		method: "POST",
+		routeMiddlewares: write,
+	});
+	app.route(organizationPath("pages/:pageId/unpublish"), unpublishPageHandler, {
+		method: "POST",
+		routeMiddlewares: write,
+	});
+};
+
+export const registerPublicPageRoutes = (app: IApp) => {
+	app.route(
+		"/api/public/organizations/:slug/pages/:pageSlug",
+		getPublicPageHandler,
+	);
 };

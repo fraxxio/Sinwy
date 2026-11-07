@@ -1,1 +1,1 @@
-export { registerPageRoutes } from "./routes";
+export { registerPageRoutes, registerPublicPageRoutes } from "./routes";

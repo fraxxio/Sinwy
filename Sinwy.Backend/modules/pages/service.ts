@@ -1,5 +1,8 @@
 import type { Membership } from "@authModule";
-import { getOrganizationProfile } from "@organizationsModule";
+import {
+	findPublicOrganizationPlan,
+	getOrganizationProfile,
+} from "@organizationsModule";
 import {
 	BLOCK_TYPES,
 	blockTypesIn,
@@ -11,6 +14,7 @@ import {
 	type PageListDto,
 	type PageListItemDto,
 	type PageStatus,
+	type PublicPageDto,
 	type SavePageContentInput,
 	type UpdatePageInput,
 } from "@sinwy/shared";
@@ -20,12 +24,15 @@ import {
 	findLatestVersion,
 	findPage,
 	findPages,
+	findPublishedPageBySlug,
 	findServedPageIds,
 	findVersionNumber,
 	insertNextVersion,
 	insertPageWithinLimit,
 	isSlugClash,
 	type PageRow,
+	publishPage as publishPageRow,
+	unpublishPage as unpublishPageRow,
 	updatePage as updatePageRow,
 } from "./repository";
 
@@ -211,4 +218,45 @@ export const deletePage = async (
 	return (await deletePageRow(membership.organizationId, pageId))
 		? { ok: true, data: null }
 		: fail("not-found");
+};
+
+const changeStatus =
+	(write: typeof publishPageRow) =>
+	async (
+		membership: Membership,
+		pageId: string,
+	): Promise<Result<PageDetailDto>> => {
+		if (membership.status !== "active") return fail("inactive");
+		const row = await write(membership.organizationId, pageId);
+		return row
+			? { ok: true, data: await toDetailDto(membership, row) }
+			: fail("not-found");
+	};
+
+/** Always allowed: a page outside the plan's served set is published but not live. */
+export const publishPage = changeStatus(publishPageRow);
+
+export const unpublishPage = changeStatus(unpublishPageRow);
+
+/** Null for an unknown or inactive organization, a draft and a page over the plan's limit alike. */
+export const getPublicPage = async (
+	organizationSlug: string,
+	pageSlug: string,
+): Promise<PublicPageDto | null> => {
+	const organization = await findPublicOrganizationPlan(organizationSlug);
+	if (!organization) return null;
+	const row = await findPublishedPageBySlug(organization.id, pageSlug);
+	if (!row) return null;
+	const served = await findServedPageIds(
+		organization.id,
+		limitsFor(organization.plan).pages,
+	);
+	if (!served.has(row.id)) return null;
+	return {
+		organization: { name: organization.name, slug: organization.slug },
+		title: row.title,
+		seoTitle: row.seoTitle ?? row.title,
+		seoDescription: row.seoDescription ?? (organization.tagline || null),
+		content: row.content,
+	};
 };

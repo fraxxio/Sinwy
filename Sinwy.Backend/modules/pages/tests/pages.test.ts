@@ -22,11 +22,12 @@ import {
 	type PageDetailDto,
 	type PageListDto,
 	type PlanSlug,
+	type PublicPageDto,
 } from "@sinwy/shared";
 import type { Server } from "bun";
 import { asc, eq } from "drizzle-orm";
 import { MAX_PAGE_CONTENT_BYTES } from "../controller";
-import { registerPageRoutes } from "../routes";
+import { registerPageRoutes, registerPublicPageRoutes } from "../routes";
 
 let server: Server<never>;
 let base: URL;
@@ -35,6 +36,7 @@ beforeAll(() => {
 	const app = createApp();
 	registerAuthRoutes(app);
 	registerPageRoutes(app);
+	registerPublicPageRoutes(app);
 	server = app.listen(0);
 	base = server.url;
 });
@@ -120,13 +122,24 @@ const save = (
 		content: body,
 	});
 
-const setPlan = (plan: PlanSlug) => givePlan(org.ownerId, plan);
+const setPlan = (plan: PlanSlug | null) => givePlan(org.ownerId, plan);
 
-const publishRow = (pageId: string) =>
-	db
-		.update(page)
-		.set({ status: "published", publishedAt: new Date() })
-		.where(eq(page.id, pageId));
+const publish = async (pageId: string) => {
+	const res = await call("POST", `pages/${pageId}/publish`);
+	expect(res.status).toBe(200);
+	return unwrap<PageDetailDto>(res);
+};
+
+const readPublic = (pageSlug: string, organizationSlug = org.orgId) =>
+	fetch(
+		new URL(
+			`/api/public/organizations/${organizationSlug}/pages/${pageSlug}`,
+			base,
+		),
+	);
+
+const publicStatus = async (pageSlug: string) =>
+	(await readPublic(pageSlug)).status;
 
 test("create: a page and version 1 built from the template and the profile", async () => {
 	await db.insert(organizationProfile).values({
@@ -352,8 +365,8 @@ test("list: usage, newest edit first, and only the oldest published pages within
 	const first = await create({ title: "First" });
 	const second = await create({ title: "Second" });
 	const draft = await create({ title: "Draft" });
-	await publishRow(second.id);
-	await publishRow(first.id);
+	await publish(second.id);
+	await publish(first.id);
 	await Bun.sleep(5);
 	await call("PATCH", `pages/${first.id}`, org.ownerCookie, { title: "1st" });
 
@@ -409,6 +422,8 @@ test("staff: reads answer, writes → 403", async () => {
 			content: content("text"),
 		}),
 		call("DELETE", `pages/${created.id}`, org.staffCookie),
+		call("POST", `pages/${created.id}/publish`, org.staffCookie),
+		call("POST", `pages/${created.id}/unpublish`, org.staffCookie),
 	];
 	for (const res of await Promise.all(writes)) expect(res.status).toBe(403);
 
@@ -423,7 +438,7 @@ test("staff: reads answer, writes → 403", async () => {
 
 test("inactive organization: writes → 409 ORGANIZATION_INACTIVE, reads answer with a limit of 0", async () => {
 	const created = await create();
-	await publishRow(created.id);
+	await publish(created.id);
 	await db
 		.update(organization)
 		.set({ slotHeldAt: null })
@@ -438,6 +453,8 @@ test("inactive organization: writes → 409 ORGANIZATION_INACTIVE, reads answer 
 		call("PATCH", `pages/${created.id}`, org.ownerCookie, { title: "x" }),
 		save(created.id, 1),
 		call("DELETE", `pages/${created.id}`),
+		call("POST", `pages/${created.id}/publish`),
+		call("POST", `pages/${created.id}/unpublish`),
 	];
 	for (const res of await Promise.all(writes)) {
 		expect(res.status).toBe(409);
@@ -466,19 +483,190 @@ test("another organization's page id → 404 on every route", async () => {
 		call("GET", `pages/${foreign.id}`),
 		call("PATCH", `pages/${foreign.id}`, org.ownerCookie, { title: "Mine" }),
 		save(foreign.id, 1),
+		call("POST", `pages/${foreign.id}/publish`),
+		call("POST", `pages/${foreign.id}/unpublish`),
 		call("DELETE", `pages/${foreign.id}`),
 	];
 	for (const res of await Promise.all(attempts)) expect(res.status).toBe(404);
 
 	const [row] = await db
-		.select({ title: page.title })
+		.select({ title: page.title, status: page.status })
 		.from(page)
 		.where(eq(page.id, foreign.id));
-	expect(row?.title).toBe("Theirs");
+	expect(row).toEqual({ title: "Theirs", status: "draft" });
 	expect(
 		await db
 			.select()
 			.from(pageContent)
 			.where(eq(pageContent.pageId, foreign.id)),
 	).toHaveLength(1);
+});
+
+test("publish: pins the latest version; later saves stay off the public page until the next publish", async () => {
+	await db.insert(organizationProfile).values({
+		organizationId: org.orgId,
+		tagline: "Cuts since 1999",
+	});
+	const created = await create({ title: "Welcome", slug: "welcome" });
+	expect(await publicStatus("welcome")).toBe(404);
+
+	const published = await publish(created.id);
+	expect(published).toMatchObject({
+		status: "published",
+		live: true,
+		publishedVersion: 1,
+		hasUnpublishedChanges: false,
+	});
+	expect(published.publishedAt).not.toBeNull();
+	const first = await unwrap<PublicPageDto>(await readPublic("welcome"));
+	expect(first).toEqual({
+		organization: { name: "Salon", slug: org.orgId },
+		title: "Welcome",
+		seoTitle: "Welcome",
+		seoDescription: "Cuts since 1999",
+		content: published.latestVersion.content,
+	});
+
+	const saved = await unwrap<PageDetailDto>(
+		await save(created.id, 1, content("heading", "text")),
+	);
+	expect(saved).toMatchObject({
+		publishedVersion: 1,
+		hasUnpublishedChanges: true,
+	});
+	await call("PATCH", `pages/${created.id}`, org.ownerCookie, {
+		seoTitle: "Welcome to the salon",
+		seoDescription: "Book a cut",
+	});
+	const unchanged = await unwrap<PublicPageDto>(await readPublic("welcome"));
+	expect(unchanged.content).toEqual(first.content);
+	expect(unchanged).toMatchObject({
+		seoTitle: "Welcome to the salon",
+		seoDescription: "Book a cut",
+	});
+
+	const republished = await publish(created.id);
+	expect(republished).toMatchObject({
+		publishedVersion: 2,
+		hasUnpublishedChanges: false,
+	});
+	expect(
+		(await unwrap<PublicPageDto>(await readPublic("welcome"))).content,
+	).toEqual(content("heading", "text"));
+});
+
+test("unpublish: back to a draft with no pin, gone from the public endpoint, not live in the list", async () => {
+	const created = await create({ slug: "gone" });
+	await publish(created.id);
+
+	const res = await call("POST", `pages/${created.id}/unpublish`);
+	expect(res.status).toBe(200);
+	expect(await unwrap<PageDetailDto>(res)).toMatchObject({
+		status: "draft",
+		live: false,
+		publishedAt: null,
+		publishedVersion: null,
+	});
+	const [row] = await db
+		.select({ versionId: page.publishedVersionId })
+		.from(page)
+		.where(eq(page.id, created.id));
+	expect(row?.versionId).toBeNull();
+	expect(await publicStatus("gone")).toBe(404);
+	const list = await unwrap<PageListDto>(await call("GET", "pages"));
+	expect(list.items[0]).toMatchObject({ status: "draft", live: false });
+});
+
+test("public: an ended plan or a scheduled deletion hides the page; restoring serves it again with no page change", async () => {
+	const created = await create({ slug: "home" });
+	await publish(created.id);
+	const before = await db.select().from(page).where(eq(page.id, created.id));
+	expect(await publicStatus("home")).toBe(200);
+
+	await setPlan(null);
+	expect(await publicStatus("home")).toBe(404);
+	await setPlan("starter");
+	expect(await publicStatus("home")).toBe(200);
+
+	await db
+		.update(organization)
+		.set({ deletionScheduledAt: new Date() })
+		.where(eq(organization.id, org.orgId));
+	expect(await publicStatus("home")).toBe(404);
+	await db
+		.update(organization)
+		.set({ deletionScheduledAt: null })
+		.where(eq(organization.id, org.orgId));
+	expect(await publicStatus("home")).toBe(200);
+
+	expect(await db.select().from(page).where(eq(page.id, created.id))).toEqual(
+		before,
+	);
+});
+
+test("public: after a downgrade only the oldest published pages by creation are served, whatever the publish order", async () => {
+	await setPlan("professional");
+	const a = await create({ slug: "a" });
+	const b = await create({ slug: "b" });
+	const c = await create({ slug: "c" });
+	for (const created of [c, b, a]) await publish(created.id);
+	for (const slug of ["a", "b", "c"])
+		expect(await publicStatus(slug)).toBe(200);
+
+	await setPlan("starter");
+	expect(await publicStatus("a")).toBe(200);
+	expect(await publicStatus("b")).toBe(404);
+	expect(await publicStatus("c")).toBe(404);
+
+	const republished = await publish(b.id);
+	expect(republished).toMatchObject({ status: "published", live: false });
+	expect(await publicStatus("b")).toBe(404);
+	expect(await publicStatus("a")).toBe(200);
+});
+
+test("public: unknown organization, unknown page, draft, inactive and over-limit all give the same 404", async () => {
+	await setPlan("professional");
+	const draft = await create({ slug: "draft" });
+	const first = await create({ slug: "first" });
+	const second = await create({ slug: "second" });
+	await publish(first.id);
+	await publish(second.id);
+	await setPlan("starter");
+	const other = await seedOrg("Other");
+	const theirs = await unwrap<PageDetailDto>(
+		await call(
+			"POST",
+			"pages",
+			other.ownerCookie,
+			{ templateId: "blank", title: "Theirs", slug: "theirs" },
+			other.orgId,
+		),
+	);
+	const publishTheirs = await call(
+		"POST",
+		`pages/${theirs.id}/publish`,
+		other.ownerCookie,
+		undefined,
+		other.orgId,
+	);
+	expect(publishTheirs.status).toBe(200);
+	expect((await readPublic("theirs", other.orgId)).status).toBe(200);
+	await db
+		.update(organization)
+		.set({ slotHeldAt: null })
+		.where(eq(organization.id, other.orgId));
+
+	const misses = [
+		readPublic("first", "no-such-org"),
+		readPublic("missing"),
+		readPublic(draft.slug),
+		readPublic("second"),
+		readPublic("theirs", other.orgId),
+	];
+	const bodies = new Set<string>();
+	for (const res of await Promise.all(misses)) {
+		expect(res.status).toBe(404);
+		bodies.add(await res.text());
+	}
+	expect(bodies.size).toBe(1);
 });

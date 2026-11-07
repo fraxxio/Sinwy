@@ -72,3 +72,36 @@ Finished phases of the [CMS pages plan](cms-pages-plan.md), each with its spec a
 - Shipped: `Sinwy.Backend/modules/pages/` (`routes.ts`, `controller.ts`, `service.ts`, `repository.ts`, `index.ts` exporting `registerPageRoutes`) with the six routes, registered in `index.ts` behind the `@pagesModule` alias; `getOrganizationProfile(organizationId)` exported from organizations; `API_ERROR_CODES.PAGE_SLUG_TAKEN = 40925` and `PAGE_VERSION_CONFLICT = 40926`; a `pro-org` seed scenario (`activate` takes the plan), with its seed test and a row in the `e2e-test` skill's `seed-scenario.md`. HTTP tests in `modules/pages/tests/pages.test.ts` (17 tests): limit and race, template and block gates, stale and racing `baseVersion`, slug clash on create and rename, staff 403, inactive 409 with reads still answering, foreign id 404 on every route, delete cascade, the served set after a downgrade.
 - Differs from plan: the slug clash is a 409 with code `PAGE_SLUG_TAKEN` (the API has no per-field error shape; the web maps the code to the slug field with `showFieldError`). A stale `baseVersion` gets its own code, `PAGE_VERSION_CONFLICT`. Content saves lock the page row (`select … for update`), so two saves on the same `baseVersion` can't both land. The content body cap is 256 KB (`MAX_PAGE_CONTENT_BYTES` in the controller) → 413; the server-wide cap stays 4 MB. Every write (create, PATCH, PUT content) answers with the full `PageDetailDto`; DELETE answers `null`. `hasUnpublishedChanges` is true only for a published page whose pinned version isn't the latest. A PATCH with an empty body still bumps `updatedAt`.
 - Checked in the running app: started the backend (`bun run start:server`, log `/tmp/sinwy-logs/backend.log`), `bun run dev:seed-scenario pro-org` exited 0 (org `27feeb7b-…`, slug `seed-079f9ae5`); as its owner, `POST pages` with `landing` → 201, content prefilled from the seeded tagline; `GET pages` → usage 1 of 5. No UI yet.
+
+## Phase 3: Publish, unpublish and the public page endpoint
+
+**Goal:** writers can publish and unpublish a page, and anyone can read a live published page by organization slug and page slug.
+
+**Files:**
+- `Sinwy.Backend/modules/pages/routes.ts` — the two `POST` routes (`write`) and a `registerPublicPageRoutes` under the `STOREFRONT` prefix (`/api/public/organizations/:slug/pages/:pageSlug`), exported from `index.ts` and registered in `Sinwy.Backend/index.ts`.
+- `modules/pages/controller.ts` — handlers; extend `respondError` if a new `PageError` appears.
+- `modules/pages/service.ts` — `publishPage`, `unpublishPage` (return `toDetailDto`), `getPublicPage` (resolves SEO with `getOrganizationProfile` for the tagline).
+- `modules/pages/repository.ts` — pin the latest version (reuse `latestVersionOf`), clear it on unpublish, and a by-slug lookup joined to the published `page_content` row; `findServedPageIds` decides "in the served set".
+- `modules/organizations/service.ts` + `index.ts` — a public-plan lookup by slug: `isOrganizationPublic` + `organizationPlanOf` over `findOrganizationBySlug` (see Standing notes; don't touch `PublicOrganization`).
+- `modules/pages/tests/pages.test.ts` — swap `publishRow` for the route; new public-endpoint tests (public app also needs the public route registered).
+
+**Steps:**
+- `POST pages/:pageId/publish` pins the latest version, sets `status = published` and `publishedAt` (Default 2: no limit check). `POST pages/:pageId/unpublish` follows Default 4. Both refuse an inactive organization.
+- `GET /api/public/organizations/:slug/pages/:pageSlug`, no auth: 404 unless the organization is public, the page is published, and it's in the served set (the oldest `limitsFor(plan).pages` published pages by `createdAt`, `id`).
+- The public DTO carries the organization's name and slug, the page title, the resolved SEO title and description (Default 6) and the published content. Never the draft.
+- Unknown org, inactive org, draft page and over-limit page all give the same 404, so nothing leaks.
+
+**Tests that matter:**
+- Saving after publishing doesn't change the public content until the next publish.
+- An org whose owner's plan ended (or that is scheduled for deletion) → 404 for a published page; restoring the plan → served again with no page change.
+- Professional with 3 published pages downgraded to Starter → only the oldest by `createdAt` is served; republishing a newer one doesn't swap it in.
+- Unpublish → 404, and the dashboard list shows `live: false`.
+
+**Done when:** the endpoints answer per the tests and `bun run verify` passes.
+
+**Verify:** None (phase 6 covers it end to end).
+
+### Log (2026-11-07, `feat(backend): add publishing and the public page endpoint`)
+- Shipped: `POST pages/:pageId/publish` and `POST pages/:pageId/unpublish` (`pages:write`, 409 while inactive, 404 for another org's id) and `GET /api/public/organizations/:slug/pages/:pageSlug` via `registerPublicPageRoutes`, registered in `Sinwy.Backend/index.ts`. Repository: `publishPage` (locks the page row, pins `latestVersionOf`), `unpublishPage`, `findPublishedPageBySlug` (inner join on the pinned `page_content` row, so the draft can't leak). Organizations: `findPublicOrganizationPlan(slug)` → `{ id, name, slug, tagline, plan }` or null. Tests: `publishRow` swapped for the route; five new tests (pin vs. later saves and SEO fallback, unpublish, ended plan and scheduled deletion with the `page` row unchanged, downgrade served set with publish order reversed and a republish, identical 404 bodies for every miss); staff, inactive and foreign-id tests cover the two new routes.
+- Differs from plan: the tagline comes from the `findOrganizationBySlug` row through `findPublicOrganizationPlan`, not a second `getOrganizationProfile` call. An empty tagline falls back to `null`. Publishing doesn't bump `updatedAt`, since it isn't a content or metadata edit. The public route path is spelled out in `pages/routes.ts` instead of importing `STOREFRONT` from bookings (not exported, and a cross-module internal import).
+- Checked in the running app: nothing (Verify: None; no dev servers running). `bun run verify` exit 0, 740 server tests.

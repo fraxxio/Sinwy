@@ -12,9 +12,12 @@ import {
 	createPage,
 	deletePage,
 	getPage,
+	getPublicPage,
 	listPages,
 	type PageError,
+	publishPage,
 	savePageContent,
+	unpublishPage,
 	updatePage,
 } from "./service";
 
@@ -138,4 +141,24 @@ export const savePageContentHandler: Handler = async (c) => {
 export const deletePageHandler: Handler = async (c) => {
 	const result = await deletePage(membershipFrom(c), pageIdFrom(c));
 	return result.ok ? ok(null, 200, "Page deleted") : respondError(result.error);
+};
+
+export const publishPageHandler: Handler = async (c) => {
+	const result = await publishPage(membershipFrom(c), pageIdFrom(c));
+	return result.ok
+		? ok(result.data, 200, "Page published")
+		: respondError(result.error);
+};
+
+export const unpublishPageHandler: Handler = async (c) => {
+	const result = await unpublishPage(membershipFrom(c), pageIdFrom(c));
+	return result.ok
+		? ok(result.data, 200, "Page unpublished")
+		: respondError(result.error);
+};
+
+export const getPublicPageHandler: Handler = async (c) => {
+	const { slug, pageSlug } = c.req.params as { slug: string; pageSlug: string };
+	const result = await getPublicPage(slug, pageSlug);
+	return result ? ok(result) : fail("This page isn't available", 404);
 };
