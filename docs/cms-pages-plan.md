@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Shared page contracts and the page tables | – | done | `feat(backend, shared): add page contracts and the page tables` |
-| 2 | Pages API: list, create, edit, content, delete | 1 | todo | |
+| 2 | Pages API: list, create, edit, content, delete | 1 | done | `feat(backend, shared): add the pages API` |
 | 3 | Publish, unpublish and the public page endpoint | 2 | todo | |
 | 4 | Pages list, create flow and limit UI (web) | 2 | todo | |
 | 5 | Page detail, publish toggle and preview (web) | 3, 4 | todo | |
@@ -56,61 +56,32 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Inactive is derived, never stored.** `isOrganizationPublic(access)` in `Sinwy.Backend/modules/organizations/service.ts` (slot held, owner plan set, not scheduled for deletion). `requireMember` puts `{ organizationId, roles, status, plan }` on the context (`modules/auth/requirePermission.ts`); `plan` is null while inactive. Services refuse writes with `if (membership.status !== "active") return inactive;` and map that to 409 `ORGANIZATION_INACTIVE` in `respondError` (`modules/services/controller.ts`).
 - **`requireFeature(feature)`** (`modules/auth/requireFeature.ts`) is a route middleware that answers 402 `PLAN_UPGRADE_REQUIRED`. Template and block checks depend on the request body, so they use `hasFeature(membership.plan, …)` from `@sinwy/shared` in the service instead.
 - **Don't add the plan to `PublicOrganization`.** `getStorefront` in `modules/bookings/service.ts` spreads every field except `id` into the public `StorefrontDto`, so a new field would leak. Add a separate organizations export for the public plan (the row from `findOrganizationBySlug` already carries `ownerPlan`; use `organizationPlanOf`).
-- **No profile reader is exported yet.** `findProfile(organizationId)` is in `modules/organizations/repository.ts`; export a service wrapper through `modules/organizations/index.ts` for template prefill.
 - **Public routes** use the prefix `/api/public/organizations/:slug` (`STOREFRONT` in `modules/bookings/routes.ts`), resolved through `findPublicOrganization(slug)` → 404 "This booking page isn't available".
-- **Module wiring:** add `@pagesModule` to both `Sinwy.Backend/import_map.json` and `tsconfig.json` `paths`, and register the routes in `Sinwy.Backend/index.ts`. Schemas are re-exported from `db/schema/index.ts`; migrations come from `bun run db:generate` (last one is `0024_pages.sql`; rename the generated file and its journal tag to match).
+- **Migrations** come from `bun run db:generate` (last one is `0024_pages.sql`; rename the generated file and its journal tag to match).
 - **JSONB:** use the custom `jsonb<T>()` from `@db/jsonb`, not Drizzle's own, which double-encodes with Bun SQL.
-- **Per-organization lock:** `pg_advisory_xact_lock(hashtext(organizationId))` inside a transaction, as `modules/bookings/repository.ts:70` does. Use it for the count-then-insert of page creation.
 - **TanStack Start SSR inheritance:** a child route can only be more restrictive than its parent. `src/modules/storefront/routes/route.tsx` (the `/$organizationSlug` layout) sets `ssr: false`, so a child page route can't render on the server until that flag moves off the layout. `api()` in `src/shared/lib/api.ts` already works on the server (forwards cookies to `BACKEND_URL`).
 - **Plan UI helpers:** `PlanGate` and `UpgradePrompt` in `src/shared/components/` are feature-based; `useEntitlements()` (`src/shared/lib/auth/entitlements.ts`) gives `has(feature)`; `minimumPlanFor(feature)` and `getPlanName` are in `src/shared/lib/plans.ts`. The upgrade link is `/account/billing?change=plan` for `billing:manage`, else "Ask an owner to upgrade."
-- **Seeding:** `bun run dev:seed-scenario` (`Sinwy.Backend/scripts/dev/seedScenario.ts`, `scenarios` list; `activate` hard-codes `plan: "starter"`). Plan changes are simulated with `bun run dev:simulate-polar-webhook` (`subscription.updated` is supported).
-- **Shared page contracts (phase 1):** `createPageSchema`, `updatePageSchema` (partial `pageDetailsSchema`; empty SEO strings → store null), `savePageContentSchema`, `pageSlugSchema`, DTOs `PageListDto`/`PageDetailDto`/`PublicPageDto`, `PAGE_TEMPLATES[id].build(profile)` (pass `EMPTY_ORGANIZATION_PROFILE` when there's none), `BLOCK_TYPES[type].requires`, `blockTypesIn(content)` for the premium-block check, `limitsFor(plan).pages`. Tables `page` / `page_content` in `db/schema/pageSchema.ts`; unique index `page_organization_slug_uidx` is the slug clash to map to a field error.
+- **Seed and plan changes:** `bun run dev:seed-scenario` (`Sinwy.Backend/scripts/dev/seedScenario.ts`; `pro-org` is the Professional owner). Plan changes are simulated with `bun run dev:simulate-polar-webhook` (`subscription.updated` is supported).
+- **Shared page contracts (phase 1):** `createPageSchema`, `updatePageSchema` (partial `pageDetailsSchema`; the API stores empty SEO strings as null), `pageSlugSchema`, DTOs `PageListDto`/`PageDetailDto`/`PublicPageDto`, `PAGE_TEMPLATES` / `PAGE_TEMPLATE_IDS` with `requires`, `limitsFor(plan).pages`. Tables `page` / `page_content` in `db/schema/pageSchema.ts`.
+- **Pages API (phase 2)**, `Sinwy.Backend/modules/pages/`: routes under `/api/organizations/:organizationId/pages`. Writes answer the full `PageDetailDto` (DELETE answers `null`). Error codes: 409 `ORGANIZATION_INACTIVE`, 409 `PAGE_LIMIT_REACHED`, 402 `PLAN_UPGRADE_REQUIRED`, 409 `PAGE_SLUG_TAKEN` (map it to the slug field with `showFieldError` from `src/shared/lib/form.ts`), 409 `PAGE_VERSION_CONFLICT`, 413 for content over 256 KB, 400 with the first Zod message (e.g. a reserved slug). `respondError` in `controller.ts` maps the service's `PageError`.
+- **Served set:** `findServedPageIds(organizationId, limit)` in `modules/pages/repository.ts` (oldest published by `createdAt`, `id`; empty set for limit 0). The service's `servedPageIds(membership)` wraps it with `limitsFor(membership.plan)`; phase 3's public lookup passes the public plan instead. `isSlugClash(error)` detects the slug unique violation (Drizzle puts the Postgres error fields on `cause`).
 - **Shared has no tests of its own:** `@sinwy/shared` contract tests run from the backend (`modules/pages/tests/pageContracts.test.ts`).
-- **Backend HTTP tests** build an app with only the routes they need and use the helpers in `Sinwy.Backend/test/helpers.ts`: `createUserWithSession`, `insertOrganization`, `givePlan`, `holdSlot`, `activateOrganization`, `joinOrganization`. See `modules/services/tests/services.test.ts`.
+- **Backend HTTP tests** build an app with only the routes they need and use the helpers in `Sinwy.Backend/test/helpers.ts`. `modules/pages/tests/pages.test.ts` has `seedOrg(name, plan)`, `create`, `save`, `setPlan` (`givePlan` on the owner) and `publishRow` (sets `status` directly; replace it with the publish route in phase 3). Inactive: clear `organization.slotHeldAt`.
+- **Dev DB leftovers:** a phase-2 smoke run left `pro-org` org `seed-079f9ae5` with one draft `welcome` page.
 
 ---
-
-## Phase 2: Pages API: list, create, edit, content, delete
-
-**Goal:** members can list pages with usage, and writers can create a page from a template within the limit, edit its metadata and SEO, save content versions and delete it.
-
-**Files:**
-- New module `Sinwy.Backend/modules/pages/`: `index.ts`, `routes.ts`, `controller.ts`, `service.ts`, `repository.ts`, `tests/` (already holds `pageContracts.test.ts`; add the HTTP tests beside it). Pattern: `modules/services/`.
-- `modules/organizations/service.ts` + `index.ts` — export a profile reader over `findProfile` (see Standing notes), returning an `OrganizationProfileDto`.
-- `Sinwy.Backend/import_map.json`, `tsconfig.json`, `index.ts` — `@pagesModule` alias and route registration.
-- `Sinwy.Backend/scripts/dev/seedScenario.ts` — `pro-org` scenario (Default 17): let `activate` take the plan.
-- Contracts to import, not redefine: `Sinwy.Shared/types/page/` and `db/schema/pageSchema.ts` (from phase 1).
-
-**Steps:**
-- Routes under `organizationPath("pages…")`: `GET pages`, `POST pages`, `GET pages/:pageId`, `PATCH pages/:pageId`, `PUT pages/:pageId/content`, `DELETE pages/:pageId`. Reads need `pages:read`, writes `pages:write`.
-- Every write refuses an inactive organization first (409 `ORGANIZATION_INACTIVE`).
-- Create: a premium template the plan lacks → 402. In one transaction under the per-org lock: count pages, refuse at the limit (409 `PAGE_LIMIT_REACHED`), insert the page and version 1 from the template filled with the profile.
-- A slug clash (unique violation) → 409 with a field error on `slug`, so the form can show it.
-- Content save: check `baseVersion` (Default 10) and premium blocks (Default 9), insert version n+1 and bump `page.updatedAt`. Metadata edits bump `updatedAt` too.
-- List items: `id`, `title`, `slug`, `status`, `updatedAt`, `publishedAt`, and `live` (published and inside the served set; the served-set query is shared with phase 3, so build it here). Order by `updatedAt` desc.
-- Detail: the page, its latest version (number + content), the published version number and `hasUnpublishedChanges`.
-- An id from another organization → 404.
-- Map DB rows to DTOs; no `$inferSelect` types in responses.
-
-**Tests that matter:**
-- At the limit, create → 409; two concurrent creates at limit − 1 → exactly one succeeds.
-- Starter creating a premium template → 402; Professional succeeds.
-- Saving a new premium block on Starter → 402; saving a page that already contains it → 200.
-- Stale `baseVersion` → 409.
-- Staff writes → 403; an inactive organization's writes → 409 while reads still answer.
-- Another organization's page id → 404 for every route.
-
-**Done when:** all routes answer per the tests, `bun run dev:seed-scenario pro-org` works and `bun run verify` passes.
-
-**Verify:** None (no UI yet; phase 4 covers the flow).
 
 ## Phase 3: Publish, unpublish and the public page endpoint
 
 **Goal:** writers can publish and unpublish a page, and anyone can read a live published page by organization slug and page slug.
 
 **Files:**
-- `Sinwy.Backend/modules/pages/` (from phase 2): `routes.ts`, `controller.ts`, `service.ts`, `repository.ts`.
-- `modules/organizations/service.ts` + `index.ts` — a public-plan lookup by slug (see Standing notes; don't touch `PublicOrganization`).
+- `Sinwy.Backend/modules/pages/routes.ts` — the two `POST` routes (`write`) and a `registerPublicPageRoutes` under the `STOREFRONT` prefix (`/api/public/organizations/:slug/pages/:pageSlug`), exported from `index.ts` and registered in `Sinwy.Backend/index.ts`.
+- `modules/pages/controller.ts` — handlers; extend `respondError` if a new `PageError` appears.
+- `modules/pages/service.ts` — `publishPage`, `unpublishPage` (return `toDetailDto`), `getPublicPage` (resolves SEO with `getOrganizationProfile` for the tagline).
+- `modules/pages/repository.ts` — pin the latest version (reuse `latestVersionOf`), clear it on unpublish, and a by-slug lookup joined to the published `page_content` row; `findServedPageIds` decides "in the served set".
+- `modules/organizations/service.ts` + `index.ts` — a public-plan lookup by slug: `isOrganizationPublic` + `organizationPlanOf` over `findOrganizationBySlug` (see Standing notes; don't touch `PublicOrganization`).
+- `modules/pages/tests/pages.test.ts` — swap `publishRow` for the route; new public-endpoint tests (public app also needs the public route registered).
 
 **Steps:**
 - `POST pages/:pageId/publish` pins the latest version, sets `status = published` and `publishedAt` (Default 2: no limit check). `POST pages/:pageId/unpublish` follows Default 4. Both refuse an inactive organization.

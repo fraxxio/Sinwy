@@ -14,6 +14,7 @@ export {
 	getOrganizationAccess,
 	getOrganizationLocale,
 	getOrganizationOnboarding,
+	getOrganizationProfile,
 	getOrganizationState,
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,

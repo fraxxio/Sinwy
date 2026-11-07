@@ -259,6 +259,12 @@ const toProfileDto = (
 			}
 		: EMPTY_ORGANIZATION_PROFILE;
 
+/** The public profile, empty fields when none was saved yet. */
+export const getOrganizationProfile = async (
+	organizationId: string,
+): Promise<OrganizationProfileDto> =>
+	toProfileDto(await findProfile(organizationId));
+
 export const getOrganizationOnboarding = async ({
 	organizationId,
 }: Membership): Promise<OrganizationOnboardingDto> => {

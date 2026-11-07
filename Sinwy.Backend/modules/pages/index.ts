@@ -1,0 +1,1 @@
+export { registerPageRoutes } from "./routes";
