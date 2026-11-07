@@ -12,7 +12,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 2 | Pages API: list, create, edit, content, delete | 1 | done | `feat(backend, shared): add the pages API` |
 | 3 | Publish, unpublish and the public page endpoint | 2 | done | `feat(backend): add publishing and the public page endpoint` |
 | 4 | Pages list, create flow and limit UI (web) | 2 | done | `feat(web): add the pages list and create flow` |
-| 5 | Page detail, publish toggle and preview (web) | 3, 4 | todo | |
+| 5 | Page detail, publish toggle and preview (web) | 3, 4 | done | `feat(web): add the page detail, publishing and preview` |
 | 6 | Public page route with SSR and SEO (web) | 3, 5 | todo | |
 | 7 | Docs and code review | 1–6 | todo | |
 
@@ -52,7 +52,6 @@ Settled with the product owner. Ask before changing any of them.
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
 - **Permissions already exist:** `pages:read` and `pages:write` in `Sinwy.Shared/types/access/Permission.ts`. Owner and admin have both, staff only read (`RolePermissions.ts`). The web section is `ORG_SECTIONS.pages` in `src/modules/org-dashboard/lib/sections.ts`.
-- **The web routes exist as placeholders:** `src/modules/org-dashboard/routes/_shell.pages.tsx` (layout, `requirePermission(ORG_SECTIONS.pages.permission)`), `_shell.pages.index.tsx` and `_shell.pages.$id.tsx`, both empty states.
 - **Inactive is derived, never stored.** `isOrganizationPublic(access)` in `Sinwy.Backend/modules/organizations/service.ts` (slot held, owner plan set, not scheduled for deletion). `requireMember` puts `{ organizationId, roles, status, plan }` on the context (`modules/auth/requirePermission.ts`); `plan` is null while inactive. Services refuse writes with `if (membership.status !== "active") return inactive;` and map that to 409 `ORGANIZATION_INACTIVE` in `respondError` (`modules/services/controller.ts`).
 - **`requireFeature(feature)`** (`modules/auth/requireFeature.ts`) is a route middleware that answers 402 `PLAN_UPGRADE_REQUIRED`. Template and block checks depend on the request body, so they use `hasFeature(membership.plan, …)` from `@sinwy/shared` in the service instead.
 - **Public page endpoint (phase 3):** `GET /api/public/organizations/:slug/pages/:pageSlug`, no auth → `PublicPageDto` (SEO already resolved: page title, then the org tagline), or 404 "This page isn't available" with the same body for every miss (unknown or inactive org, draft, over the limit). The org and its public plan come from `findPublicOrganizationPlan(slug)` in organizations.
@@ -68,35 +67,13 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Shared has no tests of its own:** `@sinwy/shared` contract tests run from the backend (`modules/pages/tests/pageContracts.test.ts`).
 - **Backend HTTP tests** build an app with only the routes they need and use the helpers in `Sinwy.Backend/test/helpers.ts`. `modules/pages/tests/pages.test.ts` has `seedOrg(name, plan)`, `create`, `save`, `setPlan` (`givePlan` on the owner, `null` ends the plan), `publish` (the route) and `readPublic(pageSlug, orgSlug)`; a test org's slug is its id. Inactive: clear `organization.slotHeldAt`.
 - **Dashboard pages UI (phase 4):** `lib/page-queries.ts` has `pageKeys` (`all`/`list`/`detail`), `pagesQuery`, `createPage`; a create seeds `pageKeys.detail` with the returned `PageDetailDto` and navigates to `pages/$id`. `lib/pages.ts` has `slugFromTitle`, `pageState` / `PAGE_STATE_LABELS` (live, "Published, not live", draft), `isAtPageLimit`, `publicPagePath`. Components in `components/pages/`: `PagesTable`, `TemplatePicker`, `PageUsageMeter`, `PageLimitNotice`, `NewPageForm` (API error handling pattern: inactive → `handleOrganizationInactive`, `PAGE_SLUG_TAKEN` → `showFieldError`). The table's public link is a plain `<a href>`, since the `$pageSlug` route doesn't exist until phase 6. The dashboard shell is `ssr: false`, so relative times need no hydration care.
-- **E2E:** the template radios are `sr-only`; click the card text (`getByText('About', { exact: true })`), not `getByRole('radio')`. Seed output prints `organization.plan: null` even for paid scenarios; the limits are still right.
-- **Dev DB leftovers:** `pro-org` `seed-079f9ae5` (draft `welcome`), Starter `seed-1adfd7aa` (draft `about-us`), and from phase 4's Verify `seed-0f754101` (Starter), `seed-e9895eba` (Pro, `welcome-home` from `landing`), `seed-af256e02` (staff org). Seed fresh orgs rather than reusing them.
+- **Page detail UI (phase 5):** `_shell.pages.$id.tsx` is a layout (crumb "Page"), with `$id.index.tsx` (detail) and `$id.preview.tsx` children. `page-queries.ts` adds `pageQuery`, `updatePage`, `publishPage`, `unpublishPage`, `deletePage`, `storePage` (sets the detail, refetches the list) and `forgetPage`; the SEO description placeholder reads the tagline from `GET /organizations/:id/onboarding` (any member). The details form PATCHes only changed fields and skips the request when nothing changed.
+- **`PageRenderer`** (`src/shared/components/page-content/`) takes `{ content, organizationSlug }`. It resolves a bare href like `book` to `/<orgSlug>/book`, drops non-http(s)/mailto/tel/root links and image sources, and renders nothing for an empty gallery or testimonials. Pure markup, no browser APIs, so it renders on the server.
+- **E2E:** buttons rendered as links (`Button` with `render={<Link/>}`: Preview, Back to page, New page) have role `button`, not `link`. The template radios are `sr-only`; click the card text (`getByText('About', { exact: true })`), not `getByRole('radio')`. Seed output prints `organization.plan: null` even for paid scenarios; the limits are still right.
+- **Dev DB leftovers:** `pro-org` `seed-079f9ae5` (draft `welcome`), Starter `seed-1adfd7aa` (draft `about-us`), from phase 4's Verify `seed-0f754101` (Starter), `seed-e9895eba` (Pro, `welcome-home` from `landing`), `seed-af256e02` (staff org), from phase 5 `seed-767f9050` (Pro, published `welcome`) and `seed-4f8a880f` (Pro, no pages). Seed fresh orgs rather than reusing them.
 - **Dev servers (phase 4):** backend and web were started with logs in `/tmp/sinwy-logs/server.log` and `web.log`; phase 7 stops them.
 
 ---
-
-## Phase 5: Page detail, publish toggle and preview (web)
-
-**Goal:** writers edit a page's title, slug and SEO, publish and unpublish it, and preview the draft; the content area is a placeholder the builder drops into.
-
-**Files:**
-- `src/modules/org-dashboard/routes/_shell.pages.$id.tsx` (replace the empty state; the create flow already lands here), new `_shell.pages.$id.preview.tsx`.
-- `src/modules/org-dashboard/lib/page-queries.ts`: add `pageQuery` (key `pageKeys.detail`, which create already seeds), `updatePage` (PATCH, `UpdatePageInput`), `publishPage` / `unpublishPage` (answer `PageDetailDto`), `deletePage` (answers `null`); update both the detail and list caches after writes.
-- `src/modules/org-dashboard/components/pages/` — details/SEO form (pattern: `NewPageForm.tsx`, with `pageDetailsSchema` and `PAGE_LIMITS`; empty SEO strings are stored as null), publish card (`pageState`, `PAGE_STATE_LABELS`, `publicPagePath` from `lib/pages.ts`), content placeholder; the delete confirm uses `src/shared/components/ui/alert-dialog.tsx`.
-- `src/shared/components/page-content/PageRenderer.tsx` (new, Default 14). Web tests are plain `bun:test` `.test.ts` files with no DOM; render it with `react-dom/server` in `src/shared/tests/`.
-
-**Steps:**
-- Sections: Details (title, slug), SEO (title and description with counters and the fallback shown as placeholder), Publishing (status, the toggle, "Publish changes" when `hasUnpublishedChanges`, the public link when live, the over-limit notice from Default 2), Content (placeholder with the version number, last saved time and a "Preview" link).
-- Changing the slug of a published page warns that the old link stops working.
-- Delete with a confirm dialog that says published pages go offline.
-- Staff see everything read-only, with no toggle or delete.
-- Preview renders the latest version with `PageRenderer` inside a "Preview — not published" banner.
-
-**Tests that matter:**
-- `PageRenderer` renders each MVP block type and skips an unknown one without crashing.
-
-**Done when:** a page can be edited, published, unpublished, previewed and deleted from the dashboard, and `bun run verify` passes.
-
-**Verify:** Seed `pro-org`, log in as the owner, create a page from `landing`. On its detail page: edit the SEO title → `page.seo_title` updates and "last edited" moves. Publish → `status = published`, `published_version_id` = version 1, the public link appears. Preview opens and renders the blocks. Unpublish → `status = draft`, `published_at` and `published_version_id` null. Delete → the `page` and `page_content` rows are gone and the list count drops. No Polar or email involved.
 
 ## Phase 6: Public page route with SSR and SEO (web)
 
@@ -104,8 +81,9 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 **Files:**
 - `src/modules/storefront/routes/route.tsx` — move `ssr: false` off the layout (see Standing notes); put it on `index.tsx` and `book.tsx` if they still need it, after checking why the layout had it (introduced in `4998ed1`).
-- New `src/modules/storefront/routes/$pageSlug.tsx`, `src/modules/storefront/lib/storefront-queries.ts` (a public page query).
-- `src/shared/components/page-content/PageRenderer.tsx` (from phase 5).
+- New `src/modules/storefront/routes/$pageSlug.tsx`; add a public page query (`PublicPageDto`, `GET /public/organizations/:slug/pages/:pageSlug`) to the existing `src/modules/storefront/lib/storefront-queries.ts`.
+- Render with `PageRenderer` from `src/shared/components/page-content/` (`content`, `organizationSlug`); no changes expected there.
+- The dashboard's public links (`PagesTable.tsx`, `PagePublishing.tsx` in `components/pages/`) are plain `<a href target="_blank">`; leave them as they are.
 
 **Steps:**
 - The layout must render on the server without browser-only APIs; check `book.tsx` and the self-booking flow still behave the same.

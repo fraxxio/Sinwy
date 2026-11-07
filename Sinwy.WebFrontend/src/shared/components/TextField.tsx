@@ -16,12 +16,15 @@ type Props = {
 	label: string;
 	description?: string;
 	shakeToken?: number;
+	/** Shows "used/maxLength" while the field has focus, like `TextareaField`. */
+	counter?: boolean;
 } & Omit<ComponentProps<typeof Input>, "name" | "form">;
 
 export const TextField = ({
 	label,
 	description,
 	shakeToken = 0,
+	counter = false,
 	type,
 	...inputProps
 }: Props) => {
@@ -83,7 +86,7 @@ export const TextField = ({
 					</button>
 				)}
 			</div>
-			<div className="min-h-5 text-xs">
+			<div className="flex min-h-5 items-start justify-between gap-3 text-xs">
 				{error ? (
 					<FieldError className="text-xs">{error}</FieldError>
 				) : (
@@ -93,6 +96,11 @@ export const TextField = ({
 							{description}
 						</FieldDescription>
 					)
+				)}
+				{counter && inputProps.maxLength && descriptionShown && (
+					<span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+						{field.state.value.length}/{inputProps.maxLength}
+					</span>
 				)}
 			</div>
 		</Field>
