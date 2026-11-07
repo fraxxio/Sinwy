@@ -69,7 +69,7 @@ export function PageLimitNotice({
 				{over && (
 					<p>
 						Only the oldest {usage.limit} published {pagesWord(usage.limit)}{" "}
-						stay online.
+						{usage.limit === 1 ? "stays" : "stay"} online.
 						{offline.length > 0 &&
 							` Offline now: ${offline.map((page) => page.title).join(", ")}.`}{" "}
 						Delete pages to get back under the limit, or upgrade.

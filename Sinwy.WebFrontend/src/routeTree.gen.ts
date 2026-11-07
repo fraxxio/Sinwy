@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './modules/home/routes/index'
 import { Route as OrganizationSlugRouteRouteImport } from './modules/storefront/routes/route'
 import { Route as AboutRouteImport } from './modules/home/routes/about'
 import { Route as OrganizationSlugIndexRouteImport } from './modules/storefront/routes/index'
+import { Route as OrganizationSlugPageSlugRouteImport } from './modules/storefront/routes/$pageSlug'
 import { Route as OrganizationSlugBookRouteImport } from './modules/storefront/routes/book'
 import { Route as AccountShellRouteImport } from './modules/account-dashboard/routes/_shell'
 import { Route as AuthForgotPasswordRouteImport } from './modules/auth/routes/forgot-password'
@@ -82,6 +83,12 @@ const OrganizationSlugIndexRoute = OrganizationSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => OrganizationSlugRouteRoute,
 } as any)
+const OrganizationSlugPageSlugRoute =
+  OrganizationSlugPageSlugRouteImport.update({
+    id: '/$pageSlug',
+    path: '/$pageSlug',
+    getParentRoute: () => OrganizationSlugRouteRoute,
+  } as any)
 const OrganizationSlugBookRoute = OrganizationSlugBookRouteImport.update({
   id: '/book',
   path: '/book',
@@ -359,6 +366,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$organizationSlug': typeof OrganizationSlugRouteRouteWithChildren
   '/about': typeof AboutRoute
+  '/$organizationSlug/$pageSlug': typeof OrganizationSlugPageSlugRoute
   '/$organizationSlug/book': typeof OrganizationSlugBookRoute
   '/account': typeof AccountShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -412,6 +420,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/$organizationSlug/$pageSlug': typeof OrganizationSlugPageSlugRoute
   '/$organizationSlug/book': typeof OrganizationSlugBookRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/goodbye': typeof AuthGoodbyeRoute
@@ -457,6 +466,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/$organizationSlug': typeof OrganizationSlugRouteRouteWithChildren
   '/about': typeof AboutRoute
+  '/$organizationSlug/$pageSlug': typeof OrganizationSlugPageSlugRoute
   '/$organizationSlug/book': typeof OrganizationSlugBookRoute
   '/account/_shell': typeof AccountShellRouteWithChildren
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -513,6 +523,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$organizationSlug'
     | '/about'
+    | '/$organizationSlug/$pageSlug'
     | '/$organizationSlug/book'
     | '/account'
     | '/auth/forgot-password'
@@ -566,6 +577,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/$organizationSlug/$pageSlug'
     | '/$organizationSlug/book'
     | '/auth/forgot-password'
     | '/auth/goodbye'
@@ -610,6 +622,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$organizationSlug'
     | '/about'
+    | '/$organizationSlug/$pageSlug'
     | '/$organizationSlug/book'
     | '/account/_shell'
     | '/auth/forgot-password'
@@ -707,6 +720,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/$organizationSlug/'
       preLoaderRoute: typeof OrganizationSlugIndexRouteImport
+      parentRoute: typeof OrganizationSlugRouteRoute
+    }
+    '/$organizationSlug/$pageSlug': {
+      id: '/$organizationSlug/$pageSlug'
+      path: '/$pageSlug'
+      fullPath: '/$organizationSlug/$pageSlug'
+      preLoaderRoute: typeof OrganizationSlugPageSlugRouteImport
       parentRoute: typeof OrganizationSlugRouteRoute
     }
     '/$organizationSlug/book': {
@@ -1049,11 +1069,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface OrganizationSlugRouteRouteChildren {
+  OrganizationSlugPageSlugRoute: typeof OrganizationSlugPageSlugRoute
   OrganizationSlugBookRoute: typeof OrganizationSlugBookRoute
   OrganizationSlugIndexRoute: typeof OrganizationSlugIndexRoute
 }
 
 const OrganizationSlugRouteRouteChildren: OrganizationSlugRouteRouteChildren = {
+  OrganizationSlugPageSlugRoute: OrganizationSlugPageSlugRoute,
   OrganizationSlugBookRoute: OrganizationSlugBookRoute,
   OrganizationSlugIndexRoute: OrganizationSlugIndexRoute,
 }
