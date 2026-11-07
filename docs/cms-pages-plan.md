@@ -11,7 +11,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 1 | Shared page contracts and the page tables | – | done | `feat(backend, shared): add page contracts and the page tables` |
 | 2 | Pages API: list, create, edit, content, delete | 1 | done | `feat(backend, shared): add the pages API` |
 | 3 | Publish, unpublish and the public page endpoint | 2 | done | `feat(backend): add publishing and the public page endpoint` |
-| 4 | Pages list, create flow and limit UI (web) | 2 | todo | |
+| 4 | Pages list, create flow and limit UI (web) | 2 | done | `feat(web): add the pages list and create flow` |
 | 5 | Page detail, publish toggle and preview (web) | 3, 4 | todo | |
 | 6 | Public page route with SSR and SEO (web) | 3, 5 | todo | |
 | 7 | Docs and code review | 1–6 | todo | |
@@ -60,53 +60,29 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Migrations** come from `bun run db:generate` (last one is `0024_pages.sql`; rename the generated file and its journal tag to match).
 - **JSONB:** use the custom `jsonb<T>()` from `@db/jsonb`, not Drizzle's own, which double-encodes with Bun SQL.
 - **TanStack Start SSR inheritance:** a child route can only be more restrictive than its parent. `src/modules/storefront/routes/route.tsx` (the `/$organizationSlug` layout) sets `ssr: false`, so a child page route can't render on the server until that flag moves off the layout. `api()` in `src/shared/lib/api.ts` already works on the server (forwards cookies to `BACKEND_URL`).
-- **Plan UI helpers:** `PlanGate` and `UpgradePrompt` in `src/shared/components/` are feature-based; `useEntitlements()` (`src/shared/lib/auth/entitlements.ts`) gives `has(feature)`; `minimumPlanFor(feature)` and `getPlanName` are in `src/shared/lib/plans.ts`. The upgrade link is `/account/billing?change=plan` for `billing:manage`, else "Ask an owner to upgrade."
+- **Plan UI helpers:** `PlanGate` and `UpgradePrompt` in `src/shared/components/` are feature-based; `UpgradeAction` (same file) is the owner/non-owner action alone (`/account/billing?change=plan` for `billing:manage`, else "Ask an owner to upgrade."). `useEntitlements()` gives `has(feature)`; `minimumPlanFor(feature)`, `minimumPlanForPages(count)` and `getPlanName` are in `src/shared/lib/plans.ts`.
 - **Seed and plan changes:** `bun run dev:seed-scenario` (`Sinwy.Backend/scripts/dev/seedScenario.ts`; `pro-org` is the Professional owner). Plan changes are simulated with `bun run dev:simulate-polar-webhook` (`subscription.updated` is supported).
 - **Shared page contracts (phase 1):** `createPageSchema`, `updatePageSchema` (partial `pageDetailsSchema`; the API stores empty SEO strings as null), `pageSlugSchema`, DTOs `PageListDto`/`PageDetailDto`/`PublicPageDto`, `PAGE_TEMPLATES` / `PAGE_TEMPLATE_IDS` with `requires`, `limitsFor(plan).pages`. Tables `page` / `page_content` in `db/schema/pageSchema.ts`.
 - **Pages API (phase 2)**, `Sinwy.Backend/modules/pages/`: routes under `/api/organizations/:organizationId/pages`. Writes answer the full `PageDetailDto` (DELETE answers `null`). Error codes: 409 `ORGANIZATION_INACTIVE`, 409 `PAGE_LIMIT_REACHED`, 402 `PLAN_UPGRADE_REQUIRED`, 409 `PAGE_SLUG_TAKEN` (map it to the slug field with `showFieldError` from `src/shared/lib/form.ts`), 409 `PAGE_VERSION_CONFLICT`, 413 for content over 256 KB, 400 with the first Zod message (e.g. a reserved slug). `respondError` in `controller.ts` maps the service's `PageError`.
 - **Served set:** `findServedPageIds(organizationId, limit)` in `modules/pages/repository.ts` (oldest published by `createdAt`, `id`; empty set for limit 0). The dashboard passes `limitsFor(membership.plan)`, the public endpoint the public plan. `isSlugClash(error)` detects the slug unique violation (Drizzle puts the Postgres error fields on `cause`).
 - **Shared has no tests of its own:** `@sinwy/shared` contract tests run from the backend (`modules/pages/tests/pageContracts.test.ts`).
 - **Backend HTTP tests** build an app with only the routes they need and use the helpers in `Sinwy.Backend/test/helpers.ts`. `modules/pages/tests/pages.test.ts` has `seedOrg(name, plan)`, `create`, `save`, `setPlan` (`givePlan` on the owner, `null` ends the plan), `publish` (the route) and `readPublic(pageSlug, orgSlug)`; a test org's slug is its id. Inactive: clear `organization.slotHeldAt`.
-- **Dev DB leftovers:** a phase-2 smoke run left `pro-org` org `seed-079f9ae5` with one draft `welcome` page.
+- **Dashboard pages UI (phase 4):** `lib/page-queries.ts` has `pageKeys` (`all`/`list`/`detail`), `pagesQuery`, `createPage`; a create seeds `pageKeys.detail` with the returned `PageDetailDto` and navigates to `pages/$id`. `lib/pages.ts` has `slugFromTitle`, `pageState` / `PAGE_STATE_LABELS` (live, "Published, not live", draft), `isAtPageLimit`, `publicPagePath`. Components in `components/pages/`: `PagesTable`, `TemplatePicker`, `PageUsageMeter`, `PageLimitNotice`, `NewPageForm` (API error handling pattern: inactive → `handleOrganizationInactive`, `PAGE_SLUG_TAKEN` → `showFieldError`). The table's public link is a plain `<a href>`, since the `$pageSlug` route doesn't exist until phase 6. The dashboard shell is `ssr: false`, so relative times need no hydration care.
+- **E2E:** the template radios are `sr-only`; click the card text (`getByText('About', { exact: true })`), not `getByRole('radio')`. Seed output prints `organization.plan: null` even for paid scenarios; the limits are still right.
+- **Dev DB leftovers:** `pro-org` `seed-079f9ae5` (draft `welcome`), Starter `seed-1adfd7aa` (draft `about-us`), and from phase 4's Verify `seed-0f754101` (Starter), `seed-e9895eba` (Pro, `welcome-home` from `landing`), `seed-af256e02` (staff org). Seed fresh orgs rather than reusing them.
+- **Dev servers (phase 4):** backend and web were started with logs in `/tmp/sinwy-logs/server.log` and `web.log`; phase 7 stops them.
 
 ---
-
-## Phase 4: Pages list, create flow and limit UI (web)
-
-**Goal:** members see their pages with status, last edited and public link, and writers create a page from a template picker that respects plan gates and the page limit.
-
-**Files:**
-- `src/modules/org-dashboard/lib/page-queries.ts` (new; pattern: `service-queries.ts`): the list query (`PageListDto` from `GET pages`) and the create mutation (`POST pages`, answers `PageDetailDto`). Phase 5 adds detail, PATCH, publish/unpublish and delete here.
-- `src/modules/org-dashboard/routes/_shell.pages.index.tsx` (replace the empty state), new `_shell.pages.new.tsx`.
-- `src/modules/org-dashboard/components/pages/` (new): list table, template picker (`PAGE_TEMPLATES` / `PAGE_TEMPLATE_IDS` and their `requires` from `@sinwy/shared`), usage meter (`usage` from the list).
-- `src/shared/lib/plans.ts`: a `minimumPlanForPages(count)` helper beside `minimumPlanFor`, built on `PLAN_LIMITS`.
-- Form validation reuses `createPageSchema` / `pageSlugSchema` from `@sinwy/shared`; the slug derivation helper lives beside the form (or in `src/shared/lib/` if phase 5's slug field reuses it).
-- `src/shared/components/UpgradePrompt.tsx`: reuse its owner/non-owner action for a limit variant rather than copying it.
-
-**Steps:**
-- List columns: title, slug, status badge ("Published", "Draft", "Published, not live" for over-limit), last edited (relative), and the public link for live pages.
-- Header shows "3 of 5 pages used". At the cap, "New page" is disabled and an upgrade prompt names the next plan with a higher limit. Over the cap, the prompt also explains which pages are offline.
-- Create page: template cards; premium ones show a lock and the plan name when `has("page-builder")` is false, and can't be picked. Then title, with the slug derived from it and editable. On success, go to the page detail.
-- Field errors from the API (slug clash, reserved slug) show on the field; 409 `PAGE_LIMIT_REACHED` shows the upgrade prompt.
-- Staff see the list without "New page" or write actions.
-
-**Tests that matter:**
-- Slug derivation from a title (accents, spaces, reserved words).
-- `minimumPlanForPages` picks the cheapest plan whose limit fits.
-
-**Done when:** the list and create flow work for owner, admin and staff, and `bun run verify` passes.
-
-**Verify:** Seed `subscribed-org` (Starter) and log in as the owner. Pages shows "0 of 1 pages used". New page: `landing` and `services-showcase` are locked with "Business"; pick `about`, title "About us" → lands on the page detail; a `page` row and one `page_content` row (version 1) exist, the content holds the seeded tagline. Back on the list: "1 of 1 pages used", "New page" disabled, upgrade prompt links to `/account/billing?change=plan`. Then seed `pro-org`: a premium template can be picked, and creating two pages with the same slug shows the slug error on the second. Log in as a staff member (`org-with-staff`): the list shows, with no create or edit actions. No Polar or email involved.
 
 ## Phase 5: Page detail, publish toggle and preview (web)
 
 **Goal:** writers edit a page's title, slug and SEO, publish and unpublish it, and preview the draft; the content area is a placeholder the builder drops into.
 
 **Files:**
-- `src/modules/org-dashboard/routes/_shell.pages.$id.tsx` (replace the empty state), new `_shell.pages.$id.preview.tsx`.
-- `src/modules/org-dashboard/lib/page-queries.ts` (from phase 4).
-- `src/modules/org-dashboard/components/pages/` — metadata/SEO form, publish card, content placeholder.
-- `src/shared/components/page-content/PageRenderer.tsx` (new, Default 14).
+- `src/modules/org-dashboard/routes/_shell.pages.$id.tsx` (replace the empty state; the create flow already lands here), new `_shell.pages.$id.preview.tsx`.
+- `src/modules/org-dashboard/lib/page-queries.ts`: add `pageQuery` (key `pageKeys.detail`, which create already seeds), `updatePage` (PATCH, `UpdatePageInput`), `publishPage` / `unpublishPage` (answer `PageDetailDto`), `deletePage` (answers `null`); update both the detail and list caches after writes.
+- `src/modules/org-dashboard/components/pages/` — details/SEO form (pattern: `NewPageForm.tsx`, with `pageDetailsSchema` and `PAGE_LIMITS`; empty SEO strings are stored as null), publish card (`pageState`, `PAGE_STATE_LABELS`, `publicPagePath` from `lib/pages.ts`), content placeholder; the delete confirm uses `src/shared/components/ui/alert-dialog.tsx`.
+- `src/shared/components/page-content/PageRenderer.tsx` (new, Default 14). Web tests are plain `bun:test` `.test.ts` files with no DOM; render it with `react-dom/server` in `src/shared/tests/`.
 
 **Steps:**
 - Sections: Details (title, slug), SEO (title and description with counters and the fallback shown as placeholder), Publishing (status, the toggle, "Publish changes" when `hasUnpublishedChanges`, the public link when live, the over-limit notice from Default 2), Content (placeholder with the version number, last saved time and a "Preview" link).

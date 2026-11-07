@@ -1,6 +1,7 @@
 import {
 	type Feature,
 	PLAN_FEATURES,
+	PLAN_LIMITS,
 	PLAN_SLUGS,
 	type PlanSlug,
 } from "@sinwy/shared";
@@ -30,3 +31,7 @@ export const FEATURE_NAMES: Record<Feature, string> = {
 /** Cheapest plan that includes the feature; relies on PLAN_SLUGS being ordered cheapest first. */
 export const minimumPlanFor = (feature: Feature): PlanSlug | null =>
 	PLAN_SLUGS.find((slug) => PLAN_FEATURES[slug].includes(feature)) ?? null;
+
+/** Cheapest plan that allows `count` pages; null when none does. */
+export const minimumPlanForPages = (count: number): PlanSlug | null =>
+	PLAN_SLUGS.find((slug) => PLAN_LIMITS[slug].pages >= count) ?? null;

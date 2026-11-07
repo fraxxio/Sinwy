@@ -105,3 +105,35 @@ Finished phases of the [CMS pages plan](cms-pages-plan.md), each with its spec a
 - Shipped: `POST pages/:pageId/publish` and `POST pages/:pageId/unpublish` (`pages:write`, 409 while inactive, 404 for another org's id) and `GET /api/public/organizations/:slug/pages/:pageSlug` via `registerPublicPageRoutes`, registered in `Sinwy.Backend/index.ts`. Repository: `publishPage` (locks the page row, pins `latestVersionOf`), `unpublishPage`, `findPublishedPageBySlug` (inner join on the pinned `page_content` row, so the draft can't leak). Organizations: `findPublicOrganizationPlan(slug)` → `{ id, name, slug, tagline, plan }` or null. Tests: `publishRow` swapped for the route; five new tests (pin vs. later saves and SEO fallback, unpublish, ended plan and scheduled deletion with the `page` row unchanged, downgrade served set with publish order reversed and a republish, identical 404 bodies for every miss); staff, inactive and foreign-id tests cover the two new routes.
 - Differs from plan: the tagline comes from the `findOrganizationBySlug` row through `findPublicOrganizationPlan`, not a second `getOrganizationProfile` call. An empty tagline falls back to `null`. Publishing doesn't bump `updatedAt`, since it isn't a content or metadata edit. The public route path is spelled out in `pages/routes.ts` instead of importing `STOREFRONT` from bookings (not exported, and a cross-module internal import).
 - Checked in the running app: nothing (Verify: None; no dev servers running). `bun run verify` exit 0, 740 server tests.
+
+## Phase 4: Pages list, create flow and limit UI (web)
+
+**Goal:** members see their pages with status, last edited and public link, and writers create a page from a template picker that respects plan gates and the page limit.
+
+**Files:**
+- `src/modules/org-dashboard/lib/page-queries.ts` (new; pattern: `service-queries.ts`): the list query (`PageListDto` from `GET pages`) and the create mutation (`POST pages`, answers `PageDetailDto`). Phase 5 adds detail, PATCH, publish/unpublish and delete here.
+- `src/modules/org-dashboard/routes/_shell.pages.index.tsx` (replace the empty state), new `_shell.pages.new.tsx`.
+- `src/modules/org-dashboard/components/pages/` (new): list table, template picker (`PAGE_TEMPLATES` / `PAGE_TEMPLATE_IDS` and their `requires` from `@sinwy/shared`), usage meter (`usage` from the list).
+- `src/shared/lib/plans.ts`: a `minimumPlanForPages(count)` helper beside `minimumPlanFor`, built on `PLAN_LIMITS`.
+- Form validation reuses `createPageSchema` / `pageSlugSchema` from `@sinwy/shared`; the slug derivation helper lives beside the form (or in `src/shared/lib/` if phase 5's slug field reuses it).
+- `src/shared/components/UpgradePrompt.tsx`: reuse its owner/non-owner action for a limit variant rather than copying it.
+
+**Steps:**
+- List columns: title, slug, status badge ("Published", "Draft", "Published, not live" for over-limit), last edited (relative), and the public link for live pages.
+- Header shows "3 of 5 pages used". At the cap, "New page" is disabled and an upgrade prompt names the next plan with a higher limit. Over the cap, the prompt also explains which pages are offline.
+- Create page: template cards; premium ones show a lock and the plan name when `has("page-builder")` is false, and can't be picked. Then title, with the slug derived from it and editable. On success, go to the page detail.
+- Field errors from the API (slug clash, reserved slug) show on the field; 409 `PAGE_LIMIT_REACHED` shows the upgrade prompt.
+- Staff see the list without "New page" or write actions.
+
+**Tests that matter:**
+- Slug derivation from a title (accents, spaces, reserved words).
+- `minimumPlanForPages` picks the cheapest plan whose limit fits.
+
+**Done when:** the list and create flow work for owner, admin and staff, and `bun run verify` passes.
+
+**Verify:** Seed `subscribed-org` (Starter) and log in as the owner. Pages shows "0 of 1 pages used". New page: `landing` and `services-showcase` are locked with "Business"; pick `about`, title "About us" → lands on the page detail; a `page` row and one `page_content` row (version 1) exist, the content holds the seeded tagline. Back on the list: "1 of 1 pages used", "New page" disabled, upgrade prompt links to `/account/billing?change=plan`. Then seed `pro-org`: a premium template can be picked, and creating two pages with the same slug shows the slug error on the second. Log in as a staff member (`org-with-staff`): the list shows, with no create or edit actions. No Polar or email involved.
+
+### Log (2026-11-07, `feat(web): add the pages list and create flow`)
+- Shipped: `lib/page-queries.ts` (list query, create), `lib/pages.ts` (`slugFromTitle`, page state labels, limit and public path helpers), `components/pages/` (`PagesTable`, `TemplatePicker`, `PageUsageMeter`, `PageLimitNotice`, `NewPageForm`), `_shell.pages.index.tsx` (usage meter, table or empty state, limit notice) and `_shell.pages.new.tsx` (`pages:write`; shows the limit notice instead of the form at the cap). `minimumPlanForPages` in `src/shared/lib/plans.ts`; `UpgradeAction` split out of `UpgradePrompt`. Tests: slug derivation (accents, folded letters like ß/Æ/Ł, reserved words, length) and `minimumPlanForPages`.
+- Differs from plan: the slug helper lives in `lib/pages.ts`, since phase 5's slug field is edited by hand and doesn't derive. The limit notice is an inline alert (the list stays visible) rather than an `UpgradePrompt` variant; it reuses the extracted `UpgradeAction`. At the cap it names the cheapest plan for `used + 1` pages, over the cap the plan for `used` pages, and lists the offline pages by title. Staff see only the over-the-cap notice, not the at-cap one. `PAGE_LIMIT_REACHED` on create refetches the list, so the form swaps to the limit notice. The address is derived from the title until someone types their own (clearing it resumes the derivation); reserved results get `-page` (`book` → `book-page`).
+- Checked in the running app: the full Verify brief passed in a subagent (Starter: locked premium templates with "Business", about → detail, one `page` + version-1 `page_content` with the seeded tagline, list at "1 of 1" with "New page" disabled and the upgrade link; Pro: premium template creates, duplicate slug shows "Another page already uses this address" on Address; staff: list without create or edit actions, and `/pages/new` redirects with an access-denied notice). No server or console errors except the expected 409. Not checked: the over-the-cap notice in the browser (phase 6's downgrade covers it) and the plan change behind "Upgrade plan". `bun run verify` exit 0 (740 server, 238 web tests).
