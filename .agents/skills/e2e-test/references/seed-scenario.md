@@ -1,7 +1,7 @@
 # seed-scenario
 
 ```bash
-bun run dev:seed-scenario <user|owner-with-org|subscribed-org|org-with-staff|bookable-org> [--staff <n>] [--url <backend url>]
+bun run dev:seed-scenario <user|owner-with-org|subscribed-org|pro-org|org-with-staff|bookable-org> [--staff <n>] [--url <backend url>]
 ```
 
 This creates fresh users and an org through the backend's HTTP API, the way the browser does. It posts the sign-up form, follows the emailed verification link and calls the org endpoints. The backend must be running and `SEED_EMAIL_BASE` must be set in `Sinwy.Backend/.env`. Users get plus-aliases of that address, because Polar rejects domains that can't receive mail when a checkout creates the customer.
@@ -11,6 +11,7 @@ This creates fresh users and an org through the backend's HTTP API, the way the 
 | `user` | one verified user with no org (start here to test org creation in the browser) |
 | `owner-with-org` | verified owner with no plan, org `inactive` without a slot, no onboarding (the state right after `/organizations/new`) |
 | `subscribed-org` | as above, then a simulated Starter `subscription.active` for the owner, the org activated on its slot, profile filled in and onboarding complete |
+| `pro-org` | `subscribed-org` with the owner on Professional instead of Starter (5 pages, `page-builder`) |
 | `org-with-staff` | `subscribed-org` plus `--staff` verified staff members (default 1) |
 | `bookable-org` | `subscribed-org` in `Europe/Vilnius` with Mon–Sun 09:00–17:00 hours, an auto-confirmed "Haircut" (30 min, €25) and a "Colouring" that needs approval (90 min, €80); `organization` adds `timezone`, `hours` and `services` (ids, prices, `requiresApproval`) |
 

@@ -13,6 +13,7 @@
 		"@servicesModule": "./modules/services",
 		"@bookingsModule": "./modules/bookings",
 		"@paymentsModule": "./modules/payments",
+		"@pagesModule": "./modules/pages",
 		"@backend/*": "./*"
 	}
 }

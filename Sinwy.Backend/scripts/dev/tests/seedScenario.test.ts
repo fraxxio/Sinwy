@@ -156,6 +156,14 @@ test("subscribed-org: the owner on Starter through the webhook, the org on its s
 	expect(profile?.country).toBe("LT");
 });
 
+test("pro-org: a subscribed org whose owner is on Professional", async () => {
+	const result = await seed("pro-org");
+	const [owner] = result.users;
+
+	expect((await orgRow(result.organization.id))?.status).toBe("active");
+	expect(await planOf(owner?.userId ?? "")).toBe("professional");
+});
+
 test("bookable-org: a subscribed org with daily hours and two services", async () => {
 	const result = await seed("bookable-org");
 

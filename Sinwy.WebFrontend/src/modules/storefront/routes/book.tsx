@@ -11,7 +11,7 @@ import {
 	useSuspenseQuery,
 } from "@tanstack/react-query";
 import { createFileRoute, useLocation } from "@tanstack/react-router";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, StoreIcon } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { BookingSuccess } from "#/modules/storefront/components/BookingSuccess";
@@ -28,6 +28,7 @@ import {
 	storefrontTimesQuery,
 } from "#/modules/storefront/lib/storefront-queries";
 import { BookableTimesPicker } from "#/shared/components/booking/BookableTimesPicker";
+import { EmptyState } from "#/shared/components/EmptyState";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { authClient } from "#/shared/lib/auth/auth-client";
@@ -42,7 +43,12 @@ const searchSchema = z.object({
 });
 
 export const Route = createFileRoute("/$organizationSlug/book")({
+	ssr: false,
 	validateSearch: searchSchema,
+	loader: ({ params, context }) =>
+		context.queryClient.ensureQueryData(
+			storefrontQuery(params.organizationSlug),
+		),
 	component: BookPage,
 });
 
@@ -52,23 +58,44 @@ function BookPage() {
 	const [booked, setBooked] = useState<CustomerBookingDto | null>(null);
 	const navigate = Route.useNavigate();
 
-	// the layout shows the unavailable page
-	if (!storefront) return null;
-
-	if (booked)
+	if (!storefront)
 		return (
-			<BookingSuccess booking={booked} onBookAnother={() => setBooked(null)} />
+			<EmptyState
+				icon={<StoreIcon />}
+				title="This booking page isn't available"
+				description="The link may be wrong, or the business isn't taking bookings on Sinwy right now."
+			/>
 		);
 
+	const { organization } = storefront;
+	const place = [organization.city, organization.country]
+		.filter(Boolean)
+		.join(", ");
 	return (
-		<BookingSteps
-			slug={slug}
-			storefront={storefront}
-			onBooked={(booking) => {
-				setBooked(booking);
-				void navigate({ search: {}, replace: true });
-			}}
-		/>
+		<div className="mx-auto w-full max-w-2xl space-y-8">
+			<header className="space-y-1">
+				<h1 className="font-semibold text-3xl">{organization.name}</h1>
+				{organization.tagline && (
+					<p className="text-muted-foreground">{organization.tagline}</p>
+				)}
+				{place && <p className="text-muted-foreground text-sm">{place}</p>}
+			</header>
+			{booked ? (
+				<BookingSuccess
+					booking={booked}
+					onBookAnother={() => setBooked(null)}
+				/>
+			) : (
+				<BookingSteps
+					slug={slug}
+					storefront={storefront}
+					onBooked={(booking) => {
+						setBooked(booking);
+						void navigate({ search: {}, replace: true });
+					}}
+				/>
+			)}
+		</div>
 	);
 }
 

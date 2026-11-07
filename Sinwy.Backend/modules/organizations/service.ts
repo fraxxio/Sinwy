@@ -108,6 +108,19 @@ export const findPublicOrganization = async (slug: string) => {
 	};
 };
 
+/** A public organization and the plan its pages are served under; null when the slug is unknown or it isn't active. */
+export const findPublicOrganizationPlan = async (slug: string) => {
+	const row = await findOrganizationBySlug(slug);
+	if (!row || !isOrganizationPublic(row)) return null;
+	return {
+		id: row.id,
+		name: row.name,
+		slug: row.slug,
+		tagline: row.tagline,
+		plan: organizationPlanOf(row),
+	};
+};
+
 export type PublicOrganization = NonNullable<
 	Awaited<ReturnType<typeof findPublicOrganization>>
 >;
@@ -258,6 +271,12 @@ const toProfileDto = (
 				country: row.country,
 			}
 		: EMPTY_ORGANIZATION_PROFILE;
+
+/** The public profile, empty fields when none was saved yet. */
+export const getOrganizationProfile = async (
+	organizationId: string,
+): Promise<OrganizationProfileDto> =>
+	toProfileDto(await findProfile(organizationId));
 
 export const getOrganizationOnboarding = async ({
 	organizationId,

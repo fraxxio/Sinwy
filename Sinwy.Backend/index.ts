@@ -11,6 +11,7 @@ import {
 import appConfig from "@config";
 import { registerFileRoutes } from "@filesModule";
 import { registerOrganizationRoutes } from "@organizationsModule";
+import { registerPageRoutes, registerPublicPageRoutes } from "@pagesModule";
 import {
 	registerAccountPaymentRoutes,
 	registerPaymentRoutes,
@@ -31,6 +32,8 @@ registerStorefrontRoutes(app);
 registerAccountBookingRoutes(app);
 registerPaymentRoutes(app);
 registerAccountPaymentRoutes(app);
+registerPageRoutes(app);
+registerPublicPageRoutes(app);
 registerUserRoutes(app);
 registerFileRoutes(app);
 

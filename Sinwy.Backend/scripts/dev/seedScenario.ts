@@ -6,6 +6,7 @@ import {
 	DEFAULT_ORGANIZATION_INDUSTRY,
 	type OrganizationDto,
 	type OrganizationStatus,
+	type PlanSlug,
 	type ServiceDto,
 } from "@sinwy/shared";
 import { assertLocalDev } from "../assertLocalDev";
@@ -16,6 +17,7 @@ export const scenarios = [
 	"user",
 	"owner-with-org",
 	"subscribed-org",
+	"pro-org",
 	"org-with-staff",
 	"bookable-org",
 ] as const;
@@ -110,17 +112,18 @@ const signUp = async (
 const statusPath = (organizationId: string) =>
 	`/api/organizations/${organizationId}/status`;
 
-/** A simulated Starter plan for the owner, then the organization takes its slot. */
+/** A simulated plan for the owner, then the organization takes its slot. */
 const activate = async (
 	baseUrl: string | URL,
 	userId: string,
 	organizationId: string,
 	cookie: string,
+	plan: PlanSlug,
 ) => {
 	const delivery = buildPolarDelivery({
 		type: "subscription.active",
 		userId,
-		plan: "starter",
+		plan,
 	});
 	const { status, response } = await sendPolarDelivery(baseUrl, delivery);
 	if (status !== 200) {
@@ -283,6 +286,7 @@ export const seedScenario = async ({
 		owner.userId,
 		org.id,
 		owner.cookie,
+		scenario === "pro-org" ? "professional" : "starter",
 	);
 	await completeOnboarding(baseUrl, org.id, owner.cookie, owner.email);
 
