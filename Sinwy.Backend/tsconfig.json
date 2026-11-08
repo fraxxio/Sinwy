@@ -17,6 +17,7 @@
 			"@bookingsModule": ["./modules/bookings"],
 			"@paymentsModule": ["./modules/payments"],
 			"@pagesModule": ["./modules/pages"],
+			"@analyticsModule": ["./modules/analytics"],
 			"@backend/*": ["./*"]
 		}
 	},

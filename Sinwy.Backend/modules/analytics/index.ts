@@ -1,0 +1,1 @@
+export { registerPublicAnalyticsRoutes } from "./routes";

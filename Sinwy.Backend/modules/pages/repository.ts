@@ -219,6 +219,23 @@ export const unpublishPage = async (organizationId: string, pageId: string) => {
 };
 
 /** A published page with its pinned content; never the draft. */
+export const findPublishedPageIdBySlug = async (
+	organizationId: string,
+	slug: string,
+) => {
+	const [row] = await db
+		.select({ id: page.id })
+		.from(page)
+		.where(
+			and(
+				eq(page.organizationId, organizationId),
+				eq(page.slug, slug),
+				eq(page.status, "published"),
+			),
+		);
+	return row?.id ?? null;
+};
+
 export const findPublishedPageBySlug = async (
 	organizationId: string,
 	slug: string,

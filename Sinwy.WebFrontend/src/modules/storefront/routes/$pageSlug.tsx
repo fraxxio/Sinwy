@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { FileXIcon } from "lucide-react";
 import { publicPageQuery } from "#/modules/storefront/lib/storefront-queries";
+import { useTrackEvent } from "#/modules/storefront/lib/track";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageRenderer } from "#/shared/components/page-content/PageRenderer";
 
@@ -42,6 +43,7 @@ function PublicPage() {
 	const { data: page } = useSuspenseQuery(
 		publicPageQuery(organizationSlug, pageSlug),
 	);
+	useTrackEvent(organizationSlug, "view", pageSlug);
 	if (!page) return <PageUnavailable />;
 
 	return (

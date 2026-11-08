@@ -19,6 +19,8 @@ const configSchema = z
 		BETTER_AUTH_SECRET: z.string(),
 		BETTER_AUTH_URL: z.string(),
 		WEB_APP_URL: z.url(),
+		// e.g. "x-forwarded-for"; unset reads the socket address
+		TRUSTED_PROXY_HEADER: z.string().toLowerCase().optional(),
 		GOOGLE_CLIENT_ID: z.string(),
 		GOOGLE_CLIENT_SECRET: z.string(),
 		EMAIL_DRIVER: z.enum(["resend", "console"]).optional(),

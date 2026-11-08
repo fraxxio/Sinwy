@@ -194,6 +194,7 @@ export const fakeCtx = (
 	);
 	return {
 		req: req as IReqContext["req"],
+		server: { requestIP: () => null } as unknown as IReqContext["server"],
 		set: (key, value) => {
 			store[key] = value;
 		},
