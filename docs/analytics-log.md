@@ -367,3 +367,43 @@ Finished phases of the [analytics plan](analytics-plan.md), each with its spec a
   - No console errors and nothing in the backend or web logs.
   - Not checked: gating after a real Polar plan change, and live visits fed through the rollup.
   - Noted, not fixed: Starter is offered the 90-day preset, clamped and explained by the note. The two bookings charts pick different x-axis ticks.
+
+## Phase 6: Exclude members and rate-limit tracking
+
+**Goal:** Signed-in members of the organization aren't counted, and one client can't flood an org's events.
+
+**Files:**
+- `Sinwy.Backend/modules/analytics/controller.ts` (the tracking handler; it already reads `clientIp(ctx)` from `lib/clientIp.ts`), `service.ts` (`trackEvent`, which does every drop check before the insert) and `tests/` (the tracking tests).
+- `modules/auth/index.ts`: a session lookup that doesn't require auth, and the membership check. Don't import auth internals.
+- `storefront/lib/track.ts` needs no change: its same-origin `fetch` already sends the session cookie.
+
+**Steps:**
+- **Members:** the tracking endpoint reads the session if there is one. When the user is a member of the org, it drops the event and still answers 204.
+- **Rate limit:** an in-memory limiter keyed by IP and org (Default 8), for example at most 60 events a minute. Events over the limit are dropped and the endpoint still answers 204.
+
+**Tests that matter:**
+- A member's view isn't stored; a signed-in customer's view is.
+- Events past the limit are dropped, and the limiter resets.
+
+**Done when:** owner and staff visits leave no rows, and customer visits still do.
+
+**Verify:**
+- **Seed:** `org-with-staff` with a published page (set up as in Phase 1, on a plan with `page-builder`) and a separate `user`.
+- **Flow:** open the page as the owner, as staff and as the customer user.
+- **Expect:** only the customer's visit adds an `analytics_event` row.
+- **Simulated:** nothing.
+
+### Log (2026-11-09, `feat(backend): skip organization members and rate-limit analytics tracking`)
+- Shipped:
+  - The tracking handler looks up the session with the new auth `findSession(ctx)` and passes `userId` to `trackEvent`, which drops the event when `isOrganizationMember` (new, in the auth module) is true for the resolved org. Still 204.
+  - `modules/analytics/rateLimit.ts`: an in-memory limiter, 60 events a minute per `ip|slug`, the window starting at a key's first hit and expired keys swept once a minute. The handler checks it first, before the body, the session lookup or any DB query, and answers 204 when it drops.
+  - Tests in `tracking.test.ts`: owner and staff views not stored, a signed-in customer (a member of another org) and an anonymous visitor stored; the 61st event dropped while another org still counts; the limiter resetting after its window (fixed-clock unit test).
+- Differs from plan:
+  - The rate limit runs in the controller, not in `trackEvent`, so a flood never reaches the session lookup or the database. Keyed by the URL slug, since the org id isn't known before the DB lookup; unknown slugs only create keys that expire within a minute.
+  - Members of an org scheduled for deletion aren't special-cased: such an org isn't public, so its events are dropped earlier.
+- Checked in the running app by the e2e subagent; every step passed:
+  - `org-with-staff` org `0ce90ef2…` (`seed-010e0e0f`), owner set to Professional with psql for `page-builder`; page `welcome` created and published through the API as the owner.
+  - Owner and staff visits (signed in, desktop Chrome user agent) each sent one events POST, answered 204, and left the count at 0. The customer `webdevrokas+seed-ce28d113-user@gmail.com` added 1 row (`view`, the page's id), and an anonymous visit added 1 more.
+  - No console errors and nothing in the backend or web logs.
+  - Not checked: creating the page through the dashboard UI, and the rate limit in the browser (unit-tested only).
+  - The backend left running from Phase 5 had no watch mode and ran old code. My `kill` was refused by the auto mode classifier; the process had exited by the time the user tried, and a new one was started.

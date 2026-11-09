@@ -2,7 +2,9 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import createApp from "@backend/lib/app";
 import {
 	activateOrganization,
+	createUserWithSession,
 	insertOrganization,
+	joinOrganization,
 } from "@backend/test/helpers";
 import appConfig from "@config";
 import db from "@db";
@@ -13,6 +15,8 @@ import { user } from "@db/schema/userSchema";
 import type { PlanSlug, TrackEventInput } from "@sinwy/shared";
 import type { Server } from "bun";
 import { asc, eq, sql } from "drizzle-orm";
+import { TRACKING_LIMIT } from "../controller";
+import { createRateLimiter } from "../rateLimit";
 import { registerPublicAnalyticsRoutes } from "../routes";
 import { trackEvent } from "../service";
 
@@ -95,7 +99,11 @@ const trackAt = (
 	now: Date,
 	event: TrackEventInput = { kind: "view" },
 	{ slug = orgId, ip = "203.0.113.7", userAgent = DESKTOP } = {},
-) => trackEvent({ organizationSlug: slug, event, ip, userAgent }, now);
+) =>
+	trackEvent(
+		{ organizationSlug: slug, event, ip, userAgent, userId: null },
+		now,
+	);
 
 test("a page view, a booking-page view and a started booking are stored as sent", async () => {
 	const pageId = await insertPage(orgId, "about");
@@ -301,4 +309,60 @@ test("every instance agrees on the day's salt", async () => {
 
 	expect(new Set((await events()).map((row) => row.visitorHash)).size).toBe(1);
 	expect(await db.select().from(analyticsSalt)).toHaveLength(1);
+});
+
+test("the organization's members aren't counted, signed-in customers are", async () => {
+	const owner = await createUserWithSession();
+	const staffOrgId = await insertOrganization("Studio");
+	await joinOrganization(staffOrgId, owner.userId, "owner");
+	await activateOrganization(staffOrgId);
+	const staff = await createUserWithSession();
+	await joinOrganization(staffOrgId, staff.userId, "staff");
+	const customer = await createUserWithSession();
+	await joinOrganization(orgId, customer.userId, "staff");
+
+	for (const { cookie } of [owner, staff, customer])
+		expect(
+			(await track({ kind: "view" }, { slug: staffOrgId, headers: { cookie } }))
+				.status,
+		).toBe(204);
+	await track({ kind: "view" }, { slug: staffOrgId });
+
+	expect((await events()).map((row) => row.organizationId)).toEqual([
+		staffOrgId,
+		staffOrgId,
+	]);
+});
+
+test("events past the rate limit are dropped", async () => {
+	const responses = [];
+	for (let i = 0; i <= TRACKING_LIMIT.max; i++)
+		responses.push(await track({ kind: "view" }));
+	const otherOrgId = await seedOrg("Other");
+	responses.push(await track({ kind: "view" }, { slug: otherOrgId }));
+
+	expect(responses.map((res) => res.status)).toEqual(responses.map(() => 204));
+	const rows = await events();
+	expect(rows.filter((row) => row.organizationId === orgId)).toHaveLength(
+		TRACKING_LIMIT.max,
+	);
+	expect(rows.filter((row) => row.organizationId === otherOrgId)).toHaveLength(
+		1,
+	);
+});
+
+test("the rate limiter resets once a key's window is over", () => {
+	const allow = createRateLimiter({ max: 2, windowMs: 60_000 });
+	const start = 1_000_000;
+
+	expect([
+		allow("a", start),
+		allow("a", start + 1),
+		allow("a", start + 2),
+		allow("b", start + 3),
+		allow("a", start + 59_999),
+		allow("a", start + 60_000),
+		allow("a", start + 60_001),
+		allow("a", start + 60_002),
+	]).toEqual([true, true, false, true, false, true, true, false]);
 });

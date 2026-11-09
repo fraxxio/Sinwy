@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Membership } from "@authModule";
+import { isOrganizationMember, type Membership } from "@authModule";
 import { getBookingAnalytics } from "@bookingsModule";
 import appConfig from "@config";
 import { findPublicOrganizationPlan } from "@organizationsModule";
@@ -78,16 +78,22 @@ type TrackRequest = {
 	event: TrackEventInput;
 	ip: string | null;
 	userAgent: string | null;
+	/** The signed-in user, if any. */
+	userId: string | null;
 };
 
-/** Stores the event, or silently drops it for a bot, an organization that isn't public or a page that isn't served. */
+/**
+ * Stores the event, or silently drops it for a bot, an organization that
+ * isn't public, a page that isn't served or one of the organization's members.
+ */
 export const trackEvent = async (
-	{ organizationSlug, event, ip, userAgent }: TrackRequest,
+	{ organizationSlug, event, ip, userAgent, userId }: TrackRequest,
 	now = new Date(),
 ) => {
 	if (!userAgent || isBot(userAgent)) return;
 	const organization = await findPublicOrganizationPlan(organizationSlug);
 	if (!organization) return;
+	if (userId && (await isOrganizationMember(userId, organization.id))) return;
 	const pageId = event.pageSlug
 		? await findServedPageId(organization.id, organization.plan, event.pageSlug)
 		: null;

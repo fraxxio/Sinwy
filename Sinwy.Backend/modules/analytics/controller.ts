@@ -1,4 +1,4 @@
-import { type Membership, membershipFrom } from "@authModule";
+import { findSession, type Membership, membershipFrom } from "@authModule";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler, IReqContext } from "@backend/lib/app/types";
 import { clientIp } from "@backend/lib/clientIp";
@@ -12,6 +12,7 @@ import {
 } from "@sinwy/shared";
 import type { z } from "zod";
 import type { AnalyticsRangeError } from "./range";
+import { createRateLimiter } from "./rateLimit";
 import {
 	exportAnalytics,
 	getBookings,
@@ -25,19 +26,27 @@ import {
 
 const logger = createLogger("analytics");
 
-/** Always 204, so the answer never tells whether the organization or page exists. */
+export const TRACKING_LIMIT = { max: 60, windowMs: 60_000 };
+const allowTracking = createRateLimiter(TRACKING_LIMIT);
+
+/** Always 204, so the answer never tells whether the organization or page exists, or that the event was dropped. */
 export const trackEventHandler: Handler = async (c) => {
 	const { slug } = c.req.params as { slug: string };
+	const ip = clientIp(c);
+	if (!allowTracking(`${ip ?? ""}|${slug}`))
+		return new Response(null, { status: 204 });
 	const event = trackEventSchema.safeParse(
 		await c.req.json().catch(() => null),
 	);
 	if (event.success) {
 		try {
+			const session = await findSession(c);
 			await trackEvent({
 				organizationSlug: slug,
 				event: event.data,
-				ip: clientIp(c),
+				ip,
 				userAgent: c.req.headers.get("user-agent"),
+				userId: session?.user.id ?? null,
 			});
 		} catch (error) {
 			logger.error("Tracking an event failed", { error });
