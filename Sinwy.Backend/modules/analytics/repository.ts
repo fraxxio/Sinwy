@@ -5,6 +5,7 @@ import {
 	analyticsPageDaily,
 	analyticsSalt,
 } from "@db/schema/analyticsSchema";
+import { organization } from "@db/schema/organizationSchema";
 import type { AnalyticsDailyMetric } from "@sinwy/shared";
 import { and, asc, between, desc, eq, lt, sql } from "drizzle-orm";
 
@@ -34,17 +35,42 @@ export const saltFor = async (localDate: string, newSalt: () => string) => {
 export const insertEvent = (event: AnalyticsEventInsert) =>
 	db.insert(analyticsEvent).values(event);
 
+/** Timezones of the organizations with raw events waiting. */
+export const findPendingTimezones = async (tx: Tx) =>
+	(
+		await tx
+			.selectDistinct({ timezone: organization.timezone })
+			.from(analyticsEvent)
+			.innerJoin(
+				organization,
+				eq(organization.id, analyticsEvent.organizationId),
+			)
+	).map((row) => row.timezone);
+
+export type TimezoneToday = { timezone: string; today: string };
+
 /**
  * Moves raw events of days that are over in their org's timezone into the
  * daily tables. One statement, so events are deleted exactly when counted.
+ * Today per timezone comes from the caller, as the database may not know
+ * every zone name the app accepts.
  */
-export const rollUpCompleteDays = async (tx: Tx, now: Date) => {
+export const rollUpCompleteDays = async (tx: Tx, todays: TimezoneToday[]) => {
+	if (todays.length === 0) return { events: 0, dailyRows: 0, pageRows: 0 };
+	const todayRows = sql.join(
+		todays.map(
+			({ timezone, today }) => sql`(${timezone}::text, ${today}::date)`,
+		),
+		sql`, `,
+	);
 	const [row] = await tx.execute(sql`
-		WITH moved AS (
+		WITH org_today (timezone, local_date) AS (VALUES ${todayRows}),
+		moved AS (
 			DELETE FROM analytics_event e
-			USING organization o
+			USING organization o, org_today t
 			WHERE o.id = e.organization_id
-				AND e.local_date < (${now.toISOString()}::timestamptz AT TIME ZONE o.timezone)::date
+				AND t.timezone = o.timezone
+				AND e.local_date < t.local_date
 			RETURNING e.organization_id, e.local_date, e.page_id, e.kind,
 				e.visitor_hash, e.referrer_host, e.device
 		),

@@ -354,6 +354,27 @@ test("the funnel sums daily visitors, then counts storefront bookings made in th
 	]);
 });
 
+test("a zone name the database doesn't know still groups by local day", async () => {
+	await db
+		.update(organization)
+		.set({ timezone: "Asia/Calcutta" })
+		.where(eq(organization.id, orgId));
+	// made 00:30 on 5 March in Kolkata, starts 00:15 on 8 March there
+	await addBooking({
+		createdAt: "2026-03-04T19:00:00Z",
+		startsAt: "2026-03-07T18:45:00Z",
+		bookedBy: "customer",
+	});
+
+	const data = await bookings();
+	expect(day(data, "2026-03-05")?.bookings).toBe(1);
+	expect(day(data, "2026-03-08")?.bookedMinor).toBe(1000);
+	expect((await breakdown()).cancellation.bookings).toBe(1);
+	expect(
+		unwrap(await getFunnel(membership(), MARCH, NOW)).steps,
+	).toContainEqual({ step: "booked", count: 1 });
+});
+
 // The endpoints run on the real clock, so their rows are dated relative to it.
 const yesterday = () => addDaysToDate(todayIn(TIMEZONE, new Date()), -1);
 

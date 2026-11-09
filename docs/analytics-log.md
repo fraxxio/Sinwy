@@ -407,3 +407,51 @@ Finished phases of the [analytics plan](analytics-plan.md), each with its spec a
   - No console errors and nothing in the backend or web logs.
   - Not checked: creating the page through the dashboard UI, and the rate limit in the browser (unit-tested only).
   - The backend left running from Phase 5 had no watch mode and ran old code. My `kill` was refused by the auto mode classifier; the process had exited by the time the user tried, and a new one was started.
+
+## Phase 7: Code review and cleanup
+
+**Goal:** The whole plan's change is reviewed for privacy, auth, plan gating and data deletion, and the workspace is left clean.
+
+**Files:**
+- Every file changed in Phases 1–6: `git diff 38fab13~1 --stat` (Phase 1 is `38fab13`). Mainly `Sinwy.Backend/modules/analytics/` (`controller.ts`, `service.ts`, `repository.ts`, `rollup.ts`, `range.ts`, `csv.ts`, `rateLimit.ts`, `routes.ts`, `tests/`), `db/schema/analyticsSchema.ts` and its migrations, `lib/clientIp.ts`, `modules/auth/` (`findSession`, `isOrganizationMember`), `Sinwy.Shared/types/analytics/`, the storefront `lib/track.ts` and `useTrackEvent`, and the dashboard's `routes/_shell.analytics.tsx`, `components/analytics/` and `lib/date-range.ts`.
+- `docs/org-rules-map.md` and `README.md`.
+- Scratch to delete: `.agent-logs/` (logs, cookies, seed output, Phase 4 `.json` and `.csv`, Phase 5 screenshots), `.playwright-cli/` page and console files.
+
+**Steps:**
+- Review for:
+  - no raw IPs or user agents stored or logged
+  - salts deleted on time
+  - every analytics route behind `analytics:read`, and advanced routes behind `requireFeature`
+  - no data from one org visible to another
+  - cascade foreign keys on org and page deletion, and the organization purge still working
+  - the timezone edge cases
+  - CSV escaping
+- Fix the findings, or record them as follow-ups in the log.
+- Check that `docs/org-rules-map.md` and the README match what shipped.
+- Last step: stop every dev server started during the plan's work, and delete the probe scripts, screenshots, browser logs and scratch data it created.
+
+**Tests that matter:** any regression tests the review's fixes need.
+
+**Done when:** the review findings are fixed or logged, `bun run verify` exits 0, and the workspace is clean.
+
+**Verify:** None.
+
+### Log (2026-11-09, `fix(backend): roll up and group analytics days without database zone names`)
+- Shipped:
+  - **Timezone fix.** The rollup and the booking figures passed org zone names to Postgres `AT TIME ZONE`. The app accepts any zone `Intl` knows, including legacy names like `Asia/Calcutta`, and this Postgres (18.4, Debian 13 without `tzdata-legacy`) rejects 19 of them. One such org would have failed the hourly rollup for every org and made its booking analytics 500. Now the rollup reads the timezones with pending events, computes each one's today with `todayIn` and joins them as a `VALUES` list. The booking queries group by `width_bucket` over day-start instants from `startOfLocalDate` and map the index back to the date. `datesIn` moved to `lib/localDate.ts`.
+  - Regression tests: an `Asia/Calcutta` org rolls up (`rollup.test.ts`), and its bookings, breakdown and funnel group by the right local day (`bookings.test.ts`). Both failed with "time zone not recognized" before the fix.
+  - `docs/org-rules-map.md`: what is counted (served pages, the booking page and its confirm step; no bots, no signed-in members, no IPs or user agents stored) and what page and org deletion removes.
+  - Cleanup: deleted `.agent-logs/` and the `.playwright-cli/` page, console and CSV files (kept `.playwright-cli/auth`).
+- Review, no change needed:
+  - **Privacy.** `analytics_event` holds only a visitor hash, the referrer host and the device. The tracking handler logs only `{ error }`, whose query params hold the hash, not the IP. Raw events are deleted when they're rolled up, and the daily tables hold only counts.
+  - **Salts.** One salt per local date, shared by every org (the org id is in the hash). The hourly rollup deletes salts dated before UTC today − 2, which covers UTC−12 to UTC+14.
+  - **Auth and gating.** All six read routes use `requireAuth` + `requirePermission("analytics:read")`, and the four advanced ones add `requireFeature("analytics-advanced")`. Tracking is the only public route.
+  - **Cross-org.** Every read filters by `membership.organizationId`, `getPageLabels` filters by org, and the rollup groups by org.
+  - **Deletion.** Every analytics table cascades on `organization`, and `analytics_event` and `analytics_page_daily` cascade on `page`. The purge job deletes the organization rows, so the cascade covers it.
+  - **CSV.** `lib/csv.ts` quotes every cell, doubles quotes and prefixes `= + - @ tab CR` with `'`. The filename uses only validated dates.
+- Follow-ups (not fixed):
+  - `TRUSTED_PROXY_HEADER` uses the header's first entry. That's safe only behind a proxy that overwrites the header, as `.env.example` says. Behind a proxy that appends to `X-Forwarded-For`, clients could forge their IP, getting around the rate limit and inflating unique visitors. Decide when the VPS proxy is chosen.
+  - A view hashed just before local midnight but inserted after that hour's rollup is rolled up on its own, and its day's uniques are summed (tested as "a day rolled up twice adds to its counts"). The overcount is at most a few events, so it's left alone.
+  - The rate limit is per instance (Default 8).
+- Checked in the running app: nothing. The phase's Verify is None, and the fix is covered by tests. `bun run verify` exited 0.
+- Not done: stopping the Phase 6 dev servers (backend :3001, web :3000). The auto mode classifier refused the `kill`, so the user has to stop them.

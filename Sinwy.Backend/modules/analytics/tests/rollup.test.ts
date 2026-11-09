@@ -213,6 +213,32 @@ test("today in the organization's timezone is left alone", async () => {
 	);
 });
 
+test("a zone name the database doesn't know still rolls up", async () => {
+	const kolkataId = await insertOrganization("Kolkata");
+	await db
+		.update(organization)
+		.set({ timezone: "Asia/Calcutta" })
+		.where(eq(organization.id, kolkataId));
+	// 17:30 on 10 March in Kolkata
+	await insertEvents(
+		[orgId, kolkataId].flatMap((organizationId) =>
+			[YESTERDAY, TODAY].map((localDate) => ({ organizationId, localDate })),
+		),
+	);
+
+	await rollupAnalytics(NOW);
+
+	expect(await rawDates()).toEqual(
+		[`${orgId} ${TODAY}`, `${kolkataId} ${TODAY}`].sort(),
+	);
+	expect((await daily()).filter((row) => row.includes(" total:"))).toEqual(
+		[
+			`${orgId} ${YESTERDAY} total: 1/1`,
+			`${kolkataId} ${YESTERDAY} total: 1/1`,
+		].sort(),
+	);
+});
+
 test("a second run changes nothing", async () => {
 	await insertEvents([{ visitor: "a" }, { visitor: "b", localDate: TODAY }]);
 	await rollupAnalytics(NOW);

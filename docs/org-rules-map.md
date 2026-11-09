@@ -210,6 +210,11 @@ Analytics (owners and admins; every tier, within a retention window)
 │  older days at once and a downgrade deletes nothing
 ├─ complete days only: a range is cut to end yesterday and to start no
 │  earlier than the window; the default is the last 30 complete days
+├─ counted: views of served pages and the booking page, and the booking
+│  page's confirm step; never bots or the organization's own signed-in
+│  members; visitors are cookieless daily hashes, no IP or user agent stored
+├─ deleting a page deletes its page rows (its views stay in the site totals);
+│  deleting or purging the organization deletes all its analytics
 ├─ every tier: total views and unique visitors per day, bookings made per
 │  day and booked value (confirmed and completed) per day of the appointment
 └─ advanced analytics (Professional, Enterprise): top pages, referrers and

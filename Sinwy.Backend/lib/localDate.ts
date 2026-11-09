@@ -32,3 +32,11 @@ export const localDateRange = (
 	start: from ? startOfLocalDate(from, timezone) : undefined,
 	end: to ? startOfLocalDate(addDaysToDate(to, 1), timezone) : undefined,
 });
+
+/** Every date from `from` to `to`, inclusive. */
+export const datesIn = ({ from, to }: { from: string; to: string }) => {
+	const dates: string[] = [];
+	for (let date = from; date <= to; date = addDaysToDate(date, 1))
+		dates.push(date);
+	return dates;
+};

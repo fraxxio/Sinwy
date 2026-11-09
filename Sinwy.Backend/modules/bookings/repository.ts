@@ -580,11 +580,26 @@ export const sumBookingsBetween = async (
 const countOf = (where: SQL = sql`true`) =>
 	sql<number>`(count(*) filter (where ${where}))::int`.mapWith(Number);
 
+/**
+ * Local days as the instants they start at, plus the end of the last one, so
+ * the database never needs the zone name.
+ */
+export type DayBounds = Date[];
+
+const spanOf = (bounds: DayBounds) => ({
+	start: bounds[0] ?? new Date(0),
+	end: bounds.at(-1) ?? new Date(0),
+});
+
+/** The 1-based index of the day the instant falls on. */
+const dayIndex = (instant: SQL, bounds: DayBounds) =>
+	sql<number>`width_bucket(${instant}, ARRAY[${sql.join(
+		bounds.map((bound) => sql`${bound.toISOString()}::timestamptz`),
+		sql`, `,
+	)}])`.mapWith(Number);
+
 // created_at holds UTC wall time without a zone
-const createdOn = (timezone: string) =>
-	sql<string>`((${booking.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})::date::text`;
-const startsOn = (timezone: string) =>
-	sql<string>`(${booking.startsAt} AT TIME ZONE ${timezone})::date::text`;
+const createdAtInstant = sql`(${booking.createdAt} AT TIME ZONE 'UTC')`;
 
 export type InstantRange = { start: Date; end: Date };
 
@@ -595,32 +610,25 @@ const createdIn = (organizationId: string, { start, end }: InstantRange) =>
 		lt(booking.createdAt, end),
 	);
 
-/** Bookings made per local day in `[start, end)`, all and from the storefront; days without any have no row. */
-export const countCreatedByDay = (
-	organizationId: string,
-	range: InstantRange,
-	timezone: string,
-) =>
+/** Bookings made per local day, all and from the storefront; days without any have no row. */
+export const countCreatedByDay = (organizationId: string, bounds: DayBounds) =>
 	db
 		.select({
-			date: createdOn(timezone),
+			day: dayIndex(createdAtInstant, bounds),
 			bookings: countOf(),
 			storefront: countOf(eq(booking.bookedBy, "customer")),
 		})
 		.from(booking)
-		.where(createdIn(organizationId, range))
+		.where(createdIn(organizationId, spanOf(bounds)))
 		.groupBy(sql`1`)
 		.orderBy(sql`1`);
 
-/** Booked value and outcomes of the bookings starting in `[start, end)`, per local day. */
-export const sumStartingByDay = (
-	organizationId: string,
-	{ start, end }: InstantRange,
-	timezone: string,
-) =>
-	db
+/** Booked value and outcomes of the bookings starting on each local day. */
+export const sumStartingByDay = (organizationId: string, bounds: DayBounds) => {
+	const { start, end } = spanOf(bounds);
+	return db
 		.select({
-			date: startsOn(timezone),
+			day: dayIndex(sql`${booking.startsAt}`, bounds),
 			bookings: countOf(),
 			bookedMinor: bookedValue,
 			cancelledByCustomer: countOf(eq(booking.cancelledBy, "customer")),
@@ -638,6 +646,7 @@ export const sumStartingByDay = (
 		)
 		.groupBy(sql`1`)
 		.orderBy(sql`1`);
+};
 
 /** Bookings made in `[start, end)` per service, most booked first. */
 export const sumCreatedByService = (
