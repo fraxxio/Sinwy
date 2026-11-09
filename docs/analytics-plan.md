@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Event capture | – | done | `feat(backend, shared, web): capture page and booking analytics events` |
-| 2 | Daily rollup job | 1 | todo | |
+| 2 | Daily rollup job | 1 | done | `feat(backend, shared): roll up analytics events into daily tables` |
 | 3 | Range, retention and traffic endpoints | 2 | todo | |
 | 4 | Booking metrics, funnel and CSV export | 3 | todo | |
 | 5 | Analytics dashboard | 4 | todo | |
@@ -49,17 +49,16 @@ Settled with the product owner. Ask before changing any of them.
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
 - **Tracking.** `trackEvent` (`modules/analytics/service.ts`) does every drop check before the insert; `clientIp(ctx)` is in `lib/clientIp.ts`, and `ctx.server` is on `IReqContext`.
-- **Raw events.** `analytics_event.local_date` is a `date` column read as `"YYYY-MM-DD"`. `analytics_salt` is keyed by local date and shared by all orgs. Only `(organization_id, local_date)` is indexed.
+- **Daily tables.** `analytics_daily` rows are `(org, localDate, metric, key)` with `events` and `visitors`; `key` is `''` for `total`, `booking_started` and direct referrers, else the referrer host or device. `analytics_page_daily` has `pageId` null for the booking page. Dates are `date` columns read as `"YYYY-MM-DD"`, and a day only has rows once it's over in the org's timezone (rolled up hourly). Days with no events have no rows. Log, Phase 2.
 - **Existing gates.** `requireFeature(feature)` (`modules/auth/requireFeature.ts`) is `requireMember` plus a plan check returning 402 `PLAN_UPGRADE_REQUIRED`. `membershipFrom(ctx).plan` is the projected plan, and it's null for an inactive org. `analytics:read` already exists for owners and admins only. `analytics-advanced` already exists in `PLAN_FEATURES`.
 - **Numeric caps.** They go in `PLAN_LIMITS`, never `FEATURES` (see the comment in `Sinwy.Shared/types/plan/PlanFeatures.ts`). `limitsFor(null)` returns zeros.
 - **Page deletion.** `deletePage` in the pages service hard-deletes the `page` row (`repository.ts`, the `.delete(page)` call), so `onDelete: "cascade"` foreign keys remove analytics rows.
-- **Jobs.** `Job` and `runJob` are in `lib/jobs.ts`; jobs are registered in `Sinwy.Backend/jobs.ts`. Each job runs once at server start and then every `intervalMs`, under an advisory lock taken on the wrapping transaction. `run()` uses the global `db`, so open your own `db.transaction` inside it.
+- **Drizzle raw SQL.** `tx.execute(sql\`…\`)` rows are untyped records: read them as `row?.["name"]` and coerce counts with `Number`.
 - **Date helpers.** Backend: `todayIn` is exported from `@servicesModule` (not `lib/localDate.ts`); `addDaysToDate`, `startOfLocalDate` and `localDateRange` are in `lib/localDate.ts`. Frontend: all four in `src/shared/lib/date.ts`.
 - **Range and CSV patterns** to copy:
   - Backend: `resolveRange` and `exportPayments` in `modules/payments/service.ts`, and `paymentsCsv` with the `cell` formula guard in `modules/payments/csv.ts`. The CSV is returned by `exportPaymentsHandler` with `Content-Disposition`.
   - Frontend: `paymentsSearchSchema`, `changeRange` and `paymentsExportUrl` (`org-dashboard/lib/payment-search.ts`), and `PaymentFilters` (`org-dashboard/components/payments/PaymentFilters.tsx`).
 - **`parseQuery` isn't shared.** It's private to each controller (for example `modules/bookings/controller.ts:111`), so copy it rather than import it.
-- **Postgres is 18,** so unique indexes with `NULLS NOT DISTINCT` (Drizzle `.nullsNotDistinct()`) work.
 - **No chart or tabs components yet.** `src/shared/components/ui/` has neither; add them with `bunx shadcn add chart tabs`.
 - **Booking page flow.** `/$organizationSlug/book` is `ssr: false`. The confirm step renders when `search.service` and `search.start` are set; signing in from it returns to the same URL, so `booking_started` can be sent twice per visitor.
 - **User agents in tests.** Bun's `fetch` adds its own user agent when none is set, so send `user-agent: ""` to test a missing one. Playwright's headless Chromium sends `HeadlessChrome`, which the bot filter drops. Override the user agent with `playwright-cli open --config=<file>`, where the file holds `browser.contextOptions.userAgent` plus `browserName: "chromium"` and `launchOptions.channel: "chromium"` (a custom config replaces `.playwright/cli.config.json`).
@@ -70,64 +69,15 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 ---
 
-## Phase 2: Daily rollup job
-
-**Goal:** An hourly job rolls complete days of raw events into daily tables and deletes them.
-
-**Files:**
-- `Sinwy.Backend/db/schema/analyticsSchema.ts`, next to `analyticsEvent` and `analyticsSalt`. Run `bun run db:generate`, then rename the migration to `0026_analytics_rollup.sql` and its tag in `drizzle/meta/_journal.json` (the repo names migrations; drizzle tracks them by hash).
-- `Sinwy.Backend/modules/analytics/rollup.ts` (new), `repository.ts` and `index.ts`.
-- `Sinwy.Backend/jobs.ts`; `Sinwy.Backend/lib/jobs.ts` (read only).
-- `Sinwy.Backend/modules/analytics/tests/`: `tracking.test.ts` has `seedOrg` and `insertPage` helpers to copy.
-- `organization.timezone` in `db/schema/organizationSchema.ts`, for the SQL join.
-
-**Steps:**
-- **`analytics_daily` table:**
-  - Columns: `organizationId` (deleted with the org), `localDate`, `metric`, `key` (not null, default `''`), `events`, `visitors`.
-  - Primary key on `(organizationId, localDate, metric, key)`.
-  - `metric` is one of `total` (view events), `booking_started`, `referrer` (`key` is the host, `''` for direct) or `device`.
-  - Referrer and device rows count only `view` events.
-- **`analytics_page_daily` table:**
-  - Columns: `organizationId` (deleted with the org), `localDate`, `pageId` (nullable, deleted with the page; null means the booking page), `views`, `visitors`.
-  - A unique index on `(organizationId, localDate, pageId)` with nulls not distinct.
-- **`rollupAnalyticsJob`:** named `rollup-analytics`, running hourly. In one `db.transaction`:
-  1. Select raw rows whose `localDate` is before today in their org's timezone, by joining `organization.timezone` in SQL. This is a read of the org's timezone only.
-  2. Insert grouped counts into both tables. Visitors are `count(DISTINCT visitorHash)`.
-  3. On conflict, add to the existing counts (Decision on rare double rollups after a timezone change).
-  4. Delete the rolled-up raw rows.
-  5. Delete salts older than 2 days.
-  6. Log the counts.
-- Register the job in `Sinwy.Backend/jobs.ts`.
-
-**Tests that matter:**
-- Counts and distinct visitors are right for each metric and page.
-- Today's rows (org-local) are left alone, including for an org east of UTC just after its midnight.
-- Raw rows are deleted only in the same transaction as the insert; a failure leaves them in place.
-- A second run is a no-op.
-- Old salts are deleted.
-- Deleting a page deletes its `analytics_page_daily` rows; `analytics_daily` totals stay.
-
-**Done when:** after the job runs, yesterday's raw rows are gone and the daily tables hold their totals.
-
-**Verify:**
-- **Seed:** start from Phase 1's data. Using `psql service=sinwy_rw`, set `local_date` to yesterday on that org's `analytics_event` rows, and add a few rows with two distinct `visitor_hash` values and different devices and referrers.
-- **Flow:** restart the backend, since the job runs at start.
-- **Expect:**
-  - `analytics_event` has no rows for yesterday.
-  - `analytics_daily` and `analytics_page_daily` have rows matching the inserted counts (LIMIT 20).
-  - A second restart changes nothing.
-- **Simulated:** event rows inserted by SQL rather than by browsing.
-
----
-
 ## Phase 3: Range, retention and traffic endpoints
 
 **Goal:** Members with `analytics:read` get traffic series for a range clamped to complete days and their plan's retention window.
 
 **Files:**
 - `Sinwy.Shared/types/plan/PlanLimits.ts`, and the PlanLimits tests in `Sinwy.Backend/modules/billing/tests/planFeatures.test.ts` and `Sinwy.WebFrontend/src/shared/tests/plans.test.ts`.
-- `Sinwy.Shared/types/analytics/`: the range query schema and the traffic DTOs.
-- `Sinwy.Backend/modules/analytics/`: `range.ts` (new), `service.ts`, `controller.ts`, `routes.ts`, `repository.ts`.
+- `Sinwy.Shared/types/analytics/`: the range query schema and the traffic DTOs (`AnalyticsEvent.ts` has `ANALYTICS_DAILY_METRICS`).
+- `Sinwy.Backend/db/schema/analyticsSchema.ts` (read only): `analyticsDaily` and `analyticsPageDaily`.
+- `Sinwy.Backend/modules/analytics/`: `range.ts` (new), `service.ts`, `controller.ts`, `routes.ts`, `repository.ts`; `tests/rollup.test.ts` shows how to insert daily rows (or raw events plus `rollupAnalytics(now)`).
 - `Sinwy.Backend/modules/pages/service.ts` and `index.ts`: page titles and slugs by id.
 - `Sinwy.Backend/modules/organizations` (`getOrganizationLocale`).
 - `modules/auth` (`requirePermission`, `requireFeature`, `organizationPath`, `membershipFrom`).

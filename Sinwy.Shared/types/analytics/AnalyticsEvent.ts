@@ -7,6 +7,15 @@ export type AnalyticsEventKind = (typeof ANALYTICS_EVENT_KINDS)[number];
 export const DEVICE_TYPES = ["mobile", "tablet", "desktop"] as const;
 export type DeviceType = (typeof DEVICE_TYPES)[number];
 
+/** Rows of the daily rollup; referrer and device rows count only views. */
+export const ANALYTICS_DAILY_METRICS = [
+	"total",
+	"booking_started",
+	"referrer",
+	"device",
+] as const;
+export type AnalyticsDailyMetric = (typeof ANALYTICS_DAILY_METRICS)[number];
+
 export const MAX_REFERRER_LENGTH = 2048;
 
 /** One tracked event; without `pageSlug` it is about the booking page. */

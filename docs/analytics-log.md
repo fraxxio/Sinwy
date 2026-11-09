@@ -84,3 +84,71 @@ Finished phases of the [analytics plan](analytics-plan.md), each with its spec a
   - Curl with an iPhone user agent and an Instagram referrer stored `mobile` and `www.instagram.com`.
   - The StrictMode duplicates were reproduced, then shown fixed: after the fix each load stored exactly one row.
   - Not checked: a referrer from a real cross-site navigation (navigation was by `goto`), and a production build.
+
+
+---
+
+## Phase 2: Daily rollup job
+
+**Goal:** An hourly job rolls complete days of raw events into daily tables and deletes them.
+
+**Files:**
+- `Sinwy.Backend/db/schema/analyticsSchema.ts`, next to `analyticsEvent` and `analyticsSalt`. Run `bun run db:generate`, then rename the migration to `0026_analytics_rollup.sql` and its tag in `drizzle/meta/_journal.json` (the repo names migrations; drizzle tracks them by hash).
+- `Sinwy.Backend/modules/analytics/rollup.ts` (new), `repository.ts` and `index.ts`.
+- `Sinwy.Backend/jobs.ts`; `Sinwy.Backend/lib/jobs.ts` (read only).
+- `Sinwy.Backend/modules/analytics/tests/`: `tracking.test.ts` has `seedOrg` and `insertPage` helpers to copy.
+- `organization.timezone` in `db/schema/organizationSchema.ts`, for the SQL join.
+
+**Steps:**
+- **`analytics_daily` table:**
+  - Columns: `organizationId` (deleted with the org), `localDate`, `metric`, `key` (not null, default `''`), `events`, `visitors`.
+  - Primary key on `(organizationId, localDate, metric, key)`.
+  - `metric` is one of `total` (view events), `booking_started`, `referrer` (`key` is the host, `''` for direct) or `device`.
+  - Referrer and device rows count only `view` events.
+- **`analytics_page_daily` table:**
+  - Columns: `organizationId` (deleted with the org), `localDate`, `pageId` (nullable, deleted with the page; null means the booking page), `views`, `visitors`.
+  - A unique index on `(organizationId, localDate, pageId)` with nulls not distinct.
+- **`rollupAnalyticsJob`:** named `rollup-analytics`, running hourly. In one `db.transaction`:
+  1. Select raw rows whose `localDate` is before today in their org's timezone, by joining `organization.timezone` in SQL. This is a read of the org's timezone only.
+  2. Insert grouped counts into both tables. Visitors are `count(DISTINCT visitorHash)`.
+  3. On conflict, add to the existing counts (Decision on rare double rollups after a timezone change).
+  4. Delete the rolled-up raw rows.
+  5. Delete salts older than 2 days.
+  6. Log the counts.
+- Register the job in `Sinwy.Backend/jobs.ts`.
+
+**Tests that matter:**
+- Counts and distinct visitors are right for each metric and page.
+- Today's rows (org-local) are left alone, including for an org east of UTC just after its midnight.
+- Raw rows are deleted only in the same transaction as the insert; a failure leaves them in place.
+- A second run is a no-op.
+- Old salts are deleted.
+- Deleting a page deletes its `analytics_page_daily` rows; `analytics_daily` totals stay.
+
+**Done when:** after the job runs, yesterday's raw rows are gone and the daily tables hold their totals.
+
+**Verify:**
+- **Seed:** start from Phase 1's data. Using `psql service=sinwy_rw`, set `local_date` to yesterday on that org's `analytics_event` rows, and add a few rows with two distinct `visitor_hash` values and different devices and referrers.
+- **Flow:** restart the backend, since the job runs at start.
+- **Expect:**
+  - `analytics_event` has no rows for yesterday.
+  - `analytics_daily` and `analytics_page_daily` have rows matching the inserted counts (LIMIT 20).
+  - A second restart changes nothing.
+- **Simulated:** event rows inserted by SQL rather than by browsing.
+
+### Log (2026-11-09, `feat(backend, shared): roll up analytics events into daily tables`)
+- Shipped:
+  - `analytics_daily` (primary key on org, date, metric and key, with a check on `metric`) and `analytics_page_daily` (unique, nulls not distinct, on org, date and page), in migration `0026_analytics_rollup.sql`. `ANALYTICS_DAILY_METRICS` is in Shared.
+  - `rollupAnalytics(now)` and `rollupAnalyticsJob` (`modules/analytics/rollup.ts`), registered in `jobs.ts`. It logs only when it moved events or deleted salts.
+  - Tests in `modules/analytics/tests/rollup.test.ts`, covering per-metric counts, timezones, a second run, a double rollup, a failure, salts and page deletion.
+- Differs from plan:
+  - The select, the inserts and the delete are one SQL statement: a `DELETE … RETURNING` CTE that feeds both inserts. Separate statements under read committed could delete an event that arrives between the insert and the delete without counting it. Salt deletion runs in the same `db.transaction`.
+  - Salts are deleted when their date is before UTC today minus 2 days.
+  - Drizzle 0.45 has `.nullsNotDistinct()` only on `unique()` constraints, not on `uniqueIndex()`, so the page table uses a unique constraint.
+  - The failure test adds a temporary `CHECK (views < 0) NOT VALID` constraint on `analytics_page_daily` to make the insert fail.
+  - `analytics_page_daily` has no index on `page_id` of its own. The cascade from a page delete scans the table, which is fine while page deletes are rare; Phase 7 may add one (`analytics_event` is in the same position).
+- Checked in the running app (e2e subagent, org `5645cff9…` in UTC):
+  - 22 Phase 1 and SQL-inserted events over 2026-11-07 and 2026-11-08 rolled up on backend start. The log said `events: 22, dailyRows: 14, pageRows: 4, salts: 1`, and all 14 daily and 4 page rows matched the counts computed beforehand.
+  - Today's row and the 2026-11-08 salt stayed, and a stale 2026-11-06 salt was deleted.
+  - A second restart changed nothing, and neither log had warnings or errors.
+  - Not checked live: a non-UTC org (covered by the tests), and events captured by browsing then rolled up after midnight.
