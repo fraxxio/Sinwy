@@ -1,7 +1,8 @@
 export { auth } from "./auth";
-export { requireAuth, sessionFrom } from "./middleware";
+export { findSession, requireAuth, sessionFrom } from "./middleware";
 export { requireFeature } from "./requireFeature";
 export {
+	isOrganizationMember,
 	type Membership,
 	membershipFrom,
 	ORGANIZATION_PARAM,

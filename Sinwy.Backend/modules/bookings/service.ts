@@ -1,6 +1,7 @@
 import type { Membership } from "@authModule";
 import {
 	addDaysToDate,
+	datesIn,
 	localDateRange,
 	startOfLocalDate,
 } from "@backend/lib/localDate";
@@ -61,6 +62,7 @@ import {
 	type CustomerBookingRow,
 	changeBooking,
 	countBookings,
+	countCreatedByDay,
 	countCustomerBookings,
 	countNeedingAttention,
 	countNotStartedBookings,
@@ -77,6 +79,8 @@ import {
 	findRebookServices,
 	insertBookingIfFree,
 	sumBookingsBetween,
+	sumCreatedByService,
+	sumStartingByDay,
 } from "./repository";
 import { type BookingTimesQuery, paddedWindow } from "./utils";
 
@@ -935,3 +939,36 @@ export const countUpcomingCustomerBookings = (
 	customerUserId: string,
 	now = new Date(),
 ) => countNotStartedCustomerBookings(customerUserId, now);
+
+/**
+ * Booking figures over inclusive local dates: bookings made per day and per
+ * service go by `createdAt`, booked value and outcomes per day by `startsAt`.
+ */
+export const getBookingAnalytics = async (
+	organizationId: string,
+	{ from, to }: { from: string; to: string },
+	timezone: string,
+) => {
+	const dates = datesIn({ from, to });
+	const bounds = [...dates, addDaysToDate(to, 1)].map((date) =>
+		startOfLocalDate(date, timezone),
+	);
+	const range = {
+		start: bounds[0] ?? new Date(0),
+		end: bounds.at(-1) ?? new Date(0),
+	};
+	const onDate = <T extends { day: number }>({ day, ...row }: T) => ({
+		...row,
+		date: dates[day - 1] ?? "",
+	});
+	const [created, starting, services] = await Promise.all([
+		countCreatedByDay(organizationId, bounds),
+		sumStartingByDay(organizationId, bounds),
+		sumCreatedByService(organizationId, range),
+	]);
+	return {
+		created: created.map(onDate),
+		starting: starting.map(onDate),
+		services,
+	};
+};

@@ -14,6 +14,7 @@ import {
 	type PageListDto,
 	type PageListItemDto,
 	type PageStatus,
+	type PlanSlug,
 	type PublicPageDto,
 	type SavePageContentInput,
 	type UpdatePageInput,
@@ -23,8 +24,10 @@ import {
 	deletePage as deletePageRow,
 	findLatestVersion,
 	findPage,
+	findPageLabels,
 	findPages,
 	findPublishedPageBySlug,
+	findPublishedPageIdBySlug,
 	findServedPageIds,
 	findVersionNumber,
 	insertNextVersion,
@@ -111,6 +114,19 @@ export const listPages = async (
 		usage: { used: rows.length, limit: limitsFor(membership.plan).pages },
 	};
 };
+
+export type PageLabel = { title: string; slug: string };
+
+/** Titles and slugs of the organization's pages among `pageIds`; unknown ids are left out. */
+export const getPageLabels = async (
+	organizationId: string,
+	pageIds: string[],
+): Promise<Map<string, PageLabel>> =>
+	new Map(
+		(await findPageLabels(organizationId, pageIds)).map(
+			({ id, title, slug }) => [id, { title, slug }],
+		),
+	);
 
 export const getPage = async (
 	membership: Membership,
@@ -238,6 +254,24 @@ export const publishPage = changeStatus(publishPageRow);
 
 export const unpublishPage = changeStatus(unpublishPageRow);
 
+/** Published and within the plan's page limit: the only pages the public may see. */
+const isServed = async (
+	organizationId: string,
+	plan: PlanSlug | null,
+	pageId: string,
+) =>
+	(await findServedPageIds(organizationId, limitsFor(plan).pages)).has(pageId);
+
+/** The id of a page the public may see, or null; the same check as `getPublicPage`. */
+export const findServedPageId = async (
+	organizationId: string,
+	plan: PlanSlug | null,
+	pageSlug: string,
+) => {
+	const id = await findPublishedPageIdBySlug(organizationId, pageSlug);
+	return id && (await isServed(organizationId, plan, id)) ? id : null;
+};
+
 /** Null for an unknown or inactive organization, a draft and a page over the plan's limit alike. */
 export const getPublicPage = async (
 	organizationSlug: string,
@@ -247,11 +281,8 @@ export const getPublicPage = async (
 	if (!organization) return null;
 	const row = await findPublishedPageBySlug(organization.id, pageSlug);
 	if (!row) return null;
-	const served = await findServedPageIds(
-		organization.id,
-		limitsFor(organization.plan).pages,
-	);
-	if (!served.has(row.id)) return null;
+	if (!(await isServed(organization.id, organization.plan, row.id)))
+		return null;
 	return {
 		organization: { name: organization.name, slug: organization.slug },
 		title: row.title,

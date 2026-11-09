@@ -59,6 +59,11 @@ export const resolveMembership = async (
 	return { organizationId, roles, status, plan };
 };
 
+export const isOrganizationMember = async (
+	userId: string,
+	organizationId: string,
+) => (await getMembershipAccess(userId, { id: organizationId })) !== null;
+
 /**
  * Scopes the request to one organization (route param first, then the
  * session's active organization) and requires the caller to be a member.

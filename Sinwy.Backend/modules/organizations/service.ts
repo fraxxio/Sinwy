@@ -117,6 +117,7 @@ export const findPublicOrganizationPlan = async (slug: string) => {
 		name: row.name,
 		slug: row.slug,
 		tagline: row.tagline,
+		timezone: row.timezone,
 		plan: organizationPlanOf(row),
 	};
 };

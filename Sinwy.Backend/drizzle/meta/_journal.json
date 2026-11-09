@@ -176,6 +176,20 @@
       "when": 1793982356647,
       "tag": "0024_pages",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794154145304,
+      "tag": "0025_analytics_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794240555119,
+      "tag": "0026_analytics_rollup",
+      "breakpoints": true
     }
   ]
 }

@@ -27,6 +27,7 @@ import {
 	storefrontQuery,
 	storefrontTimesQuery,
 } from "#/modules/storefront/lib/storefront-queries";
+import { useTrackEvent } from "#/modules/storefront/lib/track";
 import { BookableTimesPicker } from "#/shared/components/booking/BookableTimesPicker";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { Button } from "#/shared/components/ui/button";
@@ -57,6 +58,7 @@ function BookPage() {
 	const { data: storefront } = useSuspenseQuery(storefrontQuery(slug));
 	const [booked, setBooked] = useState<CustomerBookingDto | null>(null);
 	const navigate = Route.useNavigate();
+	useTrackEvent(slug, "view");
 
 	if (!storefront)
 		return (
@@ -247,6 +249,7 @@ function Confirm({
 	const queryClient = useQueryClient();
 	const { data: session } = authClient.useSession();
 	const { organization } = storefront;
+	useTrackEvent(slug, "booking_started");
 
 	const toLogin = () =>
 		navigate({ to: "/auth/login", search: { redirect: location.href } });

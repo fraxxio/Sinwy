@@ -1,5 +1,5 @@
 import type { ReqContextValues } from "@backend/lib/sharedTypes";
-import type { BunRequest } from "bun";
+import type { BunRequest, Server } from "bun";
 import { fail } from "./respond";
 import type {
 	BunRouteHandler,
@@ -13,10 +13,12 @@ import type {
 
 class ReqContext implements IReqContext {
 	req: BunRequest<string>;
+	server: Server<never>;
 	private store: Partial<ReqContextValues> = {};
 
-	constructor(req: BunRequest<string>) {
+	constructor(req: BunRequest<string>, server: Server<never>) {
 		this.req = req;
+		this.server = server;
 	}
 
 	set<K extends keyof ReqContextValues>(key: K, value: ReqContextValues[K]) {
@@ -96,8 +98,8 @@ const createApp = (): IApp => {
 				const methods = Array.isArray(r.method) ? r.method : [r.method];
 
 				for (const method of methods) {
-					routeHandlers[method] = (req: BunRequest<string>) => {
-						const ctx = new ReqContext(req);
+					routeHandlers[method] = (req, server) => {
+						const ctx = new ReqContext(req, server);
 						return composed(ctx);
 					};
 				}

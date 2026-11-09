@@ -8,6 +8,11 @@ export const sessionFrom = (ctx: IReqContext) => {
 	return session;
 };
 
+/** The signed-in session, or null for an anonymous request; for routes without `requireAuth`. */
+export const findSession = async (ctx: IReqContext) =>
+	ctx.get("session") ??
+	(await auth.api.getSession({ headers: ctx.req.headers }));
+
 export const requireAuth: Middleware = async (ctx, next) => {
 	const session = await auth.api.getSession({ headers: ctx.req.headers });
 	if (!session) return fail("Unauthorized", 401);

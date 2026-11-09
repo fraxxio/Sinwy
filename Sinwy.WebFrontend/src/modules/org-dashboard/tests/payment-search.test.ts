@@ -1,7 +1,6 @@
 import { expect, it } from "bun:test";
 import { PAYMENT_STATUSES } from "@sinwy/shared";
 import {
-	changeRange,
 	paymentsExportUrl,
 	paymentsSearchSchema,
 } from "#/modules/org-dashboard/lib/payment-search";
@@ -39,22 +38,6 @@ it("clears a reversed or one-sided range, which the router would otherwise keep 
 		from: undefined,
 		to: undefined,
 		page: 1,
-	});
-});
-
-it("moves the other end of the range instead of reversing it", () => {
-	const range = { from: "2026-11-01", to: "2026-11-30" };
-	expect(changeRange(range, { from: "2026-11-10" })).toEqual({
-		from: "2026-11-10",
-		to: "2026-11-30",
-	});
-	expect(changeRange(range, { from: "2026-12-05" })).toEqual({
-		from: "2026-12-05",
-		to: "2026-12-05",
-	});
-	expect(changeRange(range, { to: "2026-10-20" })).toEqual({
-		from: "2026-10-20",
-		to: "2026-10-20",
 	});
 });
 

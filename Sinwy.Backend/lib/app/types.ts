@@ -3,6 +3,7 @@ import type { BunRequest, Server } from "bun";
 
 export interface IReqContext {
 	req: BunRequest<string>;
+	server: Server<never>;
 	set<K extends keyof ReqContextValues>(
 		key: K,
 		value: ReqContextValues[K],
@@ -36,7 +37,13 @@ export type Route = {
 };
 
 export type BunRouteHandler = Partial<
-	Record<HTTPMethod, (req: BunRequest<string>) => Response | Promise<Response>>
+	Record<
+		HTTPMethod,
+		(
+			req: BunRequest<string>,
+			server: Server<never>,
+		) => Response | Promise<Response>
+	>
 >;
 
 export interface IApp {

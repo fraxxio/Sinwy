@@ -32,18 +32,20 @@ test("organization caps are pinned: Starter 1, Professional 2, Enterprise 5", ()
 	});
 });
 
-test("page limits are pinned: Starter 1, Professional 5, Enterprise 25", () => {
+test("limits are pinned: pages 1/5/25, analytics retention 30/365/730 days", () => {
 	expect(PLAN_LIMITS).toEqual({
-		starter: { pages: 1 },
-		professional: { pages: 5 },
-		enterprise: { pages: 25 },
+		starter: { pages: 1, analyticsRetentionDays: 30 },
+		professional: { pages: 5, analyticsRetentionDays: 365 },
+		enterprise: { pages: 25, analyticsRetentionDays: 730 },
 	});
 });
 
-test("page limits never decrease with the tier, and no plan allows none", () => {
-	const pages = PLAN_SLUGS.map((plan) => PLAN_LIMITS[plan].pages);
-	expect(pages).toEqual([...pages].sort((a, b) => a - b));
-	expect(limitsFor(null).pages).toBe(0);
+test("limits never decrease with the tier, and no plan allows none", () => {
+	for (const limit of ["pages", "analyticsRetentionDays"] as const) {
+		const values = PLAN_SLUGS.map((plan) => PLAN_LIMITS[plan][limit]);
+		expect(values).toEqual([...values].sort((a, b) => a - b));
+		expect(limitsFor(null)[limit]).toBe(0);
+	}
 });
 
 test("starter ⊂ professional ⊂ enterprise", () => {

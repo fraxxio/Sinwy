@@ -1,3 +1,4 @@
+export * from "./analyticsSchema";
 export * from "./authSchema";
 export * from "./bookingSchema";
 export * from "./organizationSchema";
