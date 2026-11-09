@@ -2,12 +2,12 @@ import { hasPermission } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
 import { CreditCardIcon, DownloadIcon } from "lucide-react";
-import { PaymentFilters } from "#/modules/org-dashboard/components/payments/PaymentFilters";
+import { DateRangeFilter } from "#/modules/org-dashboard/components/DateRangeFilter";
 import { PaymentsTable } from "#/modules/org-dashboard/components/payments/PaymentsTable";
 import { PaymentTotals } from "#/modules/org-dashboard/components/payments/PaymentTotals";
+import { changeRange } from "#/modules/org-dashboard/lib/date-range";
 import { paymentListQuery } from "#/modules/org-dashboard/lib/payment-queries";
 import {
-	changeRange,
 	PAYMENTS_SEARCH_DEFAULTS,
 	paymentsExportUrl,
 	paymentsSearchSchema,
@@ -72,7 +72,7 @@ function PaymentsPage() {
 				<FieldError>{availability.error.message}</FieldError>
 			) : (
 				<>
-					<PaymentFilters
+					<DateRangeFilter
 						from={range.from}
 						to={range.to}
 						onChange={(change) =>

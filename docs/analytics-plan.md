@@ -12,7 +12,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 2 | Daily rollup job | 1 | done | `feat(backend, shared): roll up analytics events into daily tables` |
 | 3 | Range, retention and traffic endpoints | 2 | done | `feat(backend, shared): serve analytics traffic within the plan's retention window` |
 | 4 | Booking metrics, funnel and CSV export | 3 | done | `feat(backend, shared): serve booking analytics, the funnel and CSV exports` |
-| 5 | Analytics dashboard | 4 | todo | |
+| 5 | Analytics dashboard | 4 | done | `feat(web): add the analytics dashboard with traffic, conversion and bookings tabs` |
 | 6 | Exclude members and rate-limit tracking | 1 | todo | |
 | 7 | Code review and cleanup | 1–6 | todo | |
 
@@ -52,61 +52,15 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Daily tables.** `analytics_daily` rows are `(org, localDate, metric, key)` with `events` and `visitors`; `key` is `''` for `total`, `booking_started` and direct referrers, else the referrer host or device. `analytics_page_daily` has `pageId` null for the booking page. Dates are `date` columns read as `"YYYY-MM-DD"`, and a day only has rows once it's over in the org's timezone (rolled up hourly). Days with no events have no rows. Log, Phase 2.
 - **Analytics range and gates.** `resolveAnalyticsRange(membership, query, now)` (`modules/analytics/range.ts`) returns the clamped `AnalyticsRangeDto` (with `timezone` and `currency`) or `no-retention`, which the controller's `respondError` turns into 402. `datesIn(range)` lists the days to zero-fill. `routes.ts` has `read` and `readAdvanced` middleware arrays; the controller has its own `parseQuery`. Shared schema and DTOs: `Sinwy.Shared/types/analytics/AnalyticsReport.ts`. Log, Phase 3.
 - **Analytics endpoints** (all `GET /api/organizations/:id/analytics/…`, `from`/`to` optional): `traffic`, `bookings` (every plan); `traffic/breakdown`, `bookings/breakdown`, `funnel`, `export?report=traffic|bookings|funnel` (`analytics-advanced`, else 402). DTOs in `Sinwy.Shared/types/analytics/AnalyticsReport.ts` (`TrafficDto`, `BookingsDto`, `BookingsBreakdownDto`, `FunnelDto`, `ANALYTICS_REPORTS`, `ANALYTICS_FUNNEL_STEPS`); every response carries `range` (resolved dates, `timezone`, `currency`, `retentionDays`, `clamped`). Rates are 0–1 fractions, null with a zero denominator. Log, Phases 3–4.
-- **Two date columns side by side.** `BookingsDto.series[].bookings` counts bookings made that day, `bookedMinor` the value of bookings *starting* that day; per-service `bookedMinor` goes by `createdAt`, so the services don't add up to the total booked value. Label them so (log, Phase 4).
 - **Endpoint tests run on the real clock.** Date seeded rows relative to `todayIn(timezone, new Date())`, and test fixed-`now` logic through the service or `range.ts` (see `tests/traffic.test.ts` and `tests/bookings.test.ts`).
-- **Date helpers.** Backend: `todayIn` is exported from `@servicesModule`; the rest are in `lib/localDate.ts`. Frontend: `todayIn`, `addDaysToDate`, `startOfLocalDate` and `localDateRange` in `src/shared/lib/date.ts`.
-- **Range pattern** to copy on the frontend: `paymentsSearchSchema`, `changeRange` and `paymentsExportUrl` (`org-dashboard/lib/payment-search.ts`), and `PaymentFilters` (`org-dashboard/components/payments/PaymentFilters.tsx`). Money: `formatMinorUnits`.
-- **No chart or tabs components yet.** `src/shared/components/ui/` has neither; add them with `bunx shadcn add chart tabs`.
-- **Booking page flow.** `/$organizationSlug/book` is `ssr: false`. The confirm step renders when `search.service` and `search.start` are set; signing in from it returns to the same URL, so `booking_started` can be sent twice per visitor (the funnel counts visitors, not events).
 - **User agents in tests.** Bun's `fetch` adds its own user agent when none is set, so send `user-agent: ""` to test a missing one. Playwright's headless Chromium sends `HeadlessChrome`, which the bot filter drops. Override the user agent with `playwright-cli open --config=<file>`, where the file holds `browser.contextOptions.userAgent` plus `browserName: "chromium"` and `launchOptions.channel: "chromium"` (a custom config replaces `.playwright/cli.config.json`).
 - **StrictMode in dev.** TanStack Start's default client entry wraps the app in `<StrictMode>`, so mount effects on client-rendered components run twice in dev. Guard one-shot side effects with a ref (see `useTrackEvent`; log, Phase 1).
 - **Projected plan.** The owner's plan is `user_subscription.plan` (keyed by `user_id`), read by `organizationPlanOf`; setting it with `psql service=sinwy_rw` simulates a plan change. `membershipFrom(ctx).plan` is null for an inactive org.
 - **Seed scenarios.** `bun run dev:seed-scenario <user|owner-with-org|subscribed-org|pro-org|org-with-staff|bookable-org>`. `bookable-org` creates bookable services but no bookings (book through the storefront API as a `user`), and `pro-org` is on Professional. The Phase 2/3 data is on org `5645cff9…` (`seed-68a85e45`, UTC, Professional).
-- **Phase 4 data.** Org `bf2f32a9…` (`seed-83a3f25e`, Europe/Vilnius, owner `webdevrokas+seed-83a3f25e-owner@gmail.com`) has 8 backdated bookings (2026-10-10 to 11-08: completed, cancelled by each side, no-show, pending) but no traffic; its owner was left on **Starter** (set `user_subscription.plan` back to `professional` for Pro checks). Org `5645cff9…` has the traffic rows. Scratch files are in `.agent-logs/` (untracked).
-
----
-
-## Phase 5: Analytics dashboard
-
-**Goal:** Owners and admins see Traffic, Conversion and Bookings tabs with a shared date range, upgrade prompts for advanced sections, and CSV export.
-
-**Files:**
-- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.analytics.tsx` (the current placeholder with `EmptyState`) and `_shell.payments.tsx`.
-- `org-dashboard/components/payments/PaymentFilters.tsx`, which becomes `org-dashboard/components/DateRangeFilter.tsx`.
-- `org-dashboard/lib/payment-search.ts` (`paymentsSearchSchema`, `changeRange`, `paymentsExportUrl`) and its `payment-search.test.ts`; `changeRange` moves to a shared range helper there or in a new `lib/date-range.ts`.
-- `org-dashboard/lib/analytics-queries.ts` and `analytics-search.ts` (new), and `org-dashboard/components/analytics/` (new).
-- `Sinwy.Shared/types/analytics/AnalyticsReport.ts` for the DTOs (read only).
-- `src/shared/components/PlanGate.tsx` and `UpgradePrompt.tsx`, and `src/shared/lib/api.ts` (`api`).
-- `src/shared/components/ui/`: add `chart` and `tabs` with `bunx shadcn add chart tabs`.
-- `org-dashboard/tests/`.
-
-**Steps:**
-- **Shared date range picker:** extract `DateRangeFilter` with 7, 30 and 90 day presets plus custom From/To inputs, and use it on Payments without changing Payments' behaviour.
-- **Search schema:** `analyticsSearchSchema` holds `from`, `to` and `tab` (`traffic` | `conversion` | `bookings`). A bad value falls back to the defaults, as on Payments.
-- **Traffic tab:** cards for views and visitors, an area chart, and a `PlanGate` section with tables for top pages, referrers and devices.
-- **Conversion tab:** a `PlanGate` funnel with step counts and conversion percentages between steps.
-- **Bookings tab:** cards and charts for volume and booked value (formatted with `formatMinorUnits`), and a `PlanGate` section for by-service and the rates.
-- **Header:** an Export CSV link for the active tab, shown only with `analytics-advanced`, plus notes for "Traffic updates once a day" and "Your plan shows the last N days" when `clamped`.
-- **Empty and error states:** keep the existing `EmptyState` when every series is zero, and show `FieldError` on errors.
-
-**Tests that matter:**
-- The search schema falls back on bad input.
-- The presets resolve to complete days ending yesterday.
-- The Payments range behaves as before (the `payment-search.test.ts` tests still pass).
-
-**Done when:** a Pro owner sees all three tabs with data and can export, a Starter owner sees totals with upgrade prompts, and staff can't open the page.
-
-**Verify:**
-- **Seed:** start from the Phase 4 bookings (org `bf2f32a9…`, set back to Professional) and the Phase 3 traffic (org `5645cff9…`), plus a `starter` org from `subscribed-org` and a staff member from `org-with-staff`.
-- **Flow:**
-  1. As the Pro owner: open Analytics, switch tabs, pick the 7-day preset, then export CSV.
-  2. As the Starter owner: open Analytics.
-  3. As staff: open `/dashboard/<slug>/analytics`.
-- **Expect:**
-  - Pro: the charts match the Phase 3 and 4 API values, the URL holds the range, and the CSV downloads.
-  - Starter: totals with upgrade prompts and no export button.
-  - Staff: the existing access-denied redirect.
-- **Simulated:** the backdated data from earlier phases.
+- **Test orgs.** Org `bf2f32a9…` (`seed-83a3f25e`, Europe/Vilnius, owner `webdevrokas+seed-83a3f25e-owner@gmail.com`, left on **Professional**) has 8 backdated bookings but no traffic. Org `5645cff9…` has the traffic rows. Phase 5 seeded `subscribed-org` `548cd1e5…` (`seed-c26106f6`) and `org-with-staff` `494d7138…` (`seed-83c3a0c1`, staff `webdevrokas+seed-83c3a0c1-staff1@gmail.com`). Scratch files are in `.agent-logs/` (untracked).
+- **Scratch JSON breaks `bun run verify`.** Biome checks untracked files, so a `.json` dump in `.agent-logs/` fails `check`. Save API responses as `.txt`, or delete them before verifying (log, Phase 5).
+- **Adding packages.** `bunx shadcn add` writes `import { cn } from "cn"` and installs a bogus `cn` package; point the import at `@/shared/lib/utils` and remove it. Any `bun add` re-resolves the `latest` TanStack ranges and can leave two `@tanstack/query-core` versions (QueryClient type errors), so keep the old TanStack entries in `bun.lock` (log, Phase 5).
+- **Dashboard.** The analytics page is in `org-dashboard/routes/_shell.analytics.tsx` and `components/analytics/`. Range helpers are in `lib/date-range.ts`, and `DateRangeFilter` is shared with Payments. Phase 5 log.
 
 ---
 
@@ -114,7 +68,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 **Goal:** Signed-in members of the organization aren't counted, and one client can't flood an org's events.
 
-**Files:** `Sinwy.Backend/modules/analytics/controller.ts`, `service.ts` and `tests/`; `modules/auth` (session lookup without requiring auth, and the membership check, both through `index.ts`). `storefront/lib/track.ts` needs no change: its same-origin `fetch` already sends the session cookie.
+**Files:**
+- `Sinwy.Backend/modules/analytics/controller.ts` (the tracking handler; it already reads `clientIp(ctx)` from `lib/clientIp.ts`), `service.ts` (`trackEvent`, which does every drop check before the insert) and `tests/` (the tracking tests).
+- `modules/auth/index.ts`: a session lookup that doesn't require auth, and the membership check. Don't import auth internals.
+- `storefront/lib/track.ts` needs no change: its same-origin `fetch` already sends the session cookie.
 
 **Steps:**
 - **Members:** the tracking endpoint reads the session if there is one. When the user is a member of the org, it drops the event and still answers 204.

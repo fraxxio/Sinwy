@@ -299,3 +299,71 @@ Finished phases of the [analytics plan](analytics-plan.md), each with its spec a
   - On Starter, `bookings` answered 200 and the other three answered 402 (code 4021). No warnings or errors in the backend log.
   - Not checked live: the funnel with real traffic rows (covered by tests), cancel and no-show from the dashboard UI, and a real Polar upgrade.
   - Noted by the e2e run: as specified, per-service booked value (by `createdAt`) and the total booked value (by `startsAt`) differ for the same range, so Phase 5 must label them.
+
+
+## Phase 5: Analytics dashboard
+
+**Goal:** Owners and admins see Traffic, Conversion and Bookings tabs with a shared date range, upgrade prompts for advanced sections, and CSV export.
+
+**Files:**
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.analytics.tsx` (the current placeholder with `EmptyState`) and `_shell.payments.tsx`.
+- `org-dashboard/components/payments/PaymentFilters.tsx`, which becomes `org-dashboard/components/DateRangeFilter.tsx`.
+- `org-dashboard/lib/payment-search.ts` (`paymentsSearchSchema`, `changeRange`, `paymentsExportUrl`) and its `payment-search.test.ts`; `changeRange` moves to a shared range helper there or in a new `lib/date-range.ts`.
+- `org-dashboard/lib/analytics-queries.ts` and `analytics-search.ts` (new), and `org-dashboard/components/analytics/` (new).
+- `Sinwy.Shared/types/analytics/AnalyticsReport.ts` for the DTOs (read only).
+- `src/shared/components/PlanGate.tsx` and `UpgradePrompt.tsx`, and `src/shared/lib/api.ts` (`api`).
+- `src/shared/components/ui/`: add `chart` and `tabs` with `bunx shadcn add chart tabs`.
+- `org-dashboard/tests/`.
+
+**Steps:**
+- **Shared date range picker:** extract `DateRangeFilter` with 7, 30 and 90 day presets plus custom From/To inputs, and use it on Payments without changing Payments' behaviour.
+- **Search schema:** `analyticsSearchSchema` holds `from`, `to` and `tab` (`traffic` | `conversion` | `bookings`). A bad value falls back to the defaults, as on Payments.
+- **Traffic tab:** cards for views and visitors, an area chart, and a `PlanGate` section with tables for top pages, referrers and devices.
+- **Conversion tab:** a `PlanGate` funnel with step counts and conversion percentages between steps.
+- **Bookings tab:** cards and charts for volume and booked value (formatted with `formatMinorUnits`), and a `PlanGate` section for by-service and the rates.
+- **Header:** an Export CSV link for the active tab, shown only with `analytics-advanced`, plus notes for "Traffic updates once a day" and "Your plan shows the last N days" when `clamped`.
+- **Empty and error states:** keep the existing `EmptyState` when every series is zero, and show `FieldError` on errors.
+
+**Tests that matter:**
+- The search schema falls back on bad input.
+- The presets resolve to complete days ending yesterday.
+- The Payments range behaves as before (the `payment-search.test.ts` tests still pass).
+
+**Done when:** a Pro owner sees all three tabs with data and can export, a Starter owner sees totals with upgrade prompts, and staff can't open the page.
+
+**Verify:**
+- **Seed:** start from the Phase 4 bookings (org `bf2f32a9…`, set back to Professional) and the Phase 3 traffic (org `5645cff9…`), plus a `starter` org from `subscribed-org` and a staff member from `org-with-staff`.
+- **Flow:**
+  1. As the Pro owner: open Analytics, switch tabs, pick the 7-day preset, then export CSV.
+  2. As the Starter owner: open Analytics.
+  3. As staff: open `/dashboard/<slug>/analytics`.
+- **Expect:**
+  - Pro: the charts match the Phase 3 and 4 API values, the URL holds the range, and the CSV downloads.
+  - Starter: totals with upgrade prompts and no export button.
+  - Staff: the existing access-denied redirect.
+- **Simulated:** the backdated data from earlier phases.
+
+
+### Log (2026-11-09, `feat(web): add the analytics dashboard with traffic, conversion and bookings tabs`)
+- Shipped:
+  - `/dashboard/<slug>/analytics` with Traffic, Conversion and Bookings tabs (`tab` in the URL), a shared range and an Export CSV link for the active tab (`conversion` exports `funnel`), hidden without `analytics-advanced`.
+  - `components/DateRangeFilter.tsx` (presets optional, `min`/`max`) replaces `PaymentFilters`; Payments passes no presets, so it behaves as before. `lib/date-range.ts` holds `changeRange`, `validRangeOr`, `completeDaysRange` and `clampRange`, shared by `payment-search.ts` and `analytics-search.ts`.
+  - `lib/analytics-queries.ts` has one `analyticsQuery(orgId, report, range)`. The traffic query (every plan) carries the resolved range, so it drives the filter, notes and presets on every tab. Advanced queries run only inside `PlanGate`.
+  - Labels follow the two date columns: "Bookings made" by booking date, "Booked value" by appointment date, and "Value of bookings made" in the by-service table.
+  - Tests: `analytics-search.test.ts` (fallbacks, presets ending yesterday, the 30-day preset is the API default, export URL) and `date-range.test.ts` (`changeRange` moved here from `payment-search.test.ts`, timezone, clamping).
+  - shadcn `chart` and `tabs`, and `recharts@3.8.0`.
+- Differs from plan:
+  - `changeRange` moved to `lib/date-range.ts`, and its test moved with it; the other `payment-search.test.ts` tests are unchanged and pass.
+  - Empty states are per tab ("No visits / bookings / visitors in this range"), not one page-wide `EmptyState`, so the range filter stays usable.
+  - The date inputs show the requested range clamped into the retention window, as the API clamps it. This was added after the e2e run found a URL `to` after yesterday sitting in the input while the data stopped at yesterday.
+  - `bunx shadcn add` wrote `import { cn } from "cn"`, installed a bogus `cn` package and re-resolved every `latest` TanStack range, leaving two `@tanstack/query-core` versions and type errors. Fixed by pointing the import at `@/shared/lib/utils` and keeping the old TanStack entries in `bun.lock`, so the lockfile adds only recharts and its dependencies.
+- Checked in the running app by the e2e subagent; every step passed:
+  - Pro, org `bf2f32a9…`: Bookings showed 8 / €130.00, by service Haircut 5 / €75.00 and Colouring 3 / €80.00, cancellation 28.6% (14.3% each side, of 7) and no-show 33.3%. The funnel showed 0 / 0 / 4. All matched a fresh API fetch.
+  - Pro, org `5645cff9…`: the traffic tables and the funnel (6 / 3 / 0) matched `traffic/breakdown` and `funnel`.
+  - 7-day preset: the URL became `from=2026-11-02&to=2026-11-08` and the figures matched the API. The CSV downloaded as `analytics-bookings-2026-11-02-to-2026-11-08.csv`, and the other reports exported with the default range.
+  - Bad URL params fell back to the defaults. A range older than retention showed "Your plan shows the last N days".
+  - Starter (`bf2f32a9…` on starter, and `subscribed-org` org `548cd1e5…`): totals, upgrade prompts and no export link.
+  - Staff (`org-with-staff` org `494d7138…`): the access-denied redirect and toast, and a 403 from the API.
+  - No console errors and nothing in the backend or web logs.
+  - Not checked: gating after a real Polar plan change, and live visits fed through the rollup.
+  - Noted, not fixed: Starter is offered the 90-day preset, clamped and explained by the note. The two bookings charts pick different x-axis ticks.
