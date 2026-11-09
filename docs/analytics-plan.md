@@ -10,7 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Event capture | – | done | `feat(backend, shared, web): capture page and booking analytics events` |
 | 2 | Daily rollup job | 1 | done | `feat(backend, shared): roll up analytics events into daily tables` |
-| 3 | Range, retention and traffic endpoints | 2 | todo | |
+| 3 | Range, retention and traffic endpoints | 2 | done | `feat(backend, shared): serve analytics traffic within the plan's retention window` |
 | 4 | Booking metrics, funnel and CSV export | 3 | todo | |
 | 5 | Analytics dashboard | 4 | todo | |
 | 6 | Exclude members and rate-limit tracking | 1 | todo | |
@@ -50,71 +50,21 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 - **Tracking.** `trackEvent` (`modules/analytics/service.ts`) does every drop check before the insert; `clientIp(ctx)` is in `lib/clientIp.ts`, and `ctx.server` is on `IReqContext`.
 - **Daily tables.** `analytics_daily` rows are `(org, localDate, metric, key)` with `events` and `visitors`; `key` is `''` for `total`, `booking_started` and direct referrers, else the referrer host or device. `analytics_page_daily` has `pageId` null for the booking page. Dates are `date` columns read as `"YYYY-MM-DD"`, and a day only has rows once it's over in the org's timezone (rolled up hourly). Days with no events have no rows. Log, Phase 2.
-- **Existing gates.** `requireFeature(feature)` (`modules/auth/requireFeature.ts`) is `requireMember` plus a plan check returning 402 `PLAN_UPGRADE_REQUIRED`. `membershipFrom(ctx).plan` is the projected plan, and it's null for an inactive org. `analytics:read` already exists for owners and admins only. `analytics-advanced` already exists in `PLAN_FEATURES`.
-- **Numeric caps.** They go in `PLAN_LIMITS`, never `FEATURES` (see the comment in `Sinwy.Shared/types/plan/PlanFeatures.ts`). `limitsFor(null)` returns zeros.
+- **Analytics range and gates.** `resolveAnalyticsRange(membership, query, now)` (`modules/analytics/range.ts`) returns the clamped `AnalyticsRangeDto` (with `timezone` and `currency`) or `no-retention`, which the controller's `respondError` turns into 402. `datesIn(range)` lists the days to zero-fill. `routes.ts` has `read` and `readAdvanced` middleware arrays; the controller has its own `parseQuery`. Shared schema and DTOs: `Sinwy.Shared/types/analytics/AnalyticsReport.ts`. Log, Phase 3.
+- **GROUP BY with bound parameters fails.** Drizzle binds every `${…}` as its own parameter, so `(created_at AT TIME ZONE ${timezone})::date` in both SELECT and GROUP BY is rejected by Postgres; group by ordinal (`group by 1`) instead. Log, Phase 3.
+- **Endpoint tests run on the real clock.** Date seeded rows relative to `todayIn(timezone, new Date())`, and test fixed-`now` logic through the service or `range.ts` (see `tests/traffic.test.ts`, which also has the HTTP and session setup).
 - **Page deletion.** `deletePage` in the pages service hard-deletes the `page` row (`repository.ts`, the `.delete(page)` call), so `onDelete: "cascade"` foreign keys remove analytics rows.
 - **Drizzle raw SQL.** `tx.execute(sql\`…\`)` rows are untyped records: read them as `row?.["name"]` and coerce counts with `Number`.
 - **Date helpers.** Backend: `todayIn` is exported from `@servicesModule` (not `lib/localDate.ts`); `addDaysToDate`, `startOfLocalDate` and `localDateRange` are in `lib/localDate.ts`. Frontend: all four in `src/shared/lib/date.ts`.
-- **Range and CSV patterns** to copy:
-  - Backend: `resolveRange` and `exportPayments` in `modules/payments/service.ts`, and `paymentsCsv` with the `cell` formula guard in `modules/payments/csv.ts`. The CSV is returned by `exportPaymentsHandler` with `Content-Disposition`.
+- **CSV and range patterns** to copy:
+  - Backend: `exportPayments` in `modules/payments/service.ts`, and `paymentsCsv` with the `cell` formula guard in `modules/payments/csv.ts`. The CSV is returned by `exportPaymentsHandler` with `Content-Disposition`.
   - Frontend: `paymentsSearchSchema`, `changeRange` and `paymentsExportUrl` (`org-dashboard/lib/payment-search.ts`), and `PaymentFilters` (`org-dashboard/components/payments/PaymentFilters.tsx`).
-- **`parseQuery` isn't shared.** It's private to each controller (for example `modules/bookings/controller.ts:111`), so copy it rather than import it.
 - **No chart or tabs components yet.** `src/shared/components/ui/` has neither; add them with `bunx shadcn add chart tabs`.
-- **Booking page flow.** `/$organizationSlug/book` is `ssr: false`. The confirm step renders when `search.service` and `search.start` are set; signing in from it returns to the same URL, so `booking_started` can be sent twice per visitor.
+- **Booking page flow.** `/$organizationSlug/book` is `ssr: false`. The confirm step renders when `search.service` and `search.start` are set; signing in from it returns to the same URL, so `booking_started` can be sent twice per visitor (the funnel counts visitors, not events).
 - **User agents in tests.** Bun's `fetch` adds its own user agent when none is set, so send `user-agent: ""` to test a missing one. Playwright's headless Chromium sends `HeadlessChrome`, which the bot filter drops. Override the user agent with `playwright-cli open --config=<file>`, where the file holds `browser.contextOptions.userAgent` plus `browserName: "chromium"` and `launchOptions.channel: "chromium"` (a custom config replaces `.playwright/cli.config.json`).
 - **StrictMode in dev.** TanStack Start's default client entry wraps the app in `<StrictMode>`, so mount effects on client-rendered components run twice in dev. Guard one-shot side effects with a ref (see `useTrackEvent`; log, Phase 1).
-- **Referrer hosts keep `www.`** (`www.google.com`). Phase 3's referrer breakdown may want to group them.
-- **Projected plan.** The owner's plan is stored in `user.plan`, and `organizationPlanOf` reads it as `ownerPlan`. Setting it with `psql service=sinwy_rw` simulates a plan change.
-- **Seed scenarios.** `bun run dev:seed-scenario <user|owner-with-org|subscribed-org|pro-org|org-with-staff|bookable-org>`. `bookable-org` creates bookings and `pro-org` is on Professional.
-
----
-
-## Phase 3: Range, retention and traffic endpoints
-
-**Goal:** Members with `analytics:read` get traffic series for a range clamped to complete days and their plan's retention window.
-
-**Files:**
-- `Sinwy.Shared/types/plan/PlanLimits.ts`, and the PlanLimits tests in `Sinwy.Backend/modules/billing/tests/planFeatures.test.ts` and `Sinwy.WebFrontend/src/shared/tests/plans.test.ts`.
-- `Sinwy.Shared/types/analytics/`: the range query schema and the traffic DTOs (`AnalyticsEvent.ts` has `ANALYTICS_DAILY_METRICS`).
-- `Sinwy.Backend/db/schema/analyticsSchema.ts` (read only): `analyticsDaily` and `analyticsPageDaily`.
-- `Sinwy.Backend/modules/analytics/`: `range.ts` (new), `service.ts`, `controller.ts`, `routes.ts`, `repository.ts`; `tests/rollup.test.ts` shows how to insert daily rows (or raw events plus `rollupAnalytics(now)`).
-- `Sinwy.Backend/modules/pages/service.ts` and `index.ts`: page titles and slugs by id.
-- `Sinwy.Backend/modules/organizations` (`getOrganizationLocale`).
-- `modules/auth` (`requirePermission`, `requireFeature`, `organizationPath`, `membershipFrom`).
-- `docs/org-rules-map.md`, around line 181 and line 220.
-
-**Steps:**
-- **Plan limit:** add `analyticsRetentionDays` to `PlanLimits` (30, 365, 730, and 0 with no plan).
-- **Range:** `resolveAnalyticsRange(membership, query, now)`, a pure function plus the org locale. It takes the default and the clamps from Default 3, and returns `{ from, to, timezone, currency, retentionDays, clamped }`. It refuses retention 0 with a 402.
-- **Shared schema:** `analyticsRangeQuerySchema` with optional ordered `from` and `to`, in the payments style.
-- **`GET analytics/traffic`** (`analytics:read`): totals and a daily series of views and visitors, with missing days filled with zeros.
-- **`GET analytics/traffic/breakdown`** (`analytics:read` and `requireFeature("analytics-advanced")`):
-  - top pages, with titles from the pages module, and the booking page labelled by a null id
-  - referrers, with direct as null
-  - devices
-- **Docs:** add retention and the `analytics-advanced` contents to `docs/org-rules-map.md`, under plans and under "Enforced in".
-
-**Tests that matter:**
-- The default range is 30 complete days.
-- `to` = today or later is cut to yesterday, and `from` is cut to the retention window per plan.
-- An inactive org or no plan gets 402.
-- Staff get 403, and Starter gets 402 on the breakdown but 200 on the traffic totals.
-- The series is filled with zeros and uses the org's timezone.
-- Another org's data never leaks.
-
-**Done when:** both endpoints return correct data for the Phase 2 rows, and the gates behave as tested.
-
-**Verify:**
-- **Seed:** start from Phase 2's data on the `pro-org` org.
-- **Flow:** using the owner session (`bun run dev:login-as`), call:
-  - `GET /api/organizations/<id>/analytics/traffic`
-  - the same endpoint with a range reaching 2 years back
-  - `/analytics/traffic/breakdown`
-- **Expect:**
-  - The totals match the `analytics_daily` rows.
-  - `from` is cut to 365 days back.
-  - After setting the owner's projected plan to `starter` with `psql service=sinwy_rw` (`user.plan`), the breakdown answers 402 and the range is cut to 30 days.
-- **Simulated:** the plan change, done directly in the DB.
+- **Projected plan.** The owner's plan is `user_subscription.plan` (keyed by `user_id`), read by `organizationPlanOf`; setting it with `psql service=sinwy_rw` simulates a plan change. `membershipFrom(ctx).plan` is null for an inactive org.
+- **Seed scenarios.** `bun run dev:seed-scenario <user|owner-with-org|subscribed-org|pro-org|org-with-staff|bookable-org>`. `bookable-org` creates bookings and `pro-org` is on Professional. The Phase 2/3 data is on org `5645cff9…` (`seed-68a85e45`, UTC, Professional).
 
 ---
 
@@ -123,10 +73,13 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** Booking volume, booked value, the breakdown, the funnel and CSV exports are served from the booking table and the rollups.
 
 **Files:**
-- `Sinwy.Backend/modules/bookings/repository.ts` (next to `sumBookingsBetween`, around line 550), `service.ts` and `index.ts`.
-- `Sinwy.Backend/modules/analytics/`: service, controller, routes, `csv.ts` (new).
-- `Sinwy.Backend/lib/csv.ts` (new), and `Sinwy.Backend/modules/payments/csv.ts`, moving `cell` and `FORMULA_START` out of it.
-- `Sinwy.Shared/types/analytics/`: the bookings, funnel and export-query DTOs.
+- `Sinwy.Backend/modules/bookings/repository.ts` (`sumBookingsBetween` at line 550 for the booked-value filter), `service.ts` and `index.ts`.
+- `Sinwy.Backend/modules/analytics/`:
+  - `service.ts` (`getTraffic` and `getTrafficBreakdown` are the shape to follow), `controller.ts` (`respondError`, `parseQuery`), `routes.ts` (`read`, `readAdvanced`), `range.ts` (`resolveAnalyticsRange`, `datesIn`), and `csv.ts` (new).
+  - `tests/traffic.test.ts` for the HTTP setup, sessions and the 402/403 checks.
+- `Sinwy.Backend/lib/localDate.ts`: `localDateRange(from, to, timezone)` turns the resolved dates into the `start`/`end` instants for the `createdAt` and `startsAt` filters.
+- `Sinwy.Backend/lib/csv.ts` (new), and `Sinwy.Backend/modules/payments/csv.ts` (`FORMULA_START` at line 19, `cell` at line 21), with `modules/payments/tests/payments.test.ts`.
+- `Sinwy.Shared/types/analytics/AnalyticsReport.ts`: add the bookings, funnel and export-query DTOs next to `analyticsRangeQuerySchema`.
 
 **Steps:**
 - **Bookings module:** export `getBookingAnalytics(organizationId, { start, end, from, to }, timezone)`, with the date definitions from Decisions:

@@ -1,6 +1,12 @@
 import db, { type Tx } from "@db";
-import { analyticsEvent, analyticsSalt } from "@db/schema/analyticsSchema";
-import { eq, lt, sql } from "drizzle-orm";
+import {
+	analyticsDaily,
+	analyticsEvent,
+	analyticsPageDaily,
+	analyticsSalt,
+} from "@db/schema/analyticsSchema";
+import type { AnalyticsDailyMetric } from "@sinwy/shared";
+import { and, asc, between, desc, eq, lt, sql } from "drizzle-orm";
 
 export type AnalyticsEventInsert = typeof analyticsEvent.$inferInsert;
 
@@ -92,4 +98,76 @@ export const deleteSaltsBefore = async (tx: Tx, localDate: string) => {
 		.where(lt(analyticsSalt.localDate, localDate))
 		.returning({ localDate: analyticsSalt.localDate });
 	return deleted.length;
+};
+
+export type DateRange = { from: string; to: string };
+
+const dailyIn = (
+	organizationId: string,
+	metric: AnalyticsDailyMetric,
+	{ from, to }: DateRange,
+) =>
+	and(
+		eq(analyticsDaily.organizationId, organizationId),
+		eq(analyticsDaily.metric, metric),
+		between(analyticsDaily.localDate, from, to),
+	);
+
+const views = sql<number>`sum(${analyticsDaily.events})::int`;
+const visitors = sql<number>`sum(${analyticsDaily.visitors})::int`;
+
+/** Days without events have no row. */
+export const findDailyTotals = (organizationId: string, range: DateRange) =>
+	db
+		.select({
+			date: analyticsDaily.localDate,
+			views: analyticsDaily.events,
+			visitors: analyticsDaily.visitors,
+		})
+		.from(analyticsDaily)
+		.where(dailyIn(organizationId, "total", range))
+		.orderBy(asc(analyticsDaily.localDate));
+
+/** Views per key over the range, most viewed first; `key` is '' for direct referrers. */
+export const sumDailyByKey = (
+	organizationId: string,
+	metric: "referrer" | "device",
+	range: DateRange,
+	limit?: number,
+) => {
+	// www.example.com and example.com are one referrer
+	const key =
+		metric === "referrer"
+			? sql<string>`(CASE WHEN ${analyticsDaily.key} LIKE 'www.%' THEN substr(${analyticsDaily.key}, 5) ELSE ${analyticsDaily.key} END)`
+			: sql<string>`${analyticsDaily.key}`;
+	const query = db
+		.select({ key, views, visitors })
+		.from(analyticsDaily)
+		.where(dailyIn(organizationId, metric, range))
+		.groupBy(key)
+		.orderBy(desc(views), asc(key));
+	return limit === undefined ? query : query.limit(limit);
+};
+
+/** Views per page over the range, most viewed first; a null page is the booking page. */
+export const sumPageViews = (
+	organizationId: string,
+	{ from, to }: DateRange,
+) => {
+	const pageViews = sql<number>`sum(${analyticsPageDaily.views})::int`;
+	return db
+		.select({
+			pageId: analyticsPageDaily.pageId,
+			views: pageViews,
+			visitors: sql<number>`sum(${analyticsPageDaily.visitors})::int`,
+		})
+		.from(analyticsPageDaily)
+		.where(
+			and(
+				eq(analyticsPageDaily.organizationId, organizationId),
+				between(analyticsPageDaily.localDate, from, to),
+			),
+		)
+		.groupBy(analyticsPageDaily.pageId)
+		.orderBy(desc(pageViews), asc(analyticsPageDaily.pageId));
 };

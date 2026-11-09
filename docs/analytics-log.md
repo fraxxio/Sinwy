@@ -152,3 +152,70 @@ Finished phases of the [analytics plan](analytics-plan.md), each with its spec a
   - Today's row and the 2026-11-08 salt stayed, and a stale 2026-11-06 salt was deleted.
   - A second restart changed nothing, and neither log had warnings or errors.
   - Not checked live: a non-UTC org (covered by the tests), and events captured by browsing then rolled up after midnight.
+
+## Phase 3: Range, retention and traffic endpoints
+
+**Goal:** Members with `analytics:read` get traffic series for a range clamped to complete days and their plan's retention window.
+
+**Files:**
+- `Sinwy.Shared/types/plan/PlanLimits.ts`, and the PlanLimits tests in `Sinwy.Backend/modules/billing/tests/planFeatures.test.ts` and `Sinwy.WebFrontend/src/shared/tests/plans.test.ts`.
+- `Sinwy.Shared/types/analytics/`: the range query schema and the traffic DTOs (`AnalyticsEvent.ts` has `ANALYTICS_DAILY_METRICS`).
+- `Sinwy.Backend/db/schema/analyticsSchema.ts` (read only): `analyticsDaily` and `analyticsPageDaily`.
+- `Sinwy.Backend/modules/analytics/`: `range.ts` (new), `service.ts`, `controller.ts`, `routes.ts`, `repository.ts`; `tests/rollup.test.ts` shows how to insert daily rows (or raw events plus `rollupAnalytics(now)`).
+- `Sinwy.Backend/modules/pages/service.ts` and `index.ts`: page titles and slugs by id.
+- `Sinwy.Backend/modules/organizations` (`getOrganizationLocale`).
+- `modules/auth` (`requirePermission`, `requireFeature`, `organizationPath`, `membershipFrom`).
+- `docs/org-rules-map.md`, around line 181 and line 220.
+
+**Steps:**
+- **Plan limit:** add `analyticsRetentionDays` to `PlanLimits` (30, 365, 730, and 0 with no plan).
+- **Range:** `resolveAnalyticsRange(membership, query, now)`, a pure function plus the org locale. It takes the default and the clamps from Default 3, and returns `{ from, to, timezone, currency, retentionDays, clamped }`. It refuses retention 0 with a 402.
+- **Shared schema:** `analyticsRangeQuerySchema` with optional ordered `from` and `to`, in the payments style.
+- **`GET analytics/traffic`** (`analytics:read`): totals and a daily series of views and visitors, with missing days filled with zeros.
+- **`GET analytics/traffic/breakdown`** (`analytics:read` and `requireFeature("analytics-advanced")`):
+  - top pages, with titles from the pages module, and the booking page labelled by a null id
+  - referrers, with direct as null
+  - devices
+- **Docs:** add retention and the `analytics-advanced` contents to `docs/org-rules-map.md`, under plans and under "Enforced in".
+
+**Tests that matter:**
+- The default range is 30 complete days.
+- `to` = today or later is cut to yesterday, and `from` is cut to the retention window per plan.
+- An inactive org or no plan gets 402.
+- Staff get 403, and Starter gets 402 on the breakdown but 200 on the traffic totals.
+- The series is filled with zeros and uses the org's timezone.
+- Another org's data never leaks.
+
+**Done when:** both endpoints return correct data for the Phase 2 rows, and the gates behave as tested.
+
+**Verify:**
+- **Seed:** start from Phase 2's data on the `pro-org` org.
+- **Flow:** using the owner session (`bun run dev:login-as`), call:
+  - `GET /api/organizations/<id>/analytics/traffic`
+  - the same endpoint with a range reaching 2 years back
+  - `/analytics/traffic/breakdown`
+- **Expect:**
+  - The totals match the `analytics_daily` rows.
+  - `from` is cut to 365 days back.
+  - After setting the owner's projected plan to `starter` with `psql service=sinwy_rw` (`user.plan`), the breakdown answers 402 and the range is cut to 30 days.
+- **Simulated:** the plan change, done directly in the DB.
+
+### Log (2026-11-09, `feat(backend, shared): serve analytics traffic within the plan's retention window`)
+- Shipped:
+  - `PLAN_LIMITS.analyticsRetentionDays` (30, 365, 730; 0 with no plan), with the backend limits test pinning both limits.
+  - `analyticsRangeQuerySchema`, `ANALYTICS_LIMITS` and the traffic DTOs in `Sinwy.Shared/types/analytics/AnalyticsReport.ts`.
+  - `modules/analytics/range.ts`: `clampAnalyticsRange` (pure), `resolveAnalyticsRange` (adds the org locale; `no-retention` → 402 `PLAN_UPGRADE_REQUIRED`) and `datesIn`.
+  - `GET analytics/traffic` (`analytics:read`) and `GET analytics/traffic/breakdown` (plus `requireFeature("analytics-advanced")`), registered by `registerAnalyticsRoutes`.
+  - `getPageLabels(organizationId, ids)` exported from the pages module for page titles and slugs.
+  - Tests in `modules/analytics/tests/traffic.test.ts`; retention and the advanced contents in `docs/org-rules-map.md` § 5.
+- Differs from plan:
+  - Both ends of a range are clamped into `[today − retentionDays, yesterday]`, so a range wholly in the future or wholly before the window collapses onto one edge day rather than erroring. Only `to` given → the 30 days ending there. `clamped` means only that retention cut `from`, not the yesterday cap.
+  - Referrers fold `www.` into the bare host and are capped at the top 20 (`ANALYTICS_LIMITS.topReferrers`); pages and devices are uncapped (at most 26 pages and 3 devices).
+  - The `www.` fold is a `CASE … LIKE 'www.%'` expression with no bound parameters: Drizzle binds each `${}` separately, and Postgres then rejects the same expression in SELECT and GROUP BY ("must appear in the GROUP BY clause"; probed). Grouping by ordinal (`group by 1`) works.
+  - The plan's "`user.plan`" is wrong: the projected plan is `user_subscription.plan`.
+- Checked in the running app (e2e subagent, org `5645cff9…` in UTC, Phase 2 rows):
+  - Default traffic: 30 days 2026-10-10 to 2026-11-08, totals 17/6 matching `analytics_daily`; zero-filled series.
+  - A range two years back on Professional: `from` 2025-11-09, `clamped: true`; a range to 2026-11-20: `to` 2026-11-08.
+  - Breakdown: pages, referrers (with `www.instagram.com` folded) and devices matched the table sums and page titles.
+  - With `user_subscription.plan = starter`: breakdown 402 (code 4021), range cut to 2026-10-10; restored to Professional afterwards. No warnings or errors in the backend log.
+  - Not checked live: an inactive org's 402 and a non-UTC org (both covered by the tests), a real Polar plan change.

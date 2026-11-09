@@ -24,6 +24,7 @@ import {
 	deletePage as deletePageRow,
 	findLatestVersion,
 	findPage,
+	findPageLabels,
 	findPages,
 	findPublishedPageBySlug,
 	findPublishedPageIdBySlug,
@@ -113,6 +114,19 @@ export const listPages = async (
 		usage: { used: rows.length, limit: limitsFor(membership.plan).pages },
 	};
 };
+
+export type PageLabel = { title: string; slug: string };
+
+/** Titles and slugs of the organization's pages among `pageIds`; unknown ids are left out. */
+export const getPageLabels = async (
+	organizationId: string,
+	pageIds: string[],
+): Promise<Map<string, PageLabel>> =>
+	new Map(
+		(await findPageLabels(organizationId, pageIds)).map(
+			({ id, title, slug }) => [id, { title, slug }],
+		),
+	);
 
 export const getPage = async (
 	membership: Membership,

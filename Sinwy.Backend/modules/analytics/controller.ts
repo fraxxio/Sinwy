@@ -1,8 +1,16 @@
-import type { Handler } from "@backend/lib/app/types";
+import { membershipFrom } from "@authModule";
+import { fail, ok } from "@backend/lib/app/respond";
+import type { Handler, IReqContext } from "@backend/lib/app/types";
 import { clientIp } from "@backend/lib/clientIp";
 import { createLogger } from "@logger";
-import { trackEventSchema } from "@sinwy/shared";
-import { trackEvent } from "./service";
+import {
+	API_ERROR_CODES,
+	analyticsRangeQuerySchema,
+	trackEventSchema,
+} from "@sinwy/shared";
+import type { z } from "zod";
+import type { AnalyticsRangeError } from "./range";
+import { getTraffic, getTrafficBreakdown, trackEvent } from "./service";
 
 const logger = createLogger("analytics");
 
@@ -25,4 +33,45 @@ export const trackEventHandler: Handler = async (c) => {
 		}
 	}
 	return new Response(null, { status: 204 });
+};
+
+const respondError = (error: AnalyticsRangeError) => {
+	switch (error) {
+		case "no-retention":
+			return fail(
+				"Your plan doesn't include analytics",
+				402,
+				API_ERROR_CODES.PLAN_UPGRADE_REQUIRED,
+			);
+		case "not-found":
+			return fail("Not found", 404);
+	}
+};
+
+const parseQuery = <T extends z.ZodType>(c: IReqContext, schema: T) => {
+	const query = schema.safeParse(
+		Object.fromEntries(new URL(c.req.url).searchParams),
+	);
+	return query.success
+		? ({ ok: true, data: query.data } as const)
+		: ({
+				ok: false,
+				response: fail(query.error.issues[0]?.message ?? "Invalid query", 400),
+			} as const);
+};
+
+export const getTrafficHandler: Handler = async (c) => {
+	const query = parseQuery(c, analyticsRangeQuerySchema);
+	if (!query.ok) return query.response;
+
+	const result = await getTraffic(membershipFrom(c), query.data);
+	return result.ok ? ok(result.data) : respondError(result.error);
+};
+
+export const getTrafficBreakdownHandler: Handler = async (c) => {
+	const query = parseQuery(c, analyticsRangeQuerySchema);
+	if (!query.ok) return query.response;
+
+	const result = await getTrafficBreakdown(membershipFrom(c), query.data);
+	return result.ok ? ok(result.data) : respondError(result.error);
 };

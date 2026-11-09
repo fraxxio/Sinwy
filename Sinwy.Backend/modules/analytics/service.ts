@@ -1,10 +1,29 @@
 import { createHash } from "node:crypto";
+import type { Membership } from "@authModule";
 import appConfig from "@config";
 import { findPublicOrganizationPlan } from "@organizationsModule";
-import { findServedPageId } from "@pagesModule";
+import { findServedPageId, getPageLabels } from "@pagesModule";
 import { todayIn } from "@servicesModule";
-import type { DeviceType, TrackEventInput } from "@sinwy/shared";
-import { insertEvent, saltFor } from "./repository";
+import {
+	ANALYTICS_LIMITS,
+	type AnalyticsRangeQuery,
+	type DeviceType,
+	type TrackEventInput,
+	type TrafficBreakdownDto,
+	type TrafficDto,
+} from "@sinwy/shared";
+import {
+	type AnalyticsRangeError,
+	datesIn,
+	resolveAnalyticsRange,
+} from "./range";
+import {
+	findDailyTotals,
+	insertEvent,
+	saltFor,
+	sumDailyByKey,
+	sumPageViews,
+} from "./repository";
 
 const BOT = /bot|crawl|spider|slurp|preview|headless|lighthouse/i;
 const TABLET = /ipad|tablet|kindle|silk|playbook|android(?!.*mobile)/i;
@@ -79,4 +98,84 @@ export const trackEvent = async (
 		device: deviceOf(userAgent),
 		createdAt: now,
 	});
+};
+
+export type Result<T> =
+	| { ok: true; data: T }
+	| { ok: false; error: AnalyticsRangeError };
+
+export const getTraffic = async (
+	membership: Membership,
+	query: AnalyticsRangeQuery,
+	now = new Date(),
+): Promise<Result<TrafficDto>> => {
+	const range = await resolveAnalyticsRange(membership, query, now);
+	if (!range.ok) return range;
+
+	const rows = await findDailyTotals(membership.organizationId, range.data);
+	const byDate = new Map(rows.map((row) => [row.date, row]));
+	const series = datesIn(range.data).map((date) => ({
+		date,
+		views: byDate.get(date)?.views ?? 0,
+		visitors: byDate.get(date)?.visitors ?? 0,
+	}));
+	const totals = series.reduce(
+		(sum, day) => ({
+			views: sum.views + day.views,
+			visitors: sum.visitors + day.visitors,
+		}),
+		{ views: 0, visitors: 0 },
+	);
+	return { ok: true, data: { range: range.data, totals, series } };
+};
+
+export const getTrafficBreakdown = async (
+	membership: Membership,
+	query: AnalyticsRangeQuery,
+	now = new Date(),
+): Promise<Result<TrafficBreakdownDto>> => {
+	const range = await resolveAnalyticsRange(membership, query, now);
+	if (!range.ok) return range;
+
+	const { organizationId } = membership;
+	const [pages, referrers, devices] = await Promise.all([
+		sumPageViews(organizationId, range.data),
+		sumDailyByKey(
+			organizationId,
+			"referrer",
+			range.data,
+			ANALYTICS_LIMITS.topReferrers,
+		),
+		sumDailyByKey(organizationId, "device", range.data),
+	]);
+	const labels = await getPageLabels(
+		organizationId,
+		pages.flatMap(({ pageId }) => (pageId ? [pageId] : [])),
+	);
+	return {
+		ok: true,
+		data: {
+			range: range.data,
+			pages: pages.map(({ pageId, views, visitors }) => {
+				const label = pageId ? labels.get(pageId) : undefined;
+				return {
+					pageId,
+					title: label?.title ?? null,
+					slug: label?.slug ?? null,
+					views,
+					visitors,
+				};
+			}),
+			referrers: referrers.map(({ key, views, visitors }) => ({
+				host: key || null,
+				views,
+				visitors,
+			})),
+			devices: devices.map(({ key, views, visitors }) => ({
+				device: key as DeviceType,
+				views,
+				visitors,
+			})),
+		},
+	};
 };

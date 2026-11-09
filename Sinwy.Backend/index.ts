@@ -1,4 +1,7 @@
-import { registerPublicAnalyticsRoutes } from "@analyticsModule";
+import {
+	registerAnalyticsRoutes,
+	registerPublicAnalyticsRoutes,
+} from "@analyticsModule";
 import { registerAuthRoutes } from "@authModule";
 import { jobs } from "@backend/jobs";
 import createApp from "@backend/lib/app";
@@ -35,6 +38,7 @@ registerPaymentRoutes(app);
 registerAccountPaymentRoutes(app);
 registerPageRoutes(app);
 registerPublicPageRoutes(app);
+registerAnalyticsRoutes(app);
 registerPublicAnalyticsRoutes(app);
 registerUserRoutes(app);
 registerFileRoutes(app);

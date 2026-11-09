@@ -1,7 +1,7 @@
 import db, { type Tx } from "@db";
 import { page, pageContent } from "@db/schema/pageSchema";
 import type { PageContent } from "@sinwy/shared";
-import { and, asc, count, desc, eq, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 
 export type PageRow = typeof page.$inferSelect;
 export type PageVersionRow = Pick<
@@ -45,6 +45,19 @@ export const findPages = (organizationId: string) =>
 		.from(page)
 		.where(eq(page.organizationId, organizationId))
 		.orderBy(desc(page.updatedAt), asc(page.id));
+
+export const findPageLabels = (organizationId: string, pageIds: string[]) =>
+	pageIds.length === 0
+		? Promise.resolve([])
+		: db
+				.select({ id: page.id, title: page.title, slug: page.slug })
+				.from(page)
+				.where(
+					and(
+						eq(page.organizationId, organizationId),
+						inArray(page.id, pageIds),
+					),
+				);
 
 export const findPage = async (organizationId: string, pageId: string) => {
 	const [row] = await db

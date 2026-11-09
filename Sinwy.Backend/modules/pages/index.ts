@@ -1,2 +1,2 @@
 export { registerPageRoutes, registerPublicPageRoutes } from "./routes";
-export { findServedPageId } from "./service";
+export { findServedPageId, getPageLabels, type PageLabel } from "./service";

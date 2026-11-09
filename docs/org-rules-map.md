@@ -203,6 +203,17 @@ Pages (every tier has them, up to a limit per organization)
    the oldest published pages by creation, up to the limit, are served
    publicly, and the dashboard shows the rest "Published, not live"
 
+Analytics (owners and admins; every tier, within a retention window)
+├─ retention: Starter 30 days, Professional 365, Enterprise 730; an inactive
+│  organization 0 → refused, "upgrade required"
+├─ retention only limits what is shown: data is kept, so an upgrade reveals
+│  older days at once and a downgrade deletes nothing
+├─ complete days only: a range is cut to end yesterday and to start no
+│  earlier than the window; the default is the last 30 complete days
+├─ every tier: total views and unique visitors per day
+└─ advanced analytics (Professional, Enterprise): top pages, referrers and
+   devices; without it → refused, "upgrade required"
+
 Buying a plan (checkout, Account → Billing)
 ├─ the plan is always the buyer's own; it can't name an organization
 ├─ the user already has one (active, trialing, past due or paused) → refused:
@@ -217,12 +228,14 @@ One trial per user (D10)
    (email and card) refuses a second trial
 ```
 
-Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages),
+Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages and
+analytics retention),
 `Sinwy.Shared/types/page/` (block and template registries),
 `Sinwy.Backend/modules/billing/` (`checkoutGuard.ts`, `projection.ts`),
 `modules/auth/auth.ts` (checkout hook), `modules/auth/requireFeature.ts`,
 `modules/pages/` (`service.ts`, and `repository.ts` for the limit count and
-the served set).
+the served set), `modules/analytics/` (`range.ts` for retention, `routes.ts`
+for the advanced gate).
 
 ## 6. Slots
 
