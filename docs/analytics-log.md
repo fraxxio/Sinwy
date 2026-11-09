@@ -219,3 +219,83 @@ Finished phases of the [analytics plan](analytics-plan.md), each with its spec a
   - Breakdown: pages, referrers (with `www.instagram.com` folded) and devices matched the table sums and page titles.
   - With `user_subscription.plan = starter`: breakdown 402 (code 4021), range cut to 2026-10-10; restored to Professional afterwards. No warnings or errors in the backend log.
   - Not checked live: an inactive org's 402 and a non-UTC org (both covered by the tests), a real Polar plan change.
+
+
+## Phase 4: Booking metrics, funnel and CSV export
+
+**Goal:** Booking volume, booked value, the breakdown, the funnel and CSV exports are served from the booking table and the rollups.
+
+**Files:**
+- `Sinwy.Backend/modules/bookings/repository.ts` (`sumBookingsBetween` at line 550 for the booked-value filter), `service.ts` and `index.ts`.
+- `Sinwy.Backend/modules/analytics/`:
+  - `service.ts` (`getTraffic` and `getTrafficBreakdown` are the shape to follow), `controller.ts` (`respondError`, `parseQuery`), `routes.ts` (`read`, `readAdvanced`), `range.ts` (`resolveAnalyticsRange`, `datesIn`), and `csv.ts` (new).
+  - `tests/traffic.test.ts` for the HTTP setup, sessions and the 402/403 checks.
+- `Sinwy.Backend/lib/localDate.ts`: `localDateRange(from, to, timezone)` turns the resolved dates into the `start`/`end` instants for the `createdAt` and `startsAt` filters.
+- `Sinwy.Backend/lib/csv.ts` (new), and `Sinwy.Backend/modules/payments/csv.ts` (`FORMULA_START` at line 19, `cell` at line 21), with `modules/payments/tests/payments.test.ts`.
+- `Sinwy.Shared/types/analytics/AnalyticsReport.ts`: add the bookings, funnel and export-query DTOs next to `analyticsRangeQuerySchema`.
+
+**Steps:**
+- **Bookings module:** export `getBookingAnalytics(organizationId, { start, end, from, to }, timezone)`, with the date definitions from Decisions:
+  - daily created counts, by `createdAt`
+  - daily booked value, by `startsAt`
+  - counts and booked value per service, with the service name, by `createdAt`
+  - cancellation rate split by `cancelledBy`, by `startsAt`
+  - no-show rate, by `startsAt`
+  - storefront-created count, by `createdAt`
+
+  Group by day in the org's timezone with `AT TIME ZONE`. The analytics module never reads `booking` itself.
+- **`GET analytics/bookings`** (any plan with retention): the volume and booked value series and their totals.
+- **`GET analytics/bookings/breakdown`** (`analytics-advanced`): by service, plus the cancellation and no-show rates. A rate with a zero denominator is null, not 0.
+- **`GET analytics/funnel`** (`analytics-advanced`): view visitors (sum of `total` visitors), then started visitors (sum of `booking_started` visitors), then storefront bookings.
+- **CSV:**
+  - Move `cell` to `lib/csv.ts` and use it from payments and analytics.
+  - `GET analytics/export?report=traffic|bookings|funnel&from&to` (`analytics-advanced`) returns one row per day for traffic and bookings, and one row per step for the funnel.
+  - The filename is `analytics-<report>-<from>-to-<to>.csv`.
+
+**Tests that matter:**
+- Each metric follows its date column across midnight in the org's timezone.
+- Cancelled, pending and no-show bookings are excluded from booked value.
+- The no-show rate ignores future, pending and confirmed bookings, and is null with nothing to divide by.
+- The funnel's last step counts only `bookedBy = customer`.
+- Every advanced endpoint answers 402 for Starter.
+- CSV cells starting with `= + - @` are escaped, and the payments CSV still passes its tests.
+
+**Done when:** all endpoints match hand-computed values for the seeded bookings, and the CSV downloads.
+
+**Verify:**
+- **Seed:** `bookable-org`. Upgrade it to Professional the same way as Phase 3, or create a `pro-org` and book through the storefront. Cancel one booking and mark one as a no-show in the dashboard. Backdate `created_at` and `starts_at` with `psql service=sinwy_rw` so they fall within the range.
+- **Flow:** using the owner session, call `analytics/bookings`, `analytics/bookings/breakdown`, `analytics/funnel` and `analytics/export?report=bookings`.
+- **Expect:**
+  - The counts, rates and booked value match a `psql service=sinwy_ro` query on `booking` (LIMIT 50).
+  - The CSV has a header and one row per day.
+- **Simulated:** the backdated timestamps.
+
+### Log (2026-11-09, `feat(backend, shared): serve booking analytics, the funnel and CSV exports`)
+- Shipped:
+  - `getBookingAnalytics(organizationId, { from, to }, timezone)` in the bookings module, built from three grouped queries:
+    - `countCreatedByDay`, by `createdAt`: bookings made per local day, all of them and the storefront ones.
+    - `sumStartingByDay`, by `startsAt`: per local day, the booked value, cancellations by each side, completed bookings and no-shows.
+    - `sumCreatedByService`, by `createdAt`: count and booked value per service.
+    - `bookedValue` is shared with `sumBookingsBetween`.
+  - The endpoints `GET analytics/bookings`, `analytics/bookings/breakdown`, `analytics/funnel` and `analytics/export?report=traffic|bookings|funnel`. The controller's range handlers share one `rangeHandler`.
+  - `lib/csv.ts` (`cell`, `csvOf`, `majorUnits`), used by payments and by `modules/analytics/csv.ts`:
+    - Bookings CSV columns: Date, Bookings made, Booked value (major units), Currency.
+    - Funnel CSV columns: Step, Count, Of previous step (percent).
+  - Tests in `modules/analytics/tests/bookings.test.ts` and `lib/tests/csv.test.ts`. `docs/org-rules-map.md` § 5 lists the new metrics.
+- Differs from plan:
+  - `getBookingAnalytics` takes the local `{ from, to }` and works out the instants itself.
+  - `booking.created_at` is `timestamp` *without* time zone and holds UTC wall time, so its local day is `((created_at AT TIME ZONE 'UTC') AT TIME ZONE tz)::date`. `starts_at` is `timestamptz`. Dates are cast `::text` so the driver doesn't parse them.
+  - The funnel's last step counts every storefront booking made in the range, including ones cancelled later.
+  - `analyticsRangeQuerySchema` and `analyticsExportQuerySchema` share their fields and refine, because Zod 4 can't `.extend` a refined object. The funnel step type is named `AnalyticsFunnelStep` because `FunnelStep` already exists in the shared types.
+- Checked in the running app by the e2e subagent:
+  - Setup: org `bf2f32a9…` (`seed-83a3f25e`, Europe/Vilnius) with 8 bookings made through the storefront and dashboard APIs, statuses changed through the API, then `created_at` and `starts_at` backdated.
+  - `bookings`: totals of 8 bookings and 13000 booked value, and every non-zero day, matched a psql grouping. This included three bookings near midnight on both sides of the 25 Oct DST change. A booking starting today was correctly left out.
+  - `bookings/breakdown`: everything matched psql, and a custom range matched too.
+    - Services: 5 bookings / 7500 and 3 / 8000.
+    - Cancellation: 7 bookings, 1 cancelled by each side, rate 0.2857.
+    - No-show: 1 of 3, rate 0.3333.
+  - `funnel`: 0 / 0 / 4. The org has no traffic rows; the 4 storefront bookings matched psql.
+  - `export?report=bookings`: a header plus 30 rows, filename `analytics-bookings-2026-10-10-to-2026-11-08.csv`.
+  - On Starter, `bookings` answered 200 and the other three answered 402 (code 4021). No warnings or errors in the backend log.
+  - Not checked live: the funnel with real traffic rows (covered by tests), cancel and no-show from the dashboard UI, and a real Polar upgrade.
+  - Noted by the e2e run: as specified, per-service booked value (by `createdAt`) and the total booked value (by `startsAt`) differ for the same range, so Phase 5 must label them.

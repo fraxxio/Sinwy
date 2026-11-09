@@ -61,6 +61,7 @@ import {
 	type CustomerBookingRow,
 	changeBooking,
 	countBookings,
+	countCreatedByDay,
 	countCustomerBookings,
 	countNeedingAttention,
 	countNotStartedBookings,
@@ -77,6 +78,8 @@ import {
 	findRebookServices,
 	insertBookingIfFree,
 	sumBookingsBetween,
+	sumCreatedByService,
+	sumStartingByDay,
 } from "./repository";
 import { type BookingTimesQuery, paddedWindow } from "./utils";
 
@@ -935,3 +938,24 @@ export const countUpcomingCustomerBookings = (
 	customerUserId: string,
 	now = new Date(),
 ) => countNotStartedCustomerBookings(customerUserId, now);
+
+/**
+ * Booking figures over inclusive local dates: bookings made per day and per
+ * service go by `createdAt`, booked value and outcomes per day by `startsAt`.
+ */
+export const getBookingAnalytics = async (
+	organizationId: string,
+	{ from, to }: { from: string; to: string },
+	timezone: string,
+) => {
+	const range = {
+		start: startOfLocalDate(from, timezone),
+		end: startOfLocalDate(addDaysToDate(to, 1), timezone),
+	};
+	const [created, starting, services] = await Promise.all([
+		countCreatedByDay(organizationId, range, timezone),
+		sumStartingByDay(organizationId, range, timezone),
+		sumCreatedByService(organizationId, range),
+	]);
+	return { created, starting, services };
+};

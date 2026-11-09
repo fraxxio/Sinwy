@@ -9,6 +9,7 @@ export {
 	countUpcomingCustomerBookings,
 	countUpcomingOrganizationBookings,
 	createBooking,
+	getBookingAnalytics,
 	handleCustomerAccountDeleted,
 	listBusyIntervals,
 	ORGANIZATION_CLOSED_REASON,

@@ -6,6 +6,10 @@ import {
 } from "@authModule";
 import type { IApp } from "@backend/lib/app/types";
 import {
+	exportAnalyticsHandler,
+	getBookingsBreakdownHandler,
+	getBookingsHandler,
+	getFunnelHandler,
 	getTrafficBreakdownHandler,
 	getTrafficHandler,
 	trackEventHandler,
@@ -23,6 +27,20 @@ export const registerAnalyticsRoutes = (app: IApp) => {
 		getTrafficBreakdownHandler,
 		{ routeMiddlewares: readAdvanced },
 	);
+	app.route(organizationPath("analytics/bookings"), getBookingsHandler, {
+		routeMiddlewares: read,
+	});
+	app.route(
+		organizationPath("analytics/bookings/breakdown"),
+		getBookingsBreakdownHandler,
+		{ routeMiddlewares: readAdvanced },
+	);
+	app.route(organizationPath("analytics/funnel"), getFunnelHandler, {
+		routeMiddlewares: readAdvanced,
+	});
+	app.route(organizationPath("analytics/export"), exportAnalyticsHandler, {
+		routeMiddlewares: readAdvanced,
+	});
 };
 
 export const registerPublicAnalyticsRoutes = (app: IApp) => {

@@ -128,6 +128,21 @@ export const findDailyTotals = (organizationId: string, range: DateRange) =>
 		.where(dailyIn(organizationId, "total", range))
 		.orderBy(asc(analyticsDaily.localDate));
 
+/** Daily unique visitors summed over the range. */
+export const sumDailyVisitors = async (
+	organizationId: string,
+	metric: "total" | "booking_started",
+	range: DateRange,
+) => {
+	const [row] = await db
+		.select({
+			visitors: sql<number>`coalesce(sum(${analyticsDaily.visitors}), 0)::int`,
+		})
+		.from(analyticsDaily)
+		.where(dailyIn(organizationId, metric, range));
+	return row?.visitors ?? 0;
+};
+
 /** Views per key over the range, most viewed first; `key` is '' for direct referrers. */
 export const sumDailyByKey = (
 	organizationId: string,

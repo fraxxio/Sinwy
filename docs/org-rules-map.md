@@ -210,9 +210,11 @@ Analytics (owners and admins; every tier, within a retention window)
 │  older days at once and a downgrade deletes nothing
 ├─ complete days only: a range is cut to end yesterday and to start no
 │  earlier than the window; the default is the last 30 complete days
-├─ every tier: total views and unique visitors per day
+├─ every tier: total views and unique visitors per day, bookings made per
+│  day and booked value (confirmed and completed) per day of the appointment
 └─ advanced analytics (Professional, Enterprise): top pages, referrers and
-   devices; without it → refused, "upgrade required"
+   devices, bookings by service, cancellation and no-show rates, the booking
+   funnel and CSV export; without it → refused, "upgrade required"
 
 Buying a plan (checkout, Account → Billing)
 ├─ the plan is always the buyer's own; it can't name an organization

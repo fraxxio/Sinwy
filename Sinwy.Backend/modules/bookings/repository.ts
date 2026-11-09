@@ -544,6 +544,11 @@ const total = (
 		Number,
 	);
 
+const bookedValue = total(
+	booking.priceMinor,
+	inArray(booking.status, ["confirmed", "completed"]),
+);
+
 const durationMinutes = sql`extract(epoch from ${booking.endsAt} - ${booking.startsAt}) / 60`;
 
 /** Booked value and booked minutes of the bookings starting in `[start, end)`. */
@@ -554,10 +559,7 @@ export const sumBookingsBetween = async (
 ) => {
 	const [row] = await db
 		.select({
-			bookedMinor: total(
-				booking.priceMinor,
-				inArray(booking.status, ["confirmed", "completed"]),
-			),
+			bookedMinor: bookedValue,
 			completedMinor: total(
 				booking.priceMinor,
 				eq(booking.status, "completed"),
@@ -574,6 +576,86 @@ export const sumBookingsBetween = async (
 		);
 	return row ?? { bookedMinor: 0, completedMinor: 0, bookedMinutes: 0 };
 };
+
+const countOf = (where: SQL = sql`true`) =>
+	sql<number>`(count(*) filter (where ${where}))::int`.mapWith(Number);
+
+// created_at holds UTC wall time without a zone
+const createdOn = (timezone: string) =>
+	sql<string>`((${booking.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})::date::text`;
+const startsOn = (timezone: string) =>
+	sql<string>`(${booking.startsAt} AT TIME ZONE ${timezone})::date::text`;
+
+export type InstantRange = { start: Date; end: Date };
+
+const createdIn = (organizationId: string, { start, end }: InstantRange) =>
+	and(
+		eq(booking.organizationId, organizationId),
+		gte(booking.createdAt, start),
+		lt(booking.createdAt, end),
+	);
+
+/** Bookings made per local day in `[start, end)`, all and from the storefront; days without any have no row. */
+export const countCreatedByDay = (
+	organizationId: string,
+	range: InstantRange,
+	timezone: string,
+) =>
+	db
+		.select({
+			date: createdOn(timezone),
+			bookings: countOf(),
+			storefront: countOf(eq(booking.bookedBy, "customer")),
+		})
+		.from(booking)
+		.where(createdIn(organizationId, range))
+		.groupBy(sql`1`)
+		.orderBy(sql`1`);
+
+/** Booked value and outcomes of the bookings starting in `[start, end)`, per local day. */
+export const sumStartingByDay = (
+	organizationId: string,
+	{ start, end }: InstantRange,
+	timezone: string,
+) =>
+	db
+		.select({
+			date: startsOn(timezone),
+			bookings: countOf(),
+			bookedMinor: bookedValue,
+			cancelledByCustomer: countOf(eq(booking.cancelledBy, "customer")),
+			cancelledByOrganization: countOf(eq(booking.cancelledBy, "organization")),
+			completed: countOf(eq(booking.status, "completed")),
+			noShows: countOf(eq(booking.status, "no_show")),
+		})
+		.from(booking)
+		.where(
+			and(
+				eq(booking.organizationId, organizationId),
+				gte(booking.startsAt, start),
+				lt(booking.startsAt, end),
+			),
+		)
+		.groupBy(sql`1`)
+		.orderBy(sql`1`);
+
+/** Bookings made in `[start, end)` per service, most booked first. */
+export const sumCreatedByService = (
+	organizationId: string,
+	range: InstantRange,
+) =>
+	db
+		.select({
+			serviceId: booking.serviceId,
+			name: service.name,
+			bookings: countOf(),
+			bookedMinor: bookedValue,
+		})
+		.from(booking)
+		.innerJoin(service, eq(service.id, booking.serviceId))
+		.where(createdIn(organizationId, range))
+		.groupBy(booking.serviceId, service.name)
+		.orderBy(desc(sql`count(*)`), asc(service.name));
 
 const upcomingRequests = (organizationId: string, now: Date) =>
 	and(

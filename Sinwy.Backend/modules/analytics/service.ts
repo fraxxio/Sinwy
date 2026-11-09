@@ -1,17 +1,24 @@
 import { createHash } from "node:crypto";
 import type { Membership } from "@authModule";
+import { getBookingAnalytics } from "@bookingsModule";
 import appConfig from "@config";
 import { findPublicOrganizationPlan } from "@organizationsModule";
 import { findServedPageId, getPageLabels } from "@pagesModule";
 import { todayIn } from "@servicesModule";
 import {
 	ANALYTICS_LIMITS,
+	type AnalyticsExportQuery,
+	type AnalyticsRangeDto,
 	type AnalyticsRangeQuery,
+	type BookingsBreakdownDto,
+	type BookingsDto,
 	type DeviceType,
+	type FunnelDto,
 	type TrackEventInput,
 	type TrafficBreakdownDto,
 	type TrafficDto,
 } from "@sinwy/shared";
+import { bookingsCsv, funnelCsv, trafficCsv } from "./csv";
 import {
 	type AnalyticsRangeError,
 	datesIn,
@@ -22,6 +29,7 @@ import {
 	insertEvent,
 	saltFor,
 	sumDailyByKey,
+	sumDailyVisitors,
 	sumPageViews,
 } from "./repository";
 
@@ -176,6 +184,148 @@ export const getTrafficBreakdown = async (
 				views,
 				visitors,
 			})),
+		},
+	};
+};
+
+const bookingFiguresIn = (organizationId: string, range: AnalyticsRangeDto) =>
+	getBookingAnalytics(organizationId, range, range.timezone);
+
+export const getBookings = async (
+	membership: Membership,
+	query: AnalyticsRangeQuery,
+	now = new Date(),
+): Promise<Result<BookingsDto>> => {
+	const range = await resolveAnalyticsRange(membership, query, now);
+	if (!range.ok) return range;
+
+	const { created, starting } = await bookingFiguresIn(
+		membership.organizationId,
+		range.data,
+	);
+	const createdOn = new Map(created.map((row) => [row.date, row.bookings]));
+	const bookedOn = new Map(starting.map((row) => [row.date, row.bookedMinor]));
+	const series = datesIn(range.data).map((date) => ({
+		date,
+		bookings: createdOn.get(date) ?? 0,
+		bookedMinor: bookedOn.get(date) ?? 0,
+	}));
+	const totals = series.reduce(
+		(sum, day) => ({
+			bookings: sum.bookings + day.bookings,
+			bookedMinor: sum.bookedMinor + day.bookedMinor,
+		}),
+		{ bookings: 0, bookedMinor: 0 },
+	);
+	return { ok: true, data: { range: range.data, totals, series } };
+};
+
+const rateOf = (part: number, whole: number) =>
+	whole > 0 ? part / whole : null;
+
+export const getBookingsBreakdown = async (
+	membership: Membership,
+	query: AnalyticsRangeQuery,
+	now = new Date(),
+): Promise<Result<BookingsBreakdownDto>> => {
+	const range = await resolveAnalyticsRange(membership, query, now);
+	if (!range.ok) return range;
+
+	const { starting, services } = await bookingFiguresIn(
+		membership.organizationId,
+		range.data,
+	);
+	const sum = (pick: (row: (typeof starting)[number]) => number) =>
+		starting.reduce((total, row) => total + pick(row), 0);
+	const bookings = sum((row) => row.bookings);
+	const cancelledByCustomer = sum((row) => row.cancelledByCustomer);
+	const cancelledByOrganization = sum((row) => row.cancelledByOrganization);
+	const noShows = sum((row) => row.noShows);
+	const finished = sum((row) => row.completed) + noShows;
+	return {
+		ok: true,
+		data: {
+			range: range.data,
+			services,
+			cancellation: {
+				bookings,
+				cancelledByCustomer,
+				cancelledByOrganization,
+				rate: rateOf(cancelledByCustomer + cancelledByOrganization, bookings),
+				customerRate: rateOf(cancelledByCustomer, bookings),
+				organizationRate: rateOf(cancelledByOrganization, bookings),
+			},
+			noShow: { finished, noShows, rate: rateOf(noShows, finished) },
+		},
+	};
+};
+
+export const getFunnel = async (
+	membership: Membership,
+	query: AnalyticsRangeQuery,
+	now = new Date(),
+): Promise<Result<FunnelDto>> => {
+	const range = await resolveAnalyticsRange(membership, query, now);
+	if (!range.ok) return range;
+
+	const { organizationId } = membership;
+	const [viewed, started, { created }] = await Promise.all([
+		sumDailyVisitors(organizationId, "total", range.data),
+		sumDailyVisitors(organizationId, "booking_started", range.data),
+		bookingFiguresIn(organizationId, range.data),
+	]);
+	const booked = created.reduce((total, row) => total + row.storefront, 0);
+	return {
+		ok: true,
+		data: {
+			range: range.data,
+			steps: [
+				{ step: "viewed", count: viewed },
+				{ step: "started", count: started },
+				{ step: "booked", count: booked },
+			],
+		},
+	};
+};
+
+type ReportCsv = { range: AnalyticsRangeDto; csv: string };
+
+const withCsv = <T extends { range: AnalyticsRangeDto }>(
+	result: Result<T>,
+	toCsv: (data: T) => string,
+): Result<ReportCsv> =>
+	result.ok
+		? { ok: true, data: { range: result.data.range, csv: toCsv(result.data) } }
+		: result;
+
+const reportCsv = async (
+	membership: Membership,
+	{ report, ...query }: AnalyticsExportQuery,
+	now: Date,
+) => {
+	switch (report) {
+		case "traffic":
+			return withCsv(await getTraffic(membership, query, now), trafficCsv);
+		case "bookings":
+			return withCsv(await getBookings(membership, query, now), bookingsCsv);
+		case "funnel":
+			return withCsv(await getFunnel(membership, query, now), funnelCsv);
+	}
+};
+
+export const exportAnalytics = async (
+	membership: Membership,
+	query: AnalyticsExportQuery,
+	now = new Date(),
+): Promise<Result<{ filename: string; csv: string }>> => {
+	const result = await reportCsv(membership, query, now);
+	if (!result.ok) return result;
+	const { range, csv } = result.data;
+	return {
+		ok: true,
+		data: {
+			filename: `analytics-${query.report}-${range.from}-to-${range.to}.csv`,
+			csv,
 		},
 	};
 };
