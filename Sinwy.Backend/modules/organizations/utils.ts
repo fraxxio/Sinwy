@@ -26,6 +26,7 @@ export const reservedSlugs = new Set([
 	"dashboard",
 	"docs",
 	"help",
+	"invite",
 	"login",
 	"organizations",
 	"pricing",

@@ -37,8 +37,8 @@ Organization states [3]
 Pages
 ├─ Dashboard     /dashboard/<slug>/…, for members of an active organization [9]
 ├─ Booking page  /<slug>, which opens /<slug>/book: the public storefront;
-│                root slugs belong to it, so slugs like dashboard, book, s and
-│                app are reserved
+│                root slugs belong to it, so slugs like dashboard, book, s,
+│                invite and app are reserved
 └─ Public page   /<slug>/<page slug>: a page the organization published [5];
                  page slugs are lowercase letters, digits and hyphens, unique in
                  the organization, and can't take a storefront route (book, s)
@@ -499,6 +499,10 @@ Invitations (owner and admins; API only, no screen yet)
 ├─ the invitee gets an email linking to /invite/<invitation id>
 ├─ an invitation lasts 7 days; resending extends the same one and emails it
 │  again; at most 10 invites a minute per client
+├─ anyone with the link sees, signed in or not: organization name, inviter,
+│  role, invited email and pending or expired; unknown, canceled, rejected,
+│  accepted, or in an organization scheduled for deletion → one "no longer
+│  available" answer that tells them apart in no way
 ├─ accepting needs a session with the invited email
 └─ on an inactive organization: refused [9]; on one scheduled for deletion:
    neither sent nor accepted

@@ -395,6 +395,27 @@ export const findInvitationOrganizationId = async (invitationId: string) => {
 	return row?.organizationId ?? null;
 };
 
+/** Pending invitations only, joined with what the public preview shows. */
+export const findPendingInvitationPreview = async (invitationId: string) => {
+	const [row] = await db
+		.select({
+			email: invitation.email,
+			role: invitation.role,
+			expiresAt: invitation.expiresAt,
+			organizationName: organization.name,
+			organizationSlug: organization.slug,
+			deletionScheduledAt: organization.deletionScheduledAt,
+			inviterName: user.name,
+		})
+		.from(invitation)
+		.innerJoin(organization, eq(organization.id, invitation.organizationId))
+		.innerJoin(user, eq(user.id, invitation.inviterId))
+		.where(
+			and(eq(invitation.id, invitationId), eq(invitation.status, "pending")),
+		);
+	return row ?? null;
+};
+
 /** Members plus pending invitations that haven't expired. */
 export const countSeatsUsed = async (organizationId: string) => {
 	const [members, invitations] = await Promise.all([

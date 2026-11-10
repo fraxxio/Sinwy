@@ -12,6 +12,8 @@ import {
 	EMPTY_ORGANIZATION_PROFILE,
 	featuresFor,
 	hasPermission,
+	type InvitationPreviewDto,
+	isInviteRole,
 	limitsFor,
 	ORGANIZATION_RETENTION_DAYS,
 	type OrganizationDto,
@@ -38,6 +40,7 @@ import {
 	findOrganizationBySlug,
 	findOrganizationLocale,
 	findOwnedOrganizationIds,
+	findPendingInvitationPreview,
 	findProfile,
 	findSoleOwnedOrganizations,
 	findUnfinishedOnboardingOrganization,
@@ -189,6 +192,24 @@ export const listOrganizations = async (
 export const getMembershipAccess = findMembershipAccess;
 
 export const getInvitationOrganizationId = findInvitationOrganizationId;
+
+/** Null for anything the link holder mustn't tell apart: unknown, used, canceled or closing. */
+export const getInvitationPreview = async (
+	invitationId: string,
+	now = new Date(),
+): Promise<InvitationPreviewDto | null> => {
+	const row = await findPendingInvitationPreview(invitationId);
+	if (!row || row.deletionScheduledAt || !row.role || !isInviteRole(row.role))
+		return null;
+	return {
+		status: row.expiresAt > now ? "pending" : "expired",
+		organization: { name: row.organizationName, slug: row.organizationSlug },
+		inviterName: row.inviterName,
+		role: row.role,
+		email: row.email,
+		expiresAt: row.expiresAt.toISOString(),
+	};
+};
 
 /** The organization's name, owner and access; null for an unknown one. */
 export const getOrganizationAccess = findOrganizationAccess;
