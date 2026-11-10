@@ -146,3 +146,54 @@ Finished phases of [team-invites-plan.md](team-invites-plan.md), each with its s
 - Shipped: `/invite/<invitationId>` (`modules/invite/routes/$invitationId.tsx`, `ssr: false`) loads the public preview fresh and shows one of: no longer valid (expired, or the 404), signed out (Sign in / Create account carrying `redirect=/invite/<id>`), mismatch ("This invite is for …, but you're signed in as …" with a Sign out that stays on the page via `useSignOut({ stay: true })`), or Accept / Decline. Accept invalidates organizations and the new org's `memberAccessQuery` then opens `/dashboard/<slug>`; Decline → `/auth/postlogin`. `ORGANIZATION_MEMBERSHIP_LIMIT_REACHED` on accept shows "<Org> has no free seats right now…". `modules/invite/lib/invite.ts` holds the preview query, `inviteView` and `acceptInvite` (refuses without calling the endpoint unless the session email matches, case-insensitively). Register takes `?redirect=`, which becomes the verification and Google `callbackURL` (`registerCallbackURL`); login and register share `safeRedirect` (also refuses `/\…`); the login ↔ register cross-links keep the redirect. Tests: `modules/invite/tests/invite.test.ts`, `modules/auth/tests/safe-redirect.test.ts`.
 - Differs from plan: no `Sinwy.Shared` change was needed (DTO and labels already existed). `useLogin` lost its inline redirect check in favour of `safeRedirect`. The running vite didn't pick up the new `physical("/invite", …)` mount and kept rewriting `routeTree.gen.ts` without it; restarting the web server fixed it.
 - Checked in the running app (e2e subagent, seeded Starter `subscribed-org` and a `user`): (3) the owner on the user's link sees the mismatch text, Sign out stays on the invite signed out; (1) Sign in → `/auth/login?redirect=…` → back on the invite → Accept → `/dashboard/<slug>`, `member` role `staff`, invitation `accepted`, session's active org set, the spent link then shows no longer valid; (4) a revoked invite shows no longer valid signed in or out; (2) Create account with a fresh address → verification email with `callbackURL=/invite/<id>` → lands on the invite signed in → Accept → dashboard, `email_verified` and a `staff` member row. No backend or web log errors. One console 401 on `/api/user/flags` right after Sign out (`queryClient.clear()` refetches `usePostLoginFlags` before `useSession` catches up; no visible effect, likely predates this phase). Not checked: Decline, an expired invite, real Resend delivery, opening the verify link in another browser. Register doesn't prefill the invited email (left out as beyond MVP).
+
+## Phase 5: Role check across the dashboard
+
+**Goal:** Every dashboard page and action behaves right for owner, admin and staff, now that real non-owner members exist.
+
+**Files:**
+- `Sinwy.Shared/types/access/RolePermissions.ts` (`ROLE_PERMISSIONS`, the source of truth)
+- `Sinwy.WebFrontend/src/modules/org-dashboard/lib/sections.ts` (`ORG_SECTIONS`, `filterNav`)
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/` (every `_shell.*.tsx`: analytics, bookings, customers, pages, payments, services, settings, team; `_shell.tsx` loads `member`)
+- `Sinwy.WebFrontend/src/shared/lib/auth/protected-route.ts` (`requirePermission`, `requireMember`) and `permissions.ts` (`memberAccessQuery`, `usePermissions` for in-page buttons)
+- `Sinwy.Backend/modules/{analytics,bookings,organizations,payments,pages,services,transfers}/routes.ts` (each `requirePermission`)
+- `docs/org-rules-map.md` section 2
+
+**Steps:**
+- Research first: for each role, list every page, sidebar entry and write action, and the expected outcome from `ROLE_PERMISSIONS`.
+- Check each in the browser and against the API; fix only mismatches (a visible button the API refuses, a reachable page the role shouldn't see, a missing guard).
+- Billing stays owner-only and outside the org (org-rules-map section 2, D15).
+
+**Tests that matter:**
+- Any guard added or fixed gets a test at the layer it was fixed in.
+
+**Done when:**
+- A role × page table with no unexplained mismatch is in the log entry, and `bun run verify` exits 0.
+
+**Verify:** Seed `org-with-staff --staff 2` (Starter), then as the owner promote one staff to admin from Team. Log in as each of owner, admin and staff; visit every sidebar entry and try typing each gated URL directly. Staff: bookings and customers only, services and pages read-only, no Team, Settings, Payments or Analytics. Admin: everything but billing. Nothing simulated beyond the seeded plan.
+
+### Log (2026-11-10, `docs: record the per-role dashboard check`)
+- Shipped: no code change. Read through `ROLE_PERMISSIONS`, `ORG_SECTIONS`/`filterNav`, every `_shell.*.tsx` guard and in-page `canWrite`/`readOnly`, and every org-scoped backend route's `requirePermission`; all agree. The past-due flag and the plan name in `OrganizationSummary` are already scoped by role on the server (`listOrganizations`). Customers has no API (static placeholder page).
+- Differs from plan: no mismatch was found, so no guard was added and no test written.
+- Checked in the running app (e2e subagent, seeded Starter `org-with-staff --staff 2`, staff1 promoted to admin from Team): role × page table below, with every gated URL typed directly and the matching API called with each role's session. Gated URLs typed by staff redirect to the overview with "You don't have access to that page". No visible button is refused by the API, and no console or web-log errors appeared. Not checked: the owner's Mark as paid (no pending payment during the owner's pass; checked as admin), the owner's billing page against a real Polar subscription (the seeded one isn't in Polar).
+
+| Page / action / API | Owner | Admin | Staff |
+| --- | --- | --- | --- |
+| Sidebar | all | all | Overview, Bookings, Services, Customers, Pages |
+| Overview, Customers | ✓ | ✓ | ✓ |
+| Bookings, New booking, booking edits | ✓ | ✓ | ✓ |
+| Services list: New service, row actions | ✓ | ✓ | read-only (no buttons) |
+| `services/new` | ✓ | ✓ | redirect + notice |
+| Service form, `services/hours` | editable | editable | disabled, no Save / closures |
+| Pages list: New page | ✓ (+ Upgrade plan at limit) | ✓ (+ "Ask an owner to upgrade.") | none |
+| `pages/new` | ✓ | ✓ (limit notice at 1/1) | redirect + notice |
+| Page detail: Save, Delete | ✓ | ✓ | Preview only, controls disabled |
+| Payments, Mark as paid | ✓ | ✓ | redirect + notice |
+| Analytics | ✓ | ✓ | redirect + notice |
+| Team (invite, role, remove) | ✓ | ✓ (no actions on owner or self) | redirect + notice |
+| Settings: Manage billing, Transfer | ✓ | plan line only | redirect + notice |
+| `/account/billing` | org's plan | own picker only | own picker only |
+| API: GET payments / analytics | 200 | 200 | 403 |
+| API: POST services / pages, PUT profile `{}` | 400 | 400 | 403 |
+| API: GET transfer | 200 | 403 | 403 |
+| API: invite-member | – | 403 `SEAT_LIMIT_REACHED` | 403 not allowed |

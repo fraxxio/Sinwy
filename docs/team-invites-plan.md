@@ -12,7 +12,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 2 | Public invitation preview | 1 | done | `feat(backend, shared): add a public invitation preview` |
 | 3 | Team page | 1 | done | `feat(backend, shared, web): add the team page with invites, role changes and removal` |
 | 4 | Accept-invite landing page | 2 | done | `feat(web): add the accept-invite landing page` |
-| 5 | Role check across the dashboard | 3, 4 | todo | |
+| 5 | Role check across the dashboard | 3, 4 | done | `docs: record the per-role dashboard check` |
 | 6 | Code review, docs and cleanup | 5 | todo | |
 
 ## Decisions
@@ -49,7 +49,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - `accept-invitation` needs a session whose email matches the invitation (case-insensitive), sets the session's active organization, and calls `beforeAcceptInvitation`.
 - Existing hooks in `Sinwy.Backend/modules/auth/auth.ts` (`organizationHooks`): `refuseOwnerRole` on create/accept invitation and role update, `refuseScheduledOrganization` on create/accept, `cancelTransfersToMember` after remove. "Cannot remove the last owner" is already true: one owner, the plugin won't remove or demote the only owner, the owner can't leave.
 - `Sinwy.Backend/modules/auth/activeOrganization.ts` `refuseOrganizationEndpoint` already refuses invite, cancel, remove and role change on an inactive org, and every endpoint on a scheduled one.
-- Gating is already enforcing: backend routes use `requirePermission`; frontend routes use `requirePermission` in `beforeLoad` and `filterNav` over `ORG_SECTIONS` (`Sinwy.WebFrontend/src/modules/org-dashboard/lib/sections.ts`). Phase 5 only verifies it per role.
+- Role gating checked per role in the code, the browser and the API with no mismatch (role × page table in log Phase 5). Escalation review can start from `requirePermission` (backend `modules/auth/requirePermission.ts`, frontend `shared/lib/auth/protected-route.ts`).
 - Tests: `Sinwy.Backend/test/helpers.ts` has `createUserWithSession`, `insertOrganization`, `activateOrganization`, `givePlan`, `joinOrganization`; `readOutboxEmails` from `@backend/infrastructure/email` reads sent mail. `Sinwy.Backend/modules/auth/tests/singleOwner.test.ts` shows how to call plugin endpoints over HTTP.
 - The `org-with-staff` seed adds staff through `addMember`, capped by seats: Starter allows `--staff 2` at most.
 - Frontend: `authClient.organization.*` is typed with `ac` and `orgAccessRoles` (`Sinwy.WebFrontend/src/shared/lib/auth/auth-client.ts`). Login and register both take `?redirect=`, filtered by `modules/auth/lib/safe-redirect.ts`; on register it becomes the verification `callbackURL`.
@@ -57,34 +57,8 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - Team data lives in `Sinwy.WebFrontend/src/modules/org-dashboard/lib/team-queries.ts` (`membersQuery`, `invitationsQuery`, `invalidateTeam`, plugin calls unwrapped through `authErrorMessage`); seat maths in `lib/team.ts`. Keys are `["team", orgId, …]`; `organizationsQuery`'s key is `["organizations", "list"]`, not a prefix of `memberAccessQuery`'s.
 - Browser checks: the Base UI select animates (pick the option once `[role=listbox]` is there), the first click right after `goto` can land before hydration, and `page.ts` lists toasts as `Dialog:` (they carry `role="dialog"`).
 - Frontend top-level routes are mounted in `Sinwy.WebFrontend/src/routes.ts`; any new prefix goes before the `/$organizationSlug` storefront mount. A running vite ignores changes to that file and overwrites `routeTree.gen.ts` without them: restart `bun run start:web` (log Phase 4).
-- Known gaps for Phase 6: one console 401 on `/api/user/flags` right after sign-out (`useSignOut` clears queries before `useSession` updates); Revoke has no confirmation; register doesn't prefill the invited email.
-
----
-
-## Phase 5: Role check across the dashboard
-
-**Goal:** Every dashboard page and action behaves right for owner, admin and staff, now that real non-owner members exist.
-
-**Files:**
-- `Sinwy.Shared/types/access/RolePermissions.ts` (`ROLE_PERMISSIONS`, the source of truth)
-- `Sinwy.WebFrontend/src/modules/org-dashboard/lib/sections.ts` (`ORG_SECTIONS`, `filterNav`)
-- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/` (every `_shell.*.tsx`: analytics, bookings, customers, pages, payments, services, settings, team; `_shell.tsx` loads `member`)
-- `Sinwy.WebFrontend/src/shared/lib/auth/protected-route.ts` (`requirePermission`, `requireMember`) and `permissions.ts` (`memberAccessQuery`, `usePermissions` for in-page buttons)
-- `Sinwy.Backend/modules/{analytics,bookings,organizations,payments,pages,services,transfers}/routes.ts` (each `requirePermission`)
-- `docs/org-rules-map.md` section 2
-
-**Steps:**
-- Research first: for each role, list every page, sidebar entry and write action, and the expected outcome from `ROLE_PERMISSIONS`.
-- Check each in the browser and against the API; fix only mismatches (a visible button the API refuses, a reachable page the role shouldn't see, a missing guard).
-- Billing stays owner-only and outside the org (org-rules-map section 2, D15).
-
-**Tests that matter:**
-- Any guard added or fixed gets a test at the layer it was fixed in.
-
-**Done when:**
-- A role × page table with no unexplained mismatch is in the log entry, and `bun run verify` exits 0.
-
-**Verify:** Seed `org-with-staff --staff 2` (Starter), then as the owner promote one staff to admin from Team. Log in as each of owner, admin and staff; visit every sidebar entry and try typing each gated URL directly. Staff: bookings and customers only, services and pages read-only, no Team, Settings, Payments or Analytics. Admin: everything but billing. Nothing simulated beyond the seeded plan.
+- Known gaps for Phase 6: one console 401 on `/api/user/flags` right after sign-out (`useSignOut` clears queries before `useSession` updates); Revoke has no confirmation; register doesn't prefill the invited email. Not about invites (log Phase 5): Customers is a static placeholder that says "No customers yet" even with bookings; a non-owner's `/account/billing` picker says "Your organization activates as soon as payment completes".
+- Left running for Phase 6 cleanup: backend on :3001 (started during Phase 3), web on :3000 (started in Phase 5, log `/tmp/sinwy-web.log`). `dev:login-as` storage states are in `.playwright-cli/auth/` (gitignored).
 
 ---
 
@@ -93,7 +67,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** The auth-facing changes are reviewed, the docs match the code, and the workspace is clean.
 
 **Files:**
-- Every file changed in Phases 1–5 (`git diff master...team-invites`)
+- Every file changed in Phases 1–4 (`git diff master...team-invites`; Phase 5 changed no code). Auth-heavy ones: `Sinwy.Backend/modules/auth/auth.ts` (organization hooks, rate limit), `modules/organizations/service.ts` (`getSeatUsage`, `getInvitationPreview`), `modules/auth/emails/invitationEmail.ts`, `Sinwy.WebFrontend/src/modules/invite/`, `modules/auth/lib/safe-redirect.ts`, `modules/org-dashboard/components/team/`
 - `docs/org-rules-map.md`, `.agents/skills/e2e-test/references/seed-scenario.md`, this plan and its log
 
 **Steps:**
