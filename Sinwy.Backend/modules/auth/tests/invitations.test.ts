@@ -52,6 +52,11 @@ const post = (path: string, cookie: string, body: unknown) =>
 		body: JSON.stringify(body),
 	});
 
+const get = (path: string, cookie: string) =>
+	fetch(new URL(`/api/auth/organization/${path}`, base), {
+		headers: { cookie },
+	});
+
 let addressSeq = 0;
 const freshAddress = () =>
 	`invitee_${Date.now()}_${++addressSeq}@test.dev`.toLowerCase();
@@ -213,12 +218,9 @@ test("over the cap after a downgrade, members keep access and new invites stop",
 	await givePlan(ownerId, "starter");
 
 	for (const { cookie } of staff) {
-		const res = await fetch(
-			new URL(
-				`/api/auth/organization/list-members?organizationId=${orgId}`,
-				base,
-			),
-			{ headers: { cookie } },
+		const res = await get(
+			`get-full-organization?organizationId=${orgId}`,
+			cookie,
 		);
 		expect(res.status).toBe(200);
 	}
@@ -292,4 +294,61 @@ test("accepting stops at the seat cap even when the invite got through", async (
 
 	expect(res.status).toBe(403);
 	expect(await errorCode(res)).toBe("ORGANIZATION_MEMBERSHIP_LIMIT_REACHED");
+});
+
+test("invites sent at the same moment can't pass the seat cap", async () => {
+	const addresses = Array.from({ length: 6 }, freshAddress);
+
+	const responses = await Promise.all(
+		addresses.map((address) => invite(address)),
+	);
+
+	const refused = responses.filter((res) => res.status !== 200);
+	expect(refused.length).toBeGreaterThanOrEqual(4);
+	for (const res of refused)
+		expect(await errorCode(res)).toBe(AUTH_ERROR_CODES.SEAT_LIMIT_REACHED);
+	expect((await pendingInvitationIds()).length).toBeLessThanOrEqual(2);
+});
+
+type FullOrganization = {
+	id: string;
+	members: unknown[];
+	invitations: unknown[];
+};
+
+test("staff can't read the invitations or the member list", async () => {
+	await invite(freshAddress());
+	const staff = await addStaff();
+
+	for (const path of ["list-invitations", "list-members"]) {
+		const res = await get(`${path}?organizationId=${orgId}`, staff.cookie);
+		expect(res.status).toBe(403);
+	}
+	const full = await get(
+		`get-full-organization?organizationId=${orgId}`,
+		staff.cookie,
+	);
+	expect(full.status).toBe(200);
+	const body = (await full.json()) as FullOrganization;
+	expect(body.id).toBe(orgId);
+	expect(body.members).toEqual([]);
+	expect(body.invitations).toEqual([]);
+});
+
+test("an admin reads the invitations and the member list", async () => {
+	await invite(freshAddress());
+	const admin = await createUserWithSession();
+	await joinOrganization(orgId, admin.userId, "admin");
+
+	for (const path of ["list-invitations", "list-members"]) {
+		const res = await get(`${path}?organizationId=${orgId}`, admin.cookie);
+		expect(res.status).toBe(200);
+	}
+	const full = await get(
+		`get-full-organization?organizationId=${orgId}`,
+		admin.cookie,
+	);
+	const body = (await full.json()) as FullOrganization;
+	expect(body.members).toHaveLength(2);
+	expect(body.invitations).toHaveLength(1);
 });

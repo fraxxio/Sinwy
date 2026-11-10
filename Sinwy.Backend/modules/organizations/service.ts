@@ -31,6 +31,7 @@ import { clearFromSessions, type OrganizationAccess } from "./access";
 import {
 	countOwnedHeldSlots,
 	countSeatsUsed,
+	deleteInvitation,
 	findDeletionScheduledAt,
 	findInvitationOrganizationId,
 	findManagerEmails,
@@ -228,6 +229,20 @@ export const getSeatUsage = async (organizationId: string) => {
 		getSeatLimit(organizationId),
 	]);
 	return { used, limit };
+};
+
+/**
+ * Invites sent at the same moment each see the same free seat. Each one counts
+ * again once it is stored and withdraws itself when the cap is passed.
+ */
+export const withdrawInvitationOverCap = async (
+	organizationId: string,
+	invitationId: string,
+) => {
+	const { used, limit } = await getSeatUsage(organizationId);
+	if (used <= limit) return false;
+	await deleteInvitation(invitationId);
+	return true;
 };
 
 export type OrganizationState = {

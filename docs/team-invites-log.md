@@ -197,3 +197,34 @@ Finished phases of [team-invites-plan.md](team-invites-plan.md), each with its s
 | API: POST services / pages, PUT profile `{}` | 400 | 400 | 403 |
 | API: GET transfer | 200 | 403 | 403 |
 | API: invite-member | – | 403 `SEAT_LIMIT_REACHED` | 403 not allowed |
+
+## Phase 6: Code review, docs and cleanup
+
+**Goal:** The auth-facing changes are reviewed, the docs match the code, and the workspace is clean.
+
+**Files:**
+- Every file changed in Phases 1–4 (`git diff master...team-invites`; Phase 5 changed no code). Auth-heavy ones: `Sinwy.Backend/modules/auth/auth.ts` (organization hooks, rate limit), `modules/organizations/service.ts` (`getSeatUsage`, `getInvitationPreview`), `modules/auth/emails/invitationEmail.ts`, `Sinwy.WebFrontend/src/modules/invite/`, `modules/auth/lib/safe-redirect.ts`, `modules/org-dashboard/components/team/`
+- `docs/org-rules-map.md`, `.agents/skills/e2e-test/references/seed-scenario.md`, this plan and its log
+
+**Steps:**
+- Review for auth holes: seat bypasses (concurrent invites, resend, accept after downgrade), role escalation, the public preview leaking anything, unescaped email content, open redirects through `redirect`.
+- Fix confirmed findings with tests.
+- Make sure the org-rules-map has no "no screen yet" left for invitations, removal or role change, and lists any new gaps.
+- Final step: stop every dev server started during this plan's work unless the user asked to keep it running, and delete temporary files (probe scripts, screenshots, browser console logs, scratch data).
+
+**Tests that matter:**
+- One per confirmed review finding.
+
+**Done when:**
+- Review findings are fixed or written down as known gaps, `bun run verify` exits 0, and no stray processes or files remain.
+
+**Verify:** None.
+
+### Log (2026-11-10, `fix(backend, web): close the concurrent-invite seat bypass and hide the team from staff`)
+- Shipped, finding 1 (seat bypass): invites sent at the same moment each passed the seat check before any was stored; six at once on a Starter org with two free seats stored five. `afterCreateInvitation` now counts again and `withdrawInvitationOverCap` (organizations module) deletes the new invitation when the cap is passed, answering 403 `SEAT_LIMIT_REACHED`. It can refuse more than needed in a race, never fewer. Test: "invites sent at the same moment can't pass the seat cap".
+- Shipped, finding 2 (team readable by staff): the plugin's `list-invitations`, `list-members` and `get-full-organization` gave any member every invitation (id, email, role) and every member's email, though Team is `people:manage` only; Phase 5 hadn't called them as staff. The two lists now answer 403 without `people:manage`, and `get-full-organization` (the dashboard shell preloads with it for every role) returns empty `members` and `invitations`. Tests: "staff can't read the invitations or the member list", "an admin reads the invitations and the member list".
+- Shipped, hardening: `safeRedirect` let `/<tab>/evil.example` through (browsers drop the tab, leaving `//evil.example`). Not exploitable, because every sink goes through Better Auth, which answered 403 `INVALID_CALLBACK_URL` on the running backend; the filter now resolves the path as a URL and compares origins. Test cases added to `safe-redirect.test.ts`.
+- Reviewed with no finding: resend (extends the same row, ignores the body's role, takes no seat); accept after a downgrade (`membershipLimit` counts members); role escalation (staff have no `member:update` or `invitation:create`; nobody sets or changes owner; role lists refused); the public preview (only Default 5's fields, one 404 for the rest, ids are the plugin's 32 random characters); the email (every value escaped, subject is plain text); accepting with an unverified email (no session exists before verification).
+- Docs: `docs/org-rules-map.md` no longer says accepting has no screen, describes the invite page, the team-read rule and the same-moment rule, and lists the new gaps (section 15): a withdrawn invite's email is already sent, accepting isn't locked, an inactive organization's invite still previews as pending, Revoke has no confirmation, register doesn't prefill the invited email, plus the two gaps Phase 5 found outside invites. `seed-scenario.md` no longer says there is no invite flow.
+- Differs from plan: the two dev servers (backend :3001, web :3000) are still running and their logs (`/tmp/sinwy-server.log`, `/tmp/sinwy-web.log`) are still there, because stopping processes was refused by the permission system. Not written down in the rules map: the console 401 on `/api/user/flags` right after sign-out (`useSignOut` clears queries before `useSession` updates), which is a frontend bug, not an organization rule.
+- Checked in the running app: only the `callbackURL` refusals, by API. The fixes are covered by tests over HTTP; the staff dashboard wasn't reopened in the browser after `get-full-organization` changed (the frontend reads only the organization's own fields from it). Deleted the six `dev:login-as` storage states made today; older ones in `.playwright-cli/auth/` and `/tmp/sinwy-logs`, `/tmp/sinwy-shots`, `/tmp/sinwy-payments.png` predate this plan and were left. Seeded dev-database rows were left.

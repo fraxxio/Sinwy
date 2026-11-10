@@ -69,6 +69,9 @@ The one owner
 Invites and role changes give exactly one of admin or staff; any other role
 or a list of roles → refused
 
+The member list and the invitations are read by the owner and admins only;
+staff get the organization without them
+
 Who sees billing (D15)
 ├─ owner → plan, invoices, payment method and every billing action, on their
 │          own Account → Billing only; never inside an organization
@@ -212,6 +215,8 @@ Seats (every tier, per organization)
 │  hasn't expired; cancelling or the expiry frees it
 ├─ inviting at or over the limit → refused, "every seat is taken"; resending
 │  a pending invitation takes no new seat
+├─ invites sent at the same moment for the last seats: each counts again
+│  once stored and the ones past the limit are withdrawn and refused
 ├─ accepting at or over the limit → refused (only reachable after a downgrade)
 └─ over the limit (after a downgrade): every member stays; only new invites
    stop until the organization is back under it
@@ -252,8 +257,9 @@ Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages,
 analytics retention and seats),
 `Sinwy.Shared/types/page/` (block and template registries),
 `Sinwy.Backend/modules/billing/` (`checkoutGuard.ts`, `projection.ts`),
-`modules/auth/auth.ts` (checkout hook; seats in `beforeCreateInvitation` and
-`membershipLimit`), `modules/organizations/` (`countSeatsUsed`),
+`modules/auth/auth.ts` (checkout hook; seats in `beforeCreateInvitation`,
+`afterCreateInvitation` and `membershipLimit`), `modules/organizations/`
+(`countSeatsUsed`, `withdrawInvitationOverCap`),
 `modules/auth/requireFeature.ts`,
 `modules/pages/` (`service.ts`, and `repository.ts` for the limit count and
 the served set), `modules/analytics/` (`range.ts` for retention, `routes.ts`
@@ -403,7 +409,8 @@ Post-login
 └─ otherwise → the personal account (Customer Mode)
 
 Members' requests to an inactive organization
-├─ reads (its summary, status, setup data, members, invitations) → answered
+├─ reads (its summary, status, setup data; members and invitations for the
+│  owner and admins [2]) → answered
 ├─ setup writes, except on the owner's draft [4] → refused, "organization inactive"
 ├─ services, business hours (and timezone) and closures: reads and bookable
 │  times answered, writes refused, "organization inactive"
@@ -494,7 +501,7 @@ when the plan lands); web `src/modules/account-dashboard/lib/transfer-accept.ts`
 ## 11. Leaving, removal, deletion and retention
 
 ```text
-Invitations (owner and admins, from Team; accepting has no screen yet)
+Invitations (owner and admins, from Team; answered on /invite/<invitation id>)
 ├─ by email, as admin or staff [2], within the organization's seats [5];
 │  at the cap Team shows the upgrade prompt instead of Invite
 ├─ the invitee gets an email linking to /invite/<invitation id>
@@ -504,7 +511,11 @@ Invitations (owner and admins, from Team; accepting has no screen yet)
 │  role, invited email and pending or expired; unknown, canceled, rejected,
 │  accepted, or in an organization scheduled for deletion → one "no longer
 │  available" answer that tells them apart in no way
-├─ accepting needs a session with the invited email
+├─ accepting or declining needs a session with the invited email: signed
+│  out, the page offers Sign in and Create account, and both return to the
+│  invitation (a new account verifies its email first); signed in as someone
+│  else, it offers Sign out
+├─ accepting opens the organization's dashboard
 └─ on an inactive organization: refused [9]; on one scheduled for deletion:
    neither sent nor accepted
 
@@ -758,8 +769,20 @@ Open, product or copy:
 - A recipient with a pending downgrade can accept into a free slot; at the
   period end the transferred organization is the latest-activated, so it
   loses its slot and they are emailed (Default 9) [7, 10].
-- Leaving, accepting an invitation and deleting an organization have no
-  screen yet [11].
+- Leaving and deleting an organization have no screen yet [11].
+- An invite withdrawn because another took the last seat at the same moment
+  has already been emailed; its link says the invitation is no longer
+  valid [5].
+- Accepting counts members without a lock, so after a downgrade invitees who
+  accept at the same moment can each take the one seat left [5].
+- An invitation to an organization that went inactive still previews as
+  pending; accepting it answers "no free seats" [11].
+- Revoke on Team has no confirmation, and Create account from an invitation
+  doesn't prefill the invited email [11].
+- Customers is a static placeholder that says "No customers yet" even with
+  bookings.
+- A non-owner's `/account/billing` picker says "Your organization activates
+  as soon as payment completes".
 - `/organizations/new` shows the Plan and Pay steps to a user who already has
   a plan.
 - Resume charges on one click with no confirmation, unlike suspend and

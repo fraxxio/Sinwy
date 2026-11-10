@@ -13,7 +13,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 3 | Team page | 1 | done | `feat(backend, shared, web): add the team page with invites, role changes and removal` |
 | 4 | Accept-invite landing page | 2 | done | `feat(web): add the accept-invite landing page` |
 | 5 | Role check across the dashboard | 3, 4 | done | `docs: record the per-role dashboard check` |
-| 6 | Code review, docs and cleanup | 5 | todo | |
+| 6 | Code review, docs and cleanup | 5 | done | `fix(backend, web): close the concurrent-invite seat bypass and hide the team from staff` |
 
 ## Decisions
 
@@ -38,48 +38,12 @@ Settled with the product owner. Ask before changing any of them.
 
 ## Standing notes
 
-Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
+Every phase is done. What later work on invites should know; detail is in the log.
 
-- Better Auth 1.7.12. Plugin source: `node_modules/better-auth/dist/plugins/organization/routes/crud-invites.mjs` and `crud-members.mjs`.
-- Plugin endpoints already live under `/api/auth/organization/*`: `invite-member` (body `resend: true` re-sends and extends an existing pending invite), `cancel-invitation`, `accept-invitation`, `reject-invitation`, `get-invitation`, `list-invitations`, `list-members`, `update-member-role`, `remove-member`, `leave`.
-- Invites send `InvitationEmail` linking to `${WEB_APP_URL}/invite/<id>`; the outbox has it under the invitee's address.
-- `invite-member` flow: permission check (`invitation:create`, owner and admin only), plugin role-name check, already-member → 400, already-invited (pending, unexpired) without `resend` → 400, then `beforeCreateInvitation` (role rule, scheduled org, seats). The `resend` path returns before the hook, so it never consumes a seat; an expired invite isn't "pending" to the plugin, so re-inviting creates a new one.
-- Seat errors: invite at the cap → 403 `code: "SEAT_LIMIT_REACHED"` (`AUTH_ERROR_CODES`); accept at the cap → 403 `ORGANIZATION_MEMBERSHIP_LIMIT_REACHED`. Bad role → 400 "Choose admin or staff". `INVITE_ROLES`, `isInviteRole` and `INVITATION_EXPIRY_DAYS` are in `@sinwy/shared`; the organizations module exports `getSeatUsage(orgId)` → `{ used, limit }`.
-- Public preview: `GET /api/public/invitations/:id`, no session. 200 → `InvitationPreviewDto` (status `pending` | `expired`); every other case is the same 404. The invite page is `Sinwy.WebFrontend/src/modules/invite/` (`inviteView`, `acceptInvite` with the email check, log Phase 4).
-- `accept-invitation` needs a session whose email matches the invitation (case-insensitive), sets the session's active organization, and calls `beforeAcceptInvitation`.
-- Existing hooks in `Sinwy.Backend/modules/auth/auth.ts` (`organizationHooks`): `refuseOwnerRole` on create/accept invitation and role update, `refuseScheduledOrganization` on create/accept, `cancelTransfersToMember` after remove. "Cannot remove the last owner" is already true: one owner, the plugin won't remove or demote the only owner, the owner can't leave.
-- `Sinwy.Backend/modules/auth/activeOrganization.ts` `refuseOrganizationEndpoint` already refuses invite, cancel, remove and role change on an inactive org, and every endpoint on a scheduled one.
-- Role gating checked per role in the code, the browser and the API with no mismatch (role × page table in log Phase 5). Escalation review can start from `requirePermission` (backend `modules/auth/requirePermission.ts`, frontend `shared/lib/auth/protected-route.ts`).
-- Tests: `Sinwy.Backend/test/helpers.ts` has `createUserWithSession`, `insertOrganization`, `activateOrganization`, `givePlan`, `joinOrganization`; `readOutboxEmails` from `@backend/infrastructure/email` reads sent mail. `Sinwy.Backend/modules/auth/tests/singleOwner.test.ts` shows how to call plugin endpoints over HTTP.
-- The `org-with-staff` seed adds staff through `addMember`, capped by seats: Starter allows `--staff 2` at most.
-- Frontend: `authClient.organization.*` is typed with `ac` and `orgAccessRoles` (`Sinwy.WebFrontend/src/shared/lib/auth/auth-client.ts`). Login and register both take `?redirect=`, filtered by `modules/auth/lib/safe-redirect.ts`; on register it becomes the verification `callbackURL`.
-- `OrganizationSummary.role` is the caller's most privileged role (`primaryRole`); `ORG_ROLE_LABELS` (Owner, Admin, Staff) are in `@sinwy/shared`.
-- Team data lives in `Sinwy.WebFrontend/src/modules/org-dashboard/lib/team-queries.ts` (`membersQuery`, `invitationsQuery`, `invalidateTeam`, plugin calls unwrapped through `authErrorMessage`); seat maths in `lib/team.ts`. Keys are `["team", orgId, …]`; `organizationsQuery`'s key is `["organizations", "list"]`, not a prefix of `memberAccessQuery`'s.
-- Browser checks: the Base UI select animates (pick the option once `[role=listbox]` is there), the first click right after `goto` can land before hydration, and `page.ts` lists toasts as `Dialog:` (they carry `role="dialog"`).
-- Frontend top-level routes are mounted in `Sinwy.WebFrontend/src/routes.ts`; any new prefix goes before the `/$organizationSlug` storefront mount. A running vite ignores changes to that file and overwrites `routeTree.gen.ts` without them: restart `bun run start:web` (log Phase 4).
-- Known gaps for Phase 6: one console 401 on `/api/user/flags` right after sign-out (`useSignOut` clears queries before `useSession` updates); Revoke has no confirmation; register doesn't prefill the invited email. Not about invites (log Phase 5): Customers is a static placeholder that says "No customers yet" even with bookings; a non-owner's `/account/billing` picker says "Your organization activates as soon as payment completes".
-- Left running for Phase 6 cleanup: backend on :3001 (started during Phase 3), web on :3000 (started in Phase 5, log `/tmp/sinwy-web.log`). `dev:login-as` storage states are in `.playwright-cli/auth/` (gitignored).
-
----
-
-## Phase 6: Code review, docs and cleanup
-
-**Goal:** The auth-facing changes are reviewed, the docs match the code, and the workspace is clean.
-
-**Files:**
-- Every file changed in Phases 1–4 (`git diff master...team-invites`; Phase 5 changed no code). Auth-heavy ones: `Sinwy.Backend/modules/auth/auth.ts` (organization hooks, rate limit), `modules/organizations/service.ts` (`getSeatUsage`, `getInvitationPreview`), `modules/auth/emails/invitationEmail.ts`, `Sinwy.WebFrontend/src/modules/invite/`, `modules/auth/lib/safe-redirect.ts`, `modules/org-dashboard/components/team/`
-- `docs/org-rules-map.md`, `.agents/skills/e2e-test/references/seed-scenario.md`, this plan and its log
-
-**Steps:**
-- Review for auth holes: seat bypasses (concurrent invites, resend, accept after downgrade), role escalation, the public preview leaking anything, unescaped email content, open redirects through `redirect`.
-- Fix confirmed findings with tests.
-- Make sure the org-rules-map has no "no screen yet" left for invitations, removal or role change, and lists any new gaps.
-- Final step: stop every dev server started during this plan's work unless the user asked to keep it running, and delete temporary files (probe scripts, screenshots, browser console logs, scratch data).
-
-**Tests that matter:**
-- One per confirmed review finding.
-
-**Done when:**
-- Review findings are fixed or written down as known gaps, `bun run verify` exits 0, and no stray processes or files remain.
-
-**Verify:** None.
+- Better Auth 1.7.12. Plugin source: `node_modules/better-auth/dist/plugins/organization/routes/crud-invites.mjs` and `crud-members.mjs`. The plugin checks membership only on its reads, and runs no transaction around its hooks.
+- `invite-member` flow: permission check, plugin role-name check, already-member → 400, already-invited without `resend` → 400, `beforeCreateInvitation` (role rule, scheduled org, seats), insert, email, `afterCreateInvitation` (seats counted again; over the cap the new row is deleted and the request gets 403 `SEAT_LIMIT_REACHED`). The `resend` path returns before both hooks.
+- Team reads are `people:manage` only: `refuseOrganizationEndpoint` (`Sinwy.Backend/modules/auth/activeOrganization.ts`) refuses `list-members` and `list-invitations` for staff, and the `after` hook in `auth.ts` empties `members` and `invitations` in `get-full-organization` for them. Anything staff-facing that needs teammates needs its own endpoint.
+- Seat errors: invite at the cap → 403 `SEAT_LIMIT_REACHED`; accept at the cap → 403 `ORGANIZATION_MEMBERSHIP_LIMIT_REACHED`. Accepting isn't locked (known gap, `docs/org-rules-map.md` section 15, with the other open gaps).
+- Redirects: `safeRedirect` (`Sinwy.WebFrontend/src/modules/auth/lib/safe-redirect.ts`) resolves the path like a browser would; Better Auth also refuses an unsafe `callbackURL` with 403 `INVALID_CALLBACK_URL`.
+- Tests: `Sinwy.Backend/modules/auth/tests/invitations.test.ts` calls the plugin endpoints over HTTP (`post`, `get`, `invite`, `addStaff`).
+- Frontend top-level routes are mounted in `Sinwy.WebFrontend/src/routes.ts`; a running vite ignores changes to that file (log Phase 4).

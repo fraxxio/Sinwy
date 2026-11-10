@@ -36,6 +36,7 @@ export {
 	saveOrganizationProfile,
 	scheduleOwnedOrganizationsForDeletion,
 	setOrganizationTimezone,
+	withdrawInvitationOverCap,
 } from "./service";
 export {
 	fitSlotsToCap,

@@ -4,7 +4,12 @@ import {
 	isOrganizationPublic,
 	isScheduledForDeletion,
 } from "@organizationsModule";
-import { AUTH_ERROR_CODES } from "@sinwy/shared";
+import {
+	AUTH_ERROR_CODES,
+	hasPermission,
+	type Permission,
+	parseMemberRoles,
+} from "@sinwy/shared";
 import { APIError } from "better-auth/api";
 import { z } from "zod";
 
@@ -58,7 +63,13 @@ export const refuseScheduledOrganization = async (organizationId: string) => {
 	if (await isScheduledForDeletion(organizationId)) throw scheduledError();
 };
 
-type ScopedEndpoint = { input: "query" | "body"; manages: boolean };
+type ScopedEndpoint = {
+	input: "query" | "body";
+	manages: boolean;
+	permission?: Permission;
+};
+
+const TEAM_PERMISSION: Permission = "people:manage";
 
 /**
  * Plugin endpoints that act on one organization, and where each reads it
@@ -67,8 +78,16 @@ type ScopedEndpoint = { input: "query" | "body"; manages: boolean };
 const scopedEndpoints: Record<string, ScopedEndpoint> = {
 	"/organization/get-organization": { input: "query", manages: false },
 	"/organization/get-full-organization": { input: "query", manages: false },
-	"/organization/list-members": { input: "query", manages: false },
-	"/organization/list-invitations": { input: "query", manages: false },
+	"/organization/list-members": {
+		input: "query",
+		manages: false,
+		permission: TEAM_PERMISSION,
+	},
+	"/organization/list-invitations": {
+		input: "query",
+		manages: false,
+		permission: TEAM_PERMISSION,
+	},
 	"/organization/get-active-member": { input: "query", manages: false },
 	"/organization/get-active-member-role": { input: "query", manages: false },
 	"/organization/has-permission": { input: "body", manages: false },
@@ -105,8 +124,8 @@ const scopedOrganization = async (
 
 /**
  * The plugin checks membership only. Nobody reaches an organization scheduled
- * for deletion through it, and nobody manages an inactive one. A non-member
- * is left to the plugin's own refusal.
+ * for deletion through it, nobody manages an inactive one, and only those who
+ * manage people read the team. A non-member is left to the plugin's own refusal.
  */
 export const refuseOrganizationEndpoint = async (
 	path: string,
@@ -123,9 +142,34 @@ export const refuseOrganizationEndpoint = async (
 	const org = await getMembershipAccess(session.userId, ref);
 	if (!org) return;
 	if (org.deletionScheduledAt) throw scheduledError();
+	if (
+		endpoint.permission &&
+		!hasPermission(parseMemberRoles(org.role), endpoint.permission)
+	)
+		throw new APIError("FORBIDDEN", {
+			message: "You don't have permission to do that",
+		});
 	if (endpoint.manages && !isOrganizationPublic(org))
 		throw new APIError("FORBIDDEN", {
 			message: "This organization isn't active",
 			code: AUTH_ERROR_CODES.ORGANIZATION_INACTIVE,
 		});
+};
+
+const fullOrganization = z.looseObject({ id: z.string() });
+
+/**
+ * The plugin's full organization carries every member and invitation; anyone
+ * who doesn't manage people gets it without them.
+ */
+export const withoutTeamUnlessManager = async (
+	userId: string,
+	returned: unknown,
+) => {
+	const parsed = fullOrganization.safeParse(returned);
+	if (!parsed.success) return null;
+	const org = await getMembershipAccess(userId, { id: parsed.data.id });
+	if (org && hasPermission(parseMemberRoles(org.role), TEAM_PERMISSION))
+		return null;
+	return { ...parsed.data, members: [], invitations: [] };
 };

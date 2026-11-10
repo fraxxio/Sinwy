@@ -432,6 +432,9 @@ export const countSeatsUsed = async (organizationId: string) => {
 	return members + invitations;
 };
 
+export const deleteInvitation = (invitationId: string) =>
+	db.delete(invitation).where(eq(invitation.id, invitationId));
+
 /** Every organization the user belongs to, oldest first, with their raw role column. */
 export const findMemberOrganizations = (userId: string) =>
 	db

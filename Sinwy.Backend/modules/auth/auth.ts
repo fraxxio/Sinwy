@@ -14,6 +14,7 @@ import {
 	getSeatLimit,
 	getSeatUsage,
 	scheduleOwnedOrganizationsForDeletion,
+	withdrawInvitationOverCap,
 } from "@organizationsModule";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import {
@@ -43,6 +44,7 @@ import {
 	refuseOrganizationEndpoint,
 	refuseScheduledOrganization,
 	refuseUnavailableOrganization,
+	withoutTeamUnlessManager,
 } from "./activeOrganization";
 import { cleanupDeletedUser } from "./deletedUserCleanup";
 import { refuseUndeliverableEmail } from "./emailDomain";
@@ -76,14 +78,16 @@ const checkoutBodySchema = z.strictObject({
 	transferId: z.string().min(1).optional(),
 });
 
+const seatLimitError = () =>
+	new APIError("FORBIDDEN", {
+		message: "Every seat on this plan is taken",
+		code: AUTH_ERROR_CODES.SEAT_LIMIT_REACHED,
+	});
+
 /** Over the cap after a downgrade, everyone stays; only new invites stop. */
 const refuseFullOrganization = async (organizationId: string) => {
 	const { used, limit } = await getSeatUsage(organizationId);
-	if (used >= limit)
-		throw new APIError("FORBIDDEN", {
-			message: "Every seat on this plan is taken",
-			code: AUTH_ERROR_CODES.SEAT_LIMIT_REACHED,
-		});
+	if (used >= limit) throw seatLimitError();
 };
 
 const checkoutSuccessUrl = (query: string) =>
@@ -308,9 +312,19 @@ export const auth = betterAuth({
 				});
 			return undefined;
 		}),
-		// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
 		after: createAuthMiddleware(async (ctx) => {
-			if (ctx.path !== "/organization/leave") return;
+			if (ctx.path === "/organization/get-full-organization") {
+				const session = await getSessionFromCtx(ctx);
+				const stripped =
+					session &&
+					(await withoutTeamUnlessManager(
+						session.user.id,
+						ctx.context.returned,
+					));
+				return stripped ? ctx.json(stripped) : undefined;
+			}
+			// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
+			if (ctx.path !== "/organization/leave") return undefined;
 			const body = z.object({ organizationId: z.string() }).safeParse(ctx.body);
 			const session = await getSessionFromCtx(ctx);
 			if (body.success && session)
@@ -318,6 +332,7 @@ export const auth = betterAuth({
 					body.data.organizationId,
 					session.user.id,
 				);
+			return undefined;
 		}),
 	},
 	socialProviders: {
@@ -364,6 +379,15 @@ export const auth = betterAuth({
 					refuseNonInviteRole(invitation.role);
 					await refuseScheduledOrganization(invitation.organizationId);
 					await refuseFullOrganization(invitation.organizationId);
+				},
+				afterCreateInvitation: async ({ invitation }) => {
+					if (
+						await withdrawInvitationOverCap(
+							invitation.organizationId,
+							invitation.id,
+						)
+					)
+						throw seatLimitError();
 				},
 				beforeAcceptInvitation: async ({ invitation }) => {
 					refuseOwnerRole(invitation.role);

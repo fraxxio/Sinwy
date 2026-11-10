@@ -34,5 +34,5 @@ The output is JSON:
 Caveats:
 
 - A seeded subscription exists only in the DB, not in Polar. The customer portal shows nothing, the billing details on the subscription endpoint are `null`, plan changes fail and account deletion has nothing to revoke. To test billing behaviour, use a real sandbox checkout.
-- Staff are added with Better Auth's server-side `addMember`, because the app has no invite flow yet. Don't use this tool to test invitations.
+- Staff are added with Better Auth's server-side `addMember`, not through an invitation. To test invitations, invite from Team (or `POST /api/auth/organization/invite-member`) and read the link from the outbox.
 - Unlike a browser login, seeded sessions have no `active_organization_id`. The app sets it when the user opens the plan, onboarding or dashboard routes.
