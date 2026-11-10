@@ -12,6 +12,7 @@ import {
 	EMPTY_ORGANIZATION_PROFILE,
 	featuresFor,
 	hasPermission,
+	limitsFor,
 	ORGANIZATION_RETENTION_DAYS,
 	type OrganizationDto,
 	type OrganizationIndustry,
@@ -26,6 +27,7 @@ import {
 import { clearFromSessions, type OrganizationAccess } from "./access";
 import {
 	countOwnedHeldSlots,
+	countSeatsUsed,
 	findDeletionScheduledAt,
 	findInvitationOrganizationId,
 	findManagerEmails,
@@ -190,6 +192,20 @@ export const getInvitationOrganizationId = findInvitationOrganizationId;
 
 /** The organization's name, owner and access; null for an unknown one. */
 export const getOrganizationAccess = findOrganizationAccess;
+
+/** The organization's plan seat cap; 0 while inactive or unknown. */
+export const getSeatLimit = async (organizationId: string) => {
+	const access = await findOrganizationAccess(organizationId);
+	return limitsFor(access ? organizationPlanOf(access) : null).members;
+};
+
+export const getSeatUsage = async (organizationId: string) => {
+	const [used, limit] = await Promise.all([
+		countSeatsUsed(organizationId),
+		getSeatLimit(organizationId),
+	]);
+	return { used, limit };
+};
 
 export type OrganizationState = {
 	status: OrganizationStatus;

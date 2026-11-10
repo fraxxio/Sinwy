@@ -1,0 +1,1 @@
+export const INVITATION_EXPIRY_DAYS = 7;

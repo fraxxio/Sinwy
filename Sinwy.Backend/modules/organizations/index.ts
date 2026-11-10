@@ -17,6 +17,8 @@ export {
 	getOrganizationOnboarding,
 	getOrganizationProfile,
 	getOrganizationState,
+	getSeatLimit,
+	getSeatUsage,
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
 	isOrganizationPublic,

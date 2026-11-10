@@ -14,6 +14,7 @@ import {
 	asc,
 	eq,
 	exists,
+	gt,
 	inArray,
 	isNotNull,
 	isNull,
@@ -392,6 +393,22 @@ export const findInvitationOrganizationId = async (invitationId: string) => {
 		.from(invitation)
 		.where(eq(invitation.id, invitationId));
 	return row?.organizationId ?? null;
+};
+
+/** Members plus pending invitations that haven't expired. */
+export const countSeatsUsed = async (organizationId: string) => {
+	const [members, invitations] = await Promise.all([
+		db.$count(member, eq(member.organizationId, organizationId)),
+		db.$count(
+			invitation,
+			and(
+				eq(invitation.organizationId, organizationId),
+				eq(invitation.status, "pending"),
+				gt(invitation.expiresAt, new Date()),
+			),
+		),
+	]);
+	return members + invitations;
 };
 
 /** Every organization the user belongs to, oldest first, with their raw role column. */

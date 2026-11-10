@@ -1,0 +1,198 @@
+# Team invites plan
+
+Makes organization employees real: owners and admins invite people by email, the invitee accepts (with or without an account), and the team page lists members and pending invites with role change, removal, resend and revoke. Seats are capped per plan. Built on Better Auth's organization plugin, which already owns the invitation and member tables and their endpoints.
+
+Run a phase with the `implementation-phase` skill. Finished phases and their logs are in [team-invites-log.md](team-invites-log.md).
+
+## Status
+
+| Phase | Title | Depends on | Status | Commit |
+| --- | --- | --- | --- | --- |
+| 1 | Seats, invite roles and the invitation email | – | done | `feat(backend, shared): cap organization seats per plan and email invitations` |
+| 2 | Public invitation preview | 1 | todo | |
+| 3 | Team page | 1 | todo | |
+| 4 | Accept-invite landing page | 2 | todo | |
+| 5 | Role check across the dashboard | 3, 4 | todo | |
+| 6 | Code review, docs and cleanup | 5 | todo | |
+
+## Decisions
+
+Settled with the product owner. Ask before changing any of them.
+
+- **Seats per plan: Starter 3, Professional 10, Enterprise 25.** A numeric cap in `PLAN_LIMITS` (`members`), not a `requireFeature` flag; no plan (inactive org) → 0.
+- **What takes a seat: members (owner included) plus pending, unexpired invitations.** An invite is refused when no seat is free, so accepting never fails for a full org under normal use.
+- **New invitee: sign up, verify the email, then accept.** No auth shortcut; the verification link returns them to the invite page.
+- **Over the limit after a downgrade: keep every member, block new invites** until the org is back under the cap. Nobody loses access.
+- **MVP scope only.** Foundation to build on; no edge-case features beyond what's listed here.
+
+### Defaults (not yet confirmed; change only if asked)
+
+1. Invitations expire after 7 days (`invitationExpiresIn`); resend extends the same invitation, it doesn't create a new one.
+2. Invite and role-change roles are exactly one of `admin` or `staff`; `member`, `owner` and comma lists are refused.
+3. Owner and admins manage the team (`people:manage`); admins may change or remove other admins. Nobody acts on the owner's row or on themselves from the team page (leaving stays a separate action).
+4. The invite link is `/invite/<invitationId>`; `invite` is added to the reserved organization slugs.
+5. The public preview returns org name and slug, inviter name, role, invited email and a status (`pending`, `expired`, `unavailable`); the unguessable invitation id is the only key.
+6. `POST /organization/invite-member` gets a Better Auth custom rate limit (10 per 60 s).
+7. A user who signs in without the link sees no pending-invite prompt; the emailed link is the only way in.
+8. Account → Organizations shows the actual role (Owner, Admin, Staff) instead of "Member".
+
+## Standing notes
+
+Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
+
+- Better Auth 1.7.12. Plugin source: `node_modules/better-auth/dist/plugins/organization/routes/crud-invites.mjs` and `crud-members.mjs`.
+- Plugin endpoints already live under `/api/auth/organization/*`: `invite-member` (body `resend: true` re-sends and extends an existing pending invite), `cancel-invitation`, `accept-invitation`, `reject-invitation`, `get-invitation`, `list-invitations`, `list-members`, `update-member-role`, `remove-member`, `leave`.
+- Invites send `InvitationEmail` linking to `${WEB_APP_URL}/invite/<id>`; the outbox has it under the invitee's address.
+- `invite-member` flow: permission check (`invitation:create`, owner and admin only), plugin role-name check, already-member → 400, already-invited (pending, unexpired) without `resend` → 400, then `beforeCreateInvitation` (role rule, scheduled org, seats). The `resend` path returns before the hook, so it never consumes a seat; an expired invite isn't "pending" to the plugin, so re-inviting creates a new one.
+- Seat errors: invite at the cap → 403 `code: "SEAT_LIMIT_REACHED"` (`AUTH_ERROR_CODES`); accept at the cap → 403 `ORGANIZATION_MEMBERSHIP_LIMIT_REACHED`. Bad role → 400 "Choose admin or staff". `INVITE_ROLES`, `isInviteRole` and `INVITATION_EXPIRY_DAYS` are in `@sinwy/shared`; the organizations module exports `getSeatUsage(orgId)` → `{ used, limit }`.
+- Pending invitations past `expiresAt` keep `status = "pending"`; count them out by date (`listInvitations` returns them too).
+- `accept-invitation` needs a session whose email matches the invitation (case-insensitive), sets the session's active organization, and calls `beforeAcceptInvitation`. `get-invitation` also requires the recipient's session, so a signed-out page needs our own preview endpoint.
+- Existing hooks in `Sinwy.Backend/modules/auth/auth.ts` (`organizationHooks`): `refuseOwnerRole` on create/accept invitation and role update, `refuseScheduledOrganization` on create/accept, `cancelTransfersToMember` after remove. "Cannot remove the last owner" is already true: one owner, the plugin won't remove or demote the only owner, the owner can't leave.
+- `Sinwy.Backend/modules/auth/activeOrganization.ts` `refuseOrganizationEndpoint` already refuses invite, cancel, remove and role change on an inactive org, and every endpoint on a scheduled one.
+- Gating is already enforcing: backend routes use `requirePermission`; frontend routes use `requirePermission` in `beforeLoad` and `filterNav` over `ORG_SECTIONS` (`Sinwy.WebFrontend/src/modules/org-dashboard/lib/sections.ts`). Phase 5 only verifies it per role.
+- Tests: `Sinwy.Backend/test/helpers.ts` has `createUserWithSession`, `insertOrganization`, `activateOrganization`, `givePlan`, `joinOrganization`; `readOutboxEmails` from `@backend/infrastructure/email` reads sent mail. `Sinwy.Backend/modules/auth/tests/singleOwner.test.ts` shows how to call plugin endpoints over HTTP.
+- The `org-with-staff` seed adds staff through `addMember`, capped by seats: Starter allows `--staff 2` at most.
+- Frontend: `authClient.organization.*` is typed with `ac` and `orgAccessRoles` (`Sinwy.WebFrontend/src/shared/lib/auth/auth-client.ts`). Login takes `?redirect=` (`useLogin`, safe-relative check); register only takes `?source=` (`useRegister` derives `callbackURL`).
+- Frontend top-level routes are mounted in `Sinwy.WebFrontend/src/routes.ts`; any new prefix goes before the `/$organizationSlug` storefront mount.
+
+---
+
+## Phase 2: Public invitation preview
+
+**Goal:** Anyone holding an invite link can see what it's for, signed in or not.
+
+**Files:**
+- `Sinwy.Backend/modules/organizations/` (`routes.ts` `registerOrganizationRoutes`, `controller.ts`, `service.ts`, `repository.ts` near `findInvitationOrganizationId` and `countSeatsUsed`)
+- `Sinwy.Backend/modules/organizations/utils.ts` (`reservedSlugs`)
+- Unauthenticated routes elsewhere live under `/api/public/…` (`modules/bookings/routes.ts` `STOREFRONT`, `modules/pages/routes.ts`); match that prefix unless there's a reason not to
+- `Sinwy.Shared/types/organization/Invitation.ts` (has `INVITATION_EXPIRY_DAYS`; add the preview DTO and Zod schema here)
+- Tests: `Sinwy.Backend/modules/organizations/tests/` (new `invitationPreview.test.ts`; seed invitations by direct insert as in `modules/auth/tests/invitations.test.ts`)
+
+**Steps:**
+- `GET /api/invitations/:invitationId`, no auth. Returns the Default 5 shape; unknown id, canceled, rejected, accepted, or org scheduled for deletion → `unavailable` (same 404 body for all, so it reveals nothing).
+- Map from DB rows to the shared DTO; no raw Drizzle types out.
+- Add `invite` to the reserved organization slugs.
+
+**Tests that matter:**
+- Pending, expired, canceled, accepted and unknown ids each give the right status; a scheduled org gives `unavailable`.
+- The response carries no ids or emails beyond the invitation's own.
+
+**Done when:**
+- The endpoint answers for every status without a session, and `bun run verify` exits 0.
+
+**Verify:** Seed `subscribed-org`, invite an address as the owner, then `curl` the preview with no cookie: pending, with org name, inviter and role. Cancel the invite and repeat: unavailable. Nothing simulated.
+
+---
+
+## Phase 3: Team page
+
+**Goal:** Owners and admins run their team from `/dashboard/<slug>/team`.
+
+**Files:**
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.team.tsx` (placeholder today)
+- `Sinwy.WebFrontend/src/modules/org-dashboard/lib/transfer-queries.ts` (`transferCandidatesQuery` uses `authClient.organization.listMembers`; share the members query rather than duplicating it)
+- `Sinwy.WebFrontend/src/modules/org-dashboard/components/` (new team components)
+- `Sinwy.WebFrontend/src/shared/lib/auth/permissions.ts` (`usePermissions`), `auth-error.ts` (`authErrorMessage`)
+- `Sinwy.WebFrontend/src/shared/components/UpgradePrompt.tsx` (seat cap reached)
+- `Sinwy.WebFrontend/src/modules/account-dashboard/routes/_shell.organizations.tsx` (role label, around line 214)
+- `docs/design-rules.md` (UI rules to follow)
+
+**Steps:**
+- Members table: name, email, role, joined date (`member.createdAt`), from `listMembers`.
+- Invite dialog: email plus role (admin or staff); shows seats used / limit; at the cap, the button is replaced by the upgrade prompt. Seats come from members + pending invites on the page and `PLAN_LIMITS` for the org's plan (no new endpoint unless the plan isn't already on the page).
+- Pending invites list from `listInvitations` (pending, not expired): resend (`inviteMember` with `resend: true`) and revoke (`cancelInvitation`).
+- Role change and remove, each behind a confirmation; hidden on the owner's row and your own (Default 3).
+- Refresh members, invitations and the member-access query after each change.
+- Account → Organizations shows Owner, Admin or Staff (Default 8).
+
+**Tests that matter:**
+- Seat count shown matches the backend's rule (expired invites excluded).
+- Row actions hidden for the owner and the current user.
+
+**Done when:**
+- Every team action works from the page with server errors shown in place, and `bun run verify` exits 0.
+
+**Verify:** Seed `org-with-staff --staff 1` (Starter). Log in as the owner, open Team: owner and staff listed with joined dates, seats 2/3. Invite an address as admin: it appears under pending, an email is in the outbox, seats 3/3 and inviting is blocked with an upgrade prompt. Resend: same row, later expiry. Revoke: row gone, seats 2/3. Change staff to admin: `member.role` updates. Remove them: `member` row gone. Nothing simulated beyond the seeded plan.
+
+---
+
+## Phase 4: Accept-invite landing page
+
+**Goal:** An invitee joins from the emailed link, whether or not they have an account.
+
+**Files:**
+- `Sinwy.WebFrontend/src/routes.ts` (mount `/invite` before the storefront)
+- New `Sinwy.WebFrontend/src/modules/invite/routes/$invitationId.tsx`
+- `Sinwy.WebFrontend/src/modules/auth/routes/register.tsx` and `modules/auth/lib/useRegister.ts` (add a safe `redirect` like `useLogin`)
+- `Sinwy.WebFrontend/src/modules/auth/routes/login.tsx`, `modules/auth/lib/useLogin.ts` (already take `redirect`)
+- `Sinwy.WebFrontend/src/shared/lib/organizations` (`organizationsQuery`, invalidate after accepting)
+- `Sinwy.WebFrontend/src/shared/lib/auth/sign-out.ts`
+
+**Steps:**
+- The page loads the Phase 2 preview, then branches:
+  - signed out → org, inviter and role, with "Sign in" and "Create account" both carrying `redirect=/invite/<id>`;
+  - signed in with the invited email → Accept and Decline;
+  - signed in with another email → "This invite is for <email>" and a sign-out button;
+  - expired or unavailable → a plain "no longer valid" message.
+- Register's `redirect` becomes the verification `callbackURL`, so verifying lands back on the invite page.
+- Accept → `acceptInvitation`, invalidate organizations and member queries, go to `/dashboard/<slug>`. Decline → `rejectInvitation`, go to `/auth/postlogin`.
+- Seat-full on accept shows its own message, not a generic error.
+
+**Tests that matter:**
+- Register's redirect only accepts safe relative paths (same rule as login).
+- Accepting with a mismatched email never calls the endpoint.
+
+**Done when:**
+- Both an existing user and a brand-new user can go from the email link to the org dashboard, and `bun run verify` exits 0.
+
+**Verify:** Seed `subscribed-org` and a separate `user`. As the owner, invite the seeded user's email and a fresh address. (1) Open the first link signed out → sign in as that user → back on the invite → Accept → org dashboard; a `member` row with role `staff`, invitation `accepted`. (2) Open the second link signed out → Create account with the fresh address → verification email in the outbox → follow it → back on the invite → Accept → dashboard. (3) Open a link while signed in as someone else → mismatch message. (4) Revoke an invite and open its link → no longer valid. Email delivery is the local outbox.
+
+---
+
+## Phase 5: Role check across the dashboard
+
+**Goal:** Every dashboard page and action behaves right for owner, admin and staff, now that real non-owner members exist.
+
+**Files:**
+- `Sinwy.WebFrontend/src/modules/org-dashboard/lib/sections.ts` (`ORG_SECTIONS`)
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/` (every `_shell.*.tsx`)
+- `Sinwy.Shared/types/access/RolePermissions.ts` (`ROLE_PERMISSIONS`, the source of truth)
+- `Sinwy.Backend/modules/*/routes.ts` (each module's `requirePermission`)
+- `docs/org-rules-map.md` section 2
+
+**Steps:**
+- Research first: for each role, list every page, sidebar entry and write action, and the expected outcome from `ROLE_PERMISSIONS`.
+- Check each in the browser and against the API; fix only mismatches (a visible button the API refuses, a reachable page the role shouldn't see, a missing guard).
+- Billing stays owner-only and outside the org (org-rules-map section 2, D15).
+
+**Tests that matter:**
+- Any guard added or fixed gets a test at the layer it was fixed in.
+
+**Done when:**
+- A role × page table with no unexplained mismatch is in the log entry, and `bun run verify` exits 0.
+
+**Verify:** Seed `org-with-staff --staff 2` (Starter), then as the owner promote one staff to admin from Team. Log in as each of owner, admin and staff; visit every sidebar entry and try typing each gated URL directly. Staff: bookings and customers only, services and pages read-only, no Team, Settings, Payments or Analytics. Admin: everything but billing. Nothing simulated beyond the seeded plan.
+
+---
+
+## Phase 6: Code review, docs and cleanup
+
+**Goal:** The auth-facing changes are reviewed, the docs match the code, and the workspace is clean.
+
+**Files:**
+- Every file changed in Phases 1–5 (`git diff master...team-invites`)
+- `docs/org-rules-map.md`, `.agents/skills/e2e-test/references/seed-scenario.md`, this plan and its log
+
+**Steps:**
+- Review for auth holes: seat bypasses (concurrent invites, resend, accept after downgrade), role escalation, the public preview leaking anything, unescaped email content, open redirects through `redirect`.
+- Fix confirmed findings with tests.
+- Make sure the org-rules-map has no "no screen yet" left for invitations, removal or role change, and lists any new gaps.
+- Final step: stop every dev server started during this plan's work unless the user asked to keep it running, and delete temporary files (probe scripts, screenshots, browser console logs, scratch data).
+
+**Tests that matter:**
+- One per confirmed review finding.
+
+**Done when:**
+- Review findings are fixed or written down as known gaps, `bun run verify` exits 0, and no stray processes or files remain.
+
+**Verify:** None.

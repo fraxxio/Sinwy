@@ -66,6 +66,9 @@ The one owner
 ├─ the owner can't leave
 └─ ownership moves only by a transfer [10], or through support's tool
 
+Invites and role changes give exactly one of admin or staff; any other role
+or a list of roles → refused
+
 Who sees billing (D15)
 ├─ owner → plan, invoices, payment method and every billing action, on their
 │          own Account → Billing only; never inside an organization
@@ -203,6 +206,16 @@ Pages (every tier has them, up to a limit per organization)
    the oldest published pages by creation, up to the limit, are served
    publicly, and the dashboard shows the rest "Published, not live"
 
+Seats (every tier, per organization)
+├─ limit: Starter 3, Professional 10, Enterprise 25; an inactive organization 0
+├─ a seat is a member (the owner included) or a pending invitation that
+│  hasn't expired; cancelling or the expiry frees it
+├─ inviting at or over the limit → refused, "every seat is taken"; resending
+│  a pending invitation takes no new seat
+├─ accepting at or over the limit → refused (only reachable after a downgrade)
+└─ over the limit (after a downgrade): every member stays; only new invites
+   stop until the organization is back under it
+
 Analytics (owners and admins; every tier, within a retention window)
 ├─ retention: Starter 30 days, Professional 365, Enterprise 730; an inactive
 │  organization 0 → refused, "upgrade required"
@@ -235,11 +248,13 @@ One trial per user (D10)
    (email and card) refuses a second trial
 ```
 
-Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages and
-analytics retention),
+Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages,
+analytics retention and seats),
 `Sinwy.Shared/types/page/` (block and template registries),
 `Sinwy.Backend/modules/billing/` (`checkoutGuard.ts`, `projection.ts`),
-`modules/auth/auth.ts` (checkout hook), `modules/auth/requireFeature.ts`,
+`modules/auth/auth.ts` (checkout hook; seats in `beforeCreateInvitation` and
+`membershipLimit`), `modules/organizations/` (`countSeatsUsed`),
+`modules/auth/requireFeature.ts`,
 `modules/pages/` (`service.ts`, and `repository.ts` for the limit count and
 the served set), `modules/analytics/` (`range.ts` for retention, `routes.ts`
 for the advanced gate).
@@ -479,6 +494,15 @@ when the plan lands); web `src/modules/account-dashboard/lib/transfer-accept.ts`
 ## 11. Leaving, removal, deletion and retention
 
 ```text
+Invitations (owner and admins; API only, no screen yet)
+├─ by email, as admin or staff [2], within the organization's seats [5]
+├─ the invitee gets an email linking to /invite/<invitation id>
+├─ an invitation lasts 7 days; resending extends the same one and emails it
+│  again; at most 10 invites a minute per client
+├─ accepting needs a session with the invited email
+└─ on an inactive organization: refused [9]; on one scheduled for deletion:
+   neither sent nor accepted
+
 Leaving and removal (API only; no screen yet)
 ├─ a member who isn't the owner can leave; the owner can't [2]
 ├─ the owner and admins remove members and change roles, never to or from owner
@@ -623,6 +647,8 @@ code; Better Auth's endpoints answer the string code.
 | `ORGANIZATION_INACTIVE` (Better Auth) | 403 | Opening an inactive or scheduled organization; any organization endpoint on a scheduled one; managing an inactive one; inviting to or joining a scheduled one |
 | `PLAN_REQUIRED` (40911) | 409 | Activating or finishing a draft without a plan that grants access; any plan action (change, stay on, suspend, undo, resume, cancel) without a plan |
 | `ORGANIZATION_LIMIT_REACHED` (40912) | 409 | Activating or finishing a draft at the cap |
+| `SEAT_LIMIT_REACHED` (Better Auth) | 403 | An invite while members and pending invitations fill the plan's seats |
+| `ORGANIZATION_MEMBERSHIP_LIMIT_REACHED` (Better Auth's own) | 403 | Accepting an invitation while the members fill the plan's seats |
 | `PLAN_EXISTS` (Better Auth) | 400 | A checkout while the user has a plan, paused included |
 | `BILLING_UNAVAILABLE` (Better Auth) | 503 | A checkout or the portal while Polar fails, times out or can't be reached; try again |
 | `BILLING_ACCOUNT_REJECTED` (Better Auth) | 409 | A checkout or the portal when Polar refuses the customer, or another Polar customer holds the account's email; contact support |
@@ -650,7 +676,8 @@ organizations or exceed the cap (400), plan change on a canceled subscription
 unreachable (502), offer to yourself or a non-member (400), expired offer
 (410), closed offer (404), checkout for an offer not waiting on it (400),
 invoice without billing details (409), the owner leaving (400), an owner role
-in an invitation or role change (403), a non-member or a scheduled
+in an invitation or role change (403), a role other than admin or staff in an
+invitation or role change (400), a non-member or a scheduled
 organization on the app's routes (404), a role without the permission (403).
 
 Enforced in: `Sinwy.Shared/types/api/ApiResponse.ts`,
@@ -738,7 +765,6 @@ Open, product or copy:
   if the country (so the currency) changes in another tab meanwhile, the
   amount is stored in the new currency's minor units. The list shows the
   stored currency, so it's visible.
-- `invite-member` accepts `role: "member"`, which isn't an app role.
 - Better Auth logs a refused open (inactive organization) and the checkout
   refusals at ERROR level, though they are user-caused.
 - Rules with no test (checked against the suites when this map was written):
