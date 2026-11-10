@@ -73,3 +73,39 @@ Finished phases of [team-invites-plan.md](team-invites-plan.md), each with its s
 - Shipped: `GET /api/public/invitations/:invitationId` (organizations module: `findPendingInvitationPreview` joins org and inviter, `getInvitationPreview` maps to the shared DTO). Pending → 200 `pending` or, past `expiresAt`, `expired`; unknown, canceled, rejected, accepted, org scheduled for deletion, or a stored role that isn't admin/staff → one 404 body. Shared `invitationPreviewSchema`, `InvitationPreviewDto` and `INVITATION_PREVIEW_STATUSES`. `invite` added to reserved slugs. 5 tests in `modules/organizations/tests/invitationPreview.test.ts`; `org-rules-map.md` invitations and reserved slugs updated.
 - Differs from plan: path is `/api/public/invitations/:id`, not `/api/invitations/:id`, to match the other unauthenticated routes. `unavailable` is the 404 itself rather than a 200 body field, as the storefront does; the DTO's status is only `pending` or `expired`. The DTO also carries `expiresAt`. An inactive org (no plan) still previews as pending: accepting isn't refused there either.
 - Checked in the running app (API only, e2e subagent): seeded Starter `subscribed-org`, owner invited an address as staff; outbox email links to `/invite/<id>`; cookie-less preview → 200 pending with org name, slug, inviter "Seed Owner", role staff, invitee email, no ids or other emails. Canceled → 404 "This invitation is no longer available", byte-identical to an unknown id. Backend log clean. Expired, rejected, accepted and scheduled-org branches covered by tests only.
+
+
+## Phase 3: Team page
+
+**Goal:** Owners and admins run their team from `/dashboard/<slug>/team`.
+
+**Files:**
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.team.tsx` (placeholder today)
+- `Sinwy.WebFrontend/src/modules/org-dashboard/lib/transfer-queries.ts` (`transferCandidatesQuery` uses `authClient.organization.listMembers`; share the members query rather than duplicating it)
+- `Sinwy.WebFrontend/src/modules/org-dashboard/components/` (new team components)
+- `Sinwy.WebFrontend/src/shared/lib/auth/permissions.ts` (`usePermissions`), `auth-error.ts` (`authErrorMessage`)
+- `Sinwy.WebFrontend/src/shared/components/UpgradePrompt.tsx` (seat cap reached)
+- `Sinwy.WebFrontend/src/modules/account-dashboard/routes/_shell.organizations.tsx` (role label, around line 214)
+- `docs/design-rules.md` (UI rules to follow)
+
+**Steps:**
+- Members table: name, email, role, joined date (`member.createdAt`), from `listMembers`.
+- Invite dialog: email plus role (admin or staff); shows seats used / limit; at the cap, the button is replaced by the upgrade prompt. Seats come from members + pending invites on the page and `PLAN_LIMITS` for the org's plan (no new endpoint unless the plan isn't already on the page).
+- Pending invites list from `listInvitations` (pending, not expired): resend (`inviteMember` with `resend: true`) and revoke (`cancelInvitation`).
+- Role change and remove, each behind a confirmation; hidden on the owner's row and your own (Default 3).
+- Refresh members, invitations and the member-access query after each change.
+- Account → Organizations shows Owner, Admin or Staff (Default 8).
+
+**Tests that matter:**
+- Seat count shown matches the backend's rule (expired invites excluded).
+- Row actions hidden for the owner and the current user.
+
+**Done when:**
+- Every team action works from the page with server errors shown in place, and `bun run verify` exits 0.
+
+**Verify:** Seed `org-with-staff --staff 1` (Starter). Log in as the owner, open Team: owner and staff listed with joined dates, seats 2/3. Invite an address as admin: it appears under pending, an email is in the outbox, seats 3/3 and inviting is blocked with an upgrade prompt. Resend: same row, later expiry. Revoke: row gone, seats 2/3. Change staff to admin: `member.role` updates. Remove them: `member` row gone. Nothing simulated beyond the seeded plan.
+
+### Log (2026-11-10, `feat(backend, shared, web): add the team page with invites, role changes and removal`)
+- Shipped: Team page (`_shell.team.tsx`) with a members table (name, email, role badge, joined date), a pending-invitations table (unexpired only, Resend and Revoke per row, errors in the row), an invite dialog (email, admin or staff, seats used / limit) and per-member Make admin / Make staff and Remove behind confirmations with errors in the dialog. Seats are members plus unexpired pending invitations against `PLAN_LIMITS` for the plan from the shell's entitlements; at or over the cap the Invite button becomes "No seats left on this plan." plus `UpgradeAction` (or "Remove someone" on the top plan). Row actions are hidden on the owner and on yourself. Every change invalidates the team queries and `memberAccessQuery`. `transferCandidatesQuery` now selects from the shared `membersQuery`. `OrganizationSummary.role` plus shared `ORG_ROLE_LABELS` and `primaryRole`; Account → Organizations shows Owner, Admin or Staff. Tests: `modules/org-dashboard/tests/team.test.ts` (seat count with expired, canceled and accepted invites, no plan, over the cap; row actions on owner and self); backend summary test pins `role`. `org-rules-map.md` sections 11 and the gaps list updated.
+- Differs from plan: `docs/design-rules.md` holds backend architecture only, so the UI follows the existing services and transfer screens. The upgrade prompt is `UpgradeAction` in the header, not the full-page `UpgradePrompt` (that one takes a yes/no feature, and seats are a number). Revoke has no confirmation, since the plan asks for one only on role change and removal, and re-inviting undoes it.
+- Checked in the running app (e2e subagent, seeded Starter `org-with-staff --staff 1`): owner and staff listed with joined dates, 2 of 3 seats; invite as admin → pending row, outbox email with `/invite/<id>`, 3 of 3 and the upgrade prompt (a direct API invite at the cap → 403 `SEAT_LIMIT_REACHED`); resend → same id, later `expires_at`, second email; revoke → `canceled`, 2 of 3; Make admin → `member.role = admin`; Remove → the `member` row is gone. No console or backend errors. Not checked: the Upgrade plan link with a real sandbox subscription, and real Resend delivery.

@@ -13,6 +13,7 @@ const org = (
 	plan: "starter",
 	features: [],
 	isOwner: true,
+	role: "owner",
 	paymentFailed: false,
 	suspended: false,
 	draft: false,

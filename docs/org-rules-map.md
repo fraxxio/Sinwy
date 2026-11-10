@@ -494,8 +494,9 @@ when the plan lands); web `src/modules/account-dashboard/lib/transfer-accept.ts`
 ## 11. Leaving, removal, deletion and retention
 
 ```text
-Invitations (owner and admins; API only, no screen yet)
-├─ by email, as admin or staff [2], within the organization's seats [5]
+Invitations (owner and admins, from Team; accepting has no screen yet)
+├─ by email, as admin or staff [2], within the organization's seats [5];
+│  at the cap Team shows the upgrade prompt instead of Invite
 ├─ the invitee gets an email linking to /invite/<invitation id>
 ├─ an invitation lasts 7 days; resending extends the same one and emails it
 │  again; at most 10 invites a minute per client
@@ -507,9 +508,10 @@ Invitations (owner and admins; API only, no screen yet)
 └─ on an inactive organization: refused [9]; on one scheduled for deletion:
    neither sent nor accepted
 
-Leaving and removal (API only; no screen yet)
+Leaving and removal (removal and role changes from Team; leaving has no screen yet)
 ├─ a member who isn't the owner can leave; the owner can't [2]
-├─ the owner and admins remove members and change roles, never to or from owner
+├─ the owner and admins remove members and change roles, never to or from owner;
+│  Team offers neither on the owner's row or your own
 ├─ either cancels open transfers to that member [10]
 ├─ on an inactive organization: leaving works, removing and role changes are refused [9]
 └─ on one scheduled for deletion: everything is refused, so the members stay
@@ -756,10 +758,10 @@ Open, product or copy:
 - A recipient with a pending downgrade can accept into a free slot; at the
   period end the transferred organization is the latest-activated, so it
   loses its slot and they are emailed (Default 9) [7, 10].
-- Leaving, removing members, invitations and deleting an organization have
-  no screen yet [11].
+- Leaving, accepting an invitation and deleting an organization have no
+  screen yet [11].
 - `/organizations/new` shows the Plan and Pay steps to a user who already has
-  a plan; Account → Organizations labels admins "Member".
+  a plan.
 - Resume charges on one click with no confirmation, unlike suspend and
   cancel; the "Choose a plan" intro on Billing speaks of one organization
   even when several wait.

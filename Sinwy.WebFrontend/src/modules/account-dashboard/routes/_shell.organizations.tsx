@@ -1,6 +1,7 @@
-import type {
-	AccountSubscriptionDto,
-	OrganizationSummary,
+import {
+	type AccountSubscriptionDto,
+	ORG_ROLE_LABELS,
+	type OrganizationSummary,
 } from "@sinwy/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -211,7 +212,7 @@ function OrganizationRow({
 				<div className="flex flex-wrap items-center gap-2">
 					<span className="font-medium">{organization.name}</span>
 					<Badge variant="secondary">
-						{organization.isOwner ? "Owner" : "Member"}
+						{ORG_ROLE_LABELS[organization.role]}
 					</Badge>
 					{open ? (
 						<Badge variant="outline">

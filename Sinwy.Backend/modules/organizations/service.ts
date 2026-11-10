@@ -24,6 +24,7 @@ import {
 	type OrganizationSummary,
 	type PlanSlug,
 	parseMemberRoles,
+	primaryRole,
 	toPlanSlug,
 } from "@sinwy/shared";
 import { clearFromSessions, type OrganizationAccess } from "./access";
@@ -180,6 +181,7 @@ export const listOrganizations = async (
 			plan: hasPermission(roles, "settings:manage") ? plan : null,
 			features: featuresFor(plan),
 			isOwner: roles.includes("owner"),
+			role: primaryRole(roles),
 			paymentFailed:
 				roles.includes("owner") && row.ownerSubscriptionStatus === "past_due",
 			deletesAt: deletesAtOf(row.deletionScheduledAt),

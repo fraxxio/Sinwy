@@ -10,7 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Seats, invite roles and the invitation email | – | done | `feat(backend, shared): cap organization seats per plan and email invitations` |
 | 2 | Public invitation preview | 1 | done | `feat(backend, shared): add a public invitation preview` |
-| 3 | Team page | 1 | todo | |
+| 3 | Team page | 1 | done | `feat(backend, shared, web): add the team page with invites, role changes and removal` |
 | 4 | Accept-invite landing page | 2 | todo | |
 | 5 | Role check across the dashboard | 3, 4 | todo | |
 | 6 | Code review, docs and cleanup | 5 | todo | |
@@ -45,7 +45,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - Invites send `InvitationEmail` linking to `${WEB_APP_URL}/invite/<id>`; the outbox has it under the invitee's address.
 - `invite-member` flow: permission check (`invitation:create`, owner and admin only), plugin role-name check, already-member → 400, already-invited (pending, unexpired) without `resend` → 400, then `beforeCreateInvitation` (role rule, scheduled org, seats). The `resend` path returns before the hook, so it never consumes a seat; an expired invite isn't "pending" to the plugin, so re-inviting creates a new one.
 - Seat errors: invite at the cap → 403 `code: "SEAT_LIMIT_REACHED"` (`AUTH_ERROR_CODES`); accept at the cap → 403 `ORGANIZATION_MEMBERSHIP_LIMIT_REACHED`. Bad role → 400 "Choose admin or staff". `INVITE_ROLES`, `isInviteRole` and `INVITATION_EXPIRY_DAYS` are in `@sinwy/shared`; the organizations module exports `getSeatUsage(orgId)` → `{ used, limit }`.
-- Pending invitations past `expiresAt` keep `status = "pending"`; count them out by date (`listInvitations` returns them too).
 - Public preview: `GET /api/public/invitations/:id`, no session. 200 → `InvitationPreviewDto` (`invitationPreviewSchema` in `@sinwy/shared`, status `pending` | `expired`); every other case is the same 404, which the page treats as `unavailable`. Frontend calls it like `storefrontQuery` (`api<T>("/public/…")`, `res.code === 404`).
 - `accept-invitation` needs a session whose email matches the invitation (case-insensitive), sets the session's active organization, and calls `beforeAcceptInvitation`. `get-invitation` also requires the recipient's session, so the page uses the public preview instead.
 - Existing hooks in `Sinwy.Backend/modules/auth/auth.ts` (`organizationHooks`): `refuseOwnerRole` on create/accept invitation and role update, `refuseScheduledOrganization` on create/accept, `cancelTransfersToMember` after remove. "Cannot remove the last owner" is already true: one owner, the plugin won't remove or demote the only owner, the owner can't leave.
@@ -54,39 +53,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - Tests: `Sinwy.Backend/test/helpers.ts` has `createUserWithSession`, `insertOrganization`, `activateOrganization`, `givePlan`, `joinOrganization`; `readOutboxEmails` from `@backend/infrastructure/email` reads sent mail. `Sinwy.Backend/modules/auth/tests/singleOwner.test.ts` shows how to call plugin endpoints over HTTP.
 - The `org-with-staff` seed adds staff through `addMember`, capped by seats: Starter allows `--staff 2` at most.
 - Frontend: `authClient.organization.*` is typed with `ac` and `orgAccessRoles` (`Sinwy.WebFrontend/src/shared/lib/auth/auth-client.ts`). Login takes `?redirect=` (`useLogin`, safe-relative check); register only takes `?source=` (`useRegister` derives `callbackURL`).
+- `OrganizationSummary.role` is the caller's most privileged role (`primaryRole`); `ORG_ROLE_LABELS` (Owner, Admin, Staff) are in `@sinwy/shared`. Use them for the invite page's role text.
+- Team data lives in `Sinwy.WebFrontend/src/modules/org-dashboard/lib/team-queries.ts` (`membersQuery`, `invitationsQuery`, `invalidateTeam`, plugin calls unwrapped through `authErrorMessage`); seat maths in `lib/team.ts`. Keys are `["team", orgId, …]`; `organizationsQuery`'s key is `["organizations", "list"]`, not a prefix of `memberAccessQuery`'s.
+- Browser checks: the Base UI select animates (pick the option once `[role=listbox]` is there), the first click right after `goto` can land before hydration, and `page.ts` lists toasts as `Dialog:` (they carry `role="dialog"`).
 - Frontend top-level routes are mounted in `Sinwy.WebFrontend/src/routes.ts`; any new prefix goes before the `/$organizationSlug` storefront mount.
-
----
-
-## Phase 3: Team page
-
-**Goal:** Owners and admins run their team from `/dashboard/<slug>/team`.
-
-**Files:**
-- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.team.tsx` (placeholder today)
-- `Sinwy.WebFrontend/src/modules/org-dashboard/lib/transfer-queries.ts` (`transferCandidatesQuery` uses `authClient.organization.listMembers`; share the members query rather than duplicating it)
-- `Sinwy.WebFrontend/src/modules/org-dashboard/components/` (new team components)
-- `Sinwy.WebFrontend/src/shared/lib/auth/permissions.ts` (`usePermissions`), `auth-error.ts` (`authErrorMessage`)
-- `Sinwy.WebFrontend/src/shared/components/UpgradePrompt.tsx` (seat cap reached)
-- `Sinwy.WebFrontend/src/modules/account-dashboard/routes/_shell.organizations.tsx` (role label, around line 214)
-- `docs/design-rules.md` (UI rules to follow)
-
-**Steps:**
-- Members table: name, email, role, joined date (`member.createdAt`), from `listMembers`.
-- Invite dialog: email plus role (admin or staff); shows seats used / limit; at the cap, the button is replaced by the upgrade prompt. Seats come from members + pending invites on the page and `PLAN_LIMITS` for the org's plan (no new endpoint unless the plan isn't already on the page).
-- Pending invites list from `listInvitations` (pending, not expired): resend (`inviteMember` with `resend: true`) and revoke (`cancelInvitation`).
-- Role change and remove, each behind a confirmation; hidden on the owner's row and your own (Default 3).
-- Refresh members, invitations and the member-access query after each change.
-- Account → Organizations shows Owner, Admin or Staff (Default 8).
-
-**Tests that matter:**
-- Seat count shown matches the backend's rule (expired invites excluded).
-- Row actions hidden for the owner and the current user.
-
-**Done when:**
-- Every team action works from the page with server errors shown in place, and `bun run verify` exits 0.
-
-**Verify:** Seed `org-with-staff --staff 1` (Starter). Log in as the owner, open Team: owner and staff listed with joined dates, seats 2/3. Invite an address as admin: it appears under pending, an email is in the outbox, seats 3/3 and inviting is blocked with an upgrade prompt. Resend: same row, later expiry. Revoke: row gone, seats 2/3. Change staff to admin: `member.role` updates. Remove them: `member` row gone. Nothing simulated beyond the seeded plan.
 
 ---
 
@@ -95,14 +65,13 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** An invitee joins from the emailed link, whether or not they have an account.
 
 **Files:**
-- `Sinwy.WebFrontend/src/routes.ts` (mount `/invite` before the storefront)
-- New `Sinwy.WebFrontend/src/modules/invite/routes/$invitationId.tsx`
-- New `Sinwy.WebFrontend/src/modules/invite/lib/` preview query, shaped like `storefrontQuery` in `modules/storefront/lib/storefront-queries.ts` (`api` from `#/shared/lib/api`; 404 → unavailable)
-- `Sinwy.Shared/types/organization/Invitation.ts` (`InvitationPreviewDto`, `InvitationPreviewStatus`)
-- `Sinwy.WebFrontend/src/modules/auth/routes/register.tsx` and `modules/auth/lib/useRegister.ts` (add a safe `redirect` like `useLogin`)
+- `Sinwy.WebFrontend/src/routes.ts` (mount `/invite` before the `/$organizationSlug` storefront)
+- New `Sinwy.WebFrontend/src/modules/invite/routes/$invitationId.tsx` and `modules/invite/lib/` preview query, shaped like `storefrontQuery` in `modules/storefront/lib/storefront-queries.ts` (`api` from `#/shared/lib/api`; 404 → unavailable)
+- `Sinwy.Shared/types/organization/Invitation.ts` (`InvitationPreviewDto`), `Sinwy.Shared/types/access/OrgRole.ts` (`ORG_ROLE_LABELS`)
+- `Sinwy.WebFrontend/src/modules/auth/lib/useRegister.ts` (takes `source`, derives `callbackURL` around line 45; add a safe `redirect` like `useLogin.ts`) and `modules/auth/routes/register.tsx`; tests next to `modules/auth/tests/register-schema.test.ts`
 - `Sinwy.WebFrontend/src/modules/auth/routes/login.tsx`, `modules/auth/lib/useLogin.ts` (already take `redirect`)
-- `Sinwy.WebFrontend/src/shared/lib/organizations` (`organizationsQuery`, invalidate after accepting)
-- `Sinwy.WebFrontend/src/shared/lib/auth/sign-out.ts`
+- `Sinwy.WebFrontend/src/shared/lib/organizations.ts` (`invalidateOrganizations` after accepting)
+- `Sinwy.WebFrontend/src/shared/lib/auth/sign-out.ts`, `auth-error.ts` (`authErrorMessage`)
 
 **Steps:**
 - The page loads the Phase 2 preview, then branches:
