@@ -298,7 +298,7 @@ export const seedScenario = async ({
 				"Seed Staff",
 				password,
 			);
-			// there is no invite flow yet, so this is Better Auth's server-side add
+			// skips the invite and its email; still capped by the plan's seats
 			await auth.api.addMember({
 				body: { userId: staff.userId, organizationId: org.id, role: "staff" },
 			});

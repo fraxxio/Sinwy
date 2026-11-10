@@ -10,10 +10,17 @@ import {
 import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
-import { scheduleOwnedOrganizationsForDeletion } from "@organizationsModule";
+import {
+	getSeatLimit,
+	getSeatUsage,
+	scheduleOwnedOrganizationsForDeletion,
+	withdrawInvitationOverCap,
+} from "@organizationsModule";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import {
+	AUTH_ERROR_CODES,
 	ac,
+	INVITATION_EXPIRY_DAYS,
 	orgAccessRoles,
 	PLAN_SLUGS,
 	profileSchema,
@@ -37,14 +44,16 @@ import {
 	refuseOrganizationEndpoint,
 	refuseScheduledOrganization,
 	refuseUnavailableOrganization,
+	withoutTeamUnlessManager,
 } from "./activeOrganization";
 import { cleanupDeletedUser } from "./deletedUserCleanup";
 import { refuseUndeliverableEmail } from "./emailDomain";
 import { ChangeEmailConfirmationEmail } from "./emails/changeEmailConfirmationEmail";
 import { DeleteAccountEmail } from "./emails/deleteAccountEmail";
+import { InvitationEmail } from "./emails/invitationEmail";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
-import { refuseOwnerRole } from "./singleOwner";
+import { refuseNonInviteRole, refuseOwnerRole } from "./singleOwner";
 
 const authLogger = createLogger("auth");
 
@@ -68,6 +77,18 @@ const checkoutBodySchema = z.strictObject({
 	redirect: z.boolean().optional(),
 	transferId: z.string().min(1).optional(),
 });
+
+const seatLimitError = () =>
+	new APIError("FORBIDDEN", {
+		message: "Every seat on this plan is taken",
+		code: AUTH_ERROR_CODES.SEAT_LIMIT_REACHED,
+	});
+
+/** Over the cap after a downgrade, everyone stays; only new invites stop. */
+const refuseFullOrganization = async (organizationId: string) => {
+	const { used, limit } = await getSeatUsage(organizationId);
+	if (used >= limit) throw seatLimitError();
+};
 
 const checkoutSuccessUrl = (query: string) =>
 	new URL(
@@ -155,6 +176,7 @@ export const auth = betterAuth({
 			"/send-verification-email": { window: RESEND_COOLDOWN_SECONDS, max: 3 },
 			"/change-email": { window: 60, max: 3 },
 			"/delete-user": { window: 60, max: 3 },
+			"/organization/invite-member": { window: 60, max: 10 },
 		},
 	},
 	user: {
@@ -290,9 +312,19 @@ export const auth = betterAuth({
 				});
 			return undefined;
 		}),
-		// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
 		after: createAuthMiddleware(async (ctx) => {
-			if (ctx.path !== "/organization/leave") return;
+			if (ctx.path === "/organization/get-full-organization") {
+				const session = await getSessionFromCtx(ctx);
+				const stripped =
+					session &&
+					(await withoutTeamUnlessManager(
+						session.user.id,
+						ctx.context.returned,
+					));
+				return stripped ? ctx.json(stripped) : undefined;
+			}
+			// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
+			if (ctx.path !== "/organization/leave") return undefined;
 			const body = z.object({ organizationId: z.string() }).safeParse(ctx.body);
 			const session = await getSessionFromCtx(ctx);
 			if (body.success && session)
@@ -300,6 +332,7 @@ export const auth = betterAuth({
 					body.data.organizationId,
 					session.user.id,
 				);
+			return undefined;
 		}),
 	},
 	socialProviders: {
@@ -314,19 +347,57 @@ export const auth = betterAuth({
 			roles: orgAccessRoles,
 			// creation goes through POST /api/organizations only
 			allowUserToCreateOrganization: false,
+			invitationExpiresIn: INVITATION_EXPIRY_DAYS * 24 * 60 * 60,
+			// invites stop at the cap; this backstops accepting
+			membershipLimit: (_user, organization) => getSeatLimit(organization.id),
+			sendInvitationEmail: async ({
+				id,
+				email,
+				role,
+				organization,
+				inviter,
+			}) => {
+				await emailClient.send({
+					to: email,
+					template: InvitationEmail,
+					props: {
+						organizationName: organization.name,
+						inviterName: inviter.user.name,
+						role,
+						inviteUrl: new URL(
+							`/invite/${encodeURIComponent(id)}`,
+							appConfig.WEB_APP_URL,
+						).toString(),
+					},
+				});
+			},
 			// the plugin already keeps the only owner from leaving, being removed
 			// or demoted; these keep a second owner from ever appearing
 			organizationHooks: {
 				beforeCreateInvitation: async ({ invitation }) => {
 					refuseOwnerRole(invitation.role);
+					refuseNonInviteRole(invitation.role);
 					await refuseScheduledOrganization(invitation.organizationId);
+					await refuseFullOrganization(invitation.organizationId);
+				},
+				afterCreateInvitation: async ({ invitation }) => {
+					if (
+						await withdrawInvitationOverCap(
+							invitation.organizationId,
+							invitation.id,
+						)
+					)
+						throw seatLimitError();
 				},
 				beforeAcceptInvitation: async ({ invitation }) => {
 					refuseOwnerRole(invitation.role);
 					await refuseScheduledOrganization(invitation.organizationId);
 				},
-				beforeUpdateMemberRole: async ({ member, newRole }) =>
-					refuseOwnerRole(member.role, newRole),
+				beforeUpdateMemberRole: ({ member, newRole }) => {
+					refuseOwnerRole(member.role, newRole);
+					refuseNonInviteRole(newRole);
+					return Promise.resolve();
+				},
 				afterRemoveMember: ({ member }) =>
 					cancelTransfersToMember(member.organizationId, member.userId),
 				// the emails go out before the deletion cascades the bookings away

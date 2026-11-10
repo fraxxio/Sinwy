@@ -1,14 +1,11 @@
 import type { OfferTransferBody, OrganizationTransferDto } from "@sinwy/shared";
 import { queryOptions } from "@tanstack/react-query";
+import { membersQuery } from "#/modules/org-dashboard/lib/team-queries";
 import { api } from "#/shared/lib/api";
-import { authClient } from "#/shared/lib/auth/auth-client";
-import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 
 export const transferKeys = {
 	open: (organizationId: string) =>
 		["transfer", organizationId, "open"] as const,
-	members: (organizationId: string) =>
-		["transfer", organizationId, "members"] as const,
 };
 
 export const openTransferQuery = (organizationId: string) =>
@@ -29,20 +26,11 @@ export const transferCandidatesQuery = (
 	ownerUserId: string,
 ) =>
 	queryOptions({
-		queryKey: transferKeys.members(organizationId),
-		queryFn: async () => {
-			const { data, error } = await authClient.organization.listMembers({
-				query: { organizationId },
-			});
-			if (error) throw new Error(authErrorMessage(error));
-			return (data?.members ?? [])
+		...membersQuery(organizationId),
+		select: (members) =>
+			members
 				.filter((member) => member.userId !== ownerUserId)
-				.map((member) => ({
-					userId: member.userId,
-					name: member.user.name,
-					email: member.user.email,
-				}));
-		},
+				.map(({ userId, name, email }) => ({ userId, name, email })),
 	});
 
 export const offerTransfer = (

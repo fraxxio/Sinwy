@@ -6,15 +6,21 @@ export type PlanLimits = {
 	pages: number;
 	/** How far back analytics reaches; older data is kept, only hidden. */
 	analyticsRetentionDays: number;
+	/** Members, the owner included, plus pending invitations that haven't expired. */
+	members: number;
 };
 
 export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
-	starter: { pages: 1, analyticsRetentionDays: 30 },
-	professional: { pages: 5, analyticsRetentionDays: 365 },
-	enterprise: { pages: 25, analyticsRetentionDays: 730 },
+	starter: { pages: 1, analyticsRetentionDays: 30, members: 3 },
+	professional: { pages: 5, analyticsRetentionDays: 365, members: 10 },
+	enterprise: { pages: 25, analyticsRetentionDays: 730, members: 25 },
 };
 
-const NO_PLAN_LIMITS: PlanLimits = { pages: 0, analyticsRetentionDays: 0 };
+const NO_PLAN_LIMITS: PlanLimits = {
+	pages: 0,
+	analyticsRetentionDays: 0,
+	members: 0,
+};
 
 /** No plan (inactive organization) allows nothing. */
 export const limitsFor = (plan: PlanSlug | null): PlanLimits =>

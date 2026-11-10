@@ -11,6 +11,7 @@ import {
 	completeOrganizationOnboarding,
 	createOrganization,
 	deactivateOrganization,
+	getInvitationPreview,
 	getOrganizationOnboarding,
 	listOrganizations,
 	type SlotResult,
@@ -114,4 +115,12 @@ export const deactivateOrganizationHandler: Handler = async (c) => {
 	return (await deactivateOrganization(user.id, organizationId))
 		? ok(null, 200, "Organization deactivated")
 		: fail("Not found", 404);
+};
+
+export const getInvitationPreviewHandler: Handler = async (c) => {
+	const { invitationId } = c.req.params as { invitationId: string };
+	const preview = await getInvitationPreview(invitationId);
+	return preview
+		? ok(preview)
+		: fail("This invitation is no longer available", 404);
 };

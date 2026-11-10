@@ -1,4 +1,4 @@
-import { parseMemberRoles } from "@sinwy/shared";
+import { isInviteRole, parseMemberRoles } from "@sinwy/shared";
 import { APIError } from "better-auth/api";
 
 /**
@@ -11,5 +11,13 @@ export const refuseOwnerRole = (...roles: string[]) => {
 		throw new APIError("FORBIDDEN", {
 			message:
 				"An organization has one owner; ownership can't be given or changed",
+		});
+};
+
+/** Invites and role changes give exactly one app role; no plugin defaults, no lists. */
+export const refuseNonInviteRole = (role: string) => {
+	if (!isInviteRole(role))
+		throw new APIError("BAD_REQUEST", {
+			message: "Choose admin or staff",
 		});
 };

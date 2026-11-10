@@ -19,6 +19,7 @@ const org = (
 	plan: null,
 	features: [],
 	isOwner: true,
+	role: "owner",
 	paymentFailed: false,
 	deletesAt: null,
 	onboardingCompletedAt: null,

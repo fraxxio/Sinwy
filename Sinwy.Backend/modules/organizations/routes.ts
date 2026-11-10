@@ -10,6 +10,7 @@ import {
 	completeOrganizationOnboardingHandler,
 	createOrganizationHandler,
 	deactivateOrganizationHandler,
+	getInvitationPreviewHandler,
 	getOrganizationOnboardingHandler,
 	listOrganizationsHandler,
 	saveOrganizationProfileHandler,
@@ -48,5 +49,9 @@ export const registerOrganizationRoutes = (app: IApp) => {
 		"/api/account/organizations/:organizationId/deactivate",
 		deactivateOrganizationHandler,
 		{ method: "POST", routeMiddlewares: [requireAuth] },
+	);
+	app.route(
+		"/api/public/invitations/:invitationId",
+		getInvitationPreviewHandler,
 	);
 };

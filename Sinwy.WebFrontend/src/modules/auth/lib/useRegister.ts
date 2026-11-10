@@ -7,6 +7,7 @@ import {
 import { formOptions, revalidateLogic } from "@tanstack/react-form";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
+import { safeRedirect } from "#/modules/auth/lib/safe-redirect";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 import { showFieldError, useAppForm } from "#/shared/lib/form";
@@ -33,17 +34,21 @@ const SHAKE_DEBOUNCE_MS = 600;
 
 type Props = {
 	source?: string | undefined;
+	redirect?: string | undefined;
 };
 
-const useRegister = ({ source }: Props = {}) => {
+/** Where the verification link (and Google sign-up) lands: a safe `redirect` wins over the business funnel. */
+export const registerCallbackURL = ({ source, redirect }: Props) =>
+	safeRedirect(redirect) ??
+	(source === "business" ? "/organizations/new" : "/auth/postlogin");
+
+const useRegister = (props: Props = {}) => {
 	const [serverError, setServerError] = useState<string | null>(null);
-	const [registerSource] = useState(source);
+	const [callbackURL] = useState(() => registerCallbackURL(props));
 	const [sentTo, setSentTo] = useState<string | null>(null);
 	const [resendDooldown, setResendCooldown] = useState(0);
 	const [shakeToken, setShakeToken] = useState(0);
 	const lastShakeAt = useRef(0);
-	const callbackURL =
-		registerSource === "business" ? "/organizations/new" : "/auth/postlogin";
 
 	useEffect(() => {
 		if (resendDooldown <= 0) return;

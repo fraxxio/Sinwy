@@ -727,6 +727,7 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 			plan: null,
 			features: [],
 			isOwner: true,
+			role: "owner",
 			paymentFailed: false,
 			deletesAt: new Date(
 				scheduledAt.getTime() + 30 * 24 * 60 * 60 * 1000,
@@ -743,6 +744,7 @@ test("GET /api/organizations: only the caller's organizations, with their role a
 			plan: "professional",
 			features: PLAN_FEATURES.professional,
 			isOwner: false,
+			role: "admin",
 			paymentFailed: false,
 			deletesAt: null,
 			onboardingCompletedAt: null,

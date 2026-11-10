@@ -17,6 +17,8 @@ export {
 	getOrganizationOnboarding,
 	getOrganizationProfile,
 	getOrganizationState,
+	getSeatLimit,
+	getSeatUsage,
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
 	isOrganizationPublic,
@@ -34,6 +36,7 @@ export {
 	saveOrganizationProfile,
 	scheduleOwnedOrganizationsForDeletion,
 	setOrganizationTimezone,
+	withdrawInvitationOverCap,
 } from "./service";
 export {
 	fitSlotsToCap,

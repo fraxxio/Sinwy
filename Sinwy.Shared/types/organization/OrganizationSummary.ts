@@ -1,3 +1,4 @@
+import type { OrgRole } from "../access/OrgRole";
 import type { PlanSlug } from "../plan/Plan";
 import type { Feature } from "../plan/PlanFeatures";
 import type { OrganizationStatus } from "./Organization";
@@ -16,6 +17,8 @@ export type OrganizationSummary = {
 	/** What the tier includes while active, for every member. */
 	features: readonly Feature[];
 	isOwner: boolean;
+	/** The caller's most privileged role in it. */
+	role: OrgRole;
 	/** The owner's last payment failed and Polar is retrying it; only ever true for the owner. */
 	paymentFailed: boolean;
 	/** When it is purged, set once its owner's account is deleted; ISO date. */

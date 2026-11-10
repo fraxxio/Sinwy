@@ -37,8 +37,8 @@ Organization states [3]
 Pages
 ├─ Dashboard     /dashboard/<slug>/…, for members of an active organization [9]
 ├─ Booking page  /<slug>, which opens /<slug>/book: the public storefront;
-│                root slugs belong to it, so slugs like dashboard, book, s and
-│                app are reserved
+│                root slugs belong to it, so slugs like dashboard, book, s,
+│                invite and app are reserved
 └─ Public page   /<slug>/<page slug>: a page the organization published [5];
                  page slugs are lowercase letters, digits and hyphens, unique in
                  the organization, and can't take a storefront route (book, s)
@@ -65,6 +65,12 @@ The one owner
 │  owner's own role → refused
 ├─ the owner can't leave
 └─ ownership moves only by a transfer [10], or through support's tool
+
+Invites and role changes give exactly one of admin or staff; any other role
+or a list of roles → refused
+
+The member list and the invitations are read by the owner and admins only;
+staff get the organization without them
 
 Who sees billing (D15)
 ├─ owner → plan, invoices, payment method and every billing action, on their
@@ -203,6 +209,18 @@ Pages (every tier has them, up to a limit per organization)
    the oldest published pages by creation, up to the limit, are served
    publicly, and the dashboard shows the rest "Published, not live"
 
+Seats (every tier, per organization)
+├─ limit: Starter 3, Professional 10, Enterprise 25; an inactive organization 0
+├─ a seat is a member (the owner included) or a pending invitation that
+│  hasn't expired; cancelling or the expiry frees it
+├─ inviting at or over the limit → refused, "every seat is taken"; resending
+│  a pending invitation takes no new seat
+├─ invites sent at the same moment for the last seats: each counts again
+│  once stored and the ones past the limit are withdrawn and refused
+├─ accepting at or over the limit → refused (only reachable after a downgrade)
+└─ over the limit (after a downgrade): every member stays; only new invites
+   stop until the organization is back under it
+
 Analytics (owners and admins; every tier, within a retention window)
 ├─ retention: Starter 30 days, Professional 365, Enterprise 730; an inactive
 │  organization 0 → refused, "upgrade required"
@@ -235,11 +253,14 @@ One trial per user (D10)
    (email and card) refuses a second trial
 ```
 
-Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages and
-analytics retention),
+Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages,
+analytics retention and seats),
 `Sinwy.Shared/types/page/` (block and template registries),
 `Sinwy.Backend/modules/billing/` (`checkoutGuard.ts`, `projection.ts`),
-`modules/auth/auth.ts` (checkout hook), `modules/auth/requireFeature.ts`,
+`modules/auth/auth.ts` (checkout hook; seats in `beforeCreateInvitation`,
+`afterCreateInvitation` and `membershipLimit`), `modules/organizations/`
+(`countSeatsUsed`, `withdrawInvitationOverCap`),
+`modules/auth/requireFeature.ts`,
 `modules/pages/` (`service.ts`, and `repository.ts` for the limit count and
 the served set), `modules/analytics/` (`range.ts` for retention, `routes.ts`
 for the advanced gate).
@@ -388,7 +409,8 @@ Post-login
 └─ otherwise → the personal account (Customer Mode)
 
 Members' requests to an inactive organization
-├─ reads (its summary, status, setup data, members, invitations) → answered
+├─ reads (its summary, status, setup data; members and invitations for the
+│  owner and admins [2]) → answered
 ├─ setup writes, except on the owner's draft [4] → refused, "organization inactive"
 ├─ services, business hours (and timezone) and closures: reads and bookable
 │  times answered, writes refused, "organization inactive"
@@ -479,9 +501,28 @@ when the plan lands); web `src/modules/account-dashboard/lib/transfer-accept.ts`
 ## 11. Leaving, removal, deletion and retention
 
 ```text
-Leaving and removal (API only; no screen yet)
+Invitations (owner and admins, from Team; answered on /invite/<invitation id>)
+├─ by email, as admin or staff [2], within the organization's seats [5];
+│  at the cap Team shows the upgrade prompt instead of Invite
+├─ the invitee gets an email linking to /invite/<invitation id>
+├─ an invitation lasts 7 days; resending extends the same one and emails it
+│  again; at most 10 invites a minute per client
+├─ anyone with the link sees, signed in or not: organization name, inviter,
+│  role, invited email and pending or expired; unknown, canceled, rejected,
+│  accepted, or in an organization scheduled for deletion → one "no longer
+│  available" answer that tells them apart in no way
+├─ accepting or declining needs a session with the invited email: signed
+│  out, the page offers Sign in and Create account, and both return to the
+│  invitation (a new account verifies its email first); signed in as someone
+│  else, it offers Sign out
+├─ accepting opens the organization's dashboard
+└─ on an inactive organization: refused [9]; on one scheduled for deletion:
+   neither sent nor accepted
+
+Leaving and removal (removal and role changes from Team; leaving has no screen yet)
 ├─ a member who isn't the owner can leave; the owner can't [2]
-├─ the owner and admins remove members and change roles, never to or from owner
+├─ the owner and admins remove members and change roles, never to or from owner;
+│  Team offers neither on the owner's row or your own
 ├─ either cancels open transfers to that member [10]
 ├─ on an inactive organization: leaving works, removing and role changes are refused [9]
 └─ on one scheduled for deletion: everything is refused, so the members stay
@@ -623,6 +664,8 @@ code; Better Auth's endpoints answer the string code.
 | `ORGANIZATION_INACTIVE` (Better Auth) | 403 | Opening an inactive or scheduled organization; any organization endpoint on a scheduled one; managing an inactive one; inviting to or joining a scheduled one |
 | `PLAN_REQUIRED` (40911) | 409 | Activating or finishing a draft without a plan that grants access; any plan action (change, stay on, suspend, undo, resume, cancel) without a plan |
 | `ORGANIZATION_LIMIT_REACHED` (40912) | 409 | Activating or finishing a draft at the cap |
+| `SEAT_LIMIT_REACHED` (Better Auth) | 403 | An invite while members and pending invitations fill the plan's seats |
+| `ORGANIZATION_MEMBERSHIP_LIMIT_REACHED` (Better Auth's own) | 403 | Accepting an invitation while the members fill the plan's seats |
 | `PLAN_EXISTS` (Better Auth) | 400 | A checkout while the user has a plan, paused included |
 | `BILLING_UNAVAILABLE` (Better Auth) | 503 | A checkout or the portal while Polar fails, times out or can't be reached; try again |
 | `BILLING_ACCOUNT_REJECTED` (Better Auth) | 409 | A checkout or the portal when Polar refuses the customer, or another Polar customer holds the account's email; contact support |
@@ -650,7 +693,8 @@ organizations or exceed the cap (400), plan change on a canceled subscription
 unreachable (502), offer to yourself or a non-member (400), expired offer
 (410), closed offer (404), checkout for an offer not waiting on it (400),
 invoice without billing details (409), the owner leaving (400), an owner role
-in an invitation or role change (403), a non-member or a scheduled
+in an invitation or role change (403), a role other than admin or staff in an
+invitation or role change (400), a non-member or a scheduled
 organization on the app's routes (404), a role without the permission (403).
 
 Enforced in: `Sinwy.Shared/types/api/ApiResponse.ts`,
@@ -725,10 +769,22 @@ Open, product or copy:
 - A recipient with a pending downgrade can accept into a free slot; at the
   period end the transferred organization is the latest-activated, so it
   loses its slot and they are emailed (Default 9) [7, 10].
-- Leaving, removing members, invitations and deleting an organization have
-  no screen yet [11].
+- Leaving and deleting an organization have no screen yet [11].
+- An invite withdrawn because another took the last seat at the same moment
+  has already been emailed; its link says the invitation is no longer
+  valid [5].
+- Accepting counts members without a lock, so after a downgrade invitees who
+  accept at the same moment can each take the one seat left [5].
+- An invitation to an organization that went inactive still previews as
+  pending; accepting it answers "no free seats" [11].
+- Revoke on Team has no confirmation, and Create account from an invitation
+  doesn't prefill the invited email [11].
+- Customers is a static placeholder that says "No customers yet" even with
+  bookings.
+- A non-owner's `/account/billing` picker says "Your organization activates
+  as soon as payment completes".
 - `/organizations/new` shows the Plan and Pay steps to a user who already has
-  a plan; Account → Organizations labels admins "Member".
+  a plan.
 - Resume charges on one click with no confirmation, unlike suspend and
   cancel; the "Choose a plan" intro on Billing speaks of one organization
   even when several wait.
@@ -738,7 +794,6 @@ Open, product or copy:
   if the country (so the currency) changes in another tab meanwhile, the
   amount is stored in the new currency's minor units. The list shows the
   stored currency, so it's visible.
-- `invite-member` accepts `role: "member"`, which isn't an app role.
 - Better Auth logs a refused open (inactive organization) and the checkout
   refusals at ERROR level, though they are user-caused.
 - Rules with no test (checked against the suites when this map was written):

@@ -1,6 +1,7 @@
 export * from "./Country";
 export * from "./Currency";
 export * from "./FunnelStep";
+export * from "./Invitation";
 export * from "./Organization";
 export * from "./OrganizationProfile";
 export * from "./OrganizationProfileSchema";
