@@ -2,6 +2,7 @@ import { formOptions, revalidateLogic } from "@tanstack/react-form";
 import { BASE_ERROR_CODES } from "better-auth";
 import { useState } from "react";
 import z from "zod";
+import { safeRedirect } from "#/modules/auth/lib/safe-redirect";
 import { authClient } from "#/shared/lib/auth/auth-client";
 import { authErrorMessage } from "#/shared/lib/auth/auth-error";
 import { useAppForm } from "#/shared/lib/form";
@@ -24,10 +25,7 @@ type Props = {
 const useLogin = ({ redirectFrom }: Props) => {
 	const [serverError, setServerError] = useState<string | null>(null);
 	const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
-	const callbackURL =
-		redirectFrom?.startsWith("/") && !redirectFrom.startsWith("//")
-			? redirectFrom
-			: undefined;
+	const callbackURL = safeRedirect(redirectFrom);
 
 	const form = useAppForm({
 		...loginFormOpts,

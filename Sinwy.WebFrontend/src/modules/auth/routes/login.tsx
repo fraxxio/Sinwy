@@ -28,6 +28,7 @@ function LoginPage() {
 		<LoginForm
 			form={form}
 			callbackURL={callbackURL ?? "/auth/postlogin"}
+			redirect={callbackURL}
 			serverError={serverError}
 		/>
 	);

@@ -23,6 +23,7 @@ import { Route as AuthPostloginRouteImport } from './modules/auth/routes/postlog
 import { Route as AuthRegisterRouteImport } from './modules/auth/routes/register'
 import { Route as AuthResetPasswordRouteImport } from './modules/auth/routes/reset-password'
 import { Route as CheckoutSuccessRouteImport } from './modules/checkout/routes/success'
+import { Route as InviteInvitationIdRouteImport } from './modules/invite/routes/$invitationId'
 import { Route as OrganizationsNewRouteImport } from './modules/organizations/routes/new'
 import { Route as AccountShellDotindexRouteImport } from './modules/account-dashboard/routes/_shell.index'
 import { Route as AccountShellDotbillingRouteImport } from './modules/account-dashboard/routes/_shell.billing'
@@ -132,6 +133,11 @@ const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
 const CheckoutSuccessRoute = CheckoutSuccessRouteImport.update({
   id: '/checkout/success',
   path: '/checkout/success',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InviteInvitationIdRoute = InviteInvitationIdRouteImport.update({
+  id: '/invite/$invitationId',
+  path: '/invite/$invitationId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrganizationsNewRoute = OrganizationsNewRouteImport.update({
@@ -376,6 +382,7 @@ export interface FileRoutesByFullPath {
   '/auth/register': typeof AuthRegisterRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/organizations/new': typeof OrganizationsNewRoute
   '/$organizationSlug/': typeof OrganizationSlugIndexRoute
   '/account/billing': typeof AccountShellDotbillingRoute
@@ -429,6 +436,7 @@ export interface FileRoutesByTo {
   '/auth/register': typeof AuthRegisterRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/organizations/new': typeof OrganizationsNewRoute
   '/$organizationSlug': typeof OrganizationSlugIndexRoute
   '/account/billing': typeof AccountShellDotbillingRoute
@@ -476,6 +484,7 @@ export interface FileRoutesById {
   '/auth/register': typeof AuthRegisterRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/checkout/success': typeof CheckoutSuccessRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/organizations/new': typeof OrganizationsNewRoute
   '/$organizationSlug/': typeof OrganizationSlugIndexRoute
   '/account/_shell/billing': typeof AccountShellDotbillingRoute
@@ -533,6 +542,7 @@ export interface FileRouteTypes {
     | '/auth/register'
     | '/auth/reset-password'
     | '/checkout/success'
+    | '/invite/$invitationId'
     | '/organizations/new'
     | '/$organizationSlug/'
     | '/account/billing'
@@ -586,6 +596,7 @@ export interface FileRouteTypes {
     | '/auth/register'
     | '/auth/reset-password'
     | '/checkout/success'
+    | '/invite/$invitationId'
     | '/organizations/new'
     | '/$organizationSlug'
     | '/account/billing'
@@ -632,6 +643,7 @@ export interface FileRouteTypes {
     | '/auth/register'
     | '/auth/reset-password'
     | '/checkout/success'
+    | '/invite/$invitationId'
     | '/organizations/new'
     | '/$organizationSlug/'
     | '/account/_shell/billing'
@@ -686,6 +698,7 @@ export interface RootRouteChildren {
   AuthRegisterRoute: typeof AuthRegisterRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   CheckoutSuccessRoute: typeof CheckoutSuccessRoute
+  InviteInvitationIdRoute: typeof InviteInvitationIdRoute
   OrganizationsNewRoute: typeof OrganizationsNewRoute
   DashboardOrganizationSlugShellRoute: typeof DashboardOrganizationSlugShellRouteWithChildren
   OrganizationsIdDotonboardingRoute: typeof OrganizationsIdDotonboardingRoute
@@ -790,6 +803,13 @@ declare module '@tanstack/react-router' {
       path: '/checkout/success'
       fullPath: '/checkout/success'
       preLoaderRoute: typeof CheckoutSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite/$invitationId': {
+      id: '/invite/$invitationId'
+      path: '/invite/$invitationId'
+      fullPath: '/invite/$invitationId'
+      preLoaderRoute: typeof InviteInvitationIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/organizations/new': {
@@ -1310,6 +1330,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRegisterRoute: AuthRegisterRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   CheckoutSuccessRoute: CheckoutSuccessRoute,
+  InviteInvitationIdRoute: InviteInvitationIdRoute,
   OrganizationsNewRoute: OrganizationsNewRoute,
   DashboardOrganizationSlugShellRoute:
     DashboardOrganizationSlugShellRouteWithChildren,

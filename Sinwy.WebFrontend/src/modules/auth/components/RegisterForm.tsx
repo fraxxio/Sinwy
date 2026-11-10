@@ -8,6 +8,8 @@ import { withForm } from "#/shared/lib/form";
 
 type Props = {
 	callbackURL: string;
+	/** Carried to the other auth page so switching between them keeps the destination. */
+	redirect?: string | undefined;
 	shakeToken: number;
 	serverError: string | null;
 };
@@ -15,7 +17,7 @@ type Props = {
 const RegisterForm = withForm({
 	...registerFormOpts,
 	props: {} as Props,
-	render: ({ form, callbackURL, shakeToken, serverError }) => (
+	render: ({ form, callbackURL, redirect, shakeToken, serverError }) => (
 		<AuthLayout>
 			<div className="mb-6 space-y-1.5">
 				<h1 className="text-2xl font-bold tracking-tight">Create an account</h1>
@@ -97,7 +99,11 @@ const RegisterForm = withForm({
 
 			<p className="mt-6 text-center text-sm text-muted-foreground">
 				Already have an account?{" "}
-				<Link to="/auth/login" className="font-medium text-foreground">
+				<Link
+					to="/auth/login"
+					search={redirect ? { redirect } : {}}
+					className="font-medium text-foreground"
+				>
 					Sign in
 				</Link>
 			</p>

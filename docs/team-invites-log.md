@@ -109,3 +109,40 @@ Finished phases of [team-invites-plan.md](team-invites-plan.md), each with its s
 - Shipped: Team page (`_shell.team.tsx`) with a members table (name, email, role badge, joined date), a pending-invitations table (unexpired only, Resend and Revoke per row, errors in the row), an invite dialog (email, admin or staff, seats used / limit) and per-member Make admin / Make staff and Remove behind confirmations with errors in the dialog. Seats are members plus unexpired pending invitations against `PLAN_LIMITS` for the plan from the shell's entitlements; at or over the cap the Invite button becomes "No seats left on this plan." plus `UpgradeAction` (or "Remove someone" on the top plan). Row actions are hidden on the owner and on yourself. Every change invalidates the team queries and `memberAccessQuery`. `transferCandidatesQuery` now selects from the shared `membersQuery`. `OrganizationSummary.role` plus shared `ORG_ROLE_LABELS` and `primaryRole`; Account → Organizations shows Owner, Admin or Staff. Tests: `modules/org-dashboard/tests/team.test.ts` (seat count with expired, canceled and accepted invites, no plan, over the cap; row actions on owner and self); backend summary test pins `role`. `org-rules-map.md` sections 11 and the gaps list updated.
 - Differs from plan: `docs/design-rules.md` holds backend architecture only, so the UI follows the existing services and transfer screens. The upgrade prompt is `UpgradeAction` in the header, not the full-page `UpgradePrompt` (that one takes a yes/no feature, and seats are a number). Revoke has no confirmation, since the plan asks for one only on role change and removal, and re-inviting undoes it.
 - Checked in the running app (e2e subagent, seeded Starter `org-with-staff --staff 1`): owner and staff listed with joined dates, 2 of 3 seats; invite as admin → pending row, outbox email with `/invite/<id>`, 3 of 3 and the upgrade prompt (a direct API invite at the cap → 403 `SEAT_LIMIT_REACHED`); resend → same id, later `expires_at`, second email; revoke → `canceled`, 2 of 3; Make admin → `member.role = admin`; Remove → the `member` row is gone. No console or backend errors. Not checked: the Upgrade plan link with a real sandbox subscription, and real Resend delivery.
+
+## Phase 4: Accept-invite landing page
+
+**Goal:** An invitee joins from the emailed link, whether or not they have an account.
+
+**Files:**
+- `Sinwy.WebFrontend/src/routes.ts` (mount `/invite` before the `/$organizationSlug` storefront)
+- New `Sinwy.WebFrontend/src/modules/invite/routes/$invitationId.tsx` and `modules/invite/lib/` preview query, shaped like `storefrontQuery` in `modules/storefront/lib/storefront-queries.ts` (`api` from `#/shared/lib/api`; 404 → unavailable)
+- `Sinwy.Shared/types/organization/Invitation.ts` (`InvitationPreviewDto`), `Sinwy.Shared/types/access/OrgRole.ts` (`ORG_ROLE_LABELS`)
+- `Sinwy.WebFrontend/src/modules/auth/lib/useRegister.ts` (takes `source`, derives `callbackURL` around line 45; add a safe `redirect` like `useLogin.ts`) and `modules/auth/routes/register.tsx`; tests next to `modules/auth/tests/register-schema.test.ts`
+- `Sinwy.WebFrontend/src/modules/auth/routes/login.tsx`, `modules/auth/lib/useLogin.ts` (already take `redirect`)
+- `Sinwy.WebFrontend/src/shared/lib/organizations.ts` (`invalidateOrganizations` after accepting)
+- `Sinwy.WebFrontend/src/shared/lib/auth/sign-out.ts`, `auth-error.ts` (`authErrorMessage`)
+
+**Steps:**
+- The page loads the Phase 2 preview, then branches:
+  - signed out → org, inviter and role, with "Sign in" and "Create account" both carrying `redirect=/invite/<id>`;
+  - signed in with the invited email → Accept and Decline;
+  - signed in with another email → "This invite is for <email>" and a sign-out button;
+  - expired or unavailable → a plain "no longer valid" message.
+- Register's `redirect` becomes the verification `callbackURL`, so verifying lands back on the invite page.
+- Accept → `acceptInvitation`, invalidate organizations and member queries, go to `/dashboard/<slug>`. Decline → `rejectInvitation`, go to `/auth/postlogin`.
+- Seat-full on accept shows its own message, not a generic error.
+
+**Tests that matter:**
+- Register's redirect only accepts safe relative paths (same rule as login).
+- Accepting with a mismatched email never calls the endpoint.
+
+**Done when:**
+- Both an existing user and a brand-new user can go from the email link to the org dashboard, and `bun run verify` exits 0.
+
+**Verify:** Seed `subscribed-org` and a separate `user`. As the owner, invite the seeded user's email and a fresh address. (1) Open the first link signed out → sign in as that user → back on the invite → Accept → org dashboard; a `member` row with role `staff`, invitation `accepted`. (2) Open the second link signed out → Create account with the fresh address → verification email in the outbox → follow it → back on the invite → Accept → dashboard. (3) Open a link while signed in as someone else → mismatch message. (4) Revoke an invite and open its link → no longer valid. Email delivery is the local outbox.
+
+### Log (2026-11-10, `feat(web): add the accept-invite landing page`)
+- Shipped: `/invite/<invitationId>` (`modules/invite/routes/$invitationId.tsx`, `ssr: false`) loads the public preview fresh and shows one of: no longer valid (expired, or the 404), signed out (Sign in / Create account carrying `redirect=/invite/<id>`), mismatch ("This invite is for …, but you're signed in as …" with a Sign out that stays on the page via `useSignOut({ stay: true })`), or Accept / Decline. Accept invalidates organizations and the new org's `memberAccessQuery` then opens `/dashboard/<slug>`; Decline → `/auth/postlogin`. `ORGANIZATION_MEMBERSHIP_LIMIT_REACHED` on accept shows "<Org> has no free seats right now…". `modules/invite/lib/invite.ts` holds the preview query, `inviteView` and `acceptInvite` (refuses without calling the endpoint unless the session email matches, case-insensitively). Register takes `?redirect=`, which becomes the verification and Google `callbackURL` (`registerCallbackURL`); login and register share `safeRedirect` (also refuses `/\…`); the login ↔ register cross-links keep the redirect. Tests: `modules/invite/tests/invite.test.ts`, `modules/auth/tests/safe-redirect.test.ts`.
+- Differs from plan: no `Sinwy.Shared` change was needed (DTO and labels already existed). `useLogin` lost its inline redirect check in favour of `safeRedirect`. The running vite didn't pick up the new `physical("/invite", …)` mount and kept rewriting `routeTree.gen.ts` without it; restarting the web server fixed it.
+- Checked in the running app (e2e subagent, seeded Starter `subscribed-org` and a `user`): (3) the owner on the user's link sees the mismatch text, Sign out stays on the invite signed out; (1) Sign in → `/auth/login?redirect=…` → back on the invite → Accept → `/dashboard/<slug>`, `member` role `staff`, invitation `accepted`, session's active org set, the spent link then shows no longer valid; (4) a revoked invite shows no longer valid signed in or out; (2) Create account with a fresh address → verification email with `callbackURL=/invite/<id>` → lands on the invite signed in → Accept → dashboard, `email_verified` and a `staff` member row. No backend or web log errors. One console 401 on `/api/user/flags` right after Sign out (`queryClient.clear()` refetches `usePostLoginFlags` before `useSession` catches up; no visible effect, likely predates this phase). Not checked: Decline, an expired invite, real Resend delivery, opening the verify link in another browser. Register doesn't prefill the invited email (left out as beyond MVP).
