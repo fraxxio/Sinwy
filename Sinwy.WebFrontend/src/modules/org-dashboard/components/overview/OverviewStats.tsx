@@ -1,8 +1,8 @@
 import type { BookingOverviewDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { FlatCard } from "#/shared/components/FlatCard";
 import {
-	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
@@ -20,7 +20,7 @@ function Stat({
 	children?: ReactNode;
 }) {
 	return (
-		<Card>
+		<FlatCard>
 			<CardHeader>
 				<CardDescription>{title}</CardDescription>
 				<CardTitle className="text-2xl">{value}</CardTitle>
@@ -30,7 +30,7 @@ function Stat({
 					{children}
 				</CardContent>
 			)}
-		</Card>
+		</FlatCard>
 	);
 }
 

@@ -119,7 +119,7 @@ export function ClosuresList({
 			{closures.length === 0 ? (
 				<p className="text-muted-foreground text-sm">No upcoming closures.</p>
 			) : (
-				<ul className="divide-y rounded-lg border">
+				<ul className="divide-y rounded-md border">
 					{closures.map((closure) => (
 						<li
 							key={closure.id}

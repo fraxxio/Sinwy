@@ -23,10 +23,11 @@ import {
 	BookingStatusBadge,
 	isExpiredRequest,
 } from "#/shared/components/booking/BookingStatusBadge";
+import { ContentBox } from "#/shared/components/ContentBox";
+import { FlatCard } from "#/shared/components/FlatCard";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { Button } from "#/shared/components/ui/button";
 import {
-	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
@@ -58,13 +59,27 @@ function BookingDetailPage() {
 		return (
 			<>
 				<PageHeader title="Booking" />
-				<FieldError>
-					{(booking.error ?? availability.error)?.message}
-				</FieldError>
+				<ContentBox>
+					<FieldError>
+						{(booking.error ?? availability.error)?.message}
+					</FieldError>
+				</ContentBox>
 			</>
 		);
 	if (booking.isPending || availability.isPending)
-		return <Skeleton className="h-96 rounded-xl" />;
+		return (
+			<>
+				<PageHeader title="Booking" />
+				<ContentBox className="gap-4">
+					<Skeleton className="h-20 rounded-md" />
+					<div className="grid gap-4 lg:grid-cols-2">
+						<Skeleton className="h-56 rounded-md" />
+						<Skeleton className="h-56 rounded-md" />
+					</div>
+					<Skeleton className="h-56 rounded-md" />
+				</ContentBox>
+			</>
+		);
 
 	const { timezone } = availability.data;
 	const data = booking.data;
@@ -72,96 +87,98 @@ function BookingDetailPage() {
 	return (
 		<>
 			<PageHeader title={data.customerName} />
-			<Card>
-				<CardContent className="flex flex-wrap items-start justify-between gap-4">
-					<div className="space-y-2">
-						<div className="flex flex-wrap items-center gap-3">
-							<BookingStatusBadge booking={data} />
-							<p className="font-medium">
-								{data.serviceName} · {formatDateIn(data.startsAt, timezone)},{" "}
-								{formatTimeIn(data.startsAt, timezone)}–
-								{formatTimeIn(data.endsAt, timezone)}
-							</p>
+			<ContentBox className="gap-4">
+				<FlatCard>
+					<CardContent className="flex flex-wrap items-start justify-between gap-4">
+						<div className="space-y-2">
+							<div className="flex flex-wrap items-center gap-3">
+								<BookingStatusBadge booking={data} />
+								<p className="font-medium">
+									{data.serviceName} · {formatDateIn(data.startsAt, timezone)},{" "}
+									{formatTimeIn(data.startsAt, timezone)}–
+									{formatTimeIn(data.endsAt, timezone)}
+								</p>
+							</div>
+							<StatusNote booking={data} />
 						</div>
-						<StatusNote booking={data} />
-					</div>
-					{canWrite && (
-						<BookingActions
-							organizationId={organization.id}
-							booking={data}
-							timezone={timezone}
-						/>
-					)}
-				</CardContent>
-			</Card>
-			<div className="grid gap-4 lg:grid-cols-2">
-				<Card>
-					<CardHeader>
-						<CardTitle>Appointment</CardTitle>
-						<CardDescription>Times in {timezone}</CardDescription>
-					</CardHeader>
-					<CardContent>
-						<dl className="grid gap-2 text-sm sm:grid-cols-[5rem_1fr]">
-							<dt className="text-muted-foreground">Service</dt>
-							<dd>{data.serviceName}</dd>
-							<dt className="text-muted-foreground">When</dt>
-							<dd>
-								{formatDateIn(data.startsAt, timezone)},{" "}
-								{formatTimeIn(data.startsAt, timezone)}–
-								{formatTimeIn(data.endsAt, timezone)}
-							</dd>
-							<dt className="text-muted-foreground">Length</dt>
-							<dd>
-								{formatDuration(
-									(Date.parse(data.endsAt) - Date.parse(data.startsAt)) /
-										60_000,
-								)}
-							</dd>
-							<dt className="text-muted-foreground">Price</dt>
-							<dd>{formatMinorUnits(data.priceMinor, data.currency)}</dd>
-							<dt className="text-muted-foreground">Booked</dt>
-							<dd>
-								{formatDateIn(data.createdAt, timezone)},{" "}
-								{formatTimeIn(data.createdAt, timezone)}
-							</dd>
-						</dl>
+						{canWrite && (
+							<BookingActions
+								organizationId={organization.id}
+								booking={data}
+								timezone={timezone}
+							/>
+						)}
 					</CardContent>
-				</Card>
-				<ContactCard
-					organizationId={organization.id}
-					booking={data}
-					canWrite={canWrite}
-				/>
-			</div>
-			<Card>
-				<CardHeader>
-					<CardTitle>Notes</CardTitle>
-				</CardHeader>
-				<CardContent className="grid gap-6">
-					{data.bookedBy === "customer" && (
-						<div className="space-y-1">
-							<p className="font-medium text-sm">From the customer</p>
-							<p className="whitespace-pre-wrap text-muted-foreground text-sm">
-								{data.customerNote ?? "No note."}
-							</p>
-						</div>
-					)}
-					<InternalNote
-						key={data.internalNote ?? ""}
+				</FlatCard>
+				<div className="grid gap-4 lg:grid-cols-2">
+					<FlatCard>
+						<CardHeader>
+							<CardTitle>Appointment</CardTitle>
+							<CardDescription>Times in {timezone}</CardDescription>
+						</CardHeader>
+						<CardContent>
+							<dl className="grid gap-2 text-sm sm:grid-cols-[5rem_1fr]">
+								<dt className="text-muted-foreground">Service</dt>
+								<dd>{data.serviceName}</dd>
+								<dt className="text-muted-foreground">When</dt>
+								<dd>
+									{formatDateIn(data.startsAt, timezone)},{" "}
+									{formatTimeIn(data.startsAt, timezone)}–
+									{formatTimeIn(data.endsAt, timezone)}
+								</dd>
+								<dt className="text-muted-foreground">Length</dt>
+								<dd>
+									{formatDuration(
+										(Date.parse(data.endsAt) - Date.parse(data.startsAt)) /
+											60_000,
+									)}
+								</dd>
+								<dt className="text-muted-foreground">Price</dt>
+								<dd>{formatMinorUnits(data.priceMinor, data.currency)}</dd>
+								<dt className="text-muted-foreground">Booked</dt>
+								<dd>
+									{formatDateIn(data.createdAt, timezone)},{" "}
+									{formatTimeIn(data.createdAt, timezone)}
+								</dd>
+							</dl>
+						</CardContent>
+					</FlatCard>
+					<ContactCard
 						organizationId={organization.id}
 						booking={data}
 						canWrite={canWrite}
 					/>
-				</CardContent>
-			</Card>
-			<Card>
-				<CardHeader>
-					<CardTitle>History</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<BookingHistory booking={data} timezone={timezone} />
-				</CardContent>
-			</Card>
+				</div>
+				<FlatCard>
+					<CardHeader>
+						<CardTitle>Notes</CardTitle>
+					</CardHeader>
+					<CardContent className="grid gap-6">
+						{data.bookedBy === "customer" && (
+							<div className="space-y-1">
+								<p className="font-medium text-sm">From the customer</p>
+								<p className="whitespace-pre-wrap text-muted-foreground text-sm">
+									{data.customerNote ?? "No note."}
+								</p>
+							</div>
+						)}
+						<InternalNote
+							key={data.internalNote ?? ""}
+							organizationId={organization.id}
+							booking={data}
+							canWrite={canWrite}
+						/>
+					</CardContent>
+				</FlatCard>
+				<FlatCard>
+					<CardHeader>
+						<CardTitle>History</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<BookingHistory booking={data} timezone={timezone} />
+					</CardContent>
+				</FlatCard>
+			</ContentBox>
 		</>
 	);
 }

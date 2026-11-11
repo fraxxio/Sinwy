@@ -23,12 +23,22 @@ function PageDetailPage() {
 	const canWrite = hasPermission(member.roles, "pages:write");
 	const page = useQuery(pageQuery(organization.id, id));
 
-	if (page.isPending) return <Skeleton className="h-96 rounded-xl" />;
+	if (page.isPending)
+		return (
+			<>
+				<PageHeader title="Page" />
+				<ContentBox>
+					<Skeleton className="h-96 max-w-3xl rounded-md" />
+				</ContentBox>
+			</>
+		);
 	if (page.isError)
 		return (
 			<>
 				<PageHeader title="Page" />
-				<FieldError>{page.error.message}</FieldError>
+				<ContentBox>
+					<FieldError>{page.error.message}</FieldError>
+				</ContentBox>
 			</>
 		);
 
@@ -52,13 +62,13 @@ function PageDetailPage() {
 					organizationSlug={organization.slug}
 					page={page.data}
 				/>
+				<PageDetailsForm
+					key={page.data.id}
+					organization={organization}
+					page={page.data}
+					readOnly={!canWrite}
+				/>
 			</ContentBox>
-			<PageDetailsForm
-				key={page.data.id}
-				organization={organization}
-				page={page.data}
-				readOnly={!canWrite}
-			/>
 		</>
 	);
 }

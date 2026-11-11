@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Shell chrome: sidebar, breadcrumb row, page header, window | – | done | `feat(web): restyle the dashboard shell to a borderless sidebar and one window` |
-| 2 | Organization dashboard pages in one window | 1 | todo | |
+| 2 | Organization dashboard pages in one window | 1 | done | `feat(web): put every organization dashboard page in one window` |
 | 3 | Account pages in one window | 2 | todo | |
 | 4 | Full regression sweep and cleanup | 3 | todo | |
 
@@ -45,71 +45,27 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 - **Reference, in CSS px at 1440×900:** sidebar and canvas are the same grey with no divider. Title 24px semibold with a 14px muted description under it; actions right-aligned on the same block. The window starts about 124px from the top, begins where the sidebar ends, has about 8px margin right and bottom, about 16px radius, about 24px inner padding and a white surface. The calendar inside it has no outer border and its Month view fits the screen with the "Times in …" line visible.
 - **Paths below are relative to `Sinwy.WebFrontend/src/`.**
-- **Shell (done in Phase 1, see the log):** `shared/components/shell/AppShell.tsx` is mounted by exactly two layout routes, `modules/org-dashboard/routes/_shell.tsx` and `modules/account-dashboard/routes/_shell.tsx`. Breadcrumb row: `mt-1 h-12 px-5 md:pl-3`, not sticky. Banner: `sticky top-0 mb-4 bg-background`. Body: `flex flex-1 flex-col gap-4 px-2 pb-2 md:pl-0`, so anything a page renders outside a window touches the sidebar edge on desktop.
-- **`PageHeader`** stacks the description under the title, bottom-aligns the action, wraps, and carries the 12px inset itself (`px-3 pb-0.5`). **`ContentBox`** is `flex flex-1 flex-col rounded-lg border bg-card p-6`; a `className` still overrides padding. Bookings uses the default padding; the other pages still pass `p-4` or `gap-4 p-4`.
+- **Shell (done in Phase 1, see the log):** `shared/components/shell/AppShell.tsx` is mounted by exactly two layout routes, `modules/org-dashboard/routes/_shell.tsx` and `modules/account-dashboard/routes/_shell.tsx`. Breadcrumb row: `mt-1 h-12 px-5 md:pl-3`, not sticky. Banner: `sticky top-0 mb-4 bg-background`. Body: `flex flex-1 flex-col gap-4 px-2 pb-2 md:pl-0`, so anything a page renders outside a window touches the sidebar edge on desktop. `SidebarInset` has `min-w-0`, so a wide table scrolls inside its own container instead of widening the page.
+- **`PageHeader`** stacks the description under the title, bottom-aligns the action, wraps, and carries the 12px inset itself (`px-3 pb-0.5`). The window starts at 124px with a description, 102px without one and 106px without one but with a button, so a page keeps the description in its loading state (Overview shows "This week", Preview "Loading the latest version…") or has none in any state. The top still differs from page to page; that is open. Optional props are typed `?: string | undefined` because of `exactOptionalPropertyTypes`.
+- **`ContentBox`** is `flex flex-1 flex-col rounded-lg border bg-card p-6`. Every organization page uses the default padding and passes only layout classes (`gap-4`, `divide-y`).
+- **Window rules from Phase 2 (see the log):** the route renders `PageHeader` and one `ContentBox` in every branch, with the error (`FieldError`) and the skeleton inside the window. Forms do not render the window: a `<form>` around a `ContentBox` is a block, so the window stops stretching to the bottom. Sections in one window are `divide-y` with `SettingsSection`, or `ContentBox className="gap-8"` with `<section className="grid gap-4">` (Team).
+- **Cards in a window** use `FlatCard` (`shared/components/FlatCard.tsx`): `Card` with a 12.8px radius, the `--border` hairline, no background, shadow or blur. It needs `!` on background, shadow and border colour, because `glass-card` is emitted after those utilities in the CSS and wins without it.
+- **Empty states in a window:** `EmptyState` takes a `className`; pass `border-none` when it is the only content of the window or of a tab. The dashed border stays the default because the storefront uses `EmptyState` outside windows. `UpgradePrompt` passes a `className` through.
+- **Other boxes in a window** (alerts, dashed notes, bordered lists, option cards, skeletons) are `rounded-md`. `Alert` is `rounded-2xl` by default; `PaymentsNotice` is already `rounded-md` for both dashboards.
 - **Radius scale:** `--radius` is 1rem, so `rounded-lg` is 16px, `rounded-xl` 22.4px, `rounded-2xl` 28.8px and `Card`'s `rounded-4xl` 41.6px. A card inside the 16px window needs `rounded-md` (12.8px) or smaller.
 - **Canvas contrast:** in light mode `bg-muted` (0.96) and the ghost button's hover are invisible on the canvas (0.9702). On the canvas use `surface-raised` for a selected state (Bookings view toggle) and `--sidebar-accent` (light 0.925, dark 0.235) for hover. Both are fine inside the white window.
 - **Both shells are `ssr: false`** (the account shell through `protectedRoute`, `shared/lib/auth/protected-route.ts:33`): the server sends an empty body, so there is no hydration to mismatch. The plan's earlier SSR note was wrong; Default 1 was not changed.
 - **Scrollbar gutter:** `html` has `scrollbar-gutter: stable`. While a dashboard is mounted the body takes the canvas colour (`body:has([data-slot="sidebar-wrapper"])` in styles.css) so the gutter does not show as a strip. With classic scrollbars the window's right margin is 8px plus the 15px gutter on pages that do not scroll; this was only seen in headless Chromium.
 - **Sidebar animation** lives in `shared/components/ui/sidebar.tsx` and must stay as is: gap `transition-[width] duration-200 ease-linear`, container `transition-[left,right,width] duration-200 ease-linear`, widths 16rem and 3rem, `sidebar_state` cookie, Ctrl/Cmd+B, rail; below `md` the sidebar is a Sheet.
-- **Bookings Month view** is 959px tall in a 900px viewport (rows are `min-h-28` in `modules/org-dashboard/components/bookings/MonthView.tsx:48`, about 105px in the reference), so the page scrolls; the grid keeps its own `rounded-lg border` (MonthView.tsx:31). Both are open gaps against the reference.
-- **`Card`** (`shared/components/ui/card.tsx`) is `glass-card rounded-4xl` with blur and a `depth-2` shadow and is used across the site. **`EmptyState`** has a dashed border and `flex-1`; grep its users before changing it.
-- **Week and Day calendar** has its own scroller (`max-h-[70vh] overflow-y-auto`, `modules/org-dashboard/components/bookings/TimeGridView.tsx:91`).
+- **Bookings Month view** matches the reference: no outer border, plain weekday row, no line under the last week, and the grid fills the window (`flex-1 auto-rows-fr`, rows at least 96px), so it fits 1440×900 without scrolling.
+- **`Card`** (`shared/components/ui/card.tsx`) is `glass-card rounded-4xl` with blur and a `depth-2` shadow and is used across the site; it is not changed.
+- **Week and Day calendar** has its own scroller (`max-h-[max(24rem,calc(100dvh-18rem))] overflow-y-auto`, `modules/org-dashboard/components/bookings/TimeGridView.tsx:91`), sized so the page itself does not scroll at 1440×900, and keeps a `rounded-md border` frame.
+- **Left open by Phase 2 (see the log), for Phase 4:** New booking's submit button is full width while other forms use `w-fit` (`components/bookings/ManualBookingForm.tsx`, the last `div`); the divider above Closures on Business hours runs the full window width while the others stop at `max-w-3xl`; in dark mode today's column label in the Week view (`text-primary`, TimeGridView.tsx:72 and 81) is hard to read; Analytics was only seen in its empty states.
 - **Print:** the breadcrumb row and banner are `print:hidden`, the sidebar is hidden by an unlayered rule in styles.css, and the account receipt page prints (`modules/account-dashboard/routes/_shell.payments.$paymentId.tsx`, `components/payments/Receipt.tsx`).
 - **Theme:** `localStorage.theme` is `light`, `dark` or `auto` and sets a class on `<html>`; the switch is "Toggle theme" in the user menu at the bottom of the sidebar.
-- **Local stack:** web app on `localhost:3000`, backend on `localhost:3001`. Phase 1 stopped the servers it started. Organization `seed-75781209` (a `bookable-org` seed, owner user id `lNenSI9j0ePY0P1XKDMHD9Pr7yEECMe9`) has one confirmed Haircut booking on 12 November 2026 and can be reused with `dev:login-as --user-id`.
-- **Browser checks:** the shell is zsh, so call `bunx playwright-cli` directly or through a function (a variable is not word-split) and quote globs. Screenshots from Phase 1 are in `.playwright-cli/` (`p1-*`, `verify-p1-*`) until Phase 4 deletes them.
+- **Local stack:** web app on `localhost:3000`, backend on `localhost:3001`. Phases 1 and 2 stopped the servers they started. Both seeds can be reused with `dev:login-as --user-id`: organization `seed-75781209` (`bookable-org`, owner `lNenSI9j0ePY0P1XKDMHD9Pr7yEECMe9`) has one confirmed Haircut booking on 12 November 2026; organization `seed-5fb75f2c` (`pro-org`, owner `ZhntZFTbbYsHsqHeTmsJRwpCYlaaqNcK`) has one draft page "About us".
+- **Browser checks:** the shell is zsh, so call `bunx playwright-cli` directly or through a function (a variable is not word-split) and quote globs. Screenshots from Phases 1 and 2 are in `.playwright-cli/` (`p1-*`, `verify-p1-*`, `p2-*`, `verify-p2-*`), with Phase 2's server logs (`p2-*.log`) and helper scripts in `/tmp/sinwy-verify-p2/`, until Phase 4 deletes them. With every API call delayed, the screen stays blank for several request rounds before the shell mounts (session, flags, organizations, active member); that is the route guards, not the layout.
 - **Git:** stage files by path; `Header above the window.png` is untracked and must stay out of commits.
-
----
-
-## Phase 2: Organization dashboard pages in one window
-
-**Goal:** Every organization dashboard page shows its content in a single window under its title, in every state (loading, error, empty, data).
-
-**Files:** all in `modules/org-dashboard/`. Structures below come from grep; confirm by reading each component's `return` blocks. `ContentBox` call sites that pass their own padding, to move onto the default: `routes/_shell.pages.index.tsx:80`, `_shell.payments.tsx:93`, `_shell.services.index.tsx:75`, `_shell.team.tsx:88` and `103` (`gap-4 p-4`), `_shell.pages.$id.preview.tsx:67` (`p-6 sm:p-10`). Forms that own their window: `components/ServiceForm.tsx:63`, `components/pages/PageDetailsForm.tsx:86`, `components/pages/NewPageForm.tsx:84`, `components/bookings/ManualBookingForm.tsx:72`.
-
-| Route file (`routes/`) | Today | Components |
-| --- | --- | --- |
-| `_shell.index.tsx` | header, stat-card grid, two-column card grid; three header branches (error, skeleton grid, data) | `components/overview/*` |
-| `_shell.analytics.tsx` | header, `Tabs` with widgets on the canvas, `PlanGate` | `components/analytics/*`, `DateRangeFilter.tsx` |
-| `_shell.bookings.index.tsx` | header, one `ContentBox` with default padding; the availability loading and error branches (107–109) still render a bare `Skeleton` or `FieldError` with no window | `components/bookings/MonthView.tsx` (grid border at 31, row height at 48), `BookingsCalendar.tsx`, `BookingsList.tsx` |
-| `_shell.bookings.$id.tsx` | header, several `Card`s; the loading branch returns a bare skeleton with no header | `components/bookings/BookingActions.tsx`, `BookingHistory.tsx`, `ContactCard.tsx` |
-| `_shell.bookings.new.tsx` | header, form with its own `ContentBox` | `components/bookings/ManualBookingForm.tsx` |
-| `_shell.customers.index.tsx`, `_shell.customers.$id.tsx` | header and `EmptyState`; header only (stub) | – |
-| `_shell.pages.index.tsx` | header, `ContentBox` | `components/pages/PagesTable.tsx`, `PageUsage.tsx` |
-| `_shell.pages.new.tsx` | header, form with its own `ContentBox` | `components/pages/NewPageForm.tsx`, `TemplatePicker.tsx` |
-| `_shell.pages.$id.index.tsx` | header (two branches), `ContentBox divide-y` | `PageDetailsForm.tsx`, `PagePublishing.tsx`, `PageContentSummary.tsx` |
-| `_shell.pages.$id.preview.tsx` | no `PageHeader`; `Alert` then `ContentBox`; bare skeleton while loading | – |
-| `_shell.payments.tsx` | header, totals, `ContentBox` | `components/payments/*` |
-| `_shell.services.index.tsx`, `.new.tsx`, `.$id.tsx`, `.hours.tsx` | header, `ContentBox` (table or `divide-y` form) | `ServicesTable.tsx`, `ServiceForm.tsx`, `BusinessHoursForm.tsx`, `ClosuresList.tsx` |
-| `_shell.settings.index.tsx` | header, `ContentBox divide-y` | `TransferSection.tsx`, `shared/components/SettingsSection.tsx` |
-| `_shell.team.tsx` | header, two `ContentBox`es (members, invitations) | `components/team/*` |
-
-**Steps:**
-- Each page renders exactly one window under its header, and every branch (loading, error, empty, data) renders the header and the window so the frame does not jump between states.
-- Pages with several boxes become one window with sections (Team: members and invitations).
-- Card-grid pages (Overview, Analytics, booking detail) move inside the window. Choose one flat treatment for cards inside a window (no glass blur, no `depth-2` shadow, a radius that sits well inside the window) and apply it at the usages; do not change `Card` itself. Record the treatment in the standing notes for Phase 3.
-- Empty states sit inside the window; drop the dashed border there if it reads as a box in a box, after checking `EmptyState`'s other users.
-- Skeletons are sized to the content they replace, inside the window.
-- The preview page keeps its notice above the window; decide whether it needs a `PageHeader` by how it looks next to the other pages.
-- Tables and the calendar must not gain horizontal overflow from the new padding; the Week and Day views keep their own scroller.
-- No behaviour changes: queries, permissions, search params and actions stay as they are.
-
-**Tests that matter:**
-- No new unit tests. The existing module tests still pass; a failing one means behaviour changed by accident.
-
-**Done when:**
-- Every route in the table shows one window under its title in loading, empty and data states.
-- No page has a card-in-card look or horizontal overflow at 1440 and 1024 wide.
-- `bun run verify` exits 0.
-
-**Verify:** Seed `bookable-org` (owner A) and `pro-org` (owner B). As A, create one booking from Bookings → New booking so the calendar, list and a booking detail have data. Nothing else is simulated. For each page take a screenshot at 1440×900 with the sidebar expanded, then collapsed, in light and in dark, and check: one white window under the title, breadcrumbs correct for the page, no nested boxes with heavy shadows, nothing clipped or overflowing, window reaches the bottom on short pages.
-- As A at `/dashboard/<slug>`: Overview (`/`), Bookings (`/bookings`: Calendar in Month, Week and Day, then List), the booking's detail, New booking (`/bookings/new`), Customers (`/customers`), Services (`/services`), New service (`/services/new`), the Haircut's edit page, Business hours (`/services/hours`), Payments (`/payments`), Team (`/team`), Settings (`/settings`).
-- As B: Analytics (`/analytics`, each tab), Pages (`/pages`), New page (`/pages/new`), a page's detail and its Preview.
-- As A: Analytics again, to see the upgrade prompt for the gated tabs inside the window.
-- On Overview and Bookings, reload with the network throttled and confirm the loading state already shows the title and the window.
-Report each page as pass or fail with the screenshot path, plus console errors.
 
 ---
 
@@ -117,19 +73,21 @@ Report each page as pass or fail with the screenshot path, plus console errors.
 
 **Goal:** Every personal account page shows its content in a single window under its title, in every state.
 
-**Files:** all in `modules/account-dashboard/`. Phase 2 rewrites this list with the card treatment it chose.
+**Files:** all in `modules/account-dashboard/`. Line numbers come from grep; confirm by reading each `return` block. Apply the window rules, `FlatCard` and the empty-state rule from the standing notes.
 
-| Route file (`routes/`) | Today | Components |
+| Route file (`routes/`) | Today | To do |
 | --- | --- | --- |
-| `_shell.index.tsx` | header, skeleton or `EmptyState` or card grid | `components/overview/*` |
-| `_shell.billing.tsx` | header, `ContentBox divide-y` | `components/billing/*` |
-| `_shell.bookings.index.tsx` | header, filter pills, list or `EmptyState` | `components/bookings/CustomerBookingList.tsx` |
-| `_shell.bookings.$id.tsx` | three header branches, `Card`s | `components/bookings/*` |
-| `_shell.notifications.tsx` | header, `EmptyState` | – |
-| `_shell.organizations.tsx` | two header branches, `ContentBox` or `EmptyState` | `components/IncomingTransfers.tsx` (own `ContentBox mb-6`), `AcceptTransferDialog.tsx` |
-| `_shell.payments.index.tsx` | header, list | `components/payments/CustomerPaymentList.tsx` |
-| `_shell.payments.$paymentId.tsx` | three header branches, receipt `Card`, print button | `components/payments/Receipt.tsx` |
-| `_shell.settings.tsx` | header, `ContentBox divide-y` | `components/settings/*` |
+| `_shell.index.tsx` | header (21), bare skeleton (28) or `EmptyState` (30) or two `Card`s | one window in every branch; `FlatCard` in `components/overview/NextBookingCard.tsx:17` and `BookAgainCard.tsx:18`; `border-none` on the empty state |
+| `_shell.billing.tsx` | header (51), bare skeleton (61), `ContentBox divide-y` (138) | skeleton inside the window; `FlatCard` in `components/billing/ResumePanel.tsx:100` if it sits in the window; `rounded-md` for `CurrentPlanSection.tsx:203` (dashed, `rounded-xl`) and `PaymentFailedNotice.tsx:16` (`rounded-2xl`) |
+| `_shell.bookings.index.tsx` | header (48), filter pills on the canvas (52), bare skeleton (75), list or two `EmptyState`s (85, 91) | pills, list and empty states inside one window; `components/bookings/CustomerBookingList.tsx:15` is `rounded-xl border`: `rounded-md`, or drop the frame |
+| `_shell.bookings.$id.tsx` | headers at 43, 51 and 86; bare skeleton with no header (47); `EmptyState` (52); four `Card`s (90, 149, 175, 227) | header and window in every branch; `FlatCard`s; same shape as the organization booking detail |
+| `_shell.notifications.tsx` | header (14), `EmptyState` (18) on the canvas | wrap in the window, `border-none` |
+| `_shell.organizations.tsx` | headers at 76 and 91; `EmptyState` (80) on the canvas; `ContentBox` (98); `components/IncomingTransfers.tsx:21` renders its own `ContentBox mb-6` | one window with two sections (incoming transfers, organizations); `IncomingTransfers` loses its window |
+| `_shell.payments.index.tsx` | header (43), `PaymentsNotice` on the canvas (47), bare skeleton (51), list or `EmptyState` (61) | notice inside the window as on the organization Payments page; `components/payments/CustomerPaymentList.tsx:14` is `rounded-xl border` |
+| `_shell.payments.$paymentId.tsx` | headers at 26, 34 and 54; bare skeleton with no header (30); `EmptyState` (35); `PaymentsNotice` (67); receipt `Card` with print classes (`components/payments/Receipt.tsx:17`) | header and window in every branch; the window must not print (surface, border, padding), the receipt must |
+| `_shell.settings.tsx` | header (58), `ContentBox divide-y` (62) | already one window; `rounded-md` for the `rounded-2xl` boxes in `components/settings/EmailSection.tsx:70` and `DangerZone.tsx:113`, `120` |
+
+Dialogs (`AcceptTransferDialog.tsx`, `billing/ChangePlanDialog.tsx`) are not in a window and keep their radii.
 
 **Steps:**
 - Same rules as Phase 2, reusing its card treatment and empty-state handling.

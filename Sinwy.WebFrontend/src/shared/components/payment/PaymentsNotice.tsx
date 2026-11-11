@@ -10,7 +10,7 @@ const COPY = {
 
 export function PaymentsNotice({ audience }: { audience: keyof typeof COPY }) {
 	return (
-		<Alert role="note" className="print:hidden">
+		<Alert role="note" className="rounded-md print:hidden">
 			<InfoIcon />
 			<AlertDescription>{COPY[audience]}</AlertDescription>
 		</Alert>

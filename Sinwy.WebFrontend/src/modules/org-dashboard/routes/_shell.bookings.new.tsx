@@ -12,6 +12,7 @@ import {
 	servicesQuery,
 	useUnwrapWrite,
 } from "#/modules/org-dashboard/lib/service-queries";
+import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
@@ -61,21 +62,23 @@ function NewBookingPage() {
 				title="New booking"
 				description="A booking taken by phone or in person. It starts confirmed."
 			/>
-			{availability.isError || services.isError ? (
-				<FieldError>
-					{(availability.error ?? services.error)?.message}
-				</FieldError>
-			) : availability.isPending || services.isPending ? (
-				<Skeleton className="h-96 rounded-xl" />
-			) : (
-				<ManualBookingForm
-					organizationId={organization.id}
-					timezone={availability.data.timezone}
-					services={services.data}
-					initialStart={start}
-					onSubmit={create}
-				/>
-			)}
+			<ContentBox>
+				{availability.isError || services.isError ? (
+					<FieldError>
+						{(availability.error ?? services.error)?.message}
+					</FieldError>
+				) : availability.isPending || services.isPending ? (
+					<Skeleton className="h-96 max-w-3xl rounded-md" />
+				) : (
+					<ManualBookingForm
+						organizationId={organization.id}
+						timezone={availability.data.timezone}
+						services={services.data}
+						initialStart={start}
+						onSubmit={create}
+					/>
+				)}
+			</ContentBox>
 		</>
 	);
 }

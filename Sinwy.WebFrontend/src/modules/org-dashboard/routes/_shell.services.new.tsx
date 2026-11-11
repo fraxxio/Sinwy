@@ -8,6 +8,7 @@ import {
 	useUnwrapWrite,
 } from "#/modules/org-dashboard/lib/service-queries";
 import { NEW_SERVICE_VALUES } from "#/modules/org-dashboard/lib/services";
+import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { toast } from "#/shared/components/ui/toast";
 import { requirePermission } from "#/shared/lib/auth/protected-route";
@@ -47,14 +48,16 @@ function NewServicePage() {
 	return (
 		<>
 			<PageHeader title="New service" />
-			<ServiceForm
-				values={NEW_SERVICE_VALUES}
-				currency={organization.currency ?? DEFAULT_CURRENCY}
-				readOnly={false}
-				submitLabel="Create service"
-				pendingLabel="Creating…"
-				onSubmit={create}
-			/>
+			<ContentBox>
+				<ServiceForm
+					values={NEW_SERVICE_VALUES}
+					currency={organization.currency ?? DEFAULT_CURRENCY}
+					readOnly={false}
+					submitLabel="Create service"
+					pendingLabel="Creating…"
+					onSubmit={create}
+				/>
+			</ContentBox>
 		</>
 	);
 }

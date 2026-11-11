@@ -52,3 +52,58 @@ Report console errors and any page where the chrome differs from the description
 - Shipped: the sidebar has no border or shadow and takes the canvas colour (`--sidebar: var(--background)` in all three theme blocks); `chrome-edge` and `--depth-chrome` are deleted. The breadcrumb row is 48px in both sidebar states with 13px crumbs, "/" separators, a 14px muted trigger and no bar, border or separator. `PageHeader` stacks the description under the title with the action bottom-aligned on the right. `ContentBox` is the window: 16px radius, hairline border, 24px padding. The body container starts the window at the sidebar edge with 8px right and bottom margins, and 8px on both sides below `md`. `--sidebar-accent` is 0.925 in light and 0.235 in dark. Bookings uses the window's default padding, puts Calendar/List before "New booking" as in the reference, and marks the selected view with `surface-raised`. The AppShell doc comment is updated.
 - Differs from plan: `breadcrumb.tsx` was not touched (class names from AppShell were enough). The window uses `rounded-lg`, because this project's `rounded-2xl` is 28.8px. The banner got `mb-4` so it does not touch the title. Not in the plan: the body takes the canvas colour while a dashboard is mounted, because the `scrollbar-gutter` strip showed the site's body gradient as a white band next to the window; the sidebar trigger hovers with `--sidebar-accent`, because the ghost hover is invisible on the canvas. The plan's SSR note was wrong: the account shell is `ssr: false` too, so step 7's hydration check has nothing to find. Default 1 (pages own the window) was left as it is.
 - Checked in the running app: all eight Verify steps passed in a subagent run on `seed-75781209` (Bookings against the reference in light and dark, transitions `width` and `left, right, width` at `0.2s linear`, widths 256px and 48px, collapse by trigger, Ctrl+B and rail, cookie surviving a reload, tooltips and centred icons when collapsed, hover states, 390×844 with the sheet and no horizontal overflow, `/account`, storefront confirm and success boxes), with no console errors. Its findings (28.8px radius, invisible selected view toggle and trigger hover in light, gutter strip, faint dark hover) were fixed and each fix was measured again inline in both themes; the full brief was not rerun after them. Not checked: a headed browser with classic scrollbars, a real phone, and the storefront boxes after the radius went from 28.8px to 16px. Left open for later phases: the Month calendar is taller than a 900px screen and keeps its own outer border, unlike the reference. `bun run verify` exited 0.
+
+---
+
+## Phase 2: Organization dashboard pages in one window
+
+**Goal:** Every organization dashboard page shows its content in a single window under its title, in every state (loading, error, empty, data).
+
+**Files:** all in `modules/org-dashboard/`. Structures below come from grep; confirm by reading each component's `return` blocks. `ContentBox` call sites that pass their own padding, to move onto the default: `routes/_shell.pages.index.tsx:80`, `_shell.payments.tsx:93`, `_shell.services.index.tsx:75`, `_shell.team.tsx:88` and `103` (`gap-4 p-4`), `_shell.pages.$id.preview.tsx:67` (`p-6 sm:p-10`). Forms that own their window: `components/ServiceForm.tsx:63`, `components/pages/PageDetailsForm.tsx:86`, `components/pages/NewPageForm.tsx:84`, `components/bookings/ManualBookingForm.tsx:72`.
+
+| Route file (`routes/`) | Today | Components |
+| --- | --- | --- |
+| `_shell.index.tsx` | header, stat-card grid, two-column card grid; three header branches (error, skeleton grid, data) | `components/overview/*` |
+| `_shell.analytics.tsx` | header, `Tabs` with widgets on the canvas, `PlanGate` | `components/analytics/*`, `DateRangeFilter.tsx` |
+| `_shell.bookings.index.tsx` | header, one `ContentBox` with default padding; the availability loading and error branches (107–109) still render a bare `Skeleton` or `FieldError` with no window | `components/bookings/MonthView.tsx` (grid border at 31, row height at 48), `BookingsCalendar.tsx`, `BookingsList.tsx` |
+| `_shell.bookings.$id.tsx` | header, several `Card`s; the loading branch returns a bare skeleton with no header | `components/bookings/BookingActions.tsx`, `BookingHistory.tsx`, `ContactCard.tsx` |
+| `_shell.bookings.new.tsx` | header, form with its own `ContentBox` | `components/bookings/ManualBookingForm.tsx` |
+| `_shell.customers.index.tsx`, `_shell.customers.$id.tsx` | header and `EmptyState`; header only (stub) | – |
+| `_shell.pages.index.tsx` | header, `ContentBox` | `components/pages/PagesTable.tsx`, `PageUsage.tsx` |
+| `_shell.pages.new.tsx` | header, form with its own `ContentBox` | `components/pages/NewPageForm.tsx`, `TemplatePicker.tsx` |
+| `_shell.pages.$id.index.tsx` | header (two branches), `ContentBox divide-y` | `PageDetailsForm.tsx`, `PagePublishing.tsx`, `PageContentSummary.tsx` |
+| `_shell.pages.$id.preview.tsx` | no `PageHeader`; `Alert` then `ContentBox`; bare skeleton while loading | – |
+| `_shell.payments.tsx` | header, totals, `ContentBox` | `components/payments/*` |
+| `_shell.services.index.tsx`, `.new.tsx`, `.$id.tsx`, `.hours.tsx` | header, `ContentBox` (table or `divide-y` form) | `ServicesTable.tsx`, `ServiceForm.tsx`, `BusinessHoursForm.tsx`, `ClosuresList.tsx` |
+| `_shell.settings.index.tsx` | header, `ContentBox divide-y` | `TransferSection.tsx`, `shared/components/SettingsSection.tsx` |
+| `_shell.team.tsx` | header, two `ContentBox`es (members, invitations) | `components/team/*` |
+
+**Steps:**
+- Each page renders exactly one window under its header, and every branch (loading, error, empty, data) renders the header and the window so the frame does not jump between states.
+- Pages with several boxes become one window with sections (Team: members and invitations).
+- Card-grid pages (Overview, Analytics, booking detail) move inside the window. Choose one flat treatment for cards inside a window (no glass blur, no `depth-2` shadow, a radius that sits well inside the window) and apply it at the usages; do not change `Card` itself. Record the treatment in the standing notes for Phase 3.
+- Empty states sit inside the window; drop the dashed border there if it reads as a box in a box, after checking `EmptyState`'s other users.
+- Skeletons are sized to the content they replace, inside the window.
+- The preview page keeps its notice above the window; decide whether it needs a `PageHeader` by how it looks next to the other pages.
+- Tables and the calendar must not gain horizontal overflow from the new padding; the Week and Day views keep their own scroller.
+- No behaviour changes: queries, permissions, search params and actions stay as they are.
+
+**Tests that matter:**
+- No new unit tests. The existing module tests still pass; a failing one means behaviour changed by accident.
+
+**Done when:**
+- Every route in the table shows one window under its title in loading, empty and data states.
+- No page has a card-in-card look or horizontal overflow at 1440 and 1024 wide.
+- `bun run verify` exits 0.
+
+**Verify:** Seed `bookable-org` (owner A) and `pro-org` (owner B). As A, create one booking from Bookings → New booking so the calendar, list and a booking detail have data. Nothing else is simulated. For each page take a screenshot at 1440×900 with the sidebar expanded, then collapsed, in light and in dark, and check: one white window under the title, breadcrumbs correct for the page, no nested boxes with heavy shadows, nothing clipped or overflowing, window reaches the bottom on short pages.
+- As A at `/dashboard/<slug>`: Overview (`/`), Bookings (`/bookings`: Calendar in Month, Week and Day, then List), the booking's detail, New booking (`/bookings/new`), Customers (`/customers`), Services (`/services`), New service (`/services/new`), the Haircut's edit page, Business hours (`/services/hours`), Payments (`/payments`), Team (`/team`), Settings (`/settings`).
+- As B: Analytics (`/analytics`, each tab), Pages (`/pages`), New page (`/pages/new`), a page's detail and its Preview.
+- As A: Analytics again, to see the upgrade prompt for the gated tabs inside the window.
+- On Overview and Bookings, reload with the network throttled and confirm the loading state already shows the title and the window.
+Report each page as pass or fail with the screenshot path, plus console errors.
+
+### Log (2026-11-11, `feat(web): put every organization dashboard page in one window`)
+- Shipped: every organization route renders `PageHeader` and one `ContentBox` in each branch, with the error and a skeleton inside the window. The four forms no longer render the window themselves. Team's two boxes and the page detail's two boxes are sections of one window. Cards inside a window use the new `FlatCard` (hairline border, 12.8px radius, no background, shadow or blur); `Card` is unchanged. `EmptyState` and `UpgradePrompt` take a `className`, and empty states that are a window's only content pass `border-none`. Alerts, dashed notes, bordered lists and the template cards inside a window are `rounded-md`. The Month view has no outer border, a plain weekday row and no line under the last week, and fills the window so it fits 1440×900. The Week and Day scroller is sized from the viewport so the page does not scroll as well. `SidebarInset` got `min-w-0`. The page usage meter's track uses `--sidebar-accent`, because `bg-muted` is invisible on the canvas.
+- Differs from plan: the Preview page has a `PageHeader` ("Preview", the notice's text as the description, "Back to page" as the action) in place of the alert, because the white alert above the window read as a second window and the verify run failed it. `PaymentsNotice` and the page limit notice moved inside the window. `FlatCard` uses `!` on three utilities, because `glass-card` is emitted later in the CSS and wins otherwise. `AppShell` (a Phase 1 file) was changed for `min-w-0`: without it the Payments table widened the whole page at 1024 wide. The Month grid's border and row height, listed as open gaps, were closed here.
+- Checked in the running app: a subagent ran the Verify brief on `seed-75781209` (owner A) and `seed-5fb75f2c` (owner B): 25 page states at 1440×900 with the sidebar expanded and collapsed in light and dark, plus 1024×768 in light. 23 passed: one window, left edge at the sidebar, 8px margins, window reaching the bottom on short pages, flat cards, correct breadcrumbs, no console errors. The throttled reload of Overview and Bookings showed the title and the window with skeletons, and the window did not move when the data arrived. The two failures (Payments overflowing at 1024, Preview with no canvas title and two boxes) were reproduced, fixed and measured again inline at 1440 and 1024, together with the Week and Day page scroll and the Overview skeleton sizes; the full brief was not rerun after the fixes. Not checked: Analytics with data (stat cards, charts, breakdown tables, the funnel and the upgrade prompt below charts), because traffic is produced once a day and nothing was inserted; the empty Pages list; Overview lists with rows; `/customers/$id`; dialogs and menus; error states; widths below 1024; the account dashboard after `min-w-0`; a browser with classic scrollbars. `bun run verify` exited 0 after the last change.

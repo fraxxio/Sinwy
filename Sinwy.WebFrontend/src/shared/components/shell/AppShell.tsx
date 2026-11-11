@@ -65,7 +65,7 @@ export function AppShell({
 	return (
 		<SidebarProvider defaultOpen={readSidebarCookie()}>
 			{sidebar}
-			<SidebarInset>
+			<SidebarInset className="min-w-0">
 				<header className="mt-1 flex h-12 shrink-0 items-center px-5 md:pl-3 print:hidden">
 					<div className="flex items-center gap-1">
 						<SidebarTrigger className="-ml-1.5 size-7 text-muted-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent [&_svg:not([class*='size-'])]:size-3.5" />

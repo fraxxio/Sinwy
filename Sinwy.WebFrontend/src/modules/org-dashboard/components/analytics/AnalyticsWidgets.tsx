@@ -1,8 +1,8 @@
 import { format, parseISO } from "date-fns";
 import type { ReactNode } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { FlatCard } from "#/shared/components/FlatCard";
 import {
-	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
@@ -44,7 +44,7 @@ export function StatCard({
 	hint?: ReactNode;
 }) {
 	return (
-		<Card size="sm">
+		<FlatCard size="sm">
 			<CardHeader>
 				<CardDescription>{title}</CardDescription>
 				<CardTitle className="text-2xl tabular-nums">{value}</CardTitle>
@@ -54,7 +54,7 @@ export function StatCard({
 					{hint}
 				</CardContent>
 			)}
-		</Card>
+		</FlatCard>
 	);
 }
 
@@ -77,7 +77,7 @@ export function SeriesChart<K extends string>({
 	const keys = Object.keys(config) as K[];
 
 	return (
-		<Card>
+		<FlatCard>
 			<CardHeader>
 				<CardTitle>{title}</CardTitle>
 				{description && <CardDescription>{description}</CardDescription>}
@@ -132,7 +132,7 @@ export function SeriesChart<K extends string>({
 					</AreaChart>
 				</ChartContainer>
 			</CardContent>
-		</Card>
+		</FlatCard>
 	);
 }
 
@@ -149,7 +149,7 @@ export function BreakdownTable({
 	empty: string;
 }) {
 	return (
-		<Card size="sm">
+		<FlatCard size="sm">
 			<CardHeader>
 				<CardTitle>{title}</CardTitle>
 			</CardHeader>
@@ -192,6 +192,6 @@ export function BreakdownTable({
 					</Table>
 				)}
 			</CardContent>
-		</Card>
+		</FlatCard>
 	);
 }

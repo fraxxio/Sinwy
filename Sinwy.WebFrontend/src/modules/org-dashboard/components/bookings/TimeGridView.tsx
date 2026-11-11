@@ -56,7 +56,7 @@ export function TimeGridView({
 	};
 
 	return (
-		<div className="overflow-hidden rounded-lg border">
+		<div className="overflow-hidden rounded-md border">
 			<div className="grid border-b bg-muted/40 text-xs" style={template}>
 				<div />
 				{dates.map((date) => {
@@ -88,7 +88,10 @@ export function TimeGridView({
 					);
 				})}
 			</div>
-			<div ref={scroller} className="max-h-[70vh] overflow-y-auto">
+			<div
+				ref={scroller}
+				className="max-h-[max(24rem,calc(100dvh-18rem))] overflow-y-auto"
+			>
 				<div className="grid" style={{ ...template, height: px(total) }}>
 					<div className="relative">
 						{rows.map((row, index) => (

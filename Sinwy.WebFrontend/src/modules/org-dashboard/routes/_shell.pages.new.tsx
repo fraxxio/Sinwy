@@ -4,6 +4,7 @@ import { NewPageForm } from "#/modules/org-dashboard/components/pages/NewPageFor
 import { PageLimitNotice } from "#/modules/org-dashboard/components/pages/PageUsage";
 import { pagesQuery } from "#/modules/org-dashboard/lib/page-queries";
 import { isAtPageLimit } from "#/modules/org-dashboard/lib/pages";
+import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { Button } from "#/shared/components/ui/button";
 import { Skeleton } from "#/shared/components/ui/skeleton";
@@ -27,32 +28,34 @@ function NewPagePage() {
 				title="New page"
 				description="Start from a template, then give the page a title."
 			/>
-			{pages.isPending ? (
-				<Skeleton className="h-96 rounded-xl" />
-			) : pages.data && isAtPageLimit(pages.data.usage) ? (
-				<>
-					<PageLimitNotice
-						usage={pages.data.usage}
-						pages={pages.data.items}
-						canWrite
-					/>
-					<Button
-						variant="outline"
-						className="w-fit"
-						nativeButton={false}
-						render={
-							<Link
-								to="/dashboard/$organizationSlug/pages"
-								params={{ organizationSlug: organization.slug }}
-							/>
-						}
-					>
-						Back to pages
-					</Button>
-				</>
-			) : (
-				<NewPageForm organization={organization} />
-			)}
+			<ContentBox>
+				{pages.isPending ? (
+					<Skeleton className="h-96 max-w-3xl rounded-md" />
+				) : pages.data && isAtPageLimit(pages.data.usage) ? (
+					<>
+						<PageLimitNotice
+							usage={pages.data.usage}
+							pages={pages.data.items}
+							canWrite
+						/>
+						<Button
+							variant="outline"
+							className="w-fit"
+							nativeButton={false}
+							render={
+								<Link
+									to="/dashboard/$organizationSlug/pages"
+									params={{ organizationSlug: organization.slug }}
+								/>
+							}
+						>
+							Back to pages
+						</Button>
+					</>
+				) : (
+					<NewPageForm organization={organization} />
+				)}
+			</ContentBox>
 		</>
 	);
 }

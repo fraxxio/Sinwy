@@ -123,7 +123,7 @@ export function BusinessHoursForm({
 					}
 				>
 					{!hasHours && (
-						<p className="rounded-lg border border-dashed px-4 py-3 text-muted-foreground text-sm">
+						<p className="rounded-md border border-dashed px-4 py-3 text-muted-foreground text-sm">
 							Every day is closed, so customers can't book yet.
 							{!readOnly && " Open the days you work and save."}
 						</p>

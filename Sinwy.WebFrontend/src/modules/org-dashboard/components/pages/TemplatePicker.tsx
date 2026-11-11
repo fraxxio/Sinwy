@@ -30,7 +30,7 @@ export function TemplatePicker({
 					<label
 						key={id}
 						className={cn(
-							"relative grid gap-1 rounded-xl border p-4 transition-colors has-focus-visible:outline-2 has-focus-visible:outline-ring has-focus-visible:outline-offset-2",
+							"relative grid gap-1 rounded-md border p-4 transition-colors has-focus-visible:outline-2 has-focus-visible:outline-ring has-focus-visible:outline-offset-2",
 							locked
 								? "cursor-not-allowed bg-muted/40 text-muted-foreground"
 								: "cursor-pointer hover:bg-muted/50",

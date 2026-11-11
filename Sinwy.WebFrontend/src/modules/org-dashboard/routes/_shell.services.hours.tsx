@@ -41,14 +41,18 @@ function BusinessHoursPage() {
 		return (
 			<>
 				{header}
-				<Skeleton className="h-96 rounded-xl" />
+				<ContentBox>
+					<Skeleton className="h-96 max-w-3xl rounded-md" />
+				</ContentBox>
 			</>
 		);
 	if (availability.isError)
 		return (
 			<>
 				{header}
-				<FieldError>{availability.error.message}</FieldError>
+				<ContentBox>
+					<FieldError>{availability.error.message}</FieldError>
+				</ContentBox>
 			</>
 		);
 

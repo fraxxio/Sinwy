@@ -11,9 +11,9 @@ import {
 	updateBooking,
 } from "#/modules/org-dashboard/lib/booking-queries";
 import { useUnwrapWrite } from "#/modules/org-dashboard/lib/service-queries";
+import { FlatCard } from "#/shared/components/FlatCard";
 import { Button } from "#/shared/components/ui/button";
 import {
-	Card,
 	CardAction,
 	CardContent,
 	CardDescription,
@@ -38,7 +38,7 @@ export function ContactCard({
 	const fromAccount = booking.bookedBy === "customer";
 
 	return (
-		<Card>
+		<FlatCard>
 			<CardHeader>
 				<CardTitle>Customer</CardTitle>
 				<CardDescription>
@@ -100,7 +100,7 @@ export function ContactCard({
 					</dl>
 				)}
 			</CardContent>
-		</Card>
+		</FlatCard>
 	);
 }
 
