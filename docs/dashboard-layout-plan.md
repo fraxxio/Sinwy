@@ -8,7 +8,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
-| 1 | Shell chrome: sidebar, breadcrumb row, page header, window | – | todo | |
+| 1 | Shell chrome: sidebar, breadcrumb row, page header, window | – | done | `feat(web): restyle the dashboard shell to a borderless sidebar and one window` |
 | 2 | Organization dashboard pages in one window | 1 | todo | |
 | 3 | Account pages in one window | 2 | todo | |
 | 4 | Full regression sweep and cleanup | 3 | todo | |
@@ -43,67 +43,23 @@ Settled with the product owner. Ask before changing any of them.
 
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
-- **Reference, in CSS px at 1440×900:** sidebar and canvas are the same grey with no divider. Breadcrumb row: small muted sidebar-trigger icon, then about 13px crumbs separated by "/", vertically centred about 28px from the top, no bar background, border or shadow. Title 24px semibold with a 14px muted description under it; actions right-aligned on the same block. The window starts about 124px from the top, begins where the sidebar ends, has about 8px margin right and bottom, about 16px radius, about 24px inner padding, a white surface and at most a hairline or soft shadow. Title and breadcrumbs are inset about 12px from the window's left edge. The active nav item is a white raised pill.
+- **Reference, in CSS px at 1440×900:** sidebar and canvas are the same grey with no divider. Title 24px semibold with a 14px muted description under it; actions right-aligned on the same block. The window starts about 124px from the top, begins where the sidebar ends, has about 8px margin right and bottom, about 16px radius, about 24px inner padding and a white surface. The calendar inside it has no outer border and its Month view fits the screen with the "Times in …" line visible.
 - **Paths below are relative to `Sinwy.WebFrontend/src/`.**
-- **Shell:** `shared/components/shell/AppShell.tsx` is mounted by exactly two layout routes, `modules/org-dashboard/routes/_shell.tsx` and `modules/account-dashboard/routes/_shell.tsx`. Header bar at line 69 (`chrome-edge`, `h-16`, `border-b`, `bg-sidebar`, height transition); banner slot at 103–110 (`sticky top-0 bg-background`); body container at 111 (`flex flex-1 flex-col gap-4 p-4`).
-- **SSR:** the organization shell is `ssr: false` but the account shell is server-rendered, so a portal-based "header slot" in the shell would make titles pop in after hydration. This is why pages own the window.
-- **Sidebar border and shadow** are one class list in `shared/components/ui/sidebar.tsx:234` (`chrome-edge border-sidebar-border … border-r`). `chrome-edge` (styles.css:532) and `--depth-chrome` (styles.css:121, 221, 303) are used only by that line and the AppShell header.
-- **Sidebar animation** lives in `shared/components/ui/sidebar.tsx`: gap at 218 (`transition-[width] duration-200 ease-linear`), container at 230 (`transition-[left,right,width] duration-200 ease-linear`), group label at 400, menu buttons at 475, widths at 27–29. State persists in the `sidebar_state` cookie, read by `readSidebarCookie` in AppShell; Ctrl/Cmd+B toggles; below `md` the sidebar is a Sheet.
-- **Tokens (styles.css, three theme blocks each):** `--background` 66/169/256, `--sidebar` 91/193/275, `--sidebar-accent` 95/197/279. In light mode `--sidebar-accent` (0.96) is almost the canvas colour (0.9702), so sidebar hover and open states become invisible once the sidebar shares the canvas colour. In dark mode `--sidebar` equals `--card` today.
-- **Active nav item** already uses `data-active:surface-raised` (white, hairline ring, small shadow), which matches the reference.
-- **`shared/components/PageHeader.tsx`** is used only by the two dashboard modules. **`shared/components/ContentBox.tsx`** (`flex flex-1 flex-col rounded-xl border bg-card p-8`) is also used by `modules/storefront/components/BookingSuccess.tsx` and `ConfirmStep.tsx`.
+- **Shell (done in Phase 1, see the log):** `shared/components/shell/AppShell.tsx` is mounted by exactly two layout routes, `modules/org-dashboard/routes/_shell.tsx` and `modules/account-dashboard/routes/_shell.tsx`. Breadcrumb row: `mt-1 h-12 px-5 md:pl-3`, not sticky. Banner: `sticky top-0 mb-4 bg-background`. Body: `flex flex-1 flex-col gap-4 px-2 pb-2 md:pl-0`, so anything a page renders outside a window touches the sidebar edge on desktop.
+- **`PageHeader`** stacks the description under the title, bottom-aligns the action, wraps, and carries the 12px inset itself (`px-3 pb-0.5`). **`ContentBox`** is `flex flex-1 flex-col rounded-lg border bg-card p-6`; a `className` still overrides padding. Bookings uses the default padding; the other pages still pass `p-4` or `gap-4 p-4`.
+- **Radius scale:** `--radius` is 1rem, so `rounded-lg` is 16px, `rounded-xl` 22.4px, `rounded-2xl` 28.8px and `Card`'s `rounded-4xl` 41.6px. A card inside the 16px window needs `rounded-md` (12.8px) or smaller.
+- **Canvas contrast:** in light mode `bg-muted` (0.96) and the ghost button's hover are invisible on the canvas (0.9702). On the canvas use `surface-raised` for a selected state (Bookings view toggle) and `--sidebar-accent` (light 0.925, dark 0.235) for hover. Both are fine inside the white window.
+- **Both shells are `ssr: false`** (the account shell through `protectedRoute`, `shared/lib/auth/protected-route.ts:33`): the server sends an empty body, so there is no hydration to mismatch. The plan's earlier SSR note was wrong; Default 1 was not changed.
+- **Scrollbar gutter:** `html` has `scrollbar-gutter: stable`. While a dashboard is mounted the body takes the canvas colour (`body:has([data-slot="sidebar-wrapper"])` in styles.css) so the gutter does not show as a strip. With classic scrollbars the window's right margin is 8px plus the 15px gutter on pages that do not scroll; this was only seen in headless Chromium.
+- **Sidebar animation** lives in `shared/components/ui/sidebar.tsx` and must stay as is: gap `transition-[width] duration-200 ease-linear`, container `transition-[left,right,width] duration-200 ease-linear`, widths 16rem and 3rem, `sidebar_state` cookie, Ctrl/Cmd+B, rail; below `md` the sidebar is a Sheet.
+- **Bookings Month view** is 959px tall in a 900px viewport (rows are `min-h-28` in `modules/org-dashboard/components/bookings/MonthView.tsx:48`, about 105px in the reference), so the page scrolls; the grid keeps its own `rounded-lg border` (MonthView.tsx:31). Both are open gaps against the reference.
 - **`Card`** (`shared/components/ui/card.tsx`) is `glass-card rounded-4xl` with blur and a `depth-2` shadow and is used across the site. **`EmptyState`** has a dashed border and `flex-1`; grep its users before changing it.
 - **Week and Day calendar** has its own scroller (`max-h-[70vh] overflow-y-auto`, `modules/org-dashboard/components/bookings/TimeGridView.tsx:91`).
-- **Print:** the shell header and banner are `print:hidden`, the sidebar is hidden by an unlayered rule at styles.css:701, and the account receipt page prints (`modules/account-dashboard/routes/_shell.payments.$paymentId.tsx`, `components/payments/Receipt.tsx`).
-- **Theme:** `localStorage.theme` is `light`, `dark` or `auto` and sets a class on `<html>`; the switch is in the user menu at the bottom of the sidebar.
-- **Local stack:** web app on `localhost:3000`, backend on `localhost:3001`. No dev server was running when this plan was written.
+- **Print:** the breadcrumb row and banner are `print:hidden`, the sidebar is hidden by an unlayered rule in styles.css, and the account receipt page prints (`modules/account-dashboard/routes/_shell.payments.$paymentId.tsx`, `components/payments/Receipt.tsx`).
+- **Theme:** `localStorage.theme` is `light`, `dark` or `auto` and sets a class on `<html>`; the switch is "Toggle theme" in the user menu at the bottom of the sidebar.
+- **Local stack:** web app on `localhost:3000`, backend on `localhost:3001`. Phase 1 stopped the servers it started. Organization `seed-75781209` (a `bookable-org` seed, owner user id `lNenSI9j0ePY0P1XKDMHD9Pr7yEECMe9`) has one confirmed Haircut booking on 12 November 2026 and can be reused with `dev:login-as --user-id`.
+- **Browser checks:** the shell is zsh, so call `bunx playwright-cli` directly or through a function (a variable is not word-split) and quote globs. Screenshots from Phase 1 are in `.playwright-cli/` (`p1-*`, `verify-p1-*`) until Phase 4 deletes them.
 - **Git:** stage files by path; `Header above the window.png` is untracked and must stay out of commits.
-
----
-
-## Phase 1: Shell chrome: sidebar, breadcrumb row, page header, window
-
-**Goal:** The shell matches the reference on pages already built as title plus one box (Bookings is the benchmark), with the sidebar animation untouched.
-
-**Files:**
-- `shared/components/shell/AppShell.tsx` (header 69–101, banner 103–110, body 111, doc comment 25–38)
-- `shared/components/ui/sidebar.tsx` (234 border and shadow; 138 wrapper; 307 `SidebarInset`; read 218 and 230 only to leave them alone)
-- `shared/components/ui/breadcrumb.tsx` (`BreadcrumbList` text size and gaps, `BreadcrumbSeparator` default chevron)
-- `shared/components/PageHeader.tsx`, `shared/components/ContentBox.tsx`
-- `styles.css` (tokens and `chrome-edge` at the lines in the standing notes)
-- `shared/components/shell/OrganizationSwitcher.tsx`, `NavUser.tsx`, `SidebarNav.tsx` (check only: hover and open states on the new sidebar colour)
-- `modules/org-dashboard/routes/_shell.bookings.index.tsx` (benchmark page: `ContentBox className="… p-4"` at 163 and 190)
-
-**Steps:**
-- Sidebar: remove the border and the `chrome-edge` shadow, and give it the canvas colour in all three theme blocks. Delete `chrome-edge` and `--depth-chrome` once nothing uses them.
-- Do not touch the transition classes, widths, `collapsible="icon"`, the cookie, the shortcut or the rail. Icon-collapsed mode must still centre the icons and show tooltips.
-- Pick a `--sidebar-accent` (light and dark) that reads as a hover on the canvas colour, and check the organization switcher, user menu, nav items, sub-items and the collapsible group.
-- Breadcrumb row: no background, border or shadow; about 48px tall in both sidebar states; about 13px text; "/" separators; no vertical separator after the trigger. Size the crumbs from AppShell through class names where possible, and change `breadcrumb.tsx` only if that is not enough. Keep the `md` rule that shows only the last crumb on small screens.
-- Body container: the window starts where the sidebar ends on desktop, with about 8px margin right and bottom and an equal margin on both sides below `md`; the breadcrumb row and `PageHeader` are inset about 12px from the window edge. The body still fills the viewport height so a short page's window reaches the bottom.
-- `PageHeader`: description under the title, action on the right, wrapping cleanly on narrow screens.
-- `ContentBox`: restyle to the reference window (surface, radius, hairline or soft shadow, default padding). Pages pass their own padding today (`p-4`, `divide-y`), so check that the override pattern still works.
-- Banner: keep it sticky and full width; make sure it does not sit on a background that now mismatches the canvas.
-- Update the AppShell doc comment where it no longer describes the shell (it says "sticky header").
-
-**Tests that matter:**
-- No new unit tests; the risk is visual and is covered by Verify. `shared/tests/nav-filter.test.ts` still passes.
-- The sidebar transition values are compared before and after in Verify, since an accidental class change would not fail any test.
-
-**Done when:**
-- Bookings at 1440×900 in light mode matches the reference's structure: borderless sidebar on the canvas colour, compact breadcrumb row, stacked title and description, one white window to the bottom of the screen.
-- The sidebar's computed transitions and widths are identical to `master`.
-- `bun run verify` exits 0.
-
-**Verify:** Seed `bookable-org` and log in as its owner. Nothing is simulated beyond the seed.
-1. Open `/dashboard/<slug>/bookings` at 1440×900, light theme. Compare a screenshot with `Header above the window.png` in the repo root: no line or shadow between sidebar and page, sidebar and canvas the same colour, breadcrumbs "Org name / Bookings" small with a trigger icon before them, title "Bookings" with its description underneath, Calendar/List and "New booking" on the right, one white rounded window reaching the bottom of the screen with a small margin.
-2. Read the computed `transition-property`, `transition-duration` and `transition-timing-function` of `[data-slot="sidebar-gap"]` and `[data-slot="sidebar-container"]`: they must be `width` and `left, right, width`, `0.2s`, `linear`. Expanded width 256px, collapsed 48px.
-3. Collapse and expand with the trigger, with Ctrl+B and by clicking the sidebar's edge. Collapsed: icons centred, labels gone, tooltips on hover, window widens. Reload while collapsed: it stays collapsed (`sidebar_state=false` cookie).
-4. Hover a nav item, the organization switcher and the user menu: each shows a visible hover state. The active item is a white raised pill.
-5. Switch to dark from the user menu and repeat steps 1 and 4: no border, sidebar matches the canvas, window is the lighter surface, text contrast is fine.
-6. Resize to 390×844: sidebar is gone, the trigger opens it as a sheet, only the last crumb shows, the window has equal margins and nothing overflows horizontally.
-7. Open `/account`: same chrome with the "Your account" nav.
-8. Open the storefront at `/<slug>` and go through booking a Haircut to the confirm step and the success screen: the boxes there still look right.
-Report console errors and any page where the chrome differs from the description.
 
 ---
 
@@ -111,13 +67,13 @@ Report console errors and any page where the chrome differs from the description
 
 **Goal:** Every organization dashboard page shows its content in a single window under its title, in every state (loading, error, empty, data).
 
-**Files:** all in `modules/org-dashboard/`. Structures below come from grep; confirm by reading each component's `return` blocks.
+**Files:** all in `modules/org-dashboard/`. Structures below come from grep; confirm by reading each component's `return` blocks. `ContentBox` call sites that pass their own padding, to move onto the default: `routes/_shell.pages.index.tsx:80`, `_shell.payments.tsx:93`, `_shell.services.index.tsx:75`, `_shell.team.tsx:88` and `103` (`gap-4 p-4`), `_shell.pages.$id.preview.tsx:67` (`p-6 sm:p-10`). Forms that own their window: `components/ServiceForm.tsx:63`, `components/pages/PageDetailsForm.tsx:86`, `components/pages/NewPageForm.tsx:84`, `components/bookings/ManualBookingForm.tsx:72`.
 
 | Route file (`routes/`) | Today | Components |
 | --- | --- | --- |
 | `_shell.index.tsx` | header, stat-card grid, two-column card grid; three header branches (error, skeleton grid, data) | `components/overview/*` |
 | `_shell.analytics.tsx` | header, `Tabs` with widgets on the canvas, `PlanGate` | `components/analytics/*`, `DateRangeFilter.tsx` |
-| `_shell.bookings.index.tsx` | header, one `ContentBox` (calendar or list) | benchmark from Phase 1 |
+| `_shell.bookings.index.tsx` | header, one `ContentBox` with default padding; the availability loading and error branches (107–109) still render a bare `Skeleton` or `FieldError` with no window | `components/bookings/MonthView.tsx` (grid border at 31, row height at 48), `BookingsCalendar.tsx`, `BookingsList.tsx` |
 | `_shell.bookings.$id.tsx` | header, several `Card`s; the loading branch returns a bare skeleton with no header | `components/bookings/BookingActions.tsx`, `BookingHistory.tsx`, `ContactCard.tsx` |
 | `_shell.bookings.new.tsx` | header, form with its own `ContentBox` | `components/bookings/ManualBookingForm.tsx` |
 | `_shell.customers.index.tsx`, `_shell.customers.$id.tsx` | header and `EmptyState`; header only (stub) | – |

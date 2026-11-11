@@ -8,7 +8,6 @@ import {
 	BreadcrumbPage,
 	BreadcrumbSeparator,
 } from "#/shared/components/ui/breadcrumb";
-import { Separator } from "#/shared/components/ui/separator";
 import {
 	SidebarInset,
 	SidebarProvider,
@@ -23,9 +22,10 @@ const readSidebarCookie = () =>
 	!/(?:^|;\s*)sidebar_state=false(?:;|$)/.test(document.cookie);
 
 /**
- * App shell for every dashboard page: collapsible sidebar, sticky header with
- * a breadcrumb trail, and the page body. Mount it once per layout route so the
- * sidebar keeps its open/collapsed state across navigations.
+ * App shell for every dashboard page: collapsible sidebar, a breadcrumb row
+ * that scrolls with the page, and the page body. Pages render a `PageHeader`
+ * followed by one `ContentBox`. Mount it once per layout route so the sidebar
+ * keeps its open/collapsed state across navigations.
  *
  * The trail starts at `rootCrumb` (runtime data, e.g. the organization name)
  * followed by every matched route that declares `staticData.crumb`. Sections
@@ -66,21 +66,19 @@ export function AppShell({
 		<SidebarProvider defaultOpen={readSidebarCookie()}>
 			{sidebar}
 			<SidebarInset>
-				<header className="chrome-edge relative z-[1] flex h-16 shrink-0 items-center gap-2 border-b border-sidebar-border bg-sidebar transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 print:hidden">
-					<div className="flex items-center gap-2 px-4">
-						<SidebarTrigger className="-ml-1" />
-						<Separator
-							orientation="vertical"
-							className="mr-2 data-vertical:h-4 data-vertical:self-auto"
-						/>
+				<header className="mt-1 flex h-12 shrink-0 items-center px-5 md:pl-3 print:hidden">
+					<div className="flex items-center gap-1">
+						<SidebarTrigger className="-ml-1.5 size-7 text-muted-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent [&_svg:not([class*='size-'])]:size-3.5" />
 						<Breadcrumb>
-							<BreadcrumbList>
+							<BreadcrumbList className="gap-1.5 text-[13px] sm:gap-1.5">
 								{breadcrumbs.map((crumb, index) => {
 									const isLast = index === breadcrumbs.length - 1;
 									return (
 										<Fragment key={String(crumb.link.to)}>
 											{index > 0 && (
-												<BreadcrumbSeparator className="hidden md:block" />
+												<BreadcrumbSeparator className="hidden text-muted-foreground/60 md:block">
+													/
+												</BreadcrumbSeparator>
 											)}
 											<BreadcrumbItem
 												className={isLast ? undefined : "hidden md:block"}
@@ -103,12 +101,14 @@ export function AppShell({
 				{banner && (
 					<div
 						role="status"
-						className="sticky top-0 z-[1] bg-background print:hidden"
+						className="sticky top-0 z-[1] mb-4 bg-background print:hidden"
 					>
 						{banner}
 					</div>
 				)}
-				<div className="flex flex-1 flex-col gap-4 p-4">{children}</div>
+				<div className="flex flex-1 flex-col gap-4 px-2 pb-2 md:pl-0">
+					{children}
+				</div>
 			</SidebarInset>
 		</SidebarProvider>
 	);

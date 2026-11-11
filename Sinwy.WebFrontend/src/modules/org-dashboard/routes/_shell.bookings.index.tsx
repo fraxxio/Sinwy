@@ -66,7 +66,7 @@ function BookingsPage() {
 					size="sm"
 					variant="ghost"
 					aria-pressed={search.view === view}
-					className={cn(search.view === view && "bg-muted")}
+					className={cn(search.view === view && "surface-raised")}
 					onClick={() =>
 						void navigate({ search: (prev) => ({ ...prev, view }) })
 					}
@@ -85,6 +85,7 @@ function BookingsPage() {
 				description="Every appointment your customers have booked with you."
 				action={
 					<div className="flex items-center gap-2">
+						{viewToggle}
 						{hasPermission(member.roles, "bookings:write") && (
 							<Button
 								nativeButton={false}
@@ -99,7 +100,6 @@ function BookingsPage() {
 								New booking
 							</Button>
 						)}
-						{viewToggle}
 					</div>
 				}
 			/>
@@ -160,7 +160,7 @@ function BookingsContent({
 
 	if (isCalendar)
 		return (
-			<ContentBox className="space-y-2 p-4">
+			<ContentBox className="space-y-2">
 				<BookingsCalendar
 					search={search}
 					date={date}
@@ -187,7 +187,7 @@ function BookingsContent({
 		);
 
 	return (
-		<ContentBox className="space-y-4 p-4">
+		<ContentBox className="space-y-4">
 			<BookingFilters
 				search={search}
 				services={services}
