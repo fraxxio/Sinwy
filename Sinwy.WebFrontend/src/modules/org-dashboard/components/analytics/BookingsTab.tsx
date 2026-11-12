@@ -110,7 +110,7 @@ function BookingsBreakdown({
 
 	return (
 		<div className="grid gap-4 lg:grid-cols-3">
-			<div className="lg:col-span-2">
+			<div className="min-w-0 lg:col-span-2">
 				<BreakdownTable
 					title="By service"
 					columns={["Service", "Bookings made", "Value of bookings made"]}

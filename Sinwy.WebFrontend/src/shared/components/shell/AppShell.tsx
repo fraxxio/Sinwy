@@ -1,5 +1,10 @@
-import { Link, type LinkOptions, useMatches } from "@tanstack/react-router";
-import { Fragment, type ReactNode } from "react";
+import {
+	Link,
+	type LinkOptions,
+	useMatches,
+	useRouter,
+} from "@tanstack/react-router";
+import { Fragment, type ReactNode, useEffect } from "react";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -12,9 +17,20 @@ import {
 	SidebarInset,
 	SidebarProvider,
 	SidebarTrigger,
+	useSidebar,
 } from "#/shared/components/ui/sidebar";
 
 export type Crumb = { label: string; link: LinkOptions };
+
+function CloseSheetOnNavigation() {
+	const router = useRouter();
+	const { setOpenMobile } = useSidebar();
+	useEffect(
+		() => router.subscribe("onResolved", () => setOpenMobile(false)),
+		[router, setOpenMobile],
+	);
+	return null;
+}
 
 /** SidebarProvider persists its state to this cookie but never reads it back. */
 const readSidebarCookie = () =>
@@ -64,6 +80,7 @@ export function AppShell({
 
 	return (
 		<SidebarProvider defaultOpen={readSidebarCookie()}>
+			<CloseSheetOnNavigation />
 			{sidebar}
 			<SidebarInset className="min-w-0">
 				<header className="mt-1 flex h-12 shrink-0 items-center px-5 md:pl-3 print:hidden">

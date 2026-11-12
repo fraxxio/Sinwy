@@ -19,7 +19,7 @@ export function PaymentFailedNotice() {
 				aria-hidden
 				className="size-4 shrink-0 text-destructive"
 			/>
-			<div className="min-w-0 flex-1">
+			<div className="min-w-0 grow basis-48">
 				<p>
 					<span className="font-medium">The last payment failed.</span> Polar
 					retries it for a while; if it keeps failing, your plan ends and every

@@ -180,84 +180,94 @@ export function PlanCards({
 				</div>
 			</div>
 
-			<div className="grid gap-4 md:grid-cols-3">
-				{plans.map((plan) => (
-					<PlanCard
-						key={plan.slug}
-						className={cn(
-							plan.popular && "border border-primary ring-3 ring-primary/15",
-							plan.popular && flat && "border-primary!",
-						)}
-					>
-						<CardHeader>
-							<CardTitle className="text-xl font-semibold">
-								{plan.name}
-							</CardTitle>
-							{plan.popular && (
-								<CardAction>
-									<span className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
-										Popular
-									</span>
-								</CardAction>
+			<div className="@container">
+				<div
+					className={cn(
+						"grid gap-4",
+						flat ? "@2xl:grid-cols-3" : "md:grid-cols-3",
+					)}
+				>
+					{plans.map((plan) => (
+						<PlanCard
+							key={plan.slug}
+							className={cn(
+								plan.popular && "border border-primary ring-3 ring-primary/15",
+								plan.popular && flat && "border-primary!",
 							)}
-							<CardDescription>{plan.description}</CardDescription>
-						</CardHeader>
-
-						<CardContent className="space-y-5">
-							<p className="font-heading">
-								<span className="inline-flex text-4xl leading-none font-bold tracking-tight tabular-nums">
-									$
-									<RollingPrice
-										value={
-											PLAN_PRICES[plan.slug][
-												billing === "monthly" ? "month" : "year"
-											]
-										}
-									/>
-								</span>{" "}
-								<span className="text-sm text-muted-foreground">
-									/{billing === "monthly" ? "month" : "year"}
-								</span>
-							</p>
-
-							<Button
-								variant={plan.buttonVariant}
-								size="lg"
-								className="w-full"
-								disabled={pendingSlug !== null}
-								onClick={() => onChoosePlan(plan.slug)}
-							>
-								{pendingSlug === plan.slug ? pendingText : plan.buttonText}
-							</Button>
-
-							<ul className="space-y-3">
-								{plan.features.map((feature) => (
-									<li
-										key={feature.text}
-										className="flex items-center gap-2.5 text-sm font-medium"
-									>
-										<span className="text-muted-foreground">
-											{feature.icon}
+						>
+							<CardHeader>
+								<CardTitle className="text-xl font-semibold">
+									{plan.name}
+								</CardTitle>
+								{plan.popular && (
+									<CardAction>
+										<span className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
+											Popular
 										</span>
-										{feature.text}
-									</li>
-								))}
-							</ul>
-						</CardContent>
+									</CardAction>
+								)}
+								<CardDescription>{plan.description}</CardDescription>
+							</CardHeader>
 
-						<CardFooter className="mt-auto flex-col items-start gap-3 border-t">
-							<p className="text-sm font-semibold">{plan.includes[0]}</p>
-							<ul className="space-y-3">
-								{plan.includes.slice(1).map((item) => (
-									<li key={item} className="flex items-center gap-2.5 text-sm">
-										<CircleCheck size={20} className="text-primary" />
-										{item}
-									</li>
-								))}
-							</ul>
-						</CardFooter>
-					</PlanCard>
-				))}
+							<CardContent className="space-y-5">
+								<p className="font-heading">
+									<span className="inline-flex text-4xl leading-none font-bold tracking-tight tabular-nums">
+										$
+										<RollingPrice
+											value={
+												PLAN_PRICES[plan.slug][
+													billing === "monthly" ? "month" : "year"
+												]
+											}
+										/>
+									</span>{" "}
+									<span className="text-sm text-muted-foreground">
+										/{billing === "monthly" ? "month" : "year"}
+									</span>
+								</p>
+
+								<Button
+									variant={plan.buttonVariant}
+									size="lg"
+									className="w-full"
+									disabled={pendingSlug !== null}
+									onClick={() => onChoosePlan(plan.slug)}
+								>
+									{pendingSlug === plan.slug ? pendingText : plan.buttonText}
+								</Button>
+
+								<ul className="space-y-3">
+									{plan.features.map((feature) => (
+										<li
+											key={feature.text}
+											className="flex items-center gap-2.5 text-sm font-medium"
+										>
+											<span className="text-muted-foreground">
+												{feature.icon}
+											</span>
+											{feature.text}
+										</li>
+									))}
+								</ul>
+							</CardContent>
+
+							<CardFooter className="mt-auto flex-col items-start gap-3 border-t">
+								<p className="text-sm font-semibold">{plan.includes[0]}</p>
+								<ul className="space-y-3">
+									{plan.includes.slice(1).map((item) => (
+										<li
+											key={item}
+											className="flex items-center gap-2.5 text-sm"
+										>
+											<CircleCheck size={20} className="text-primary" />
+											{item}
+										</li>
+									))}
+								</ul>
+							</CardFooter>
+						</PlanCard>
+					))}
+				</div>
 			</div>
 		</>
 	);

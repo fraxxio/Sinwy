@@ -39,7 +39,7 @@ function TimeInput({ field, label }: { field: AnyFieldApi; label: string }) {
 				onBlur={field.handleBlur}
 				onChange={(e) => field.handleChange(e.target.value)}
 				aria-invalid={!!error}
-				className="w-32"
+				className="w-34"
 			/>
 			{error && <FieldError className="text-xs">{error}</FieldError>}
 		</div>
@@ -75,7 +75,7 @@ export function BusinessHoursForm({
 
 	return (
 		<form
-			className="pb-8"
+			className="max-w-3xl pb-8"
 			onSubmit={(e) => {
 				e.preventDefault();
 				void form.handleSubmit();

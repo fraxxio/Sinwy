@@ -47,7 +47,7 @@ function IncomingTransferRow({ transfer }: { transfer: IncomingTransferDto }) {
 
 	return (
 		<li className="grid gap-2 py-3 first:pt-0 last:pb-0">
-			<div className="flex items-center justify-between gap-4">
+			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
 				<div className="grid gap-0.5 text-sm">
 					<span className="font-medium">{transfer.organization.name}</span>
 					<span className="text-xs text-muted-foreground">

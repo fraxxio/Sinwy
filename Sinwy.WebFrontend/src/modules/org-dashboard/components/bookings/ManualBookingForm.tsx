@@ -155,6 +155,7 @@ export function ManualBookingForm({
 						<form.SubmitButton
 							label="Create booking"
 							pendingLabel="Creating…"
+							className="w-fit"
 						/>
 					</form.AppForm>
 				</div>
