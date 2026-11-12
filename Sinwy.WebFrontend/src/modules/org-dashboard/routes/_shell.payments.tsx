@@ -63,34 +63,35 @@ function PaymentsPage() {
 					)
 				}
 			/>
-			<PaymentsNotice audience="organization" />
-			{list.isError ? (
-				<FieldError>{list.error.message}</FieldError>
-			) : !data || availability.isPending ? (
-				<Skeleton className="h-64 rounded-xl" />
-			) : availability.isError ? (
-				<FieldError>{availability.error.message}</FieldError>
-			) : (
-				<>
-					<DateRangeFilter
-						from={range.from}
-						to={range.to}
-						onChange={(change) =>
-							void navigate({
-								search: { ...changeRange(range, change), page: 1 },
-							})
-						}
-					/>
-					{data.total === 0 ? (
-						<EmptyState
-							icon={<CreditCardIcon />}
-							title="No payments in this range"
-							description="Each booking with a price adds a payment here when it's made."
+			<ContentBox className="gap-4">
+				<PaymentsNotice audience="organization" />
+				{list.isError ? (
+					<FieldError>{list.error.message}</FieldError>
+				) : !data || availability.isPending ? (
+					<Skeleton className="h-64 rounded-md" />
+				) : availability.isError ? (
+					<FieldError>{availability.error.message}</FieldError>
+				) : (
+					<>
+						<DateRangeFilter
+							from={range.from}
+							to={range.to}
+							onChange={(change) =>
+								void navigate({
+									search: { ...changeRange(range, change), page: 1 },
+								})
+							}
 						/>
-					) : (
-						<>
-							<PaymentTotals totals={data.totals} />
-							<ContentBox className="p-4">
+						{data.total === 0 ? (
+							<EmptyState
+								icon={<CreditCardIcon />}
+								title="No payments in this range"
+								description="Each booking with a price adds a payment here when it's made."
+								className="border-none"
+							/>
+						) : (
+							<>
+								<PaymentTotals totals={data.totals} />
 								<PaymentsTable
 									items={data.items}
 									total={data.total}
@@ -103,11 +104,11 @@ function PaymentsPage() {
 										void navigate({ search: (prev) => ({ ...prev, page }) })
 									}
 								/>
-							</ContentBox>
-						</>
-					)}
-				</>
-			)}
+							</>
+						)}
+					</>
+				)}
+			</ContentBox>
 		</>
 	);
 }

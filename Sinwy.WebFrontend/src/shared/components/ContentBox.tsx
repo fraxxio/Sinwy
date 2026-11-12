@@ -11,7 +11,7 @@ export function ContentBox({
 	return (
 		<div
 			className={cn(
-				"flex flex-1 flex-col rounded-xl border bg-card p-8 text-card-foreground",
+				"flex flex-1 flex-col rounded-lg border bg-card p-6 text-card-foreground",
 				className,
 			)}
 		>

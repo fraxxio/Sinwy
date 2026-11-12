@@ -14,7 +14,6 @@ import {
 	publicPagePath,
 	slugFromTitle,
 } from "#/modules/org-dashboard/lib/pages";
-import { ContentBox } from "#/shared/components/ContentBox";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { FieldError } from "#/shared/components/ui/field";
 import { toast } from "#/shared/components/ui/toast";
@@ -81,7 +80,7 @@ export function NewPageForm({
 				void form.handleSubmit();
 			}}
 		>
-			<ContentBox className="divide-y">
+			<div className="divide-y">
 				<SettingsSection
 					id="template"
 					title="Template"
@@ -150,7 +149,7 @@ export function NewPageForm({
 						/>
 					</form.AppForm>
 				</div>
-			</ContentBox>
+			</div>
 		</form>
 	);
 }

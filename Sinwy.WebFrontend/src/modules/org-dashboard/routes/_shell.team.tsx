@@ -48,14 +48,20 @@ function TeamPage() {
 		return (
 			<>
 				{header()}
-				<Skeleton className="h-48 rounded-xl" />
+				<ContentBox>
+					<Skeleton className="h-48 rounded-md" />
+				</ContentBox>
 			</>
 		);
 	if (members.isError || invitations.isError)
 		return (
 			<>
 				{header()}
-				<FieldError>{(members.error ?? invitations.error)?.message}</FieldError>
+				<ContentBox>
+					<FieldError>
+						{(members.error ?? invitations.error)?.message}
+					</FieldError>
+				</ContentBox>
 			</>
 		);
 
@@ -85,31 +91,32 @@ function TeamPage() {
 				),
 			)}
 
-			<ContentBox className="gap-4 p-4">
-				<div className="flex items-baseline justify-between gap-4">
-					<h2 className="font-heading font-medium text-base">Members</h2>
-					<p className="text-muted-foreground text-sm">
-						{seats.used} of {seats.limit} seats used
-					</p>
-				</div>
-				<MembersTable
-					organizationId={organization.id}
-					members={members.data}
-					currentUserId={session.user.id}
-				/>
-			</ContentBox>
-
-			{pending.length > 0 && (
-				<ContentBox className="gap-4 p-4">
-					<h2 className="font-heading font-medium text-base">
-						Pending invitations
-					</h2>
-					<InvitationsTable
+			<ContentBox className="gap-8">
+				<section className="grid gap-4">
+					<div className="flex items-baseline justify-between gap-4">
+						<h2 className="font-heading font-medium text-base">Members</h2>
+						<p className="text-muted-foreground text-sm">
+							{seats.used} of {seats.limit} seats used
+						</p>
+					</div>
+					<MembersTable
 						organizationId={organization.id}
-						invitations={pending}
+						members={members.data}
+						currentUserId={session.user.id}
 					/>
-				</ContentBox>
-			)}
+				</section>
+				{pending.length > 0 && (
+					<section className="grid gap-4">
+						<h2 className="font-heading font-medium text-base">
+							Pending invitations
+						</h2>
+						<InvitationsTable
+							organizationId={organization.id}
+							invitations={pending}
+						/>
+					</section>
+				)}
+			</ContentBox>
 
 			{inviting && (
 				<InviteDialog

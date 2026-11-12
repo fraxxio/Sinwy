@@ -77,12 +77,15 @@ function OrganizationsPage() {
 					title="Organizations"
 					description="Organizations you own or belong to."
 				/>
-				<EmptyState
-					icon={<Building2Icon />}
-					title="No organizations yet"
-					description="Create an organization to take bookings, publish pages and get paid."
-					action={createLink}
-				/>
+				<ContentBox>
+					<EmptyState
+						icon={<Building2Icon />}
+						title="No organizations yet"
+						description="Create an organization to take bookings, publish pages and get paid."
+						action={createLink}
+						className="border-none"
+					/>
+				</ContentBox>
 			</>
 		);
 
@@ -93,26 +96,28 @@ function OrganizationsPage() {
 				description="Organizations you own or belong to."
 				action={organizations && createLink}
 			/>
-			<IncomingTransfers />
-			{subscription && <SlotUsage subscription={subscription} />}
-			<ContentBox>
-				{isPending ? (
-					<Skeleton className="h-24" />
-				) : isError ? (
-					<FieldError>
-						Couldn't load your organizations. Reload to retry.
-					</FieldError>
-				) : (
-					<ul className="divide-y">
-						{organizations.map((org) => (
-							<OrganizationRow
-								key={org.id}
-								organization={org}
-								subscription={subscription ?? null}
-							/>
-						))}
-					</ul>
-				)}
+			<ContentBox className="divide-y">
+				<IncomingTransfers />
+				<section className="grid gap-4 py-8 first:pt-0 last:pb-0">
+					{subscription && <SlotUsage subscription={subscription} />}
+					{isPending ? (
+						<Skeleton className="h-24 rounded-md" />
+					) : isError ? (
+						<FieldError>
+							Couldn't load your organizations. Reload to retry.
+						</FieldError>
+					) : (
+						<ul className="divide-y">
+							{organizations.map((org) => (
+								<OrganizationRow
+									key={org.id}
+									organization={org}
+									subscription={subscription ?? null}
+								/>
+							))}
+						</ul>
+					)}
+				</section>
 			</ContentBox>
 		</>
 	);
@@ -126,7 +131,7 @@ function SlotUsage({ subscription }: { subscription: AccountSubscriptionDto }) {
 			: "You have no plan, so none of your organizations are active.";
 
 	return (
-		<div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+		<div className="flex flex-wrap items-center justify-between gap-3 text-sm">
 			<p className="text-muted-foreground">{text}</p>
 			<Button
 				variant="outline"

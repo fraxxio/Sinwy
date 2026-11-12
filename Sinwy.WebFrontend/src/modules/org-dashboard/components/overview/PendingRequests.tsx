@@ -12,9 +12,9 @@ import {
 	invalidateBookings,
 } from "#/modules/org-dashboard/lib/booking-queries";
 import { useUnwrapWrite } from "#/modules/org-dashboard/lib/service-queries";
+import { FlatCard } from "#/shared/components/FlatCard";
 import { Button } from "#/shared/components/ui/button";
 import {
-	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
@@ -40,7 +40,7 @@ export function PendingRequests({
 	canWrite: boolean;
 }) {
 	return (
-		<Card>
+		<FlatCard>
 			<CardHeader>
 				<CardTitle>Pending requests</CardTitle>
 				<CardDescription>
@@ -79,7 +79,7 @@ export function PendingRequests({
 					</Link>
 				)}
 			</CardContent>
-		</Card>
+		</FlatCard>
 	);
 }
 

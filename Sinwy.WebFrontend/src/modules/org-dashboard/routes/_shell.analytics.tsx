@@ -22,6 +22,7 @@ import {
 	completeDaysRange,
 } from "#/modules/org-dashboard/lib/date-range";
 import { ORG_SECTIONS } from "#/modules/org-dashboard/lib/sections";
+import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { PlanGate } from "#/shared/components/PlanGate";
 import { buttonVariants } from "#/shared/components/ui/button";
@@ -77,47 +78,49 @@ function AnalyticsPage() {
 					)
 				}
 			/>
-			{traffic.isError ? (
-				<FieldError>{traffic.error.message}</FieldError>
-			) : !resolved ? (
-				<Skeleton className="h-64 rounded-xl" />
-			) : (
-				<Tabs
-					value={search.tab}
-					onValueChange={(tab) => {
-						if (isTab(tab))
-							void navigate({ search: (prev) => ({ ...prev, tab }) });
-					}}
-					className="gap-4"
-				>
-					<div className="flex flex-wrap items-end justify-between gap-3">
-						<TabsList>
-							{ANALYTICS_TABS.map((tab) => (
-								<TabsTrigger key={tab} value={tab}>
-									{ANALYTICS_TAB_LABELS[tab]}
-								</TabsTrigger>
-							))}
-						</TabsList>
-						<RangeFilter
-							resolved={resolved}
-							search={query}
-							onChange={(range) =>
-								void navigate({ search: (prev) => ({ ...prev, ...range }) })
-							}
-						/>
-					</div>
-					<RangeNotes range={resolved} />
-					<TabsContent value="traffic">
-						<TrafficTab organizationId={organization.id} range={query} />
-					</TabsContent>
-					<TabsContent value="conversion">
-						<ConversionTab organizationId={organization.id} range={query} />
-					</TabsContent>
-					<TabsContent value="bookings">
-						<BookingsTab organizationId={organization.id} range={query} />
-					</TabsContent>
-				</Tabs>
-			)}
+			<ContentBox>
+				{traffic.isError ? (
+					<FieldError>{traffic.error.message}</FieldError>
+				) : !resolved ? (
+					<Skeleton className="h-64 rounded-md" />
+				) : (
+					<Tabs
+						value={search.tab}
+						onValueChange={(tab) => {
+							if (isTab(tab))
+								void navigate({ search: (prev) => ({ ...prev, tab }) });
+						}}
+						className="gap-4"
+					>
+						<div className="flex flex-wrap items-end justify-between gap-3">
+							<TabsList>
+								{ANALYTICS_TABS.map((tab) => (
+									<TabsTrigger key={tab} value={tab}>
+										{ANALYTICS_TAB_LABELS[tab]}
+									</TabsTrigger>
+								))}
+							</TabsList>
+							<RangeFilter
+								resolved={resolved}
+								search={query}
+								onChange={(range) =>
+									void navigate({ search: (prev) => ({ ...prev, ...range }) })
+								}
+							/>
+						</div>
+						<RangeNotes range={resolved} />
+						<TabsContent value="traffic">
+							<TrafficTab organizationId={organization.id} range={query} />
+						</TabsContent>
+						<TabsContent value="conversion">
+							<ConversionTab organizationId={organization.id} range={query} />
+						</TabsContent>
+						<TabsContent value="bookings">
+							<BookingsTab organizationId={organization.id} range={query} />
+						</TabsContent>
+					</Tabs>
+				)}
+			</ContentBox>
 		</>
 	);
 }

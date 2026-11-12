@@ -11,9 +11,10 @@ import {
 } from "#/modules/org-dashboard/components/analytics/AnalyticsWidgets";
 import { analyticsQuery } from "#/modules/org-dashboard/lib/analytics-queries";
 import { EmptyState } from "#/shared/components/EmptyState";
+import { FlatCard } from "#/shared/components/FlatCard";
 import { PlanGate } from "#/shared/components/PlanGate";
+import { UpgradePrompt } from "#/shared/components/UpgradePrompt";
 import {
-	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
@@ -35,7 +36,12 @@ export function ConversionTab(props: {
 	range: AnalyticsRangeQuery;
 }) {
 	return (
-		<PlanGate feature="analytics-advanced">
+		<PlanGate
+			feature="analytics-advanced"
+			fallback={
+				<UpgradePrompt feature="analytics-advanced" className="border-none" />
+			}
+		>
 			<Funnel {...props} />
 		</PlanGate>
 	);
@@ -51,7 +57,7 @@ function Funnel({
 	const funnel = useQuery(analyticsQuery(organizationId, "funnel", range));
 
 	if (funnel.isError) return <FieldError>{funnel.error.message}</FieldError>;
-	if (!funnel.data) return <Skeleton className="h-64 rounded-xl" />;
+	if (!funnel.data) return <Skeleton className="h-64 rounded-md" />;
 
 	const { steps } = funnel.data;
 	if (steps.every((step) => step.count === 0))
@@ -60,6 +66,7 @@ function Funnel({
 				icon={<FilterIcon />}
 				title="No visitors in this range"
 				description="The funnel fills in as visitors reach your booking page and book."
+				className="border-none"
 			/>
 		);
 
@@ -71,7 +78,7 @@ function FunnelSteps({ steps }: { steps: FunnelDto["steps"] }) {
 	const last = steps.at(-1)?.count ?? 0;
 
 	return (
-		<Card>
+		<FlatCard>
 			<CardHeader>
 				<CardTitle>Booking funnel</CardTitle>
 				<CardDescription>
@@ -107,6 +114,6 @@ function FunnelSteps({ steps }: { steps: FunnelDto["steps"] }) {
 					})}
 				</ol>
 			</CardContent>
-		</Card>
+		</FlatCard>
 	);
 }

@@ -55,7 +55,7 @@ export function BookingsCalendar({
 	const showDay = (day: string) => onChange({ calendarView: "day", date: day });
 
 	return (
-		<div className="space-y-3">
+		<div className="flex flex-1 flex-col gap-3">
 			<div className="flex flex-wrap items-center gap-2">
 				<div className="flex items-center gap-1">
 					<Button
@@ -113,7 +113,7 @@ export function BookingsCalendar({
 				</div>
 			</div>
 			{loading && !bookings ? (
-				<Skeleton className="h-[60vh] rounded-lg" />
+				<Skeleton className="min-h-[60vh] flex-1 rounded-md" />
 			) : view === "month" ? (
 				<MonthView
 					dates={dates}

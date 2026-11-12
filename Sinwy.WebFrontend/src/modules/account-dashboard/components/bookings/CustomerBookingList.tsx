@@ -12,7 +12,7 @@ export function CustomerBookingList({
 	bookings: CustomerBookingDto[];
 }) {
 	return (
-		<ul className="divide-y rounded-xl border">
+		<ul className="divide-y overflow-hidden rounded-md border">
 			{bookings.map((booking) => {
 				const { timezone } = booking.organization;
 				return (

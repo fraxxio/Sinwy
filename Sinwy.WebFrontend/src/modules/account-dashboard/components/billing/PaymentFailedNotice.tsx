@@ -13,13 +13,13 @@ export function PaymentFailedNotice() {
 	return (
 		<div
 			role="alert"
-			className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-destructive/10 p-4 text-sm dark:bg-destructive/20"
+			className="flex max-w-3xl flex-wrap items-center gap-x-4 gap-y-2 rounded-md bg-destructive/10 p-4 text-sm dark:bg-destructive/20"
 		>
 			<TriangleAlertIcon
 				aria-hidden
 				className="size-4 shrink-0 text-destructive"
 			/>
-			<div className="min-w-0 flex-1">
+			<div className="min-w-0 grow basis-48">
 				<p>
 					<span className="font-medium">The last payment failed.</span> Polar
 					retries it for a while; if it keeps failing, your plan ends and every

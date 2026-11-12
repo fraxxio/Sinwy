@@ -1,8 +1,8 @@
 import type { BookingDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
 import { BookingStatusBadge } from "#/shared/components/booking/BookingStatusBadge";
+import { FlatCard } from "#/shared/components/FlatCard";
 import {
-	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
@@ -20,7 +20,7 @@ export function TodayBookings({
 	timezone: string;
 }) {
 	return (
-		<Card>
+		<FlatCard>
 			<CardHeader>
 				<CardTitle>Today's bookings</CardTitle>
 				<CardDescription>Times in {timezone}</CardDescription>
@@ -56,6 +56,6 @@ export function TodayBookings({
 					</ul>
 				)}
 			</CardContent>
-		</Card>
+		</FlatCard>
 	);
 }

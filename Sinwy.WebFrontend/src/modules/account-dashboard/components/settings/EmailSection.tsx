@@ -67,7 +67,7 @@ export function EmailSection({ user }: { user: SessionUser }) {
 				</div>
 
 				{sentTo ? (
-					<div className="grid gap-2 rounded-2xl border border-dashed p-4 text-sm">
+					<div className="grid gap-2 rounded-md border border-dashed p-4 text-sm">
 						<p className="font-medium">Almost there</p>
 						<p className="text-muted-foreground">
 							Check your current inbox to approve the change, then the one at{" "}

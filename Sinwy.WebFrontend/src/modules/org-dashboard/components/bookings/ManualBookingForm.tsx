@@ -13,7 +13,6 @@ import {
 	manualBookingFormSchema,
 } from "#/modules/org-dashboard/lib/booking-forms";
 import { formatDuration } from "#/modules/org-dashboard/lib/services";
-import { ContentBox } from "#/shared/components/ContentBox";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { FieldError } from "#/shared/components/ui/field";
 import { todayIn } from "#/shared/lib/date";
@@ -69,7 +68,7 @@ export function ManualBookingForm({
 				void form.handleSubmit();
 			}}
 		>
-			<ContentBox className="divide-y">
+			<div className="divide-y">
 				<SettingsSection
 					id="when"
 					title="Service and time"
@@ -156,10 +155,11 @@ export function ManualBookingForm({
 						<form.SubmitButton
 							label="Create booking"
 							pendingLabel="Creating…"
+							className="w-fit"
 						/>
 					</form.AppForm>
 				</div>
-			</ContentBox>
+			</div>
 		</form>
 	);
 }

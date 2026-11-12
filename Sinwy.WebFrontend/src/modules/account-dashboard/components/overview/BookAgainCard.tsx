@@ -1,7 +1,7 @@
 import type { CustomerRebookServiceDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
+import { FlatCard } from "#/shared/components/FlatCard";
 import {
-	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
@@ -15,7 +15,7 @@ export function BookAgainCard({
 	services: CustomerRebookServiceDto[];
 }) {
 	return (
-		<Card>
+		<FlatCard>
 			<CardHeader>
 				<CardTitle>Book again</CardTitle>
 				<CardDescription>Services you booked before</CardDescription>
@@ -46,6 +46,6 @@ export function BookAgainCard({
 					))}
 				</ul>
 			</CardContent>
-		</Card>
+		</FlatCard>
 	);
 }

@@ -37,7 +37,7 @@ export function PageContentSummary({
 				</Button>
 			}
 		>
-			<div className="flex items-center gap-4 rounded-xl border border-dashed p-6">
+			<div className="flex items-center gap-4 rounded-md border border-dashed p-6">
 				<LayoutTemplateIcon
 					className="size-8 shrink-0 text-muted-foreground"
 					aria-hidden

@@ -28,15 +28,15 @@ export function MonthView({
 }) {
 	const byDate = groupByStartDate(bookings, timezone);
 	return (
-		<div className="overflow-hidden rounded-lg border">
-			<div className="grid grid-cols-7 border-b bg-muted/40 text-muted-foreground text-xs">
+		<div className="flex flex-1 flex-col">
+			<div className="grid grid-cols-7 border-b text-muted-foreground text-xs">
 				{WEEKDAYS.map((day) => (
 					<div key={day} className="px-2 py-1.5 font-medium">
 						{day}
 					</div>
 				))}
 			</div>
-			<div className="grid grid-cols-7">
+			<div className="grid flex-1 auto-rows-fr grid-cols-7">
 				{dates.map((date, index) => {
 					const day = byDate.get(date) ?? [];
 					const hidden = day.length - SHOWN_PER_DAY;
@@ -45,7 +45,8 @@ export function MonthView({
 							key={date}
 							data-date={date}
 							className={cn(
-								"min-h-28 space-y-1 border-b p-1.5",
+								"min-h-24 space-y-1 p-1.5",
+								index < dates.length - 7 && "border-b",
 								index % 7 !== 6 && "border-r",
 								!date.startsWith(month) && "bg-muted/30 text-muted-foreground",
 							)}

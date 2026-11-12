@@ -7,7 +7,6 @@ import {
 	declineTransfer,
 	incomingTransfersQuery,
 } from "#/modules/account-dashboard/lib/account-queries";
-import { ContentBox } from "#/shared/components/ContentBox";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { formatDay } from "#/shared/lib/date";
@@ -18,16 +17,14 @@ export function IncomingTransfers() {
 	if (!transfers?.length) return null;
 
 	return (
-		<ContentBox className="mb-6">
-			<h2 className="mb-3 font-heading font-medium text-base">
-				Ownership offers
-			</h2>
+		<section className="grid gap-4 py-8 first:pt-0 last:pb-0">
+			<h2 className="font-heading font-medium text-base">Ownership offers</h2>
 			<ul className="divide-y">
 				{transfers.map((transfer) => (
 					<IncomingTransferRow key={transfer.id} transfer={transfer} />
 				))}
 			</ul>
-		</ContentBox>
+		</section>
 	);
 }
 
@@ -50,7 +47,7 @@ function IncomingTransferRow({ transfer }: { transfer: IncomingTransferDto }) {
 
 	return (
 		<li className="grid gap-2 py-3 first:pt-0 last:pb-0">
-			<div className="flex items-center justify-between gap-4">
+			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
 				<div className="grid gap-0.5 text-sm">
 					<span className="font-medium">{transfer.organization.name}</span>
 					<span className="text-xs text-muted-foreground">

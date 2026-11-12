@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 import { CustomerBookingList } from "#/modules/account-dashboard/components/bookings/CustomerBookingList";
 import { accountBookingsQuery } from "#/modules/account-dashboard/lib/booking-queries";
+import { ContentBox } from "#/shared/components/ContentBox";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { Button } from "#/shared/components/ui/button";
@@ -49,81 +50,85 @@ function BookingsPage() {
 				title="Bookings"
 				description="Appointments you've booked with businesses on Sinwy."
 			/>
-			<div className="flex gap-1 rounded-lg border p-1 self-start">
-				{CUSTOMER_BOOKING_TABS.map((value) => (
-					<Button
-						key={value}
-						size="sm"
-						variant="ghost"
-						aria-pressed={tab === value}
-						className={cn(tab === value && "bg-muted")}
-						onClick={() =>
-							void navigate({
-								search: {
-									tab: value === "upcoming" ? undefined : value,
-								},
-							})
-						}
-					>
-						{TAB_LABELS[value]}
-					</Button>
-				))}
-			</div>
-			{bookings.isError ? (
-				<FieldError>{bookings.error.message}</FieldError>
-			) : bookings.isPending ? (
-				<Skeleton className="h-48 rounded-xl" />
-			) : bookings.data.items.length === 0 ? (
-				page > 1 ? (
-					<p className="py-10 text-center text-muted-foreground text-sm">
-						This page is empty.
-						<Button variant="link" onClick={() => goToPage(1)}>
-							Back to the first page
+			<ContentBox className="gap-4">
+				<div className="flex gap-1 self-start rounded-md border p-1">
+					{CUSTOMER_BOOKING_TABS.map((value) => (
+						<Button
+							key={value}
+							size="sm"
+							variant="ghost"
+							aria-pressed={tab === value}
+							className={cn(tab === value && "bg-muted")}
+							onClick={() =>
+								void navigate({
+									search: {
+										tab: value === "upcoming" ? undefined : value,
+									},
+								})
+							}
+						>
+							{TAB_LABELS[value]}
 						</Button>
-					</p>
-				) : tab === "upcoming" ? (
-					<EmptyState
-						icon={<CalendarCheckIcon />}
-						title="No upcoming bookings"
-						description="Bookings are made on a business's own booking page. Once you book there, your appointments show up here."
-					/>
-				) : (
-					<EmptyState
-						icon={<HistoryIcon />}
-						title="No past bookings"
-						description="Finished and cancelled bookings show up here."
-					/>
-				)
-			) : (
-				<div className="space-y-3">
-					<CustomerBookingList bookings={bookings.data.items} />
-					{pages > 1 && (
-						<div className="flex items-center justify-end gap-1 text-muted-foreground text-sm">
-							<Button
-								variant="outline"
-								size="icon-sm"
-								aria-label="Previous page"
-								disabled={page <= 1}
-								onClick={() => goToPage(page - 1)}
-							>
-								<ChevronLeftIcon />
-							</Button>
-							<span className="px-2 tabular-nums">
-								Page {page} of {pages}
-							</span>
-							<Button
-								variant="outline"
-								size="icon-sm"
-								aria-label="Next page"
-								disabled={page >= pages}
-								onClick={() => goToPage(page + 1)}
-							>
-								<ChevronRightIcon />
-							</Button>
-						</div>
-					)}
+					))}
 				</div>
-			)}
+				{bookings.isError ? (
+					<FieldError>{bookings.error.message}</FieldError>
+				) : bookings.isPending ? (
+					<Skeleton className="h-48 rounded-md" />
+				) : bookings.data.items.length === 0 ? (
+					page > 1 ? (
+						<p className="py-10 text-center text-muted-foreground text-sm">
+							This page is empty.
+							<Button variant="link" onClick={() => goToPage(1)}>
+								Back to the first page
+							</Button>
+						</p>
+					) : tab === "upcoming" ? (
+						<EmptyState
+							icon={<CalendarCheckIcon />}
+							title="No upcoming bookings"
+							description="Bookings are made on a business's own booking page. Once you book there, your appointments show up here."
+							className="border-none"
+						/>
+					) : (
+						<EmptyState
+							icon={<HistoryIcon />}
+							title="No past bookings"
+							description="Finished and cancelled bookings show up here."
+							className="border-none"
+						/>
+					)
+				) : (
+					<>
+						<CustomerBookingList bookings={bookings.data.items} />
+						{pages > 1 && (
+							<div className="flex items-center justify-end gap-1 text-muted-foreground text-sm">
+								<Button
+									variant="outline"
+									size="icon-sm"
+									aria-label="Previous page"
+									disabled={page <= 1}
+									onClick={() => goToPage(page - 1)}
+								>
+									<ChevronLeftIcon />
+								</Button>
+								<span className="px-2 tabular-nums">
+									Page {page} of {pages}
+								</span>
+								<Button
+									variant="outline"
+									size="icon-sm"
+									aria-label="Next page"
+									disabled={page >= pages}
+									onClick={() => goToPage(page + 1)}
+								>
+									<ChevronRightIcon />
+								</Button>
+							</div>
+						)}
+					</>
+				)}
+			</ContentBox>
 		</>
 	);
 }

@@ -39,7 +39,7 @@ function TimeInput({ field, label }: { field: AnyFieldApi; label: string }) {
 				onBlur={field.handleBlur}
 				onChange={(e) => field.handleChange(e.target.value)}
 				aria-invalid={!!error}
-				className="w-32"
+				className="w-34"
 			/>
 			{error && <FieldError className="text-xs">{error}</FieldError>}
 		</div>
@@ -75,7 +75,7 @@ export function BusinessHoursForm({
 
 	return (
 		<form
-			className="pb-8"
+			className="max-w-3xl pb-8"
 			onSubmit={(e) => {
 				e.preventDefault();
 				void form.handleSubmit();
@@ -123,7 +123,7 @@ export function BusinessHoursForm({
 					}
 				>
 					{!hasHours && (
-						<p className="rounded-lg border border-dashed px-4 py-3 text-muted-foreground text-sm">
+						<p className="rounded-md border border-dashed px-4 py-3 text-muted-foreground text-sm">
 							Every day is closed, so customers can't book yet.
 							{!readOnly && " Open the days you work and save."}
 						</p>

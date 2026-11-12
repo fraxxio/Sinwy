@@ -22,7 +22,7 @@ export function PageUsageMeter({ usage }: { usage: PageUsageDto }) {
 			<p className="text-muted-foreground text-sm">
 				{usage.used} of {usage.limit} pages used
 			</p>
-			<div className="h-1.5 overflow-hidden rounded-full bg-muted">
+			<div className="h-1.5 overflow-hidden rounded-full bg-sidebar-accent">
 				<div
 					className={cn(
 						"h-full rounded-full bg-primary",
@@ -62,7 +62,7 @@ export function PageLimitNotice({
 		: "No plan includes more pages.";
 
 	return (
-		<Alert className="mb-4">
+		<Alert className="mb-4 rounded-md">
 			<InfoIcon />
 			<AlertTitle>{title}</AlertTitle>
 			<AlertDescription className="grid gap-3">

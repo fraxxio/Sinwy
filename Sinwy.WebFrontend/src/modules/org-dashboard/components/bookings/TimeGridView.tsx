@@ -55,9 +55,14 @@ export function TimeGridView({
 		gridTemplateColumns: `3.5rem repeat(${dates.length}, 1fr)`,
 	};
 
+	const minWidth = dates.length > 1 && "min-w-xl";
+
 	return (
-		<div className="overflow-hidden rounded-lg border">
-			<div className="grid border-b bg-muted/40 text-xs" style={template}>
+		<div className="overflow-x-auto rounded-md border">
+			<div
+				className={cn("grid border-b bg-muted/40 text-xs", minWidth)}
+				style={template}
+			>
 				<div />
 				{dates.map((date) => {
 					const label = format(parseISO(date), "EEE d");
@@ -88,7 +93,13 @@ export function TimeGridView({
 					);
 				})}
 			</div>
-			<div ref={scroller} className="max-h-[70vh] overflow-y-auto">
+			<div
+				ref={scroller}
+				className={cn(
+					"max-h-[max(24rem,calc(100dvh-18rem))] overflow-y-auto",
+					minWidth,
+				)}
+			>
 				<div className="grid" style={{ ...template, height: px(total) }}>
 					<div className="relative">
 						{rows.map((row, index) => (

@@ -34,7 +34,7 @@ export function BookingsTab({
 
 	if (bookings.isError)
 		return <FieldError>{bookings.error.message}</FieldError>;
-	if (!bookings.data) return <Skeleton className="h-64 rounded-xl" />;
+	if (!bookings.data) return <Skeleton className="h-64 rounded-md" />;
 
 	const { totals, series, range: resolved } = bookings.data;
 	const money = (minor: number) => formatMinorUnits(minor, resolved.currency);
@@ -45,6 +45,7 @@ export function BookingsTab({
 				icon={<CalendarIcon />}
 				title="No bookings in this range"
 				description="Bookings show up here the day after they're made."
+				className="border-none"
 			/>
 		);
 
@@ -103,13 +104,13 @@ function BookingsBreakdown({
 
 	if (breakdown.isError)
 		return <FieldError>{breakdown.error.message}</FieldError>;
-	if (!breakdown.data) return <Skeleton className="h-48 rounded-xl" />;
+	if (!breakdown.data) return <Skeleton className="h-48 rounded-md" />;
 
 	const { services, cancellation, noShow } = breakdown.data;
 
 	return (
 		<div className="grid gap-4 lg:grid-cols-3">
-			<div className="lg:col-span-2">
+			<div className="min-w-0 lg:col-span-2">
 				<BreakdownTable
 					title="By service"
 					columns={["Service", "Bookings made", "Value of bookings made"]}

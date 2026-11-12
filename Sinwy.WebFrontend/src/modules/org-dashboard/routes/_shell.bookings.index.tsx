@@ -66,7 +66,7 @@ function BookingsPage() {
 					size="sm"
 					variant="ghost"
 					aria-pressed={search.view === view}
-					className={cn(search.view === view && "bg-muted")}
+					className={cn(search.view === view && "surface-raised")}
 					onClick={() =>
 						void navigate({ search: (prev) => ({ ...prev, view }) })
 					}
@@ -85,6 +85,7 @@ function BookingsPage() {
 				description="Every appointment your customers have booked with you."
 				action={
 					<div className="flex items-center gap-2">
+						{viewToggle}
 						{hasPermission(member.roles, "bookings:write") && (
 							<Button
 								nativeButton={false}
@@ -99,14 +100,17 @@ function BookingsPage() {
 								New booking
 							</Button>
 						)}
-						{viewToggle}
 					</div>
 				}
 			/>
 			{availability.isPending ? (
-				<Skeleton className="h-[60vh] rounded-xl" />
+				<ContentBox>
+					<Skeleton className="h-[60vh] rounded-md" />
+				</ContentBox>
 			) : availability.isError ? (
-				<FieldError>{availability.error.message}</FieldError>
+				<ContentBox>
+					<FieldError>{availability.error.message}</FieldError>
+				</ContentBox>
 			) : (
 				<BookingsContent
 					search={search}
@@ -160,7 +164,7 @@ function BookingsContent({
 
 	if (isCalendar)
 		return (
-			<ContentBox className="space-y-2 p-4">
+			<ContentBox className="gap-2">
 				<BookingsCalendar
 					search={search}
 					date={date}
@@ -187,14 +191,14 @@ function BookingsContent({
 		);
 
 	return (
-		<ContentBox className="space-y-4 p-4">
+		<ContentBox className="gap-4">
 			<BookingFilters
 				search={search}
 				services={services}
 				onChange={(change) => update({ ...change, page: 1 })}
 			/>
 			{list.isPending ? (
-				<Skeleton className="h-64 rounded-lg" />
+				<Skeleton className="h-64 rounded-md" />
 			) : list.isError ? (
 				<FieldError>{list.error.message}</FieldError>
 			) : (

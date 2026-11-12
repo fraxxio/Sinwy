@@ -13,11 +13,12 @@ import {
 	windowPassedMessage,
 } from "#/modules/account-dashboard/lib/customer-booking";
 import { BookingStatusBadge } from "#/shared/components/booking/BookingStatusBadge";
+import { ContentBox } from "#/shared/components/ContentBox";
 import { EmptyState } from "#/shared/components/EmptyState";
+import { FlatCard } from "#/shared/components/FlatCard";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { Button } from "#/shared/components/ui/button";
 import {
-	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
@@ -41,28 +42,46 @@ function BookingDetailPage() {
 		return (
 			<>
 				<PageHeader title="Booking" />
-				<FieldError>{booking.error.message}</FieldError>
+				<ContentBox>
+					<FieldError>{booking.error.message}</FieldError>
+				</ContentBox>
 			</>
 		);
-	if (booking.isPending) return <Skeleton className="h-96 rounded-xl" />;
+	if (booking.isPending)
+		return (
+			<>
+				<PageHeader title="Booking" description="Loading your booking…" />
+				<ContentBox className="gap-4">
+					<Skeleton className="h-40 rounded-md" />
+					<div className="grid gap-4 lg:grid-cols-2">
+						<Skeleton className="h-56 rounded-md" />
+						<Skeleton className="h-56 rounded-md" />
+					</div>
+					<Skeleton className="h-40 rounded-md" />
+				</ContentBox>
+			</>
+		);
 	if (booking.data === null)
 		return (
 			<>
 				<PageHeader title="Booking" />
-				<EmptyState
-					icon={<CalendarXIcon />}
-					title="Booking not found"
-					description="It may have been made from another account."
-					action={
-						<Button
-							variant="outline"
-							nativeButton={false}
-							render={<Link to="/account/bookings" />}
-						>
-							Back to bookings
-						</Button>
-					}
-				/>
+				<ContentBox>
+					<EmptyState
+						icon={<CalendarXIcon />}
+						title="Booking not found"
+						description="It may have been made from another account."
+						className="border-none"
+						action={
+							<Button
+								variant="outline"
+								nativeButton={false}
+								render={<Link to="/account/bookings" />}
+							>
+								Back to bookings
+							</Button>
+						}
+					/>
+				</ContentBox>
 			</>
 		);
 
@@ -87,151 +106,155 @@ function BookingDetail({ booking }: { booking: CustomerBookingDetailDto }) {
 				title={booking.serviceName}
 				description={`at ${organization.name}`}
 			/>
-			<Card>
-				<CardContent className="space-y-4">
-					<div className="space-y-1">
-						<div className="flex flex-wrap items-center gap-3">
-							<BookingStatusBadge booking={booking} />
-							<p className="font-medium">
-								{formatDateIn(booking.startsAt, timezone)},{" "}
-								{formatTimeIn(booking.startsAt, timezone)}–
-								{formatTimeIn(booking.endsAt, timezone)}
-							</p>
+			<ContentBox className="gap-4">
+				<FlatCard>
+					<CardContent className="space-y-4">
+						<div className="space-y-1">
+							<div className="flex flex-wrap items-center gap-3">
+								<BookingStatusBadge booking={booking} />
+								<p className="font-medium">
+									{formatDateIn(booking.startsAt, timezone)},{" "}
+									{formatTimeIn(booking.startsAt, timezone)}–
+									{formatTimeIn(booking.endsAt, timezone)}
+								</p>
+							</div>
+							{statusLine && (
+								<p className="text-muted-foreground text-sm">{statusLine}</p>
+							)}
+							{booking.cancellationReason && (
+								<p className="text-muted-foreground text-sm">
+									Reason: {booking.cancellationReason}
+								</p>
+							)}
 						</div>
-						{statusLine && (
-							<p className="text-muted-foreground text-sm">{statusLine}</p>
-						)}
-						{booking.cancellationReason && (
-							<p className="text-muted-foreground text-sm">
-								Reason: {booking.cancellationReason}
+						{policy.canCancel && policy.deadline && (
+							<p className="text-sm">
+								You can cancel until {at(policy.deadline.toISOString())} (
+								{timezone}).
 							</p>
 						)}
-					</div>
-					{policy.canCancel && policy.deadline && (
-						<p className="text-sm">
-							You can cancel until {at(policy.deadline.toISOString())} (
-							{timezone}).
-						</p>
-					)}
-					{policy.canCancel && !policy.deadline && (
-						<p className="text-sm">
-							{booking.status === "pending"
-								? "You can withdraw this request any time."
-								: "You can cancel any time before the start."}
-						</p>
-					)}
-					{!policy.canCancel && policy.windowPassed && (
-						<p className="text-sm">{windowPassedMessage(booking)}</p>
-					)}
-					<div className="flex flex-wrap gap-2">
-						{policy.canCancel && <CancelBookingButton booking={booking} />}
-						{isUpcoming(booking, now) && (
-							<AddToCalendarButton booking={booking} />
+						{policy.canCancel && !policy.deadline && (
+							<p className="text-sm">
+								{booking.status === "pending"
+									? "You can withdraw this request any time."
+									: "You can cancel any time before the start."}
+							</p>
 						)}
-						<Button
-							variant="outline"
-							nativeButton={false}
-							render={
-								<Link
-									to="/$organizationSlug/book"
-									params={{ organizationSlug: organization.slug }}
-									search={{ service: booking.serviceId }}
-								/>
-							}
-						>
-							<RepeatIcon />
-							Book again
-						</Button>
-					</div>
-				</CardContent>
-			</Card>
-			<div className="grid gap-4 lg:grid-cols-2">
-				<Card>
+						{!policy.canCancel && policy.windowPassed && (
+							<p className="text-sm">{windowPassedMessage(booking)}</p>
+						)}
+						<div className="flex flex-wrap gap-2">
+							{policy.canCancel && <CancelBookingButton booking={booking} />}
+							{isUpcoming(booking, now) && (
+								<AddToCalendarButton booking={booking} />
+							)}
+							<Button
+								variant="outline"
+								nativeButton={false}
+								render={
+									<Link
+										to="/$organizationSlug/book"
+										params={{ organizationSlug: organization.slug }}
+										search={{ service: booking.serviceId }}
+									/>
+								}
+							>
+								<RepeatIcon />
+								Book again
+							</Button>
+						</div>
+					</CardContent>
+				</FlatCard>
+				<div className="grid gap-4 lg:grid-cols-2">
+					<FlatCard>
+						<CardHeader>
+							<CardTitle>Appointment</CardTitle>
+							<CardDescription>Times in {timezone}</CardDescription>
+						</CardHeader>
+						<CardContent>
+							<dl className="grid gap-2 text-sm sm:grid-cols-[6rem_1fr]">
+								<dt className="text-muted-foreground">Service</dt>
+								<dd>{booking.serviceName}</dd>
+								<dt className="text-muted-foreground">When</dt>
+								<dd>
+									{formatDateIn(booking.startsAt, timezone)},{" "}
+									{formatTimeIn(booking.startsAt, timezone)}–
+									{formatTimeIn(booking.endsAt, timezone)}
+								</dd>
+								<dt className="text-muted-foreground">Price</dt>
+								<dd>
+									{formatMinorUnits(booking.priceMinor, booking.currency)}
+								</dd>
+								<dt className="text-muted-foreground">Booked</dt>
+								<dd>{at(booking.createdAt)}</dd>
+								<dt className="text-muted-foreground">Your note</dt>
+								<dd className="whitespace-pre-wrap">
+									{booking.customerNote ?? "No note."}
+								</dd>
+							</dl>
+						</CardContent>
+					</FlatCard>
+					<FlatCard>
+						<CardHeader>
+							<CardTitle>Business</CardTitle>
+						</CardHeader>
+						<CardContent>
+							<dl className="grid gap-2 text-sm sm:grid-cols-[6rem_1fr]">
+								<dt className="text-muted-foreground">Name</dt>
+								<dd>
+									<Link
+										to="/$organizationSlug"
+										params={{ organizationSlug: organization.slug }}
+										className="underline underline-offset-4"
+									>
+										{organization.name}
+									</Link>
+								</dd>
+								{location && (
+									<>
+										<dt className="text-muted-foreground">Location</dt>
+										<dd>{location}</dd>
+									</>
+								)}
+								{organization.phone && (
+									<>
+										<dt className="text-muted-foreground">Phone</dt>
+										<dd>
+											<a
+												href={`tel:${organization.phone}`}
+												className="underline underline-offset-4"
+											>
+												{organization.phone}
+											</a>
+										</dd>
+									</>
+								)}
+								{organization.email && (
+									<>
+										<dt className="text-muted-foreground">Email</dt>
+										<dd>
+											<a
+												href={`mailto:${organization.email}`}
+												className="underline underline-offset-4"
+											>
+												{organization.email}
+											</a>
+										</dd>
+									</>
+								)}
+							</dl>
+						</CardContent>
+					</FlatCard>
+				</div>
+				<FlatCard>
 					<CardHeader>
-						<CardTitle>Appointment</CardTitle>
-						<CardDescription>Times in {timezone}</CardDescription>
+						<CardTitle>Timeline</CardTitle>
 					</CardHeader>
 					<CardContent>
-						<dl className="grid gap-2 text-sm sm:grid-cols-[6rem_1fr]">
-							<dt className="text-muted-foreground">Service</dt>
-							<dd>{booking.serviceName}</dd>
-							<dt className="text-muted-foreground">When</dt>
-							<dd>
-								{formatDateIn(booking.startsAt, timezone)},{" "}
-								{formatTimeIn(booking.startsAt, timezone)}–
-								{formatTimeIn(booking.endsAt, timezone)}
-							</dd>
-							<dt className="text-muted-foreground">Price</dt>
-							<dd>{formatMinorUnits(booking.priceMinor, booking.currency)}</dd>
-							<dt className="text-muted-foreground">Booked</dt>
-							<dd>{at(booking.createdAt)}</dd>
-							<dt className="text-muted-foreground">Your note</dt>
-							<dd className="whitespace-pre-wrap">
-								{booking.customerNote ?? "No note."}
-							</dd>
-						</dl>
+						<BookingTimeline booking={booking} />
 					</CardContent>
-				</Card>
-				<Card>
-					<CardHeader>
-						<CardTitle>Business</CardTitle>
-					</CardHeader>
-					<CardContent>
-						<dl className="grid gap-2 text-sm sm:grid-cols-[6rem_1fr]">
-							<dt className="text-muted-foreground">Name</dt>
-							<dd>
-								<Link
-									to="/$organizationSlug"
-									params={{ organizationSlug: organization.slug }}
-									className="underline underline-offset-4"
-								>
-									{organization.name}
-								</Link>
-							</dd>
-							{location && (
-								<>
-									<dt className="text-muted-foreground">Location</dt>
-									<dd>{location}</dd>
-								</>
-							)}
-							{organization.phone && (
-								<>
-									<dt className="text-muted-foreground">Phone</dt>
-									<dd>
-										<a
-											href={`tel:${organization.phone}`}
-											className="underline underline-offset-4"
-										>
-											{organization.phone}
-										</a>
-									</dd>
-								</>
-							)}
-							{organization.email && (
-								<>
-									<dt className="text-muted-foreground">Email</dt>
-									<dd>
-										<a
-											href={`mailto:${organization.email}`}
-											className="underline underline-offset-4"
-										>
-											{organization.email}
-										</a>
-									</dd>
-								</>
-							)}
-						</dl>
-					</CardContent>
-				</Card>
-			</div>
-			<Card>
-				<CardHeader>
-					<CardTitle>Timeline</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<BookingTimeline booking={booking} />
-				</CardContent>
-			</Card>
+				</FlatCard>
+			</ContentBox>
 		</>
 	);
 }

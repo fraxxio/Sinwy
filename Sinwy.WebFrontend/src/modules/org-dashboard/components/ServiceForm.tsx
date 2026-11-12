@@ -10,7 +10,6 @@ import {
 	serviceFormSchema,
 	toServiceInput,
 } from "#/modules/org-dashboard/lib/services";
-import { ContentBox } from "#/shared/components/ContentBox";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Button } from "#/shared/components/ui/button";
 import {
@@ -60,7 +59,7 @@ export function ServiceForm({
 			}}
 		>
 			<fieldset disabled={readOnly} className="contents">
-				<ContentBox className="divide-y">
+				<div className="divide-y">
 					<SettingsSection
 						id="details"
 						title="Details"
@@ -200,7 +199,7 @@ export function ServiceForm({
 							</form.AppForm>
 						</div>
 					)}
-				</ContentBox>
+				</div>
 			</fieldset>
 		</form>
 	);

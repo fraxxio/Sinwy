@@ -65,38 +65,39 @@ function PagesPage() {
 					)
 				}
 			/>
-			{pages.isPending ? (
-				<Skeleton className="h-48 rounded-xl" />
-			) : pages.isError ? (
-				<FieldError>{pages.error.message}</FieldError>
-			) : (
-				<>
-					<PageLimitNotice
-						usage={pages.data.usage}
-						pages={pages.data.items}
-						canWrite={canWrite}
-					/>
-					{hasPages ? (
-						<ContentBox className="p-4">
+			<ContentBox>
+				{pages.isPending ? (
+					<Skeleton className="h-48 rounded-md" />
+				) : pages.isError ? (
+					<FieldError>{pages.error.message}</FieldError>
+				) : (
+					<>
+						<PageLimitNotice
+							usage={pages.data.usage}
+							pages={pages.data.items}
+							canWrite={canWrite}
+						/>
+						{hasPages ? (
 							<PagesTable
 								organizationSlug={organization.slug}
 								pages={pages.data.items}
 							/>
-						</ContentBox>
-					) : (
-						<EmptyState
-							icon={<FileTextIcon />}
-							title="No pages yet"
-							description={
-								canWrite
-									? "Build a page from a template to give your organization a public presence."
-									: "Once an owner or admin adds pages, they show up here."
-							}
-							action={canWrite && createButton("Create your first page")}
-						/>
-					)}
-				</>
-			)}
+						) : (
+							<EmptyState
+								icon={<FileTextIcon />}
+								title="No pages yet"
+								description={
+									canWrite
+										? "Build a page from a template to give your organization a public presence."
+										: "Once an owner or admin adds pages, they show up here."
+								}
+								action={canWrite && createButton("Create your first page")}
+								className="border-none"
+							/>
+						)}
+					</>
+				)}
+			</ContentBox>
 		</>
 	);
 }

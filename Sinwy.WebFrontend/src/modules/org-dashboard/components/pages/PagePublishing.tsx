@@ -135,7 +135,7 @@ export function PagePublishing({
 			)}
 
 			{state === "not-live" && (
-				<Alert>
+				<Alert className="rounded-md">
 					<InfoIcon />
 					<AlertTitle>
 						Published, not live: over your plan's page limit

@@ -1,10 +1,11 @@
 import type { CustomerPaymentDetailDto } from "@sinwy/shared";
 import { receiptNumberOf } from "#/modules/account-dashboard/lib/receipt";
+import { FlatCard } from "#/shared/components/FlatCard";
 import {
 	PAYMENT_PROVIDER_LABELS,
 	PaymentStatusBadge,
 } from "#/shared/components/payment/PaymentStatusBadge";
-import { Card, CardContent } from "#/shared/components/ui/card";
+import { CardContent } from "#/shared/components/ui/card";
 import { Separator } from "#/shared/components/ui/separator";
 import { formatDateIn, formatTimeIn } from "#/shared/lib/date";
 import { formatMinorUnits } from "#/shared/lib/money";
@@ -14,8 +15,8 @@ export function Receipt({ payment }: { payment: CustomerPaymentDetailDto }) {
 	const { timezone } = organization;
 
 	return (
-		<Card className="print:border-0 print:shadow-none print:ring-0">
-			<CardContent className="space-y-4">
+		<FlatCard className="print:border-0!">
+			<CardContent className="space-y-4 print:px-3">
 				<div className="flex flex-wrap items-start justify-between gap-4">
 					<div className="space-y-0.5">
 						<p className="font-semibold text-lg">{organization.name}</p>
@@ -61,6 +62,6 @@ export function Receipt({ payment }: { payment: CustomerPaymentDetailDto }) {
 					</span>
 				</div>
 			</CardContent>
-		</Card>
+		</FlatCard>
 	);
 }

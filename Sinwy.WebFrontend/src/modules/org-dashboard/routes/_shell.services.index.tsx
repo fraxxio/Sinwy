@@ -67,31 +67,32 @@ function ServicesPage() {
 					</div>
 				}
 			/>
-			{services.isPending ? (
-				<Skeleton className="h-48 rounded-xl" />
-			) : services.isError ? (
-				<FieldError>{services.error.message}</FieldError>
-			) : hasServices ? (
-				<ContentBox className="p-4">
+			<ContentBox>
+				{services.isPending ? (
+					<Skeleton className="h-48 rounded-md" />
+				) : services.isError ? (
+					<FieldError>{services.error.message}</FieldError>
+				) : hasServices ? (
 					<ServicesTable
 						organizationId={organization.id}
 						organizationSlug={organization.slug}
 						services={services.data}
 						canWrite={canWrite}
 					/>
-				</ContentBox>
-			) : (
-				<EmptyState
-					icon={<WrenchIcon />}
-					title="No services yet"
-					description={
-						canWrite
-							? "Add the services you offer so customers can book them."
-							: "Once an owner or admin adds services, they show up here."
-					}
-					action={canWrite && createButton("Create your first service")}
-				/>
-			)}
+				) : (
+					<EmptyState
+						icon={<WrenchIcon />}
+						title="No services yet"
+						description={
+							canWrite
+								? "Add the services you offer so customers can book them."
+								: "Once an owner or admin adds services, they show up here."
+						}
+						action={canWrite && createButton("Create your first service")}
+						className="border-none"
+					/>
+				)}
+			</ContentBox>
 		</>
 	);
 }

@@ -10,6 +10,7 @@ import {
 	useUnwrapWrite,
 } from "#/modules/org-dashboard/lib/service-queries";
 import { toServiceFormValues } from "#/modules/org-dashboard/lib/services";
+import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
@@ -31,12 +32,22 @@ function ServiceEditorPage() {
 	const unwrap = useUnwrapWrite();
 	const service = useQuery(serviceQuery(organization.id, id));
 
-	if (service.isPending) return <Skeleton className="h-96 rounded-xl" />;
+	if (service.isPending)
+		return (
+			<>
+				<PageHeader title="Service" />
+				<ContentBox>
+					<Skeleton className="h-96 max-w-3xl rounded-md" />
+				</ContentBox>
+			</>
+		);
 	if (service.isError)
 		return (
 			<>
 				<PageHeader title="Service" />
-				<FieldError>{service.error.message}</FieldError>
+				<ContentBox>
+					<FieldError>{service.error.message}</FieldError>
+				</ContentBox>
 			</>
 		);
 
@@ -75,15 +86,17 @@ function ServiceEditorPage() {
 					)
 				}
 			/>
-			<ServiceForm
-				key={service.data.id}
-				values={toServiceFormValues(service.data)}
-				currency={service.data.currency}
-				readOnly={!canWrite}
-				submitLabel="Save changes"
-				pendingLabel="Saving…"
-				onSubmit={save}
-			/>
+			<ContentBox>
+				<ServiceForm
+					key={service.data.id}
+					values={toServiceFormValues(service.data)}
+					currency={service.data.currency}
+					readOnly={!canWrite}
+					submitLabel="Save changes"
+					pendingLabel="Saving…"
+					onSubmit={save}
+				/>
+			</ContentBox>
 		</>
 	);
 }

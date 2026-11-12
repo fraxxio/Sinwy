@@ -34,7 +34,7 @@ export function TrafficTab({
 	const traffic = useQuery(analyticsQuery(organizationId, "traffic", range));
 
 	if (traffic.isError) return <FieldError>{traffic.error.message}</FieldError>;
-	if (!traffic.data) return <Skeleton className="h-64 rounded-xl" />;
+	if (!traffic.data) return <Skeleton className="h-64 rounded-md" />;
 
 	const { totals, series } = traffic.data;
 	if (totals.views === 0)
@@ -43,6 +43,7 @@ export function TrafficTab({
 				icon={<ChartNoAxesColumnIcon />}
 				title="No visits in this range"
 				description="Views of your published pages and booking page show up here the day after they happen."
+				className="border-none"
 			/>
 		);
 
@@ -81,7 +82,7 @@ function TrafficBreakdown({
 
 	if (breakdown.isError)
 		return <FieldError>{breakdown.error.message}</FieldError>;
-	if (!breakdown.data) return <Skeleton className="h-48 rounded-xl" />;
+	if (!breakdown.data) return <Skeleton className="h-48 rounded-md" />;
 
 	const { pages, referrers, devices } = breakdown.data;
 	const counts = (row: { views: number; visitors: number }) =>

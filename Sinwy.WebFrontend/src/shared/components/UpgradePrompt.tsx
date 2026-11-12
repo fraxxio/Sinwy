@@ -23,7 +23,13 @@ export function UpgradeAction() {
 	);
 }
 
-export function UpgradePrompt({ feature }: { feature: Feature }) {
+export function UpgradePrompt({
+	feature,
+	className,
+}: {
+	feature: Feature;
+	className?: string;
+}) {
 	const plan = minimumPlanFor(feature);
 
 	const description = plan
@@ -36,6 +42,7 @@ export function UpgradePrompt({ feature }: { feature: Feature }) {
 			title={FEATURE_NAMES[feature]}
 			description={description}
 			action={plan && <UpgradeAction />}
+			className={className}
 		/>
 	);
 }

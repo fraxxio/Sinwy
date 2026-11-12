@@ -16,7 +16,6 @@ import {
 	updatePage,
 } from "#/modules/org-dashboard/lib/page-queries";
 import { publicPagePath } from "#/modules/org-dashboard/lib/pages";
-import { ContentBox } from "#/shared/components/ContentBox";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Alert, AlertDescription } from "#/shared/components/ui/alert";
 import { FieldError } from "#/shared/components/ui/field";
@@ -83,7 +82,7 @@ export function PageDetailsForm({
 				void form.handleSubmit();
 			}}
 		>
-			<ContentBox className="divide-y">
+			<div className="divide-y pt-8">
 				<SettingsSection
 					id="details"
 					title="Details"
@@ -111,7 +110,7 @@ export function PageDetailsForm({
 								/>
 								{page.status === "published" &&
 									field.state.value.trim() !== page.slug && (
-										<Alert className="-mt-2">
+										<Alert className="-mt-2 rounded-md">
 											<TriangleAlertIcon />
 											<AlertDescription>
 												The old address{" "}
@@ -172,7 +171,7 @@ export function PageDetailsForm({
 						</form.AppForm>
 					</div>
 				)}
-			</ContentBox>
+			</div>
 		</form>
 	);
 }
