@@ -2,8 +2,8 @@ import type { CustomerBookingDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
 import { AddToCalendarButton } from "#/modules/account-dashboard/components/bookings/AddToCalendarButton";
 import { BookingStatusBadge } from "#/shared/components/booking/BookingStatusBadge";
+import { FlatCard } from "#/shared/components/FlatCard";
 import {
-	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
@@ -14,7 +14,7 @@ import { formatDateIn, formatTimeIn } from "#/shared/lib/date";
 export function NextBookingCard({ booking }: { booking: CustomerBookingDto }) {
 	const { timezone } = booking.organization;
 	return (
-		<Card>
+		<FlatCard>
 			<CardHeader>
 				<CardTitle>Next booking</CardTitle>
 				<CardDescription>Times in {timezone}</CardDescription>
@@ -39,6 +39,6 @@ export function NextBookingCard({ booking }: { booking: CustomerBookingDto }) {
 					<AddToCalendarButton booking={booking} />
 				</div>
 			</CardContent>
-		</Card>
+		</FlatCard>
 	);
 }

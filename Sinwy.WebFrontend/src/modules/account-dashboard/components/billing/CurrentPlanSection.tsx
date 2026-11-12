@@ -200,7 +200,7 @@ function PendingChange({
 	const names = change.deactivates.map(({ name }) => name).join(", ");
 
 	return (
-		<div className="my-1 grid gap-2 rounded-xl border border-dashed p-3 text-sm">
+		<div className="my-1 grid gap-2 rounded-md border border-dashed p-3 text-sm">
 			<p>
 				Switches to{" "}
 				<span className="font-medium">{getPlanName(change.plan)}</span> on{" "}

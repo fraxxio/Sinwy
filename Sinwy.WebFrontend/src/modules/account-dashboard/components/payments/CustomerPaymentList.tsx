@@ -11,7 +11,7 @@ export function CustomerPaymentList({
 	payments: CustomerPaymentDto[];
 }) {
 	return (
-		<ul className="divide-y rounded-xl border">
+		<ul className="divide-y overflow-hidden rounded-md border">
 			{payments.map((payment) => {
 				const { timezone } = payment.organization;
 				return (

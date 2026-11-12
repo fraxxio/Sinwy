@@ -1,6 +1,7 @@
 import type { PlanSlug } from "@sinwy/shared";
 import { ChartColumn, CircleCheck, LayoutTemplate, Users } from "lucide-react";
 import { useState } from "react";
+import { FlatCard } from "#/shared/components/FlatCard";
 import { Button } from "#/shared/components/ui/button";
 import {
 	Card,
@@ -116,15 +117,19 @@ function RollingPrice({ value }: { value: number }) {
 type PlanCardsProps = {
 	pendingSlug?: string | null;
 	pendingText?: string;
+	/** Inside a `ContentBox` window. */
+	flat?: boolean;
 	onChoosePlan: (slug: PlanSlug) => void;
 };
 
 export function PlanCards({
 	pendingSlug = null,
 	pendingText = "Redirecting…",
+	flat = false,
 	onChoosePlan,
 }: PlanCardsProps) {
 	const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
+	const PlanCard = flat ? FlatCard : Card;
 
 	return (
 		<>
@@ -177,13 +182,12 @@ export function PlanCards({
 
 			<div className="grid gap-4 md:grid-cols-3">
 				{plans.map((plan) => (
-					<Card
+					<PlanCard
 						key={plan.slug}
-						className={
-							plan.popular
-								? "border border-primary ring-3 ring-primary/15"
-								: undefined
-						}
+						className={cn(
+							plan.popular && "border border-primary ring-3 ring-primary/15",
+							plan.popular && flat && "border-primary!",
+						)}
 					>
 						<CardHeader>
 							<CardTitle className="text-xl font-semibold">
@@ -252,7 +256,7 @@ export function PlanCards({
 								))}
 							</ul>
 						</CardFooter>
-					</Card>
+					</PlanCard>
 				))}
 			</div>
 		</>

@@ -13,7 +13,7 @@ export function PaymentFailedNotice() {
 	return (
 		<div
 			role="alert"
-			className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-destructive/10 p-4 text-sm dark:bg-destructive/20"
+			className="flex max-w-3xl flex-wrap items-center gap-x-4 gap-y-2 rounded-md bg-destructive/10 p-4 text-sm dark:bg-destructive/20"
 		>
 			<TriangleAlertIcon
 				aria-hidden

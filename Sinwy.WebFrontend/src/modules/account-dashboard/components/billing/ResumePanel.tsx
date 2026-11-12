@@ -9,9 +9,9 @@ import {
 	runSubscriptionAction,
 } from "#/modules/account-dashboard/lib/billing-queries";
 import { formatPrice } from "#/modules/account-dashboard/lib/subscription-status";
+import { FlatCard } from "#/shared/components/FlatCard";
 import { Button } from "#/shared/components/ui/button";
 import {
-	Card,
 	CardContent,
 	CardFooter,
 	CardHeader,
@@ -97,7 +97,7 @@ export function ResumePanel({
 	const price = billing && formatPrice(billing);
 
 	return (
-		<Card>
+		<FlatCard className="max-w-3xl">
 			<CardHeader>
 				<CardTitle>Resume your plan</CardTitle>
 				{price && <p className="font-medium text-2xl">{price}</p>}
@@ -154,6 +154,6 @@ export function ResumePanel({
 					</Button>
 				)}
 			</CardFooter>
-		</Card>
+		</FlatCard>
 	);
 }

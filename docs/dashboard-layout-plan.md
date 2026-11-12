@@ -10,7 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Shell chrome: sidebar, breadcrumb row, page header, window | – | done | `feat(web): restyle the dashboard shell to a borderless sidebar and one window` |
 | 2 | Organization dashboard pages in one window | 1 | done | `feat(web): put every organization dashboard page in one window` |
-| 3 | Account pages in one window | 2 | todo | |
+| 3 | Account pages in one window | 2 | done | `feat(web): put every account page in one window` |
 | 4 | Full regression sweep and cleanup | 3 | todo | |
 
 ## Decisions
@@ -46,71 +46,27 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Reference, in CSS px at 1440×900:** sidebar and canvas are the same grey with no divider. Title 24px semibold with a 14px muted description under it; actions right-aligned on the same block. The window starts about 124px from the top, begins where the sidebar ends, has about 8px margin right and bottom, about 16px radius, about 24px inner padding and a white surface. The calendar inside it has no outer border and its Month view fits the screen with the "Times in …" line visible.
 - **Paths below are relative to `Sinwy.WebFrontend/src/`.**
 - **Shell (done in Phase 1, see the log):** `shared/components/shell/AppShell.tsx` is mounted by exactly two layout routes, `modules/org-dashboard/routes/_shell.tsx` and `modules/account-dashboard/routes/_shell.tsx`. Breadcrumb row: `mt-1 h-12 px-5 md:pl-3`, not sticky. Banner: `sticky top-0 mb-4 bg-background`. Body: `flex flex-1 flex-col gap-4 px-2 pb-2 md:pl-0`, so anything a page renders outside a window touches the sidebar edge on desktop. `SidebarInset` has `min-w-0`, so a wide table scrolls inside its own container instead of widening the page.
-- **`PageHeader`** stacks the description under the title, bottom-aligns the action, wraps, and carries the 12px inset itself (`px-3 pb-0.5`). The window starts at 124px with a description, 102px without one and 106px without one but with a button, so a page keeps the description in its loading state (Overview shows "This week", Preview "Loading the latest version…") or has none in any state. The top still differs from page to page; that is open. Optional props are typed `?: string | undefined` because of `exactOptionalPropertyTypes`.
-- **`ContentBox`** is `flex flex-1 flex-col rounded-lg border bg-card p-6`. Every organization page uses the default padding and passes only layout classes (`gap-4`, `divide-y`).
-- **Window rules from Phase 2 (see the log):** the route renders `PageHeader` and one `ContentBox` in every branch, with the error (`FieldError`) and the skeleton inside the window. Forms do not render the window: a `<form>` around a `ContentBox` is a block, so the window stops stretching to the bottom. Sections in one window are `divide-y` with `SettingsSection`, or `ContentBox className="gap-8"` with `<section className="grid gap-4">` (Team).
-- **Cards in a window** use `FlatCard` (`shared/components/FlatCard.tsx`): `Card` with a 12.8px radius, the `--border` hairline, no background, shadow or blur. It needs `!` on background, shadow and border colour, because `glass-card` is emitted after those utilities in the CSS and wins without it.
+- **`PageHeader`** stacks the description under the title, bottom-aligns the action, wraps, and carries the 12px inset itself (`px-3 pb-0.5`). The window starts at 124px with a description, 102px without one and 106px without one but with a button, so a page keeps the description in its loading state (Overview shows "This week", Preview "Loading the latest version…", the account booking detail "Loading your booking…") or has none in any state, and a title with a button keeps the button, disabled, while loading (the account payment detail). The top still differs from page to page; that is open. Optional props are typed `?: string | undefined` because of `exactOptionalPropertyTypes`.
+- **`ContentBox`** is `flex flex-1 flex-col rounded-lg border bg-card p-6`. Every page uses the default padding and passes only layout classes (`gap-4`, `gap-8`, `divide-y`); the account payment detail also passes print classes.
+- **Window rules from Phases 2 and 3 (see the log):** the route renders `PageHeader` and one `ContentBox` in every branch, with the error (`FieldError`) and the skeleton inside the window. Forms do not render the window: a `<form>` around a `ContentBox` is a block, so the window stops stretching to the bottom. Sections in one window are `divide-y` with `SettingsSection`, or `ContentBox className="gap-8"` with `<section className="grid gap-4">` (Team).
+- **Cards in a window** use `FlatCard` (`shared/components/FlatCard.tsx`): `Card` with a 12.8px radius, the `--border` hairline, no background, shadow or blur. It needs `!` on background, shadow and border colour, because `glass-card` is emitted after those utilities in the CSS and wins without it; for the same reason a caller's own border utility needs `!` (`print:border-0!` on the receipt, `border-primary!` on the popular plan card). `PlanCards` takes `flat` for the account Billing page and stays a glass `Card` on the home page.
 - **Empty states in a window:** `EmptyState` takes a `className`; pass `border-none` when it is the only content of the window or of a tab. The dashed border stays the default because the storefront uses `EmptyState` outside windows. `UpgradePrompt` passes a `className` through.
 - **Other boxes in a window** (alerts, dashed notes, bordered lists, option cards, skeletons) are `rounded-md`. `Alert` is `rounded-2xl` by default; `PaymentsNotice` is already `rounded-md` for both dashboards.
 - **Radius scale:** `--radius` is 1rem, so `rounded-lg` is 16px, `rounded-xl` 22.4px, `rounded-2xl` 28.8px and `Card`'s `rounded-4xl` 41.6px. A card inside the 16px window needs `rounded-md` (12.8px) or smaller.
 - **Canvas contrast:** in light mode `bg-muted` (0.96) and the ghost button's hover are invisible on the canvas (0.9702). On the canvas use `surface-raised` for a selected state (Bookings view toggle) and `--sidebar-accent` (light 0.925, dark 0.235) for hover. Both are fine inside the white window.
-- **Both shells are `ssr: false`** (the account shell through `protectedRoute`, `shared/lib/auth/protected-route.ts:33`): the server sends an empty body, so there is no hydration to mismatch. The plan's earlier SSR note was wrong; Default 1 was not changed.
+- **Both shells are `ssr: false`** (the account shell through `protectedRoute`, `shared/lib/auth/protected-route.ts:33`): the server sends an empty body, so there is no hydration to mismatch.
 - **Scrollbar gutter:** `html` has `scrollbar-gutter: stable`. While a dashboard is mounted the body takes the canvas colour (`body:has([data-slot="sidebar-wrapper"])` in styles.css) so the gutter does not show as a strip. With classic scrollbars the window's right margin is 8px plus the 15px gutter on pages that do not scroll; this was only seen in headless Chromium.
 - **Sidebar animation** lives in `shared/components/ui/sidebar.tsx` and must stay as is: gap `transition-[width] duration-200 ease-linear`, container `transition-[left,right,width] duration-200 ease-linear`, widths 16rem and 3rem, `sidebar_state` cookie, Ctrl/Cmd+B, rail; below `md` the sidebar is a Sheet.
 - **Bookings Month view** matches the reference: no outer border, plain weekday row, no line under the last week, and the grid fills the window (`flex-1 auto-rows-fr`, rows at least 96px), so it fits 1440×900 without scrolling.
 - **`Card`** (`shared/components/ui/card.tsx`) is `glass-card rounded-4xl` with blur and a `depth-2` shadow and is used across the site; it is not changed.
 - **Week and Day calendar** has its own scroller (`max-h-[max(24rem,calc(100dvh-18rem))] overflow-y-auto`, `modules/org-dashboard/components/bookings/TimeGridView.tsx:91`), sized so the page itself does not scroll at 1440×900, and keeps a `rounded-md border` frame.
 - **Left open by Phase 2 (see the log), for Phase 4:** New booking's submit button is full width while other forms use `w-fit` (`components/bookings/ManualBookingForm.tsx`, the last `div`); the divider above Closures on Business hours runs the full window width while the others stop at `max-w-3xl`; in dark mode today's column label in the Week view (`text-primary`, TimeGridView.tsx:72 and 81) is hard to read; Analytics was only seen in its empty states.
-- **Print:** the breadcrumb row and banner are `print:hidden`, the sidebar is hidden by an unlayered rule in styles.css, and the account receipt page prints (`modules/account-dashboard/routes/_shell.payments.$paymentId.tsx`, `components/payments/Receipt.tsx`).
+- **Left open by Phase 3 (see the log), for Phase 4:** in dark mode `text-primary` on the dark surface is about 2.3:1, seen on the "Save 20%" badge (`modules/organizations/components/PlanCards.tsx:174`) and the "Retry" link on account Billing (`modules/account-dashboard/components/billing/CurrentPlanSection.tsx:42`), the same cause as the Week view label; in print the receipt's content is indented 12px more than the title (`modules/account-dashboard/components/payments/Receipt.tsx`); account pages were only seen at 1440 wide; Billing's suspended and past-due states and the ownership offers on Organizations were only seen with a changed API response in light mode.
+- **Print:** the breadcrumb row and banner are `print:hidden`, the sidebar is hidden by an unlayered rule in styles.css, and the account receipt page prints its title and the receipt with no window frame (`modules/account-dashboard/routes/_shell.payments.$paymentId.tsx`, `components/payments/Receipt.tsx`).
 - **Theme:** `localStorage.theme` is `light`, `dark` or `auto` and sets a class on `<html>`; the switch is "Toggle theme" in the user menu at the bottom of the sidebar.
-- **Local stack:** web app on `localhost:3000`, backend on `localhost:3001`. Phases 1 and 2 stopped the servers they started. Both seeds can be reused with `dev:login-as --user-id`: organization `seed-75781209` (`bookable-org`, owner `lNenSI9j0ePY0P1XKDMHD9Pr7yEECMe9`) has one confirmed Haircut booking on 12 November 2026; organization `seed-5fb75f2c` (`pro-org`, owner `ZhntZFTbbYsHsqHeTmsJRwpCYlaaqNcK`) has one draft page "About us".
-- **Browser checks:** the shell is zsh, so call `bunx playwright-cli` directly or through a function (a variable is not word-split) and quote globs. Screenshots from Phases 1 and 2 are in `.playwright-cli/` (`p1-*`, `verify-p1-*`, `p2-*`, `verify-p2-*`), with Phase 2's server logs (`p2-*.log`) and helper scripts in `/tmp/sinwy-verify-p2/`, until Phase 4 deletes them. With every API call delayed, the screen stays blank for several request rounds before the shell mounts (session, flags, organizations, active member); that is the route guards, not the layout.
+- **Local stack:** web app on `localhost:3000`, backend on `localhost:3001`. Phases 1 to 3 stopped the servers they started. The seeds can be reused with `dev:login-as --user-id`: organization `seed-75781209` (`bookable-org`, owner `lNenSI9j0ePY0P1XKDMHD9Pr7yEECMe9`) has one confirmed Haircut booking on 12 November 2026; organization `seed-5fb75f2c` (`pro-org`, owner `ZhntZFTbbYsHsqHeTmsJRwpCYlaaqNcK`) has one draft page "About us"; customer `aJ8Y8VWhJo5Mao6z3xUNK80L52IGVoWw` (a `user` seed with no organization or plan) has one confirmed Haircut booking at `seed-75781209` on 13 November 2026 (`/account/bookings/1b59fc3a-abeb-4a11-beee-980897c85889`) and its pending payment (`/account/payments/288e67bd-afd0-48a9-b6d3-cd146e765197`). A storefront booking with a price creates the payment row, so the payment detail is reachable locally.
+- **Browser checks:** the shell is zsh, so call `bunx playwright-cli` directly or through a function (a variable is not word-split) and quote globs. Screenshots from Phases 1 to 3 are in `.playwright-cli/` (`p1-*`, `verify-p1-*`, `p2-*`, `verify-p2-*`, `p3-*`, `verify-p3-*`), with the server logs (`p2-*.log`, `p3-*.log`), Phase 3's measurement files (`verify-p3-*.json`, `.ts`, `.js`, `.sh`, `.log`) and Phase 2's helper scripts in `/tmp/sinwy-verify-p2/`, until Phase 4 deletes them. A state the seeds cannot reach (suspended plan, past due, an ownership offer) can be seen without touching the database: `page.route` on `/api/account/subscription` or `/api/transfers/incoming`, `route.fetch()`, change the `data` of the `{ isSuccess, data, message, code }` envelope and `route.fulfill`. The data request of each account page is under `/api/account/`, which is what to delay for a loading state. With every API call delayed, the screen stays blank for several request rounds before the shell mounts (session, flags, organizations, active member); that is the route guards, not the layout.
 - **Git:** stage files by path; `Header above the window.png` is untracked and must stay out of commits.
-
----
-
-## Phase 3: Account pages in one window
-
-**Goal:** Every personal account page shows its content in a single window under its title, in every state.
-
-**Files:** all in `modules/account-dashboard/`. Line numbers come from grep; confirm by reading each `return` block. Apply the window rules, `FlatCard` and the empty-state rule from the standing notes.
-
-| Route file (`routes/`) | Today | To do |
-| --- | --- | --- |
-| `_shell.index.tsx` | header (21), bare skeleton (28) or `EmptyState` (30) or two `Card`s | one window in every branch; `FlatCard` in `components/overview/NextBookingCard.tsx:17` and `BookAgainCard.tsx:18`; `border-none` on the empty state |
-| `_shell.billing.tsx` | header (51), bare skeleton (61), `ContentBox divide-y` (138) | skeleton inside the window; `FlatCard` in `components/billing/ResumePanel.tsx:100` if it sits in the window; `rounded-md` for `CurrentPlanSection.tsx:203` (dashed, `rounded-xl`) and `PaymentFailedNotice.tsx:16` (`rounded-2xl`) |
-| `_shell.bookings.index.tsx` | header (48), filter pills on the canvas (52), bare skeleton (75), list or two `EmptyState`s (85, 91) | pills, list and empty states inside one window; `components/bookings/CustomerBookingList.tsx:15` is `rounded-xl border`: `rounded-md`, or drop the frame |
-| `_shell.bookings.$id.tsx` | headers at 43, 51 and 86; bare skeleton with no header (47); `EmptyState` (52); four `Card`s (90, 149, 175, 227) | header and window in every branch; `FlatCard`s; same shape as the organization booking detail |
-| `_shell.notifications.tsx` | header (14), `EmptyState` (18) on the canvas | wrap in the window, `border-none` |
-| `_shell.organizations.tsx` | headers at 76 and 91; `EmptyState` (80) on the canvas; `ContentBox` (98); `components/IncomingTransfers.tsx:21` renders its own `ContentBox mb-6` | one window with two sections (incoming transfers, organizations); `IncomingTransfers` loses its window |
-| `_shell.payments.index.tsx` | header (43), `PaymentsNotice` on the canvas (47), bare skeleton (51), list or `EmptyState` (61) | notice inside the window as on the organization Payments page; `components/payments/CustomerPaymentList.tsx:14` is `rounded-xl border` |
-| `_shell.payments.$paymentId.tsx` | headers at 26, 34 and 54; bare skeleton with no header (30); `EmptyState` (35); `PaymentsNotice` (67); receipt `Card` with print classes (`components/payments/Receipt.tsx:17`) | header and window in every branch; the window must not print (surface, border, padding), the receipt must |
-| `_shell.settings.tsx` | header (58), `ContentBox divide-y` (62) | already one window; `rounded-md` for the `rounded-2xl` boxes in `components/settings/EmailSection.tsx:70` and `DangerZone.tsx:113`, `120` |
-
-Dialogs (`AcceptTransferDialog.tsx`, `billing/ChangePlanDialog.tsx`) are not in a window and keep their radii.
-
-**Steps:**
-- Same rules as Phase 2, reusing its card treatment and empty-state handling.
-- Organizations: the incoming-transfers box and the organization list become sections of one window.
-- Receipt: printing must still produce a clean receipt. The window's surface, padding and shadow must not print, and the title and print button stay hidden as today.
-- These routes are server-rendered: check there is no layout shift or hydration warning on first load.
-
-**Tests that matter:**
-- No new unit tests; existing module tests still pass.
-- The printed receipt is checked in Verify because print styles are easy to break and nothing else covers them.
-
-**Done when:**
-- Every route in the table shows one window under its title in loading, empty and data states.
-- The receipt's print preview shows only the receipt.
-- `bun run verify` exits 0.
-
-**Verify:** Seed `bookable-org` (owner A) and a separate `user` (customer C). As C, book the Haircut on the storefront at `/<slug>` so C has an account booking. A payment for C may not be producible locally: if the Payments list is empty, check its empty state and report the payment detail page as unchecked instead of faking a row. Billing details for a seeded subscription are empty by design.
-For each page take screenshots at 1440×900, sidebar expanded and collapsed, light and dark, with the same checks as Phase 2.
-- As C at `/account`: Overview, Bookings (each filter), the booking's detail, Payments, Notifications, Organizations (empty), Settings.
-- As A at `/account`: Overview, Organizations (one organization listed), Billing, Settings.
-- If a payment detail is reachable, open it and emulate print media: only the receipt shows, with no window frame, sidebar, breadcrumbs or buttons.
-- Hard-reload `/account` and `/account/settings` and watch for content jumping after load; report hydration warnings from the console.
-Report each page as pass or fail with the screenshot path.
 
 ---
 
@@ -118,7 +74,12 @@ Report each page as pass or fail with the screenshot path.
 
 **Goal:** Every dashboard page is confirmed on the new layout across themes, sidebar states, screen sizes and roles, and whatever the sweep finds is fixed.
 
-**Files:** none known in advance; fixes land in the files from Phases 1–3. Phase 3 fills this in with anything it left open.
+**Files:** fixes land in the files from Phases 1–3 (paths relative to `Sinwy.WebFrontend/src/`). Known before the sweep, from the two "Left open" standing notes:
+- `modules/org-dashboard/components/bookings/ManualBookingForm.tsx`: full-width submit button.
+- `modules/org-dashboard/routes/_shell.services.hours.tsx` (around line 82, where `ClosuresList` is rendered): the divider above Closures runs the full window width.
+- `modules/org-dashboard/components/bookings/TimeGridView.tsx:72`, `81`, `modules/organizations/components/PlanCards.tsx:174` and `modules/account-dashboard/components/billing/CurrentPlanSection.tsx:42`: `text-primary` is hard to read in dark mode. Check where the token is set in `styles.css` before changing the three places one by one.
+- `modules/account-dashboard/components/payments/Receipt.tsx`: 12px print indent against the title.
+- The account routes (`modules/account-dashboard/routes/_shell.*.tsx`) have not been seen below 1440 wide; the wide rows are `components/bookings/CustomerBookingList.tsx`, `components/payments/CustomerPaymentList.tsx`, the rows in `routes/_shell.organizations.tsx` and the three plan cards on Billing without a plan.
 
 **Steps:**
 - Run the Verify brief below first, then fix its findings and rerun only the affected pages.
@@ -136,7 +97,7 @@ Report each page as pass or fail with the screenshot path.
 - No dev servers or temporary artifacts from this plan remain.
 - `bun run verify` exits 0.
 
-**Verify:** Seed `org-with-staff` (owner and one staff member), `bookable-org` and `pro-org`, with one booking created as in Phase 2. The payment-failed state is simulated by setting the owner's `user_subscription.status` to `past_due` with `psql service=sinwy_rw`; restore it afterwards.
+**Verify:** Seed `org-with-staff` (owner and one staff member); reuse `bookable-org`, `pro-org` and the customer from the standing notes for the pages of Phases 2 and 3. The payment-failed state is simulated by setting the owner's `user_subscription.status` to `past_due` with `psql service=sinwy_rw`; restore it afterwards.
 1. Size sweep: for every page listed in Phases 2 and 3, screenshot at 1024×768, 768×1024 and 390×844 in light mode. Check: no horizontal scroll, title and actions wrap without overlap, tables and the calendar stay usable, the window keeps its margins, the mobile sheet opens and navigates.
 2. Dark sweep at 390×844 for Overview, Bookings, Settings and the account Overview.
 3. As the staff member: open the organization dashboard, confirm the navigation shows only what staff may see and each visible page renders in the window; open a hidden page's URL directly and confirm the redirect and notice still work.

@@ -4,6 +4,7 @@ import { PrinterIcon, ReceiptIcon } from "lucide-react";
 import { Receipt } from "#/modules/account-dashboard/components/payments/Receipt";
 import { accountPaymentQuery } from "#/modules/account-dashboard/lib/payment-queries";
 import { receiptHeadingOf } from "#/modules/account-dashboard/lib/receipt";
+import { ContentBox } from "#/shared/components/ContentBox";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { PaymentsNotice } from "#/shared/components/payment/PaymentsNotice";
@@ -24,28 +25,41 @@ function PaymentDetailPage() {
 		return (
 			<>
 				<PageHeader title="Payment" />
-				<FieldError>{payment.error.message}</FieldError>
+				<ContentBox>
+					<FieldError>{payment.error.message}</FieldError>
+				</ContentBox>
 			</>
 		);
-	if (payment.isPending) return <Skeleton className="h-96 rounded-xl" />;
+	if (payment.isPending)
+		return (
+			<>
+				<PageHeader title="Payment" action={<PrintButton disabled />} />
+				<ContentBox>
+					<Skeleton className="h-72 rounded-md" />
+				</ContentBox>
+			</>
+		);
 	if (payment.data === null)
 		return (
 			<>
 				<PageHeader title="Payment" />
-				<EmptyState
-					icon={<ReceiptIcon />}
-					title="Payment not found"
-					description="It may belong to another account."
-					action={
-						<Button
-							variant="outline"
-							nativeButton={false}
-							render={<Link to="/account/payments" />}
-						>
-							Back to payments
-						</Button>
-					}
-				/>
+				<ContentBox>
+					<EmptyState
+						icon={<ReceiptIcon />}
+						title="Payment not found"
+						description="It may belong to another account."
+						className="border-none"
+						action={
+							<Button
+								variant="outline"
+								nativeButton={false}
+								render={<Link to="/account/payments" />}
+							>
+								Back to payments
+							</Button>
+						}
+					/>
+				</ContentBox>
 			</>
 		);
 
@@ -53,19 +67,26 @@ function PaymentDetailPage() {
 		<>
 			<PageHeader
 				title={receiptHeadingOf(payment.data.status)}
-				action={
-					<Button
-						variant="outline"
-						className="print:hidden"
-						onClick={() => window.print()}
-					>
-						<PrinterIcon />
-						Print
-					</Button>
-				}
+				action={<PrintButton />}
 			/>
-			<PaymentsNotice audience="customer" />
-			<Receipt payment={payment.data} />
+			<ContentBox className="gap-4 print:border-0 print:bg-transparent print:p-0">
+				<PaymentsNotice audience="customer" />
+				<Receipt payment={payment.data} />
+			</ContentBox>
 		</>
+	);
+}
+
+function PrintButton({ disabled = false }: { disabled?: boolean }) {
+	return (
+		<Button
+			variant="outline"
+			className="print:hidden"
+			disabled={disabled}
+			onClick={() => window.print()}
+		>
+			<PrinterIcon />
+			Print
+		</Button>
 	);
 }

@@ -58,7 +58,9 @@ function BillingPage() {
 		return (
 			<>
 				{header}
-				<Skeleton className="h-64 rounded-xl" />
+				<ContentBox>
+					<Skeleton className="h-64 rounded-md" />
+				</ContentBox>
 			</>
 		);
 
@@ -67,17 +69,19 @@ function BillingPage() {
 		return (
 			<>
 				{header}
-				<div className="flex items-center gap-3">
-					<FieldError>Couldn't load your plan.</FieldError>
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={isFetching}
-						onClick={() => void refetch()}
-					>
-						Try again
-					</Button>
-				</div>
+				<ContentBox>
+					<div className="flex items-center gap-3">
+						<FieldError>Couldn't load your plan.</FieldError>
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={isFetching}
+							onClick={() => void refetch()}
+						>
+							Try again
+						</Button>
+					</div>
+				</ContentBox>
 			</>
 		);
 
@@ -85,10 +89,10 @@ function BillingPage() {
 		return (
 			<>
 				{header}
-				<div className="grid gap-6">
+				<ContentBox className="gap-8">
 					<ResumePanel billing={data.billing} />
 					<BillingDetails />
-				</div>
+				</ContentBox>
 			</>
 		);
 
@@ -96,19 +100,21 @@ function BillingPage() {
 		return (
 			<>
 				{header}
-				<ChoosePlan />
+				<ContentBox>
+					<ChoosePlan />
+				</ContentBox>
 			</>
 		);
 
 	return (
 		<>
 			{header}
-			<div className="grid gap-6">
+			<ContentBox className="gap-8">
 				{data.billing?.subscriptionStatus === "past_due" && (
 					<PaymentFailedNotice />
 				)}
 				<BillingDetails withPlan />
-			</div>
+			</ContentBox>
 		</>
 	);
 }
@@ -135,7 +141,7 @@ function BillingDetails({ withPlan = false }: { withPlan?: boolean }) {
 		});
 
 	return (
-		<ContentBox className="divide-y">
+		<div className="divide-y">
 			{withPlan && (
 				<CurrentPlanSection
 					changePlanOpen={change === "plan"}
@@ -146,7 +152,7 @@ function BillingDetails({ withPlan = false }: { withPlan?: boolean }) {
 			<ManageBillingSection />
 			{withPlan && <PlanEndSection kind="suspend" />}
 			{withPlan && <PlanEndSection kind="cancel" />}
-		</ContentBox>
+		</div>
 	);
 }
 
@@ -217,6 +223,7 @@ function ChoosePlan() {
 				</div>
 			) : (
 				<PlanCards
+					flat
 					pendingSlug={pendingSlug}
 					onChoosePlan={(slug) => void choosePlan(slug)}
 				/>
