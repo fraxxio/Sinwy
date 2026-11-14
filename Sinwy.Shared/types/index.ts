@@ -3,6 +3,7 @@ export * from "./analytics";
 export * from "./api";
 export * from "./auth";
 export * from "./booking";
+export * from "./notification";
 export * from "./organization";
 export * from "./page";
 export * from "./payment";

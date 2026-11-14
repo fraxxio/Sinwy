@@ -2,6 +2,7 @@ import type { Membership } from "@authModule";
 import { emailClient } from "@backend/infrastructure/email";
 import appConfig from "@config";
 import { createLogger } from "@logger";
+import { notifyUser } from "@notificationsModule";
 import {
 	type ActivityActor,
 	getMembershipAccess,
@@ -199,6 +200,17 @@ export const offerTransfer = async (
 				},
 			}),
 		{ transferId: row.id },
+	);
+	await notifyUser(
+		to.userId,
+		{
+			type: "transfer.offered",
+			payload: {
+				organizationName: org?.name ?? "",
+				fromName: from?.name ?? "",
+			},
+		},
+		"/account/organizations",
 	);
 	transferLogger.info("Transfer offered", {
 		transferId: row.id,

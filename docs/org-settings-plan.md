@@ -14,7 +14,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 4 | Ownership & danger zone | 3 | done | `feat(shared, backend, web): add organization deletion screens` |
 | 5 | Branding | 1, 3 | done | `feat(shared, backend, web): add organization branding` |
 | 6 | Notification Preferences and staff emails | 2 | done | `feat(shared, backend, web): add member notification preferences` |
-| 7 | In-app notification center | 6 | todo | |
+| 7 | In-app notification center | 6 | done | `feat(shared, backend, web): add in-app notification center` |
 | 8 | Code review | 1–7 | todo | |
 
 ## Decisions
@@ -64,15 +64,16 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Owner check** on the web: `hasPermission(member.roles, "billing:manage")` is the owner's alone. `SETTINGS_TABS` entries take `ownerOnly: true`; the owner-only route guards with `requirePermission("billing:manage")` (`_shell.settings.ownership.tsx`). `settings:manage` is owner + admin; staff can't open `/settings` (`org-dashboard/lib/sections.ts`).
 - **Timezone** is written only by `PUT …/timezone` (`changeOrganizationTimezone`); the availability input has no `timezone` (a stray one is stripped). Name, timezone and logo writes need an active organization (409 otherwise); the profile save still allows drafts.
 - **Image uploads:** `Sinwy.Backend/lib/image.ts` (`readImageUpload`, `validateImage`, `respondImageError`; limits are `IMAGE_UPLOAD_LIMITS` in shared). Logos are `logos/<org id>/<uuid>.<ext>` in `organization.logo`, set by `uploadOrganizationLogo`/`removeOrganizationLogo` (old file deleted, best effort). Both the purge and an immediate delete remove the logo file (`deleteStoredLogo`). Web: `shared/components/ImageUpload.tsx`.
-- **Booking emails:** the matrix is `emailsFor` in `bookings/dispatch.ts:41`; its `organization` entry is `{ template, event }` with a `NotificationEvent`, and `sendBookingEmails` (100) asks `listNotificationRecipients(orgId, event)` (`@organizationsModule`). It runs after commit and never throws; `dispatchBookingEvent` is at 144.
-- **Notification Preferences:** shared `NotificationPreferences.ts` holds the event keys, defaults and `NOTIFICATION_EVENT_ROLES` (`notificationEventsFor(roles)` gives a member's eligible events). Recipients come from `organizations/notificationPreferences.ts`; preferences are boolean columns on `member_notification_preference`, no row = defaults. The account page is `account-dashboard/routes/_shell.notifications.tsx` (layout, Inbox + Preferences tabs); the Inbox is `_shell.notifications.index.tsx`, still an empty state. See the Phase 6 log.
+- **Booking notices:** the matrix is `noticesFor` in `bookings/dispatch.ts`: per side `{ template, notification? }` (customer) and `{ template, notification }` (organization; its email event is `ORGANIZATION_NOTIFICATION_EVENTS[notification]`). `sendBookingEmails` sends the emails (`listNotificationRecipients`) and writes the notifications. It runs after commit and never throws.
+- **Notification Preferences:** shared `NotificationPreferences.ts` holds the event keys, defaults and `NOTIFICATION_EVENT_ROLES` (`notificationEventsFor(roles)` gives a member's eligible events). Recipients come from `organizations/notificationPreferences.ts`; preferences are boolean columns on `member_notification_preference`, no row = defaults. The account page is `account-dashboard/routes/_shell.notifications.tsx` (layout, Inbox + Preferences tabs). See the Phase 6 log.
 - **Payments** are manual only (`PAYMENT_PROVIDERS = ["manual"]`). Only owner and admin can mark paid (staff 403). `markPaidHandler` (`payments/controller.ts:79`) calls `sendPaymentRecordedEmails` (`payments/emails.ts`) with the session user as actor, who is excluded. Bookings imports payments, so payments can't import bookings; shared time formatting is `formatLocalTime` in `lib/localDate.ts`.
 - **Jobs** are registered in `Sinwy.Backend/jobs.ts` (the activity cleanup is `purgeActivityJob`). Organizations can't import bookings; wire cross-module work there or through the lazy `bookingsModule()` pattern in `auth.ts`.
 - **Branding:** `organization.brand_color`/`brand_font` (nullable, check-constrained), `PUT …/branding` (`organizationBrandingSchema`). `branding` rides on `OrganizationGeneralDto`, `OrganizationSummary`, `StorefrontDto.organization` and `PublicPageDto.organization`. The web applies it with `brandAttributes()` (`shared/lib/branding.ts`) spread on the hosted content's wrapper; unbranded adds nothing. See the Phase 5 log.
+- **shadcn CLI:** `shadcn add` writes `import { cn } from "cn"` and adds the npm package `cn`; change the import to `@/shared/lib/utils` and revert `package.json`/`bun.lock`.
 - **Dependencies:** the web's TanStack packages are `"latest"`, so any lockfile change (even `bun add` of something else) bumps them. If the type check then fails with two `query-core` versions, run `bun install --force` to relink Bun's store.
-- **Dev servers:** the backend (`bun run start:server`, log `/tmp/sinwy-server.log`, port 3001) runs without watch; restart it after backend changes before an e2e check. Killing a server the session didn't start is blocked by auto mode, so ask the user first. Phase 6 restarted it (log as above). The web server (`/tmp/sinwy-web.log`) hot-reloads and regenerates the route tree.
-- **Shell:** the header in `shared/components/shell/AppShell.tsx:86` holds the sidebar trigger and breadcrumbs, and is where the bell goes. `shared/` must not import `modules/`.
-- **Seed scenarios** (`e2e-test` skill): `subscribed-org`, `pro-org`, `org-with-staff --staff n`, `bookable-org`, `owner-with-org`, `user`. Phase 6 added staff to `bookable-org` through the real invite flow (`invite-member` + `accept-invitation`), which also exercises the invitation email. `bookable-org` sets its timezone through `PUT …/timezone`, so it starts with a "changed the timezone" Activity entry. `org-with-staff` has no admin; promote a staff member with `POST /api/auth/organization/update-member-role` as the owner. Seeded subscriptions exist only in the DB, so the backend logs `WARN [billing] Polar subscription read failed` for them, which is expected.
+- **Dev servers:** the backend (`bun run start:server`, log `/tmp/sinwy-server.log`, port 3001) runs without watch; restart it after backend changes before an e2e check. Killing a server the session didn't start is blocked by auto mode, so ask the user first. Phase 7 restarted it from this session's work (log as above), so it can be stopped at cleanup. The web server (`/tmp/sinwy-web.log`) hot-reloads and regenerates the route tree.
+- **Notifications:** `@notificationsModule` (`notifyOrganization`, `notifyUser`, `notifyEmail`, `readInvitationNotifications`), best effort. Org rows have `organization_id` + `member_id` (cascade; no org FK), personal rows neither; org routes run behind `requireMember`, personal under `/api/account/notifications`, mark one at `/api/notifications/:id/read`. Web: `shared/lib/notifications.ts`, `shared/components/notifications/`, `AppShell` `actions` slot. See the Phase 7 log.
+- **Seed scenarios** (`e2e-test` skill): `subscribed-org`, `pro-org`, `org-with-staff --staff n`, `bookable-org`, `owner-with-org`, `user`. `--staff` only applies to `org-with-staff` and is silently ignored elsewhere; to give `bookable-org` staff, seed a `user` and invite them through the real flow (`invite-member` + accept on `/invite/<id>`). `bookable-org` sets its timezone through `PUT …/timezone`, so it starts with a "changed the timezone" Activity entry. `org-with-staff` has no admin; promote a staff member with `POST /api/auth/organization/update-member-role` as the owner. Seeded subscriptions exist only in the DB, so the backend logs `WARN [billing] Polar subscription read failed` for them, which is expected.
 
 ## Deferred to other tickets
 
@@ -89,37 +90,11 @@ Reminder for whoever plans next: these were raised and consciously left out of P
 
 ---
 
-## Phase 7: In-app notification center
-
-**Goal:** both shells have a bell with an unread count, and `/account/notifications` lists personal notifications. Organization notifications show only in that organization's dashboard.
-
-**Files:** new `Sinwy.Backend/db/schema/notificationSchema.ts` (`notification` table; migration with `bun run db:generate -- --name …` then `bun run db:migrate`), `Sinwy.Shared/types/` (notification DTO and type keys; reuse `NotificationEvent`/`NOTIFICATION_EVENT_ROLES` from `organization/NotificationPreferences.ts` for org eligibility), a new `Sinwy.Backend/modules/notifications/` (other modules call it through its `index.ts`; it needs org members by role: add a member-by-event lookup next to `findNotificationRecipientEmails` in `organizations/repository.ts` that returns user ids without the preference filter), `bookings/dispatch.ts` (`emailsFor` at 41: org events and customer personal events from the same matrix; `sendBookingEmails` at 100), `payments/emails.ts` (`sendPaymentRecordedEmails`; actor excluded), `auth/auth.ts` `sendInvitationEmail` at 374 (invitations), `transfers/service.ts` `offerTransfer` at 159 (offers), `Sinwy.Backend/jobs.ts` (90-day cleanup, next to `purgeActivityJob`); web `shared/components/shell/AppShell.tsx` (header at 86: a slot for the bell), new `shared/components/notifications/` (bell, list items), org shell `org-dashboard/routes/_shell.tsx`, account shell `account-dashboard/routes/_shell.tsx`, `account-dashboard/routes/_shell.notifications.index.tsx` (Inbox tab; the layout and tabs already exist).
-
-**Steps:**
-- One row per recipient: user id (cascade), optional organization id (cascade), type, a link target, a small jsonb payload for the sentence, read at, created at. Indexes for (user, organization, created at) and unread counts.
-- Org notifications go to every member eligible for the event by role, regardless of email preference. Personal ones go to the customer's user (for bookings with a `customerUserId`), the invited user if they exist, and the transfer recipient.
-- Written after commit, best effort, from the same places that send the emails, so both always agree.
-- API: list (scoped to `organizationId` or personal), unread count, mark one read, mark all read, all for the session user only. A notification of an organization scheduled for deletion isn't returned.
-- The bell goes in the `AppShell` header through a prop/slot so `shared/` stays free of modules. The popover holds the latest items, "Mark all read" and "View all" (account shell). The count shows "9+". Refetch on focus and every ~60 s.
-- Clicking an item marks it read and opens its link (booking detail, invitation, transfer offer).
-- An hourly job deletes notifications older than 90 days.
-
-**Tests that matter:**
-- A user never sees another user's notifications. Org notifications don't appear in the account inbox, and vice versa.
-- Removing a member or deleting an organization removes its notifications for them. Staff get no payment notifications.
-
-**Done when:**
-- A customer booking makes the owner's org bell show 1. The customer's account bell shows "Booking confirmed". Mark all read clears both.
-
-**Verify:** Seed `bookable-org` with one staff member, and a separate `user` as the customer. As the customer, book "Haircut". The owner and staff, in the org dashboard, see a bell count of 1 with "New booking: Haircut, <time>"; clicking it opens the booking and the count drops. The customer's account bell shows "Booking confirmed", and `/account/notifications` lists it. Invite the customer to the org as staff: their account bell shows the invitation, linking to `/invite/<id>`. Check `notification` rows. Nothing simulated beyond the seed and the outbox.
-
----
-
 ## Phase 8: Code review
 
 **Goal:** the deletion, permission and notification paths are reviewed and the plan is closed.
 
-**Files:** every file changed in phases 1–7 (`git diff` from the plan's first commit), `docs/org-rules-map.md`, `CONTEXT.md`, this plan and its log.
+**Files:** every file changed in phases 1–7 (`git diff 39d4936`, the plan's first commit). Focus files: org deletion in `modules/auth/auth.ts` (`before`/`after` middleware, organization hooks), `modules/user/` deletion preview, `modules/organizations/{controller,routes,service,activity,notificationPreferences,repository}.ts`, `modules/notifications/`, `modules/bookings/dispatch.ts`, `modules/payments/emails.ts`, `modules/transfers/service.ts`, migrations `drizzle/0027`–`0032` (0027 is Phase 1's widget jsonb migration), `Sinwy.Shared/types/{organization,notification}/`, web `shared/components/notifications/`, `shared/lib/notifications.ts`, `org-dashboard/routes/_shell.settings*.tsx`, `modules/organizations/components/DeleteOrganizationDialog.tsx`; plus `docs/org-rules-map.md`, `CONTEXT.md`, this plan and its log.
 
 **Steps:**
 - Review with focus on: org deletion (owner-only, inactive allowed, the transfer refusal, logo cleanup, booking emails before the cascade); every new endpoint's permission and organization scoping; that activity and notification writes can't fail their action; the jsonb migration on real-shaped data; that notification and activity payloads don't leak contact details.

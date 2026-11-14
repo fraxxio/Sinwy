@@ -3,6 +3,7 @@ import { majorUnits } from "@backend/lib/csv";
 import { formatLocalTime } from "@backend/lib/localDate";
 import appConfig from "@config";
 import { createLogger } from "@logger";
+import { notifyOrganization } from "@notificationsModule";
 import { listNotificationRecipients } from "@organizationsModule";
 import { findPaymentNotice } from "./repository";
 
@@ -35,7 +36,7 @@ const formatAmount = (amountMinor: number, currency: string) =>
 		Number(majorUnits(amountMinor, currency)),
 	);
 
-/** Call after the payment is marked paid; the actor isn't emailed. A failure is logged and never reaches the caller. */
+/** Call after the payment is marked paid; the actor is neither emailed nor notified. A failure is logged and never reaches the caller. */
 export const sendPaymentRecordedEmails = async (
 	organizationId: string,
 	paymentId: string,
@@ -50,6 +51,7 @@ export const sendPaymentRecordedEmails = async (
 			{ exceptUserId: actor.id },
 		);
 		const { organization } = notice;
+		const bookingPath = `/dashboard/${organization.slug}/bookings/${notice.bookingId}`;
 		const props: PaymentRecordedEmailProps = {
 			organizationName: organization.name,
 			serviceName: notice.serviceName,
@@ -57,10 +59,7 @@ export const sendPaymentRecordedEmails = async (
 			amount: formatAmount(notice.amountMinor, notice.currency),
 			when: formatLocalTime(notice.startsAt, organization.timezone),
 			recordedBy: actor.name,
-			bookingUrl: new URL(
-				`/dashboard/${organization.slug}/bookings/${notice.bookingId}`,
-				appConfig.WEB_APP_URL,
-			).toString(),
+			bookingUrl: new URL(bookingPath, appConfig.WEB_APP_URL).toString(),
 		};
 		await Promise.all(
 			recipients.map((to) =>
@@ -70,6 +69,19 @@ export const sendPaymentRecordedEmails = async (
 						logger.warn("Payment email failed", { paymentId, error }),
 					),
 			),
+		);
+		await notifyOrganization(
+			organizationId,
+			{
+				type: "payment.recorded",
+				payload: {
+					serviceName: notice.serviceName,
+					amount: props.amount,
+					recordedByName: actor.name,
+				},
+			},
+			bookingPath,
+			{ exceptUserId: actor.id },
 		);
 	} catch (error) {
 		logger.warn("Payment emails failed", { paymentId, error });

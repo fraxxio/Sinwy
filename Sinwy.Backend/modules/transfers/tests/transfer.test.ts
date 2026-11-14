@@ -16,6 +16,7 @@ import {
 } from "@backend/test/helpers";
 import { applySubscriptionEvent } from "@billingModule";
 import db from "@db";
+import { notification } from "@db/schema/notificationSchema";
 import {
 	member,
 	organization,
@@ -168,6 +169,24 @@ test("offer emails the recipient and shows up in their incoming list, without th
 	]);
 	expect(incoming[0]?.organization).not.toHaveProperty("plan");
 	expect(await listIncomingTransfers(ownerId)).toEqual([]);
+	expect(
+		await db
+			.select({
+				userId: notification.userId,
+				organizationId: notification.organizationId,
+				type: notification.type,
+				link: notification.link,
+			})
+			.from(notification)
+			.where(eq(notification.userId, staffId)),
+	).toEqual([
+		{
+			userId: staffId,
+			organizationId: null,
+			type: "transfer.offered",
+			link: "/account/organizations",
+		},
+	]);
 });
 
 const planBoughtFor = (

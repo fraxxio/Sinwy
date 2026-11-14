@@ -10,6 +10,7 @@ import {
 } from "@backend/test/helpers";
 import db from "@db";
 import { booking } from "@db/schema/bookingSchema";
+import { notification } from "@db/schema/notificationSchema";
 import {
 	memberNotificationPreference,
 	organization,
@@ -385,6 +386,15 @@ test("marking as paid emails the opted-in owner and admins, never the actor or s
 	]);
 	for (const quiet of [actor, quietAdmin, staff])
 		expect(await subjects(quiet)).toEqual([]);
+
+	// in the app, every owner and admin hears of it whatever their email choice
+	const notified = await db
+		.select({ userId: notification.userId, type: notification.type })
+		.from(notification);
+	expect(notified.map((row) => row.userId).sort()).toEqual(
+		[owner.userId, quietAdmin.userId].sort(),
+	);
+	expect(notified.every((row) => row.type === "payment.recorded")).toBe(true);
 });
 
 test("someone outside the organization can't read or mark its payments", async () => {

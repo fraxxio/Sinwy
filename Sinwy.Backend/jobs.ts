@@ -1,5 +1,6 @@
 import { rollupAnalyticsJob } from "@analyticsModule";
 import { cancelUpcomingOrganizationBookings } from "@bookingsModule";
+import { purgeNotificationsJob } from "@notificationsModule";
 import {
 	createPurgeOrganizationsJob,
 	purgeActivityJob,
@@ -17,4 +18,5 @@ export const jobs = [
 	expireTransfersJob,
 	rollupAnalyticsJob,
 	purgeActivityJob,
+	purgeNotificationsJob,
 ];

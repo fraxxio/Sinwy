@@ -10,6 +10,7 @@ import {
 import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
+import { notifyEmail, readInvitationNotifications } from "@notificationsModule";
 import {
 	deleteStoredLogo,
 	getSeatLimit,
@@ -74,6 +75,8 @@ const TEAM_ACTIVITY_PATHS = new Set([
 // better-auth only type-checks name; apply the shared length/character rule
 // imported on use: the bookings module's routes need this module loaded first
 const bookingsModule = () => import("@bookingsModule");
+
+const invitationPath = (id: string) => `/invite/${encodeURIComponent(id)}`;
 
 const validName = (name: unknown) => {
 	const result = profileSchema.safeParse({ name });
@@ -378,6 +381,7 @@ export const auth = betterAuth({
 				organization,
 				inviter,
 			}) => {
+				const invitePath = invitationPath(id);
 				await emailClient.send({
 					to: email,
 					template: InvitationEmail,
@@ -385,12 +389,22 @@ export const auth = betterAuth({
 						organizationName: organization.name,
 						inviterName: inviter.user.name,
 						role,
-						inviteUrl: new URL(
-							`/invite/${encodeURIComponent(id)}`,
-							appConfig.WEB_APP_URL,
-						).toString(),
+						inviteUrl: new URL(invitePath, appConfig.WEB_APP_URL).toString(),
 					},
 				});
+				if (isInviteRole(role))
+					await notifyEmail(
+						email,
+						{
+							type: "invitation.received",
+							payload: {
+								organizationName: organization.name,
+								inviterName: inviter.user.name,
+								role,
+							},
+						},
+						invitePath,
+					);
 			},
 			// the plugin already keeps the only owner from leaving, being removed
 			// or demoted; these keep a second owner from ever appearing
@@ -415,12 +429,26 @@ export const auth = betterAuth({
 					await refuseScheduledOrganization(invitation.organizationId);
 				},
 				afterAcceptInvitation: async ({ invitation, user }) => {
+					await readInvitationNotifications(
+						invitation.email,
+						invitationPath(invitation.id),
+					);
 					if (isInviteRole(invitation.role))
 						await recordActivity(invitation.organizationId, user, {
 							action: "member.joined",
 							details: { role: invitation.role },
 						});
 				},
+				afterRejectInvitation: ({ invitation }) =>
+					readInvitationNotifications(
+						invitation.email,
+						invitationPath(invitation.id),
+					),
+				afterCancelInvitation: ({ invitation }) =>
+					readInvitationNotifications(
+						invitation.email,
+						invitationPath(invitation.id),
+					),
 				beforeUpdateMemberRole: ({ member, newRole }) => {
 					refuseOwnerRole(member.role, newRole);
 					refuseNonInviteRole(newRole);

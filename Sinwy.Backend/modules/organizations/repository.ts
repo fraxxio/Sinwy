@@ -222,6 +222,23 @@ export const findNotificationRecipientEmails = async (
 	return rows.map((row) => row.email);
 };
 
+/** Members whose role receives the event, whatever their email choice. */
+export const findMembersForEvent = (
+	organizationId: string,
+	event: NotificationEvent,
+	exceptUserId?: string,
+) =>
+	db
+		.select({ memberId: member.id, userId: member.userId })
+		.from(member)
+		.where(
+			and(
+				eq(member.organizationId, organizationId),
+				or(...NOTIFICATION_EVENT_ROLES[event].map(memberHasRole)),
+				exceptUserId ? ne(member.userId, exceptUserId) : undefined,
+			),
+		);
+
 /** The user's memberships with their saved email choices (null when never saved), skipping organizations scheduled for deletion. */
 export const findMemberNotificationPreferences = (
 	userId: string,

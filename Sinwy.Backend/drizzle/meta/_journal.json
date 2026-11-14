@@ -218,6 +218,20 @@
       "when": 1794670559245,
       "tag": "0030_member_notification_preference",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794671549912,
+      "tag": "0031_notification",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794671609352,
+      "tag": "0032_notification_inbox_index",
+      "breakpoints": true
     }
   ]
 }

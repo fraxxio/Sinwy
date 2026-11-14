@@ -10,6 +10,7 @@ import {
 } from "@sinwy/shared";
 import {
 	findMemberNotificationPreferences,
+	findMembersForEvent,
 	findNotificationRecipientEmails,
 	upsertMemberNotificationPreferences,
 } from "./repository";
@@ -40,6 +41,13 @@ export const listNotificationRecipients = (
 	options: { exceptUserId?: string } = {},
 ) =>
 	findNotificationRecipientEmails(organizationId, event, options.exceptUserId);
+
+/** Who gets an organization event in their in-app inbox: every member whose role receives it. */
+export const listEventMembers = (
+	organizationId: string,
+	event: NotificationEvent,
+	options: { exceptUserId?: string } = {},
+) => findMembersForEvent(organizationId, event, options.exceptUserId);
 
 export const listNotificationPreferences = async (userId: string) =>
 	(await findMemberNotificationPreferences(userId)).map(toDto);

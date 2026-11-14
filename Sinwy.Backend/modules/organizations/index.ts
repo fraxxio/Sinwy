@@ -3,7 +3,10 @@ export {
 	purgeActivityJob,
 	recordActivity,
 } from "./activity";
-export { listNotificationRecipients } from "./notificationPreferences";
+export {
+	listEventMembers,
+	listNotificationRecipients,
+} from "./notificationPreferences";
 export {
 	createPurgeOrganizationsJob,
 	purgeScheduledOrganizations,

@@ -1,6 +1,7 @@
 export * from "./analyticsSchema";
 export * from "./authSchema";
 export * from "./bookingSchema";
+export * from "./notificationSchema";
 export * from "./organizationSchema";
 export * from "./pageSchema";
 export * from "./paymentSchema";
