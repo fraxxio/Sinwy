@@ -8,6 +8,7 @@ import {
 	paymentListQuerySchema,
 } from "@sinwy/shared";
 import type { z } from "zod";
+import { sendPaymentRecordedEmails } from "./emails";
 import {
 	exportPayments,
 	getCustomerPayment,
@@ -76,10 +77,15 @@ export const exportPaymentsHandler: Handler = async (c) => {
 };
 
 export const markPaidHandler: Handler = async (c) => {
-	const result = await markPaid(membershipFrom(c), paymentIdOf(c));
-	return result.ok
-		? ok(result.data, 200, "Marked as paid")
-		: respondError(result.error);
+	const membership = membershipFrom(c);
+	const result = await markPaid(membership, paymentIdOf(c));
+	if (!result.ok) return respondError(result.error);
+	await sendPaymentRecordedEmails(
+		membership.organizationId,
+		result.data.id,
+		sessionFrom(c).user,
+	);
+	return ok(result.data, 200, "Marked as paid");
 };
 
 export const listCustomerPaymentsHandler: Handler = async (c) => {

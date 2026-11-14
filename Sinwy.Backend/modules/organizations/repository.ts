@@ -3,12 +3,18 @@ import { memberHasRole } from "@db/memberRole";
 import {
 	invitation,
 	member,
+	memberNotificationPreference,
 	organization,
 	organizationActivity,
 	organizationProfile,
 	organizationTransfer,
 } from "@db/schema/organizationSchema";
 import { user, userSubscription } from "@db/schema/userSchema";
+import {
+	NOTIFICATION_EVENT_DEFAULTS,
+	NOTIFICATION_EVENT_ROLES,
+	type NotificationEvent,
+} from "@sinwy/shared";
 import {
 	and,
 	asc,
@@ -21,6 +27,7 @@ import {
 	isNull,
 	lt,
 	lte,
+	ne,
 	not,
 	or,
 	sql,
@@ -183,18 +190,88 @@ export const findOrganizationLocale = async (organizationId: string) => {
 	return row ?? null;
 };
 
-export const findManagerEmails = async (organizationId: string) => {
+const emailColumns = {
+	"booking.new": memberNotificationPreference.emailBookingNew,
+	"booking.cancelled_by_customer":
+		memberNotificationPreference.emailBookingCancelledByCustomer,
+	"payment.recorded": memberNotificationPreference.emailPaymentRecorded,
+} as const satisfies Record<NotificationEvent, unknown>;
+
+/** Emails of the members whose role receives the event and who have it on. */
+export const findNotificationRecipientEmails = async (
+	organizationId: string,
+	event: NotificationEvent,
+	exceptUserId?: string,
+) => {
 	const rows = await db
 		.selectDistinct({ email: user.email })
 		.from(member)
 		.innerJoin(user, eq(user.id, member.userId))
+		.leftJoin(
+			memberNotificationPreference,
+			eq(memberNotificationPreference.memberId, member.id),
+		)
 		.where(
 			and(
 				eq(member.organizationId, organizationId),
-				or(memberHasRole("owner"), memberHasRole("admin")),
+				or(...NOTIFICATION_EVENT_ROLES[event].map(memberHasRole)),
+				sql`coalesce(${emailColumns[event]}, ${NOTIFICATION_EVENT_DEFAULTS[event]})`,
+				exceptUserId ? ne(member.userId, exceptUserId) : undefined,
 			),
 		);
 	return rows.map((row) => row.email);
+};
+
+/** The user's memberships with their saved email choices (null when never saved), skipping organizations scheduled for deletion. */
+export const findMemberNotificationPreferences = (
+	userId: string,
+	organizationId?: string,
+) =>
+	db
+		.select({
+			memberId: member.id,
+			role: member.role,
+			organizationId: organization.id,
+			organizationName: organization.name,
+			email: {
+				"booking.new": emailColumns["booking.new"],
+				"booking.cancelled_by_customer":
+					emailColumns["booking.cancelled_by_customer"],
+				"payment.recorded": emailColumns["payment.recorded"],
+			},
+		})
+		.from(member)
+		.innerJoin(organization, eq(organization.id, member.organizationId))
+		.leftJoin(
+			memberNotificationPreference,
+			eq(memberNotificationPreference.memberId, member.id),
+		)
+		.where(
+			and(
+				eq(member.userId, userId),
+				isNull(organization.deletionScheduledAt),
+				organizationId ? eq(organization.id, organizationId) : undefined,
+			),
+		)
+		.orderBy(asc(organization.createdAt), asc(organization.id));
+
+export const upsertMemberNotificationPreferences = (
+	memberId: string,
+	email: Partial<Record<NotificationEvent, boolean>>,
+) => {
+	const values = {
+		emailBookingNew: email["booking.new"],
+		emailBookingCancelledByCustomer: email["booking.cancelled_by_customer"],
+		emailPaymentRecorded: email["payment.recorded"],
+		updatedAt: new Date(),
+	};
+	return db
+		.insert(memberNotificationPreference)
+		.values({ memberId, ...values })
+		.onConflictDoUpdate({
+			target: memberNotificationPreference.memberId,
+			set: values,
+		});
 };
 
 export const findOrganizationGeneral = async (organizationId: string) => {

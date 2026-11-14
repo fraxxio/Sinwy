@@ -11,7 +11,10 @@ import {
 } from "@backend/test/helpers";
 import db from "@db";
 import { booking, bookingEvent } from "@db/schema/bookingSchema";
-import { organization } from "@db/schema/organizationSchema";
+import {
+	memberNotificationPreference,
+	organization,
+} from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
 import { registerServiceRoutes, todayIn } from "@servicesModule";
 import {
@@ -352,7 +355,7 @@ test("a customer may hold five upcoming bookings here; a cancelled or past one d
 	expect(await errorCode(again)).toBe(API_ERROR_CODES.BOOKING_LIMIT_REACHED);
 });
 
-test("an approval service creates a request and emails the customer and the managers", async () => {
+test("an approval service creates a request and emails the customer and every member", async () => {
 	const admin = await createUserWithSession();
 	const staffMember = await createUserWithSession();
 	await joinOrganization(orgId, admin.userId, "admin");
@@ -401,12 +404,36 @@ test("an approval service creates a request and emails the customer and the mana
 	expect(await sentTo(`${customer.userId}@test.dev`)).toEqual([
 		"Request received: Colouring at Salon",
 	]);
-	for (const manager of [ownerId, admin.userId]) {
-		const subjects = await sentTo(`${manager}@test.dev`);
+	// no preference rows: everyone gets the default
+	for (const member of [ownerId, admin.userId, staffMember.userId]) {
+		const subjects = await sentTo(`${member}@test.dev`);
 		expect(subjects).toHaveLength(1);
 		expect(subjects[0]).toStartWith("New booking request: Colouring");
 	}
-	expect(await sentTo(`${staffMember.userId}@test.dev`)).toEqual([]);
+});
+
+test("a member who turned new bookings off isn't emailed; the rest still are", async () => {
+	const admin = await createUserWithSession();
+	const staffMember = await createUserWithSession();
+	await joinOrganization(orgId, admin.userId, "admin");
+	await joinOrganization(orgId, staffMember.userId, "staff");
+	await db.insert(memberNotificationPreference).values({
+		memberId: `member_${admin.userId}_${orgId}`,
+		emailBookingNew: false,
+	});
+
+	const res = await selfBook({
+		serviceId: haircutId,
+		startsAt: at(tomorrow(), 10),
+	});
+	expect(res.status).toBe(201);
+
+	expect(await sentTo(`${admin.userId}@test.dev`)).toEqual([]);
+	for (const member of [ownerId, staffMember.userId]) {
+		const subjects = await sentTo(`${member}@test.dev`);
+		expect(subjects).toHaveLength(1);
+		expect(subjects[0]).toStartWith("New booking: Haircut");
+	}
 });
 
 test("an auto-confirm service books straight away and sends the confirmation", async () => {

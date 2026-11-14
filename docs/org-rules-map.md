@@ -577,8 +577,9 @@ Any user's account deletion, as a customer (one function, so regional rules
 can change it later)
 → the deletion dialog says how many of their own bookings will be cancelled
 → their pending and confirmed bookings that haven't started → cancelled by the
-  customer, cancellation window or not; each organization's owner and admins
-  are emailed, the customer isn't
+  customer, cancellation window or not; each organization's members who have
+  "Cancelled by customer" on are emailed (Notification Preferences), the
+  customer isn't
 → every booking keeps its contact snapshot (name, email, phone); the link to
   the account is cleared, but it stays a self-booking (`bookedBy`), so staff
   still can't edit its contact

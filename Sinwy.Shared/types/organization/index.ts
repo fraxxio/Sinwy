@@ -2,6 +2,7 @@ export * from "./Country";
 export * from "./Currency";
 export * from "./FunnelStep";
 export * from "./Invitation";
+export * from "./NotificationPreferences";
 export * from "./Organization";
 export * from "./OrganizationActivity";
 export * from "./OrganizationBranding";

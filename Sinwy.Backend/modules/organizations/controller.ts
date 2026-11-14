@@ -12,11 +12,16 @@ import {
 } from "@backend/modules/organizations/utils";
 import {
 	API_ERROR_CODES,
+	notificationPreferencesInputSchema,
 	organizationBrandingSchema,
 	organizationNameInputSchema,
 	organizationTimezoneInputSchema,
 } from "@sinwy/shared";
 import { listActivity, parseActivityCursor, recordActivity } from "./activity";
+import {
+	listNotificationPreferences,
+	saveNotificationPreferences,
+} from "./notificationPreferences";
 import {
 	activateOrganization,
 	changeOrganizationBranding,
@@ -256,4 +261,22 @@ export const getInvitationPreviewHandler: Handler = async (c) => {
 	return preview
 		? ok(preview)
 		: fail("This invitation is no longer available", 404);
+};
+
+export const listNotificationPreferencesHandler: Handler = async (c) =>
+	ok(await listNotificationPreferences(sessionFrom(c).user.id));
+
+export const saveNotificationPreferencesHandler: Handler = async (c) => {
+	const body = notificationPreferencesInputSchema.safeParse(
+		await c.req.json().catch(() => null),
+	);
+	if (!body.success) return fail("Invalid body", 400);
+
+	const { organizationId } = c.req.params as { organizationId: string };
+	const saved = await saveNotificationPreferences(
+		sessionFrom(c).user.id,
+		organizationId,
+		body.data,
+	);
+	return saved ? ok(saved, 200, "Preferences saved") : fail("Not found", 404);
 };

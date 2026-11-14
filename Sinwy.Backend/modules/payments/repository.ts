@@ -156,6 +156,38 @@ export const findPayment = async (
 	return row ?? null;
 };
 
+/** What the "payment recorded" email shows. */
+export const findPaymentNotice = async (
+	organizationId: string,
+	paymentId: string,
+) => {
+	const [row] = await db
+		.select({
+			amountMinor: payment.amountMinor,
+			currency: payment.currency,
+			bookingId: payment.bookingId,
+			customerName: booking.customerName,
+			serviceName: service.name,
+			startsAt: booking.startsAt,
+			organization: {
+				name: organization.name,
+				slug: organization.slug,
+				timezone: organization.timezone,
+			},
+		})
+		.from(payment)
+		.innerJoin(booking, eq(booking.id, payment.bookingId))
+		.innerJoin(service, eq(service.id, booking.serviceId))
+		.innerJoin(organization, eq(organization.id, payment.organizationId))
+		.where(
+			and(
+				eq(payment.id, paymentId),
+				eq(payment.organizationId, organizationId),
+			),
+		);
+	return row ?? null;
+};
+
 const customerPaymentFields = {
 	...paymentFields,
 	organization: {

@@ -3,6 +3,7 @@ export {
 	purgeActivityJob,
 	recordActivity,
 } from "./activity";
+export { listNotificationRecipients } from "./notificationPreferences";
 export {
 	createPurgeOrganizationsJob,
 	purgeScheduledOrganizations,
@@ -31,7 +32,6 @@ export {
 	isOrganizationPublic,
 	isScheduledForDeletion,
 	isSuspended,
-	listOrganizationManagerEmails,
 	listOrganizations,
 	listOwnedOrganizationIds,
 	listSoleOwnedOrganizations,

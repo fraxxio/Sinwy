@@ -5,10 +5,12 @@ import {
 	type ActivityEvent,
 	BRAND_FONTS,
 	type BrandFont,
+	NOTIFICATION_EVENT_DEFAULTS,
 	ORGANIZATION_TRANSFER_STATUSES,
 } from "@sinwy/shared";
 import { relations, sql } from "drizzle-orm";
 import {
+	boolean,
 	check,
 	index,
 	pgTable,
@@ -84,6 +86,28 @@ export const member = pgTable(
 			.on(table.organizationId)
 			.where(sql`'owner' = ANY(string_to_array(${table.role}, ','))`),
 	],
+);
+
+/** A member's email choices; no row means the defaults. */
+export const memberNotificationPreference = pgTable(
+	"member_notification_preference",
+	{
+		memberId: text("member_id")
+			.primaryKey()
+			.references(() => member.id, { onDelete: "cascade" }),
+		emailBookingNew: boolean("email_booking_new")
+			.notNull()
+			.default(NOTIFICATION_EVENT_DEFAULTS["booking.new"]),
+		emailBookingCancelledByCustomer: boolean(
+			"email_booking_cancelled_by_customer",
+		)
+			.notNull()
+			.default(NOTIFICATION_EVENT_DEFAULTS["booking.cancelled_by_customer"]),
+		emailPaymentRecorded: boolean("email_payment_recorded")
+			.notNull()
+			.default(NOTIFICATION_EVENT_DEFAULTS["payment.recorded"]),
+		updatedAt: timestamp("updated_at").notNull().defaultNow(),
+	},
 );
 
 export const invitation = pgTable(

@@ -44,7 +44,6 @@ import {
 	deleteInvitation,
 	findDeletionScheduledAt,
 	findInvitationOrganizationId,
-	findManagerEmails,
 	findMemberOrganizations,
 	findMembershipAccess,
 	findOnboardingCompletedAt,
@@ -412,10 +411,6 @@ export type OrganizationLocale = { timezone: string; currency: string };
 export const getOrganizationLocale = (
 	organizationId: string,
 ): Promise<OrganizationLocale | null> => findOrganizationLocale(organizationId);
-
-/** Who hears about the organization's bookings: its owner and admins. */
-export const listOrganizationManagerEmails = (organizationId: string) =>
-	findManagerEmails(organizationId);
 
 type Change<T> = { changed: false } | { changed: true; from: T };
 

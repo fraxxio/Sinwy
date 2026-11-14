@@ -16,9 +16,11 @@ import {
 	getOrganizationGeneralHandler,
 	getOrganizationOnboardingHandler,
 	listActivityHandler,
+	listNotificationPreferencesHandler,
 	listOrganizationsHandler,
 	removeOrganizationLogoHandler,
 	renameOrganizationHandler,
+	saveNotificationPreferencesHandler,
 	saveOrganizationProfileHandler,
 	uploadOrganizationLogoHandler,
 } from "./controller";
@@ -83,6 +85,17 @@ export const registerOrganizationRoutes = (app: IApp) => {
 		"/api/account/organizations/:organizationId/deactivate",
 		deactivateOrganizationHandler,
 		{ method: "POST", routeMiddlewares: [requireAuth] },
+	);
+	// the session user's own memberships only
+	app.route(
+		"/api/account/notification-preferences",
+		listNotificationPreferencesHandler,
+		{ routeMiddlewares: [requireAuth] },
+	);
+	app.route(
+		"/api/account/organizations/:organizationId/notification-preferences",
+		saveNotificationPreferencesHandler,
+		{ method: "PUT", routeMiddlewares: [requireAuth] },
 	);
 	app.route(
 		"/api/public/invitations/:invitationId",

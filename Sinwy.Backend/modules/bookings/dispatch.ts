@@ -1,7 +1,9 @@
 import { type EmailTemplate, emailClient } from "@backend/infrastructure/email";
+import { formatLocalTime } from "@backend/lib/localDate";
 import appConfig from "@config";
 import { createLogger } from "@logger";
-import { listOrganizationManagerEmails } from "@organizationsModule";
+import { listNotificationRecipients } from "@organizationsModule";
+import type { NotificationEvent } from "@sinwy/shared";
 import {
 	BookingCancelledByCustomerEmail,
 	BookingCancelledEmail,
@@ -11,7 +13,6 @@ import {
 	BookingRequestDeclinedEmail,
 	BookingRequestReceivedEmail,
 	CancellationConfirmedEmail,
-	formatBookingTime,
 	NewBookingEmail,
 	NewBookingRequestEmail,
 } from "./emails/bookingEmails";
@@ -24,7 +25,17 @@ import {
 const logger = createLogger("bookings");
 
 type Template = EmailTemplate<BookingEmailProps>;
-type Emails = { customer?: Template; organization?: Template };
+type Emails = {
+	customer?: Template;
+	organization?: { template: Template; event: NotificationEvent };
+};
+
+const newBooking = (template: Template) =>
+	({ template, event: "booking.new" }) as const;
+const cancelledByCustomer = {
+	template: BookingCancelledByCustomerEmail,
+	event: "booking.cancelled_by_customer",
+} as const;
 
 /** The email matrix: who hears about each event. */
 const emailsFor = (
@@ -38,19 +49,22 @@ const emailsFor = (
 			return event.toStatus === "pending"
 				? {
 						customer: BookingRequestReceivedEmail,
-						organization: NewBookingRequestEmail,
+						organization: newBooking(NewBookingRequestEmail),
 					}
-				: { customer: BookingConfirmedEmail, organization: NewBookingEmail };
+				: {
+						customer: BookingConfirmedEmail,
+						organization: newBooking(NewBookingEmail),
+					};
 		case "status_changed":
 			if (event.toStatus === "confirmed")
 				return { customer: BookingConfirmedEmail };
 			if (event.toStatus !== "cancelled") return {};
 			if (context.booking.cancelledBy === "customer")
 				return event.payload["accountDeleted"]
-					? { organization: BookingCancelledByCustomerEmail }
+					? { organization: cancelledByCustomer }
 					: {
 							customer: CancellationConfirmedEmail,
-							organization: BookingCancelledByCustomerEmail,
+							organization: cancelledByCustomer,
 						};
 			return event.fromStatus === "pending" && event.actorType === "member"
 				? { customer: BookingRequestDeclinedEmail }
@@ -96,8 +110,8 @@ export const sendBookingEmails = async (
 		organizationName: organization.name,
 		serviceName: context.serviceName,
 		customerName: booking.customerName,
-		when: formatBookingTime(booking.startsAt, timezone),
-		previousWhen: previous ? formatBookingTime(previous, timezone) : null,
+		when: formatLocalTime(booking.startsAt, timezone),
+		previousWhen: previous ? formatLocalTime(previous, timezone) : null,
 		reason: booking.cancellationReason,
 	};
 
@@ -112,15 +126,16 @@ export const sendBookingEmails = async (
 					: null,
 		});
 	if (emails.organization) {
-		const template = emails.organization;
+		const { template, event: notification } = emails.organization;
 		const bookingUrl = url(
 			`/dashboard/${organization.slug}/bookings/${booking.id}`,
 		);
-		const managers = await listOrganizationManagerEmails(
+		const recipients = await listNotificationRecipients(
 			booking.organizationId,
+			notification,
 		);
 		await Promise.all(
-			managers.map((to) => send(to, template, { ...props, bookingUrl })),
+			recipients.map((to) => send(to, template, { ...props, bookingUrl })),
 		);
 	}
 };

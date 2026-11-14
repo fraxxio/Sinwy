@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { registerAuthRoutes } from "@authModule";
+import { readOutboxEmails } from "@backend/infrastructure/email";
 import createApp from "@backend/lib/app";
 import {
 	activateOrganization,
@@ -9,7 +10,10 @@ import {
 } from "@backend/test/helpers";
 import db from "@db";
 import { booking } from "@db/schema/bookingSchema";
-import { organization } from "@db/schema/organizationSchema";
+import {
+	memberNotificationPreference,
+	organization,
+} from "@db/schema/organizationSchema";
 import { payment } from "@db/schema/paymentSchema";
 import { service } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
@@ -344,6 +348,43 @@ test("staff can't read or mark payments; admins can mark them as paid", async ()
 
 	expect((await org(admin, "POST", `/${id}/mark-paid`)).status).toBe(200);
 	expect((await statusOf(id))?.status).toBe("paid");
+});
+
+test("marking as paid emails the opted-in owner and admins, never the actor or staff", async () => {
+	const id = await insertPayment();
+	const [actor, quietAdmin, staff] = await Promise.all([
+		createUserWithSession(),
+		createUserWithSession(),
+		createUserWithSession(),
+	]);
+	await joinOrganization(orgId, actor.userId, "admin");
+	await joinOrganization(orgId, quietAdmin.userId, "admin");
+	await joinOrganization(orgId, staff.userId, "staff");
+	// staff can't opt in through the API; a row written anyway must not count
+	await db.insert(memberNotificationPreference).values(
+		[owner, actor, staff].map(({ userId }) => ({
+			memberId: `member_${userId}_${orgId}`,
+			emailPaymentRecorded: true,
+		})),
+	);
+	const since = Date.now();
+
+	expect((await org(actor, "POST", `/${id}/mark-paid`)).status).toBe(200);
+
+	const subjects = async ({ userId }: Session) =>
+		(await readOutboxEmails())
+			.map(({ email }) => email)
+			.filter(
+				(email) =>
+					email.to === `${userId}@test.dev` &&
+					Date.parse(email.sentAt) >= since,
+			)
+			.map((email) => email.subject);
+	expect(await subjects(owner)).toEqual([
+		"Payment recorded: €25.00 for Haircut",
+	]);
+	for (const quiet of [actor, quietAdmin, staff])
+		expect(await subjects(quiet)).toEqual([]);
 });
 
 test("someone outside the organization can't read or mark its payments", async () => {

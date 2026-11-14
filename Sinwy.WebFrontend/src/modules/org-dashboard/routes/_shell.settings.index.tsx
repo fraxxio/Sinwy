@@ -84,6 +84,21 @@ function SettingsPage() {
 			</SettingsSection>
 			<TimezoneSection key={general.data.timezone} general={general.data} />
 			<SettingsSection
+				id="notifications"
+				title="Notifications"
+				description="Each member chooses which of this organization's updates are emailed to them, in their account."
+				action={
+					<Button
+						variant="outline"
+						size="sm"
+						nativeButton={false}
+						render={<Link to="/account/notifications/preferences" />}
+					>
+						Your email preferences
+					</Button>
+				}
+			/>
+			<SettingsSection
 				id="plan"
 				title="Plan"
 				description={

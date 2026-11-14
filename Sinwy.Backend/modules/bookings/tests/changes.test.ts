@@ -384,7 +384,7 @@ test("a manual booking emails the customer once, and only with an email", async 
 	expect(await outboxIds()).toEqual(before);
 });
 
-test("self-bookings email the customer and the owner and admins, not staff", async () => {
+test("self-bookings email the customer and every member", async () => {
 	const admin = await createUserWithSession();
 	const staff = await createUserWithSession();
 	await joinOrganization(orgId, admin.userId, "admin");
@@ -395,12 +395,11 @@ test("self-bookings email the customer and the owner and admins, not staff", asy
 	expect((await sentTo(email)).map((e) => e.subject)).toEqual([
 		"Request received: Haircut at Salon",
 	]);
-	for (const manager of [ownerId, admin.userId]) {
-		const [received] = await sentTo(`${manager}@test.dev`);
+	for (const member of [ownerId, admin.userId, staff.userId]) {
+		const [received] = await sentTo(`${member}@test.dev`);
 		expect(received?.subject).toStartWith("New booking request: Haircut");
 		expect(received?.html).toContain(`/bookings/${request.id}`);
 	}
-	expect(await sentTo(`${staff.userId}@test.dev`)).toEqual([]);
 
 	await action(request.id, "confirm");
 	const confirmed = (await sentTo(email)).find((e) =>
