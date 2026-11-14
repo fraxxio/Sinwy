@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Block → Widget rename | – | done | `feat(shared, backend, web): rename page blocks to widgets` |
-| 2 | Activity Log foundation | – | todo | |
+| 2 | Activity Log foundation | – | done | `feat(shared, backend, web): add organization activity log` |
 | 3 | Settings tabs and General | 2 | todo | |
 | 4 | Ownership & danger zone | 3 | todo | |
 | 5 | Branding | 1, 3 | todo | |
@@ -54,9 +54,12 @@ Settled with the product owner. Ask before changing any of them.
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
 - **Widgets:** page content is `{ schemaVersion: 1, widgets: PageWidget[] }` with nested `children`, a strict schema (unknown keys refused). Premium widgets and templates use `requires: "advanced-widgets"`. The renderer tags each widget with `data-widget="<type>"`. There's still no editor UI. See the Phase 1 log.
-- **Better Auth hooks** (installed version): leaving fires no hook, which is why `auth.ts:327` handles `/organization/leave` in the `after` middleware. Hook payloads name the affected user, not the actor, except `afterCancelInvitation`, which has `cancelledBy`. `afterAcceptInvitation` gets `{ invitation, member, user, organization }`, `afterUpdateMemberRole` gets `{ member, previousRole, user, organization }`, and `afterRemoveMember` gets `{ member, user, organization }`. The `after` middleware has the session (`getSessionFromCtx`), `ctx.path`, `ctx.body` and `ctx.context.returned`.
-- **`Membership`** (`auth/requirePermission.ts:21`) has no user id. Controllers take the actor from the session user.
+- **Activity Log:** record with `recordActivity(organizationId, actor, { action, details })` from `@organizationsModule`, after the write; `actor` is the session user (`sessionFrom(c).user`) or `null` for Sinwy. A new action needs a key in `ActivityDetailsMap` (`Sinwy.Shared/types/organization/OrganizationActivity.ts`) and a sentence in `SENTENCES` (`org-dashboard/lib/activity.ts`). Details hold names and roles only, never contact details or field values. Seeded active orgs start with one `organization.activated` entry. See the Phase 2 log.
+- **Settings tabs:** `_shell.settings.tsx` is the layout (PageHeader + `SETTINGS_TABS` nav, styled off `Link`'s `data-status="active"`) and guards `settings:manage`; tab pages render only their `ContentBox`. An owner-only tab needs its own `beforeLoad` guard and a filtered tab list. Settings content is capped at `max-w-3xl`.
+- **Better Auth hooks** (installed version): leaving fires no hook, so the `after` middleware in `auth.ts` handles `/organization/leave`; it also records team activity for `TEAM_ACTIVITY_PATHS` from `ctx.context.returned` (`auth/teamActivity.ts`). A refused call's `returned` is an `APIError`. Hook payloads name the affected user, not the actor, except `afterCancelInvitation`, which has `cancelledBy`. `afterAcceptInvitation` gets `{ invitation, member, user, organization }`, `afterUpdateMemberRole` gets `{ member, previousRole, user, organization }`, and `afterRemoveMember` gets `{ member, user, organization }`. The `after` middleware has the session (`getSessionFromCtx`), `ctx.path`, `ctx.body` and `ctx.context.returned`.
+- **`Membership`** (`auth/requirePermission.ts:21`) has no user id. Controllers take the actor from the session user and pass it to the service.
 - **Inactive refusal:** `/organization/update` and `/organization/delete` are `manages: true` in `auth/activeOrganization.ts:95-96`, so they're refused while the organization is inactive. That's the cause of the Default 1 gap.
+- **Slots:** `holdSlot` returns `{ result: "held", changed }` and `releaseSlot` returns `{ found, changed }`, so callers can tell a no-op from a change.
 - **Owner check** on the web: `hasPermission(member.roles, "billing:manage")` is the owner's alone (`_shell.settings.index.tsx`). `settings:manage` is owner + admin; staff can't open `/settings` (`org-dashboard/lib/sections.ts`).
 - **Currency** is set only by `saveOrganizationProfile` → `currencyForCountry(country)` (`organizations/service.ts:350-362`). Services, bookings and payments store their own `currency`.
 - **Timezone** is written only inside `saveAvailability` via `setOrganizationTimezone` (`services/repository.ts:145`). The availability input schema requires `timezone` (`Sinwy.Shared/types/service/Availability.ts:60`), and `BusinessHoursForm.tsx:61-95` has the picker. It's read by analytics, emails, payments CSV and bookable times.
@@ -64,9 +67,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Avatar pipeline:** `user/avatar.ts` (magic bytes, `AVATAR_LIMITS`), `user/service.ts:58-80` (`storageClient.put/delete`, key `avatars/<id>/<uuid>.<ext>`), served by `files` (`/api/files/*`). The hourly purge deletes logos (`organizations/purge.ts:52`), but an immediate delete through Better Auth doesn't.
 - **Booking emails:** the matrix is `emailsFor` in `bookings/dispatch.ts`. Organization emails go to `listOrganizationManagerEmails` → `findManagerEmails` (`organizations/repository.ts:178`, owner + admin). It runs after commit and never throws.
 - **Payments** are manual only (`PAYMENT_PROVIDERS = ["manual"]`). "Payment recorded" means a member marked a payment paid.
-- **Jobs** are registered in `Sinwy.Backend/jobs.ts`. Organizations can't import bookings; wire cross-module work there or through the lazy `bookingsModule()` pattern in `auth.ts`.
+- **Jobs** are registered in `Sinwy.Backend/jobs.ts` (the activity cleanup is `purgeActivityJob`). Organizations can't import bookings; wire cross-module work there or through the lazy `bookingsModule()` pattern in `auth.ts`.
 - **Hosted page data:** the storefront layout is the bare `storefront/routes/route.tsx`. `StorefrontDto` is in `Sinwy.Shared/types/booking/Storefront.ts` and `PublicPageDto` in `Sinwy.Shared/types/page/Page.ts`. `findPublicOrganization` is at `organizations/service.ts:102`.
 - **Fonts:** `styles.css:1,5` loads Manrope/Fraunces from Google Fonts and Inter through `@fontsource-variable/inter`.
+- **Dev servers:** the backend (`bun run start:server`, log `/tmp/sinwy-server.log`) runs without watch; restart it after backend changes before an e2e check. The web server (`/tmp/sinwy-web.log`) hot-reloads and regenerates the route tree.
 - **Shell:** the header in `shared/components/shell/AppShell.tsx:86` holds the sidebar trigger and breadcrumbs, and is where the bell goes. `shared/` must not import `modules/`.
 - **Upcoming-booking counts** exist: `countUpcomingOrganizationBookings(ids)` in `@bookingsModule`, used by the account deletion preview (`user/service.ts:87`).
 - **Seed scenarios** (`e2e-test` skill): `subscribed-org`, `pro-org`, `org-with-staff --staff n`, `bookable-org`, `owner-with-org`.
@@ -86,37 +90,11 @@ Reminder for whoever plans next: these were raised and consciously left out of P
 
 ---
 
-## Phase 2: Activity Log foundation
-
-**Goal:** owners and admins see a 90-day list of management actions under Settings → Activity, and the existing team, pages, services, ownership and lifecycle actions record into it.
-
-**Files:** `Sinwy.Backend/db/schema/organizationSchema.ts` (new `organization_activity` table), `Sinwy.Shared/types/organization/` (activity DTO and action keys), `Sinwy.Backend/modules/organizations/` (`repository.ts`, `service.ts` `recordActivity` / `listActivity`, `routes.ts`, `controller.ts`, `index.ts`, a cleanup job like `purge.ts`), `Sinwy.Backend/jobs.ts`; recording call sites: `auth/auth.ts` (`after` middleware at 315-335 and the `organizationHooks` at 376-408), `pages/service.ts` (`publishPage`, `unpublishPage`, `deletePage`), `services/service.ts` (`createService`, `updateService` price change, `archiveService`), `transfers/service.ts` (`offerTransfer`, `cancelTransfer`, `completeTransferOnPlan`, `transferOwnershipBySupport`), `organizations/service.ts` (activate and deactivate, called from `controller.ts:103+`); web `org-dashboard/routes/_shell.settings.tsx`, `_shell.settings.index.tsx`, new `_shell.settings.activity.tsx`, `org-dashboard/lib/` (activity queries).
-
-**Steps:**
-- One row per action: organization id (cascade), actor user id (set null), actor name snapshot, action key, small jsonb details (field names, role from/to, page title, service name, old/new price), occurred at. Index on (organization, occurred at).
-- `recordActivity` is exported from the organizations module, called after the change commits, and catches and logs its own errors. The actor comes from the session user or is `system`. Use the lazy-import pattern where a static import would create a cycle.
-- Record team actions where an actor is known. Use the `after` middleware with the session for invite, revoke, remove, role change and leave, and only when `ctx.context.returned` is a success. `afterAcceptInvitation` covers "member joined", with the joining user as actor.
-- Log field names, never values, so contact details don't leak into the log.
-- `GET` the list with `settings:manage`, cursor-paginated 50 at a time. An hourly job deletes rows older than 90 days.
-- Web: turn `/settings` into a tabbed layout with General (the current page) and Activity. The Activity list shows an actor avatar or initial, a sentence built from a map of action keys, a relative time, and load more. Phases 3–5 add the other tabs.
-
-**Tests that matter:**
-- A failed write doesn't fail the action. A failed Better Auth call (for example a refused role change) records nothing.
-- Staff get 403 on the list. Another organization's entries never show.
-- Actor names survive the actor's account deletion.
-
-**Done when:**
-- Inviting, removing, publishing, archiving and offering a transfer each add one entry with the right actor and wording, and old rows are cleaned up.
-
-**Verify:** Seed `org-with-staff --staff 1`. As the owner, change the staff member's role to admin, publish a page, archive a service and revoke a fresh invitation. Settings → Activity lists four entries, newest first, each naming the owner. Log in as the staff member (now admin) and see the same list. A new staff member opening `/settings/activity` gets the no-permission screen. Check `organization_activity` rows in the DB.
-
----
-
 ## Phase 3: Settings tabs and General
 
 **Goal:** owners and admins edit the organization's name, logo, contact details and timezone on Settings → General, and see the slug and currency read-only.
 
-**Files:** `organizations/routes.ts`, `controller.ts`, `service.ts` (`saveOrganizationProfile`, `setOrganizationTimezone` at 377+, `findWizardTarget` at 305), `repository.ts` (`updateOrganizationTimezone` at 192); `user/avatar.ts` and `user/service.ts:58-80` (pipeline to reuse; move the generic image check somewhere both modules can import, not into another module's internals); `auth/auth.ts` (`before` middleware at 298-305, to refuse `/organization/update`); `services/service.ts` `saveAvailability` and `services/repository.ts:145`; `Sinwy.Shared/types/service/Availability.ts:60`; web `org-dashboard/routes/_shell.settings.index.tsx`, `organizations/components/BusinessProfileForm.tsx`, `org-dashboard/components/BusinessHoursForm.tsx:61-95`, `org-dashboard/routes/_shell.services.hours.tsx:84`, `org-dashboard/components/OrganizationSidebar.tsx` (switcher logo), `storefront/routes/index.tsx` (header logo), `shared/lib/organizations.ts` (`organizationsQuery`).
+**Files:** `organizations/routes.ts`, `controller.ts` (`listActivityHandler` shows the actor/`recordActivity` pattern), `service.ts` (`saveOrganizationProfile` at 354, `setOrganizationTimezone` at 382, `findWizardTarget` at 310), `repository.ts` (`updateOrganizationTimezone` at 194); `Sinwy.Shared/types/organization/OrganizationActivity.ts` (new action keys) and web `org-dashboard/lib/activity.ts` (their sentences); `user/avatar.ts` and `user/service.ts:58-80` (pipeline to reuse; move the generic image check somewhere both modules can import, not into another module's internals); `auth/auth.ts` (`before` middleware's `/organization/` branch at 310, to refuse `/organization/update`); `services/service.ts` `saveAvailability` at 247 and `services/repository.ts:145`; `Sinwy.Shared/types/service/Availability.ts:60`; web `org-dashboard/routes/_shell.settings.index.tsx` (General tab body only; the header and tabs are in `_shell.settings.tsx`), `organizations/components/BusinessProfileForm.tsx`, `org-dashboard/components/BusinessHoursForm.tsx:61-95`, `org-dashboard/routes/_shell.services.hours.tsx:84`, `org-dashboard/components/OrganizationSidebar.tsx` (switcher logo), `storefront/routes/index.tsx` (header logo), `shared/lib/organizations.ts` (`organizationsQuery`).
 
 **Steps:**
 - Endpoints with `settings:manage`, refused when inactive: update name (validated length) and timezone (`isTimeZone`); upload and remove the logo (avatar limits, key `logos/<org id>/<uuid>.<ext>`, the old file deleted after the new one is stored).

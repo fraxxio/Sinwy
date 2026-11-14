@@ -5,6 +5,7 @@ import {
 	invitation,
 	member,
 	organization,
+	organizationActivity,
 	organizationProfile,
 	organizationTransfer,
 } from "@db/schema/organizationSchema";
@@ -12,6 +13,7 @@ import { user, userSubscription } from "@db/schema/userSchema";
 import {
 	and,
 	asc,
+	desc,
 	eq,
 	exists,
 	gt,
@@ -477,4 +479,61 @@ export const findUnfinishedOnboardingOrganization = async (
 		.orderBy(asc(organization.createdAt))
 		.limit(1);
 	return row?.organizationId ?? null;
+};
+
+export const insertActivity = (
+	values: typeof organizationActivity.$inferInsert,
+) => db.insert(organizationActivity).values(values);
+
+/** Newest first; strictly older than `before`, which is a (time, id) pair. */
+export const findActivity = (
+	organizationId: string,
+	before: { occurredAt: Date; id: string } | null,
+	limit: number,
+) =>
+	db
+		.select({
+			id: organizationActivity.id,
+			actorName: organizationActivity.actorName,
+			actorImage: user.image,
+			action: organizationActivity.action,
+			details: organizationActivity.details,
+			occurredAt: organizationActivity.occurredAt,
+		})
+		.from(organizationActivity)
+		.leftJoin(user, eq(organizationActivity.actorUserId, user.id))
+		.where(
+			and(
+				eq(organizationActivity.organizationId, organizationId),
+				before
+					? or(
+							lt(organizationActivity.occurredAt, before.occurredAt),
+							and(
+								eq(organizationActivity.occurredAt, before.occurredAt),
+								lt(organizationActivity.id, before.id),
+							),
+						)
+					: undefined,
+			),
+		)
+		.orderBy(
+			desc(organizationActivity.occurredAt),
+			desc(organizationActivity.id),
+		)
+		.limit(limit);
+
+export const deleteActivityBefore = async (cutoff: Date) =>
+	(
+		await db
+			.delete(organizationActivity)
+			.where(lt(organizationActivity.occurredAt, cutoff))
+			.returning({ id: organizationActivity.id })
+	).length;
+
+export const findUserName = async (userId: string) => {
+	const [row] = await db
+		.select({ name: user.name })
+		.from(user)
+		.where(eq(user.id, userId));
+	return row?.name ?? null;
 };

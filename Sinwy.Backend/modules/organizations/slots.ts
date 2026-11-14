@@ -105,7 +105,8 @@ export const fitSlotsToCap = async (
 };
 
 export type SlotHold =
-	| { result: "held" }
+	/** `changed` is false when it already held one. */
+	| { result: "held"; changed: boolean }
 	| { result: "not-found" }
 	| { result: "no-plan" }
 	| { result: "limit-reached"; limit: number };
@@ -129,7 +130,7 @@ export const holdSlot = (userId: string, organizationId: string) =>
 			)
 			.for("update");
 		if (!org) return { result: "not-found" };
-		if (org.slotHeldAt) return { result: "held" };
+		if (org.slotHeldAt) return { result: "held", changed: false };
 		if (!plan) return { result: "no-plan" };
 
 		const limit = slotLimit(plan);
@@ -139,18 +140,19 @@ export const holdSlot = (userId: string, organizationId: string) =>
 			.update(organization)
 			.set({ slotHeldAt: new Date() })
 			.where(eq(organization.id, organizationId));
-		return { result: "held" };
+		return { result: "held", changed: true };
 	});
 
 /**
  * Frees the organization's slot and takes it out of the sessions that have it
- * open. false when the user doesn't own it or it is scheduled for deletion.
+ * open. Not found when the user doesn't own it or it is scheduled for
+ * deletion; `changed` is false when it held no slot.
  */
 export const releaseSlot = (userId: string, organizationId: string) =>
 	db.transaction(async (tx) => {
-		const released = await tx
-			.update(organization)
-			.set({ slotHeldAt: null })
+		const [org] = await tx
+			.select({ slotHeldAt: organization.slotHeldAt })
+			.from(organization)
 			.where(
 				and(
 					eq(organization.id, organizationId),
@@ -158,12 +160,14 @@ export const releaseSlot = (userId: string, organizationId: string) =>
 					ownedBy(userId),
 				),
 			)
-			.returning({ id: organization.id });
-		await clearFromSessions(
-			tx,
-			released.map(({ id }) => id),
-		);
-		return released.length > 0;
+			.for("update");
+		if (!org) return { found: false, changed: false };
+		await tx
+			.update(organization)
+			.set({ slotHeldAt: null })
+			.where(eq(organization.id, organizationId));
+		await clearFromSessions(tx, [organizationId]);
+		return { found: true, changed: org.slotHeldAt !== null };
 	});
 
 /**

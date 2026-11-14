@@ -1,6 +1,10 @@
+import { jsonb } from "@db/jsonb";
 import { oneOf } from "@db/oneOf";
 import { user } from "@db/schema/userSchema";
-import { ORGANIZATION_TRANSFER_STATUSES } from "@sinwy/shared";
+import {
+	type ActivityEvent,
+	ORGANIZATION_TRANSFER_STATUSES,
+} from "@sinwy/shared";
 import { relations, sql } from "drizzle-orm";
 import {
 	check,
@@ -119,6 +123,36 @@ export const organizationTransfer = pgTable(
 			"organization_transfer_status_check",
 			oneOf("status", ORGANIZATION_TRANSFER_STATUSES),
 		),
+	],
+);
+
+export const organizationActivity = pgTable(
+	"organization_activity",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		actorUserId: text("actor_user_id").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		// a snapshot, so the entry outlives the account; null for Sinwy itself
+		actorName: text("actor_name"),
+		action: text("action").$type<ActivityEvent["action"]>().notNull(),
+		details: jsonb<ActivityEvent["details"]>("details").notNull(),
+		// set in JS, so the millisecond cursor matches the stored value exactly
+		occurredAt: timestamp("occurred_at")
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [
+		index("organization_activity_org_occurred_idx").on(
+			table.organizationId,
+			table.occurredAt,
+			table.id,
+		),
+		index("organization_activity_occurred_idx").on(table.occurredAt),
+		index("organization_activity_actor_idx").on(table.actorUserId),
 	],
 );
 

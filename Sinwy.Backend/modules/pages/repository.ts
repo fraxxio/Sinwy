@@ -190,12 +190,13 @@ export const insertNextVersion = (
 		return { ok: true } as const;
 	});
 
+/** The deleted page's title, or null when there was none. */
 export const deletePage = async (organizationId: string, pageId: string) => {
-	const rows = await db
+	const [row] = await db
 		.delete(page)
 		.where(byId(organizationId, pageId))
-		.returning({ id: page.id });
-	return rows.length > 0;
+		.returning({ title: page.title });
+	return row ?? null;
 };
 
 /** Pins the latest version under the page lock, so a concurrent save can't slip between reading and pinning it. */

@@ -6,6 +6,7 @@ import {
 	organizationProfileBody,
 } from "@backend/modules/organizations/utils";
 import { API_ERROR_CODES } from "@sinwy/shared";
+import { listActivity, parseActivityCursor, recordActivity } from "./activity";
 import {
 	activateOrganization,
 	completeOrganizationOnboarding,
@@ -104,17 +105,33 @@ export const activateOrganizationHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
 	const { organizationId } = c.req.params as { organizationId: string };
 	const result = await activateOrganization(user.id, organizationId);
-	return result.ok
-		? ok(null, 200, "Organization activated")
-		: respondSlotError(result.error);
+	if (!result.ok) return respondSlotError(result.error);
+	if (result.data.changed)
+		await recordActivity(organizationId, user, {
+			action: "organization.activated",
+			details: {},
+		});
+	return ok(null, 200, "Organization activated");
 };
 
 export const deactivateOrganizationHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
 	const { organizationId } = c.req.params as { organizationId: string };
-	return (await deactivateOrganization(user.id, organizationId))
-		? ok(null, 200, "Organization deactivated")
-		: fail("Not found", 404);
+	const result = await deactivateOrganization(user.id, organizationId);
+	if (!result.found) return fail("Not found", 404);
+	if (result.changed)
+		await recordActivity(organizationId, user, {
+			action: "organization.deactivated",
+			details: {},
+		});
+	return ok(null, 200, "Organization deactivated");
+};
+
+export const listActivityHandler: Handler = async (c) => {
+	const raw = new URL(c.req.url).searchParams.get("before");
+	const before = raw ? parseActivityCursor(raw) : null;
+	if (raw && !before) return fail("Invalid cursor", 400);
+	return ok(await listActivity(membershipFrom(c).organizationId, before));
 };
 
 export const getInvitationPreviewHandler: Handler = async (c) => {

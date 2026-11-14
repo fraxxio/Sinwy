@@ -12,6 +12,7 @@ import {
 	deactivateOrganizationHandler,
 	getInvitationPreviewHandler,
 	getOrganizationOnboardingHandler,
+	listActivityHandler,
 	listOrganizationsHandler,
 	saveOrganizationProfileHandler,
 } from "./controller";
@@ -37,6 +38,9 @@ export const registerOrganizationRoutes = (app: IApp) => {
 	);
 	app.route(organizationPath("profile"), saveOrganizationProfileHandler, {
 		method: "PUT",
+		routeMiddlewares: [requireAuth, requirePermission("settings:manage")],
+	});
+	app.route(organizationPath("activity"), listActivityHandler, {
 		routeMiddlewares: [requireAuth, requirePermission("settings:manage")],
 	});
 	// owner only: the slot is the owner's, so the repository checks ownership

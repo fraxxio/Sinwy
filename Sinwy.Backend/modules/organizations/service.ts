@@ -47,6 +47,7 @@ import {
 	findSoleOwnedOrganizations,
 	findUnfinishedOnboardingOrganization,
 	findUnpaidOwnedOrganization,
+	findUserName,
 	hasFreeSlot,
 	insertOrganizationWithOwner,
 	isSlugTaken,
@@ -217,6 +218,8 @@ export const getInvitationPreview = async (
 /** The organization's name, owner and access; null for an unknown one. */
 export const getOrganizationAccess = findOrganizationAccess;
 
+export const getUserName = findUserName;
+
 /** The organization's plan seat cap; 0 while inactive or unknown. */
 export const getSeatLimit = async (organizationId: string) => {
 	const access = await findOrganizationAccess(organizationId);
@@ -284,10 +287,12 @@ export type SlotResult = Exclude<SlotHold, { result: "held" }>["result"];
 export const activateOrganization = async (
 	userId: string,
 	organizationId: string,
-): Promise<{ ok: true } | { ok: false; error: SlotResult }> => {
+): Promise<
+	{ ok: true; data: { changed: boolean } } | { ok: false; error: SlotResult }
+> => {
 	const hold = await holdSlot(userId, organizationId);
 	return hold.result === "held"
-		? { ok: true }
+		? { ok: true, data: { changed: hold.changed } }
 		: { ok: false, error: hold.result };
 };
 

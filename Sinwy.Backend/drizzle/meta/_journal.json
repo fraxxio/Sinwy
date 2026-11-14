@@ -197,6 +197,13 @@
       "when": 1794665013121,
       "tag": "0027_page_content_widgets",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794665596143,
+      "tag": "0028_organization_activity",
+      "breakpoints": true
     }
   ]
 }

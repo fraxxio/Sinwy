@@ -13,6 +13,7 @@ import { createLogger } from "@logger";
 import {
 	getSeatLimit,
 	getSeatUsage,
+	recordActivity,
 	scheduleOwnedOrganizationsForDeletion,
 	withdrawInvitationOverCap,
 } from "@organizationsModule";
@@ -21,6 +22,7 @@ import {
 	AUTH_ERROR_CODES,
 	ac,
 	INVITATION_EXPIRY_DAYS,
+	isInviteRole,
 	orgAccessRoles,
 	PLAN_SLUGS,
 	profileSchema,
@@ -54,8 +56,18 @@ import { InvitationEmail } from "./emails/invitationEmail";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
 import { refuseNonInviteRole, refuseOwnerRole } from "./singleOwner";
+import { recordTeamActivity } from "./teamActivity";
 
 const authLogger = createLogger("auth");
+
+// the team actions the after middleware records; it reads who did them from the session
+const TEAM_ACTIVITY_PATHS = new Set([
+	"/organization/invite-member",
+	"/organization/cancel-invitation",
+	"/organization/update-member-role",
+	"/organization/remove-member",
+	"/organization/leave",
+]);
 
 // better-auth only type-checks name; apply the shared length/character rule
 // imported on use: the bookings module's routes need this module loaded first
@@ -323,11 +335,13 @@ export const auth = betterAuth({
 					));
 				return stripped ? ctx.json(stripped) : undefined;
 			}
-			// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
-			if (ctx.path !== "/organization/leave") return undefined;
-			const body = z.object({ organizationId: z.string() }).safeParse(ctx.body);
+			if (!TEAM_ACTIVITY_PATHS.has(ctx.path)) return undefined;
 			const session = await getSessionFromCtx(ctx);
-			if (body.success && session)
+			if (!session) return undefined;
+			await recordTeamActivity(ctx.path, session.user, ctx.context.returned);
+			// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
+			const body = z.object({ organizationId: z.string() }).safeParse(ctx.body);
+			if (ctx.path === "/organization/leave" && body.success)
 				await cancelTransfersToMember(
 					body.data.organizationId,
 					session.user.id,
@@ -392,6 +406,13 @@ export const auth = betterAuth({
 				beforeAcceptInvitation: async ({ invitation }) => {
 					refuseOwnerRole(invitation.role);
 					await refuseScheduledOrganization(invitation.organizationId);
+				},
+				afterAcceptInvitation: async ({ invitation, user }) => {
+					if (isInviteRole(invitation.role))
+						await recordActivity(invitation.organizationId, user, {
+							action: "member.joined",
+							details: { role: invitation.role },
+						});
 				},
 				beforeUpdateMemberRole: ({ member, newRole }) => {
 					refuseOwnerRole(member.role, newRole);

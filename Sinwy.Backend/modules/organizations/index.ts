@@ -1,4 +1,9 @@
 export {
+	type ActivityActor,
+	purgeActivityJob,
+	recordActivity,
+} from "./activity";
+export {
 	createPurgeOrganizationsJob,
 	purgeScheduledOrganizations,
 } from "./purge";
@@ -21,6 +26,7 @@ export {
 	getSeatUsage,
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
+	getUserName,
 	isOrganizationPublic,
 	isScheduledForDeletion,
 	isSuspended,

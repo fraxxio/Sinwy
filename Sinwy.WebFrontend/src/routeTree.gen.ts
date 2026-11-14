@@ -61,6 +61,7 @@ import { Route as DashboardOrganizationSlugShellDotservicesDotidRouteImport } fr
 import { Route as DashboardOrganizationSlugShellDotservicesDothoursRouteImport } from './modules/org-dashboard/routes/_shell.services.hours'
 import { Route as DashboardOrganizationSlugShellDotservicesDotnewRouteImport } from './modules/org-dashboard/routes/_shell.services.new'
 import { Route as DashboardOrganizationSlugShellDotsettingsDotindexRouteImport } from './modules/org-dashboard/routes/_shell.settings.index'
+import { Route as DashboardOrganizationSlugShellDotsettingsDotactivityRouteImport } from './modules/org-dashboard/routes/_shell.settings.activity'
 import { Route as DashboardOrganizationSlugShellDotpagesDotidDotindexRouteImport } from './modules/org-dashboard/routes/_shell.pages.$id.index'
 import { Route as DashboardOrganizationSlugShellDotpagesDotidDotpreviewRouteImport } from './modules/org-dashboard/routes/_shell.pages.$id.preview'
 
@@ -355,6 +356,12 @@ const DashboardOrganizationSlugShellDotsettingsDotindexRoute =
     path: '/',
     getParentRoute: () => DashboardOrganizationSlugShellDotsettingsRoute,
   } as any)
+const DashboardOrganizationSlugShellDotsettingsDotactivityRoute =
+  DashboardOrganizationSlugShellDotsettingsDotactivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => DashboardOrganizationSlugShellDotsettingsRoute,
+  } as any)
 const DashboardOrganizationSlugShellDotpagesDotidDotindexRoute =
   DashboardOrganizationSlugShellDotpagesDotidDotindexRouteImport.update({
     id: '/',
@@ -416,6 +423,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/$organizationSlug/services/$id': typeof DashboardOrganizationSlugShellDotservicesDotidRoute
   '/dashboard/$organizationSlug/services/hours': typeof DashboardOrganizationSlugShellDotservicesDothoursRoute
   '/dashboard/$organizationSlug/services/new': typeof DashboardOrganizationSlugShellDotservicesDotnewRoute
+  '/dashboard/$organizationSlug/settings/activity': typeof DashboardOrganizationSlugShellDotsettingsDotactivityRoute
   '/dashboard/$organizationSlug/bookings/': typeof DashboardOrganizationSlugShellDotbookingsDotindexRoute
   '/dashboard/$organizationSlug/customers/': typeof DashboardOrganizationSlugShellDotcustomersDotindexRoute
   '/dashboard/$organizationSlug/pages/': typeof DashboardOrganizationSlugShellDotpagesDotindexRoute
@@ -461,6 +469,7 @@ export interface FileRoutesByTo {
   '/dashboard/$organizationSlug/services/$id': typeof DashboardOrganizationSlugShellDotservicesDotidRoute
   '/dashboard/$organizationSlug/services/hours': typeof DashboardOrganizationSlugShellDotservicesDothoursRoute
   '/dashboard/$organizationSlug/services/new': typeof DashboardOrganizationSlugShellDotservicesDotnewRoute
+  '/dashboard/$organizationSlug/settings/activity': typeof DashboardOrganizationSlugShellDotsettingsDotactivityRoute
   '/dashboard/$organizationSlug/bookings': typeof DashboardOrganizationSlugShellDotbookingsDotindexRoute
   '/dashboard/$organizationSlug/customers': typeof DashboardOrganizationSlugShellDotcustomersDotindexRoute
   '/dashboard/$organizationSlug/pages': typeof DashboardOrganizationSlugShellDotpagesDotindexRoute
@@ -518,6 +527,7 @@ export interface FileRoutesById {
   '/dashboard/$organizationSlug/_shell/services/$id': typeof DashboardOrganizationSlugShellDotservicesDotidRoute
   '/dashboard/$organizationSlug/_shell/services/hours': typeof DashboardOrganizationSlugShellDotservicesDothoursRoute
   '/dashboard/$organizationSlug/_shell/services/new': typeof DashboardOrganizationSlugShellDotservicesDotnewRoute
+  '/dashboard/$organizationSlug/_shell/settings/activity': typeof DashboardOrganizationSlugShellDotsettingsDotactivityRoute
   '/dashboard/$organizationSlug/_shell/bookings/': typeof DashboardOrganizationSlugShellDotbookingsDotindexRoute
   '/dashboard/$organizationSlug/_shell/customers/': typeof DashboardOrganizationSlugShellDotcustomersDotindexRoute
   '/dashboard/$organizationSlug/_shell/pages/': typeof DashboardOrganizationSlugShellDotpagesDotindexRoute
@@ -576,6 +586,7 @@ export interface FileRouteTypes {
     | '/dashboard/$organizationSlug/services/$id'
     | '/dashboard/$organizationSlug/services/hours'
     | '/dashboard/$organizationSlug/services/new'
+    | '/dashboard/$organizationSlug/settings/activity'
     | '/dashboard/$organizationSlug/bookings/'
     | '/dashboard/$organizationSlug/customers/'
     | '/dashboard/$organizationSlug/pages/'
@@ -621,6 +632,7 @@ export interface FileRouteTypes {
     | '/dashboard/$organizationSlug/services/$id'
     | '/dashboard/$organizationSlug/services/hours'
     | '/dashboard/$organizationSlug/services/new'
+    | '/dashboard/$organizationSlug/settings/activity'
     | '/dashboard/$organizationSlug/bookings'
     | '/dashboard/$organizationSlug/customers'
     | '/dashboard/$organizationSlug/pages'
@@ -677,6 +689,7 @@ export interface FileRouteTypes {
     | '/dashboard/$organizationSlug/_shell/services/$id'
     | '/dashboard/$organizationSlug/_shell/services/hours'
     | '/dashboard/$organizationSlug/_shell/services/new'
+    | '/dashboard/$organizationSlug/_shell/settings/activity'
     | '/dashboard/$organizationSlug/_shell/bookings/'
     | '/dashboard/$organizationSlug/_shell/customers/'
     | '/dashboard/$organizationSlug/_shell/pages/'
@@ -1071,6 +1084,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardOrganizationSlugShellDotsettingsDotindexRouteImport
       parentRoute: typeof DashboardOrganizationSlugShellDotsettingsRoute
     }
+    '/dashboard/$organizationSlug/_shell/settings/activity': {
+      id: '/dashboard/$organizationSlug/_shell/settings/activity'
+      path: '/activity'
+      fullPath: '/dashboard/$organizationSlug/settings/activity'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotsettingsDotactivityRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotsettingsRoute
+    }
     '/dashboard/$organizationSlug/_shell/pages/$id/': {
       id: '/dashboard/$organizationSlug/_shell/pages/$id/'
       path: '/'
@@ -1265,11 +1285,14 @@ const DashboardOrganizationSlugShellDotservicesRouteWithChildren =
   )
 
 interface DashboardOrganizationSlugShellDotsettingsRouteChildren {
+  DashboardOrganizationSlugShellDotsettingsDotactivityRoute: typeof DashboardOrganizationSlugShellDotsettingsDotactivityRoute
   DashboardOrganizationSlugShellDotsettingsDotindexRoute: typeof DashboardOrganizationSlugShellDotsettingsDotindexRoute
 }
 
 const DashboardOrganizationSlugShellDotsettingsRouteChildren: DashboardOrganizationSlugShellDotsettingsRouteChildren =
   {
+    DashboardOrganizationSlugShellDotsettingsDotactivityRoute:
+      DashboardOrganizationSlugShellDotsettingsDotactivityRoute,
     DashboardOrganizationSlugShellDotsettingsDotindexRoute:
       DashboardOrganizationSlugShellDotsettingsDotindexRoute,
   }

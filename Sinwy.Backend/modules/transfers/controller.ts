@@ -84,7 +84,7 @@ export const offerTransferHandler: Handler = async (c) => {
 };
 
 export const cancelTransferHandler: Handler = async (c) =>
-	(await cancelTransfer(membershipFrom(c)))
+	(await cancelTransfer(membershipFrom(c), sessionFrom(c).user))
 		? ok(null, 200, "Transfer canceled")
 		: fail("No pending transfer", 404);
 
