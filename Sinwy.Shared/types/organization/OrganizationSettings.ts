@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { OrganizationBrandingDto } from "./OrganizationBranding";
 import type { OrganizationProfileDto } from "./OrganizationProfile";
 import { timeZoneSchema } from "./TimeZone";
 
@@ -32,6 +33,7 @@ export type OrganizationGeneralDto = {
 	/** Follows the country; existing services keep their own. */
 	currency: string;
 	profile: OrganizationProfileDto;
+	branding: OrganizationBrandingDto;
 };
 
 export type OrganizationLogoDto = { logo: string };

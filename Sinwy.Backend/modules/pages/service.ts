@@ -298,7 +298,11 @@ export const getPublicPage = async (
 	if (!(await isServed(organization.id, organization.plan, row.id)))
 		return null;
 	return {
-		organization: { name: organization.name, slug: organization.slug },
+		organization: {
+			name: organization.name,
+			slug: organization.slug,
+			branding: organization.branding,
+		},
 		title: row.title,
 		seoTitle: row.seoTitle ?? row.title,
 		seoDescription: row.seoDescription ?? (organization.tagline || null),

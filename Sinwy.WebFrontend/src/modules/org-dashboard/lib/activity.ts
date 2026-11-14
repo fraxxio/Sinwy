@@ -4,6 +4,7 @@ import {
 	type ActivityEvent,
 	ORG_ROLE_LABELS,
 	type OrganizationActivityPageDto,
+	type OrganizationBrandingDto,
 	type OrganizationProfileDto,
 } from "@sinwy/shared";
 import { infiniteQueryOptions } from "@tanstack/react-query";
@@ -43,6 +44,11 @@ const PROFILE_FIELD_LABELS: Record<keyof OrganizationProfileDto, string> = {
 	country: "country",
 };
 
+const BRANDING_FIELD_LABELS: Record<keyof OrganizationBrandingDto, string> = {
+	color: "color",
+	font: "font",
+};
+
 /** What the actor did, written to follow their name. */
 const SENTENCES: {
 	[A in ActivityAction]: (details: ActivityDetailsMap[A]) => string;
@@ -78,6 +84,8 @@ const SENTENCES: {
 		`updated the business profile (${fields.map((field) => PROFILE_FIELD_LABELS[field]).join(", ")})`,
 	"organization.timezone_changed": ({ fromTimezone, toTimezone }) =>
 		`changed the timezone from ${zone(fromTimezone)} to ${zone(toTimezone)}`,
+	"organization.branding_changed": ({ fields }) =>
+		`changed the brand ${fields.map((field) => BRANDING_FIELD_LABELS[field]).join(" and ")}`,
 };
 
 /** A generic sentence for an action newer than this page. */

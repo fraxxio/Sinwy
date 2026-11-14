@@ -12,7 +12,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 2 | Activity Log foundation | – | done | `feat(shared, backend, web): add organization activity log` |
 | 3 | Settings tabs and General | 2 | done | `feat(shared, backend, web): add organization general settings` |
 | 4 | Ownership & danger zone | 3 | done | `feat(shared, backend, web): add organization deletion screens` |
-| 5 | Branding | 1, 3 | todo | |
+| 5 | Branding | 1, 3 | done | `feat(shared, backend, web): add organization branding` |
 | 6 | Notification Preferences and staff emails | 2 | todo | |
 | 7 | In-app notification center | 6 | todo | |
 | 8 | Code review | 1–7 | todo | |
@@ -55,8 +55,8 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 - **Widgets:** page content is `{ schemaVersion: 1, widgets: PageWidget[] }` with nested `children`, a strict schema (unknown keys refused). Premium widgets and templates use `requires: "advanced-widgets"`. The renderer tags each widget with `data-widget="<type>"`. There's still no editor UI. See the Phase 1 log.
 - **Activity Log:** record with `recordActivity(organizationId, actor, { action, details })` from `@organizationsModule`, after the write; `actor` is the session user (`sessionFrom(c).user`) or `null` for Sinwy. A new action needs a key in `ActivityDetailsMap` (`Sinwy.Shared/types/organization/OrganizationActivity.ts`) and a sentence in `SENTENCES` (`org-dashboard/lib/activity.ts`). Details hold names and roles only, never contact details or field values. Seeded active orgs start with one `organization.activated` entry. See the Phase 2 log.
-- **Settings tabs:** `_shell.settings.tsx` is the layout (PageHeader + `SETTINGS_TABS` nav, styled off `Link`'s `data-status="active"`) and guards `settings:manage`; tab pages render only their `ContentBox`. An owner-only tab needs its own `beforeLoad` guard and a filtered tab list. Settings content is capped at `max-w-3xl`. General (`_shell.settings.index.tsx`) holds Organization, Business profile, Timezone and Plan; Ownership holds `TransferSection` and Delete; its sections are in `org-dashboard/components/settings/`.
-- **General data:** `GET …/general` (`OrganizationGeneralDto`) via `generalQuery` in `org-dashboard/lib/settings-queries.ts`; after a change `useRefreshGeneral` invalidates it, availability, the organizations list and the router (so breadcrumbs and switcher update). `OrganizationSummary` and `StorefrontDto` carry `logo`.
+- **Settings tabs:** `_shell.settings.tsx` is the layout (PageHeader + `SETTINGS_TABS` nav: General, Branding, Activity, Ownership) and guards `settings:manage`; tab pages render only their `ContentBox`. An owner-only tab needs its own `beforeLoad` guard and a filtered tab list. Settings content is capped at `max-w-3xl`. General (`_shell.settings.index.tsx`) holds Organization, Business profile, Timezone and Plan; Ownership holds `TransferSection` and Delete; its sections are in `org-dashboard/components/settings/`.
+- **General data:** `GET …/general` (`OrganizationGeneralDto`) via `generalQuery` in `org-dashboard/lib/settings-queries.ts`; after a change `useRefreshGeneral` invalidates it, availability, the organizations list and the router (so breadcrumbs and switcher update). `OrganizationSummary` and `StorefrontDto` carry `logo`. The org shell's route-context `organization` is Better Auth's, not the summary; read the summary from `organizationsQuery` by id.
 - **Better Auth hooks** (installed version): leaving fires no hook, so the `after` middleware in `auth.ts` handles `/organization/leave`; it also records team activity for `TEAM_ACTIVITY_PATHS` from `ctx.context.returned` (`auth/teamActivity.ts`). A refused call's `returned` is an `APIError`. Hook payloads name the affected user, not the actor, except `afterCancelInvitation`, which has `cancelledBy`. `afterAcceptInvitation` gets `{ invitation, member, user, organization }`, `afterUpdateMemberRole` gets `{ member, previousRole, user, organization }`, and `afterRemoveMember` gets `{ member, user, organization }`. The `after` middleware has the session (`getSessionFromCtx`), `ctx.path`, `ctx.body` and `ctx.context.returned`.
 - **`Membership`** (`auth/requirePermission.ts:21`) has no user id. Controllers take the actor from the session user and pass it to the service.
 - **Organization deletion** is Better Auth's `/organization/delete` (owner only by the plugin; allowed inactive or draft, refused when scheduled or during an accepted transfer: `beforeDeleteOrganization` in `auth.ts`; `afterDeleteOrganization` deletes the logo through `deleteStoredLogo`). Its sessions' `active_organization_id` becomes NULL. Preview: `GET /api/account/organizations/:id/deletion-preview` in `user/`. The web dialog is `modules/organizations/components/DeleteOrganizationDialog.tsx`. `/organization/update` is refused outright at the top of the `before` middleware's `/organization/` branch (`auth.ts`). See the Phase 4 log.
@@ -64,12 +64,12 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Owner check** on the web: `hasPermission(member.roles, "billing:manage")` is the owner's alone. `SETTINGS_TABS` entries take `ownerOnly: true`; the owner-only route guards with `requirePermission("billing:manage")` (`_shell.settings.ownership.tsx`). `settings:manage` is owner + admin; staff can't open `/settings` (`org-dashboard/lib/sections.ts`).
 - **Timezone** is written only by `PUT …/timezone` (`changeOrganizationTimezone`); the availability input has no `timezone` (a stray one is stripped). Name, timezone and logo writes need an active organization (409 otherwise); the profile save still allows drafts.
 - **Image uploads:** `Sinwy.Backend/lib/image.ts` (`readImageUpload`, `validateImage`, `respondImageError`; limits are `IMAGE_UPLOAD_LIMITS` in shared). Logos are `logos/<org id>/<uuid>.<ext>` in `organization.logo`, set by `uploadOrganizationLogo`/`removeOrganizationLogo` (old file deleted, best effort). Both the purge and an immediate delete remove the logo file (`deleteStoredLogo`). Web: `shared/components/ImageUpload.tsx`.
-- **Booking emails:** the matrix is `emailsFor` in `bookings/dispatch.ts`. Organization emails go to `listOrganizationManagerEmails` → `findManagerEmails` (`organizations/repository.ts:178`, owner + admin). It runs after commit and never throws.
+- **Booking emails:** the matrix is `emailsFor` in `bookings/dispatch.ts:30`; `sendBookingEmails` (86) calls `listOrganizationManagerEmails` (119) → `findManagerEmails` (`organizations/repository.ts:186`, owner + admin). It runs after commit and never throws.
 - **Payments** are manual only (`PAYMENT_PROVIDERS = ["manual"]`). "Payment recorded" means a member marked a payment paid.
 - **Jobs** are registered in `Sinwy.Backend/jobs.ts` (the activity cleanup is `purgeActivityJob`). Organizations can't import bookings; wire cross-module work there or through the lazy `bookingsModule()` pattern in `auth.ts`.
-- **Hosted page data:** the storefront layout is the bare `storefront/routes/route.tsx`. `StorefrontDto` is in `Sinwy.Shared/types/booking/Storefront.ts` and `PublicPageDto` in `Sinwy.Shared/types/page/Page.ts`. `findPublicOrganization` is at `organizations/service.ts:114`.
-- **Fonts:** `styles.css:1,5` loads Manrope/Fraunces from Google Fonts and Inter through `@fontsource-variable/inter`.
-- **Dev servers:** the backend (`bun run start:server`, log `/tmp/sinwy-server.log`, port 3001) runs without watch; restart it after backend changes before an e2e check. Killing a server the session didn't start is blocked by auto mode, so ask the user first. Phase 4 restarted it (log as above). The web server (`/tmp/sinwy-web.log`) hot-reloads and regenerates the route tree.
+- **Branding:** `organization.brand_color`/`brand_font` (nullable, check-constrained), `PUT …/branding` (`organizationBrandingSchema`). `branding` rides on `OrganizationGeneralDto`, `OrganizationSummary`, `StorefrontDto.organization` and `PublicPageDto.organization`. The web applies it with `brandAttributes()` (`shared/lib/branding.ts`) spread on the hosted content's wrapper; unbranded adds nothing. See the Phase 5 log.
+- **Dependencies:** the web's TanStack packages are `"latest"`, so any lockfile change (even `bun add` of something else) bumps them. If the type check then fails with two `query-core` versions, run `bun install --force` to relink Bun's store.
+- **Dev servers:** the backend (`bun run start:server`, log `/tmp/sinwy-server.log`, port 3001) runs without watch; restart it after backend changes before an e2e check. Killing a server the session didn't start is blocked by auto mode, so ask the user first. Phase 5 restarted it (log as above). The web server (`/tmp/sinwy-web.log`) hot-reloads and regenerates the route tree.
 - **Shell:** the header in `shared/components/shell/AppShell.tsx:86` holds the sidebar trigger and breadcrumbs, and is where the bell goes. `shared/` must not import `modules/`.
 - **Seed scenarios** (`e2e-test` skill): `subscribed-org`, `pro-org`, `org-with-staff --staff n`, `bookable-org`, `owner-with-org`. `bookable-org` sets its timezone through `PUT …/timezone`, so it starts with a "changed the timezone" Activity entry. `org-with-staff` has no admin; promote a staff member with `POST /api/auth/organization/update-member-role` as the owner. Seeded subscriptions exist only in the DB, so the backend logs `WARN [billing] Polar subscription read failed` for them, which is expected.
 
@@ -88,36 +88,11 @@ Reminder for whoever plans next: these were raised and consciously left out of P
 
 ---
 
-## Phase 5: Branding
-
-**Goal:** owners and admins choose an accent color and font, and every hosted page, the booking flow and the dashboard preview use them.
-
-**Files:** `Sinwy.Backend/db/schema/organizationSchema.ts` (`brand_color`, `brand_font`; a Drizzle migration), `Sinwy.Shared/types/organization/` (branding schema, font keys, label map; `OrganizationSettings.ts` holds `OrganizationGeneralDto`), `organizations/` (`routes.ts` `manageSettings` middlewares, `controller.ts`, `service.ts` `replaceField`/`editableTarget` pattern and `findPublicOrganization` at 114, `recordActivity` + a new `ActivityDetailsMap` key and `SENTENCES` entry in `org-dashboard/lib/activity.ts`), `Sinwy.Shared/types/booking/Storefront.ts` (`StorefrontDto`), `Sinwy.Shared/types/page/Page.ts` (`PublicPageDto`), `pages/service.ts` `getPublicPage` (290), `bookings/service.ts` (builds `StorefrontDto`); web `storefront/routes/route.tsx`, `index.tsx`, `$pageSlug.tsx`, `book.tsx`, `shared/components/page-content/PageRenderer.tsx`, `org-dashboard/routes/_shell.pages.$id.preview.tsx`, `org-dashboard/routes/_shell.settings.tsx` (`SETTINGS_TABS`), new `org-dashboard/routes/_shell.settings.branding.tsx`, `org-dashboard/lib/settings-queries.ts`, `styles.css`, `Sinwy.WebFrontend/package.json` (font packages).
-
-**Steps:**
-- Validate the color as `#rrggbb` and the font against the shared key list on both sides. Null resets to the default.
-- Public DTOs carry `branding: { color, font }`. The storefront root sets CSS variables for the accent, the text on it and the font family. Buttons, links and highlights in the renderer and booking flow read the variables instead of the app's primary.
-- Pick the text on the accent from contrast, with no refusal.
-- Load the curated fonts as self-hosted `@fontsource` packages; only the chosen one is fetched by the browser.
-- The Branding tab has a color input plus a few swatches, the font list rendered in its own face, a live preview card (heading, text, button), Reset, and a "Custom domain: coming soon" card.
-- Record a "branding changed" activity entry.
-
-**Tests that matter:**
-- Invalid colors and unknown font keys are refused by the API. Staff can't save.
-- A public page and the storefront of an unbranded org look exactly as before.
-
-**Done when:**
-- Saving a color and font changes the storefront, every published page, the booking flow and the dashboard preview.
-
-**Verify:** Seed `bookable-org`. As the owner, open Settings → Branding and pick `#0f766e` and "Classic". The preview updates. Open the storefront: the book button is teal with white text and headings use Lora. Go through booking a slot: the buttons stay teal. Publish a page and open it: it's branded too. Reset brings Sinwy's defaults back. The `organization` row holds the values, then nulls.
-
----
-
 ## Phase 6: Notification Preferences and staff emails
 
 **Goal:** each member chooses which organization events email them, and staff receive booking emails.
 
-**Files:** `organizationSchema.ts` (new `member_notification_preference`, cascade on `member`), `Sinwy.Shared/types/` (preference DTO, event keys and defaults), `organizations/` (`listOrganizationManagerEmails` → a recipient lookup per event that honours roles and preferences; `repository.ts:178`; routes for the user's own preferences across memberships), `bookings/dispatch.ts` (`emailsFor`, `sendBookingEmails`), `payments/service.ts` (where a payment becomes `paid`), new email template in `payments/` or `bookings/emails/`; web `account-dashboard/routes/_shell.notifications.tsx` (Inbox and Preferences tabs), the account sidebar nav, `org-dashboard/routes/_shell.settings.index.tsx` (link to preferences).
+**Files:** `Sinwy.Backend/db/schema/organizationSchema.ts` (new `member_notification_preference`, cascade on `member`; check constraints via `oneOf` as on `organization`; migration with `bun run db:generate -- --name …` then `bun run db:migrate`), `Sinwy.Shared/types/organization/` (preference DTO, event keys, defaults, role eligibility; export from `index.ts`), `organizations/` (`service.ts:417` `listOrganizationManagerEmails` → a recipient lookup per event that honours roles and preferences; `repository.ts:186` `findManagerEmails`; `index.ts` exports; new routes for the user's own preferences across memberships, like the `/api/account/organizations/:id/…` routes in `routes.ts`), `bookings/dispatch.ts` (`emailsFor` at 30, `sendBookingEmails` at 86, manager lookup at 119), `payments/service.ts` (`markPaid` at 140), new email template in `payments/` or `bookings/emails/`; web `account-dashboard/routes/_shell.notifications.tsx` (Inbox and Preferences tabs; the Settings tab nav in `org-dashboard/routes/_shell.settings.tsx` is a pattern), the account sidebar nav, `org-dashboard/routes/_shell.settings.index.tsx` (link to preferences).
 
 **Steps:**
 - Events: `booking.new` (created by a customer, requests included), `booking.cancelled_by_customer`, `payment.recorded`. Defaults on, on, off. Roles: booking events go to owner, admin and staff; `payment.recorded` to owner and admin only.

@@ -86,6 +86,11 @@ export const findOrganizationAccess = async (organizationId: string) => {
 };
 
 /** What a booking page needs, with the access fields that decide whether it may be shown. */
+const brandingColumns = {
+	brandColor: organization.brandColor,
+	brandFont: organization.brandFont,
+};
+
 export const findOrganizationBySlug = async (slug: string) => {
 	const [row] = await db
 		.select({
@@ -93,6 +98,7 @@ export const findOrganizationBySlug = async (slug: string) => {
 			name: organization.name,
 			slug: organization.slug,
 			logo: organization.logo,
+			...brandingColumns,
 			timezone: organization.timezone,
 			currency: organization.currency,
 			...organizationAccess,
@@ -198,6 +204,7 @@ export const findOrganizationGeneral = async (organizationId: string) => {
 			name: organization.name,
 			slug: organization.slug,
 			logo: organization.logo,
+			...brandingColumns,
 			timezone: organization.timezone,
 			currency: organization.currency,
 		})
@@ -207,7 +214,10 @@ export const findOrganizationGeneral = async (organizationId: string) => {
 };
 
 type EditableFields = Partial<
-	Pick<typeof organization.$inferInsert, "name" | "timezone" | "logo">
+	Pick<
+		typeof organization.$inferInsert,
+		"name" | "timezone" | "logo" | "brandColor" | "brandFont"
+	>
 >;
 
 /** Sets the fields and returns their values from before; null for an unknown organization. */
@@ -221,6 +231,7 @@ export const replaceOrganizationFields = (
 				name: organization.name,
 				timezone: organization.timezone,
 				logo: organization.logo,
+				...brandingColumns,
 			})
 			.from(organization)
 			.where(eq(organization.id, organizationId))
@@ -477,6 +488,7 @@ export const findMemberOrganizations = (userId: string) =>
 			name: organization.name,
 			slug: organization.slug,
 			logo: organization.logo,
+			...brandingColumns,
 			...organizationAccess,
 			role: member.role,
 			onboardingCompletedAt: organization.onboardingCompletedAt,

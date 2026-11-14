@@ -14,6 +14,7 @@ const org = (
 	name: "Acme",
 	slug: "acme",
 	logo: null,
+	branding: { color: null, font: null },
 	status: "inactive",
 	suspended: false,
 	draft: false,

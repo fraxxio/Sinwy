@@ -24,6 +24,7 @@ import type {
 import type { Server } from "bun";
 import { asc, eq } from "drizzle-orm";
 import { registerOrganizationRoutes } from "../routes";
+import { findPublicOrganization } from "../service";
 
 let server: Server<never>;
 let base: URL;
@@ -205,6 +206,7 @@ test("staff and non-members can't read or change General", async () => {
 		send("PUT", "timezone", cookie, { timezone: "Europe/Berlin" }),
 		send("POST", "logo", cookie, logoForm(PNG)),
 		send("DELETE", "logo", cookie),
+		send("PUT", "branding", cookie, { color: "#0f766e", font: "classic" }),
 	];
 	for (const res of await Promise.all(attempts(staff.cookie)))
 		expect(res.status).toBe(403);
@@ -216,10 +218,18 @@ test("staff and non-members can't read or change General", async () => {
 			name: organization.name,
 			timezone: organization.timezone,
 			logo: organization.logo,
+			brandColor: organization.brandColor,
+			brandFont: organization.brandFont,
 		})
 		.from(organization)
 		.where(eq(organization.id, orgId));
-	expect(row).toEqual({ name: "Salon", timezone: "UTC", logo: null });
+	expect(row).toEqual({
+		name: "Salon",
+		timezone: "UTC",
+		logo: null,
+		brandColor: null,
+		brandFont: null,
+	});
 });
 
 test("an inactive organization refuses changes", async () => {
@@ -232,9 +242,16 @@ test("an inactive organization refuses changes", async () => {
 		await send("PUT", "name", admin.cookie, { name: "Taken" }),
 		await send("PUT", "timezone", admin.cookie, { timezone: "Europe/Berlin" }),
 		await send("POST", "logo", admin.cookie, logoForm(PNG)),
+		await send("PUT", "branding", admin.cookie, {
+			color: "#0f766e",
+			font: "classic",
+		}),
 	])
 		expect(res.status).toBe(409);
-	expect((await general()).name).toBe("Salon");
+	expect(await general()).toMatchObject({
+		name: "Salon",
+		branding: { color: null, font: null },
+	});
 });
 
 test("changing the timezone leaves booking instants and hour rows untouched", async () => {
@@ -325,4 +342,80 @@ test("a profile save records the changed field names, never their values", async
 		},
 	]);
 	expect(JSON.stringify(recorded)).not.toContain("salon.test");
+});
+
+const brandingRow = async () => {
+	const [row] = await db
+		.select({
+			color: organization.brandColor,
+			font: organization.brandFont,
+		})
+		.from(organization)
+		.where(eq(organization.id, orgId));
+	return row;
+};
+
+test("an admin brands the organization, its public pages carry it, and a reset brings the defaults back", async () => {
+	expect((await general()).branding).toEqual({ color: null, font: null });
+
+	const saved = await send("PUT", "branding", admin.cookie, {
+		color: "#0F766E",
+		font: "classic",
+	});
+	expect(saved.status).toBe(200);
+	expect(await brandingRow()).toEqual({ color: "#0f766e", font: "classic" });
+	expect((await general()).branding).toEqual({
+		color: "#0f766e",
+		font: "classic",
+	});
+	const { slug } = await general();
+	expect((await findPublicOrganization(slug))?.branding).toEqual({
+		color: "#0f766e",
+		font: "classic",
+	});
+
+	await send("PUT", "branding", admin.cookie, {
+		color: "#0f766e",
+		font: "classic",
+	});
+	await send("PUT", "branding", admin.cookie, {
+		color: "#0f766e",
+		font: "modern",
+	});
+	await send("PUT", "branding", admin.cookie, { color: null, font: null });
+	expect(await brandingRow()).toEqual({ color: null, font: null });
+	expect(await actions()).toEqual([
+		{
+			action: "organization.branding_changed",
+			details: { fields: ["color", "font"] },
+		},
+		{ action: "organization.branding_changed", details: { fields: ["font"] } },
+		{
+			action: "organization.branding_changed",
+			details: { fields: ["color", "font"] },
+		},
+	]);
+});
+
+test("invalid colors and unknown fonts are refused, and nothing changes", async () => {
+	await send("PUT", "branding", admin.cookie, {
+		color: "#123456",
+		font: "friendly",
+	});
+	for (const body of [
+		{ color: "teal", font: null },
+		{ color: "#fff", font: null },
+		{ color: "0f766e", font: null },
+		{ color: "#12345g", font: null },
+		{ color: "#0f766e80", font: null },
+		{ color: "#0f766e", font: "comic-sans" },
+		{ color: "#0f766e", font: "Classic" },
+		{ color: "#0f766e" },
+		{ color: "#0f766e", font: null, extra: true },
+		null,
+	])
+		expect((await send("PUT", "branding", admin.cookie, body)).status).toBe(
+			400,
+		);
+	expect(await brandingRow()).toEqual({ color: "#123456", font: "friendly" });
 });

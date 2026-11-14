@@ -14,6 +14,7 @@ import db from "@db";
 import { createLogger } from "@logger";
 import {
 	type AccountDeletionPreviewDto,
+	type BrandFont,
 	currencyForCountry,
 	EMPTY_ORGANIZATION_PROFILE,
 	featuresFor,
@@ -22,6 +23,7 @@ import {
 	isInviteRole,
 	limitsFor,
 	ORGANIZATION_RETENTION_DAYS,
+	type OrganizationBrandingDto,
 	type OrganizationDto,
 	type OrganizationGeneralDto,
 	type OrganizationIndustry,
@@ -68,6 +70,11 @@ import {
 import { holdSlot, releaseSlot, type SlotHold } from "./slots";
 
 const organizationLogger = createLogger("organizations");
+
+const toBranding = (row: {
+	brandColor: string | null;
+	brandFont: BrandFont | null;
+}): OrganizationBrandingDto => ({ color: row.brandColor, font: row.brandFont });
 
 export const createOrganization = async (
 	userId: string,
@@ -121,6 +128,7 @@ export const findPublicOrganization = async (slug: string) => {
 		logo: row.logo,
 		timezone: row.timezone,
 		currency: row.currency,
+		branding: toBranding(row),
 		tagline: row.tagline,
 		description: row.description,
 		city: row.city,
@@ -138,6 +146,7 @@ export const findPublicOrganizationPlan = async (slug: string) => {
 		slug: row.slug,
 		tagline: row.tagline,
 		timezone: row.timezone,
+		branding: toBranding(row),
 		plan: organizationPlanOf(row),
 	};
 };
@@ -189,6 +198,7 @@ export const listOrganizations = async (
 			name: row.name,
 			slug: row.slug,
 			logo: row.logo,
+			branding: toBranding(row),
 			status: organizationStatusOf(row),
 			suspended: isSuspended(row),
 			draft: isDraft(row),
@@ -422,7 +432,13 @@ export const getOrganizationGeneral = async (
 		findOrganizationGeneral(organizationId),
 		findProfile(organizationId),
 	]);
-	return row && { ...row, profile: toProfileDto(profile) };
+	if (!row) return null;
+	const { brandColor, brandFont, ...general } = row;
+	return {
+		...general,
+		profile: toProfileDto(profile),
+		branding: toBranding({ brandColor, brandFont }),
+	};
 };
 
 const replaceField = async <K extends "name" | "timezone">(
@@ -458,6 +474,29 @@ export const changeOrganizationTimezone = (
 	membership: Membership,
 	timezone: string,
 ) => replaceField(membership, "timezone", timezone);
+
+/** Null resets a part to Sinwy's default. Returns the parts that changed. */
+export const changeOrganizationBranding = async (
+	membership: Membership,
+	branding: OrganizationBrandingDto,
+): Promise<WriteResult<{ fields: (keyof OrganizationBrandingDto)[] }>> => {
+	const refused = editableTarget(membership);
+	if (refused) return refused;
+	const before = await replaceOrganizationFields(membership.organizationId, {
+		brandColor: branding.color,
+		brandFont: branding.font,
+	});
+	if (!before) return { ok: false, error: "not-found" };
+	const previous = toBranding(before);
+	return {
+		ok: true,
+		data: {
+			fields: (["color", "font"] as const).filter(
+				(field) => previous[field] !== branding[field],
+			),
+		},
+	};
+};
 
 /** Best effort: a failure is logged, never thrown. */
 export const deleteStoredLogo = async (

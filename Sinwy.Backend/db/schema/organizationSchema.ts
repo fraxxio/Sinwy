@@ -3,6 +3,8 @@ import { oneOf } from "@db/oneOf";
 import { user } from "@db/schema/userSchema";
 import {
 	type ActivityEvent,
+	BRAND_FONTS,
+	type BrandFont,
 	ORGANIZATION_TRANSFER_STATUSES,
 } from "@sinwy/shared";
 import { relations, sql } from "drizzle-orm";
@@ -30,10 +32,20 @@ export const organization = pgTable(
 		onboardingCompletedAt: timestamp("onboarding_completed_at"),
 		deletionScheduledAt: timestamp("deletion_scheduled_at"),
 		logo: text("logo"),
+		// null means Sinwy's default
+		brandColor: text("brand_color"),
+		brandFont: text("brand_font").$type<BrandFont>(),
 		createdAt: timestamp("created_at").notNull(),
 		metadata: text("metadata"),
 	},
-	(table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
+	(table) => [
+		uniqueIndex("organization_slug_uidx").on(table.slug),
+		check(
+			"organization_brand_color_check",
+			sql`${table.brandColor} ~ '^#[0-9a-f]{6}$'`,
+		),
+		check("organization_brand_font_check", oneOf("brand_font", BRAND_FONTS)),
+	],
 );
 
 export const organizationProfile = pgTable("organization_profile", {

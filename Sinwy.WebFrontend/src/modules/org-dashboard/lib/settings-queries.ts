@@ -1,4 +1,5 @@
 import type {
+	OrganizationBrandingDto,
 	OrganizationGeneralDto,
 	OrganizationNameInput,
 	OrganizationProfileDto,
@@ -47,6 +48,15 @@ export const changeTimezone = (
 	body: OrganizationTimezoneInput,
 ) =>
 	api<OrganizationTimezoneInput>(settingsPath(organizationId, "timezone"), {
+		method: "PUT",
+		body: JSON.stringify(body),
+	});
+
+export const changeBranding = (
+	organizationId: string,
+	body: OrganizationBrandingDto,
+) =>
+	api<OrganizationBrandingDto>(settingsPath(organizationId, "branding"), {
 		method: "PUT",
 		body: JSON.stringify(body),
 	});

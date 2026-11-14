@@ -3,6 +3,10 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
+@import "@fontsource-variable/nunito";
+@import "@fontsource-variable/lora";
+@import "@fontsource-variable/playfair-display";
+@import "@fontsource-variable/space-grotesk";
 
 @custom-variant dark {
 	&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *) {
@@ -781,4 +785,28 @@ body:has([data-slot="sidebar-wrapper"]) {
 	.rise-in {
 		animation: rise-in 0.5s var(--ease-glide) both;
 	}
+}
+
+/* ------------------------------------------------------------------ */
+/* Organization branding: set by `brandAttributes` on hosted content   */
+/* ------------------------------------------------------------------ */
+[data-brand-color] {
+	--primary: var(--brand-color);
+	--primary-foreground: var(--brand-on-color);
+	/* lifted toward white on dark backgrounds */
+	--primary-text: color-mix(
+		in oklab,
+		var(--brand-color) var(--brand-text-mix, 100%),
+		white
+	);
+	--ring: var(--brand-color);
+
+	@variant dark {
+		--brand-text-mix: 65%;
+	}
+}
+
+[data-brand-font],
+[data-brand-font] :is(h1, h2, h3, h4, h5, h6, .font-heading, .font-sans) {
+	font-family: var(--brand-font);
 }

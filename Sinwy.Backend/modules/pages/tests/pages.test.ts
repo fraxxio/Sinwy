@@ -632,7 +632,11 @@ test("publish: pins the latest version; later saves stay off the public page unt
 	expect(published.publishedAt).not.toBeNull();
 	const first = await unwrap<PublicPageDto>(await readPublic("welcome"));
 	expect(first).toEqual({
-		organization: { name: "Salon", slug: org.orgId },
+		organization: {
+			name: "Salon",
+			slug: org.orgId,
+			branding: { color: null, font: null },
+		},
 		title: "Welcome",
 		seoTitle: "Welcome",
 		seoDescription: "Cuts since 1999",

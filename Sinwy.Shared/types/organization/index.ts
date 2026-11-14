@@ -4,6 +4,7 @@ export * from "./FunnelStep";
 export * from "./Invitation";
 export * from "./Organization";
 export * from "./OrganizationActivity";
+export * from "./OrganizationBranding";
 export * from "./OrganizationProfile";
 export * from "./OrganizationProfileSchema";
 export * from "./OrganizationSettings";

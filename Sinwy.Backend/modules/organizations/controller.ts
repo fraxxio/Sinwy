@@ -12,12 +12,14 @@ import {
 } from "@backend/modules/organizations/utils";
 import {
 	API_ERROR_CODES,
+	organizationBrandingSchema,
 	organizationNameInputSchema,
 	organizationTimezoneInputSchema,
 } from "@sinwy/shared";
 import { listActivity, parseActivityCursor, recordActivity } from "./activity";
 import {
 	activateOrganization,
+	changeOrganizationBranding,
 	changeOrganizationTimezone,
 	completeOrganizationOnboarding,
 	createOrganization,
@@ -155,6 +157,25 @@ export const changeOrganizationTimezoneHandler: Handler = async (c) => {
 			details: { fromTimezone: result.data.from, toTimezone: timezone },
 		});
 	return ok({ timezone }, 200, "Timezone saved");
+};
+
+export const changeOrganizationBrandingHandler: Handler = async (c) => {
+	const body = organizationBrandingSchema.safeParse(
+		await c.req.json().catch(() => null),
+	);
+	if (!body.success)
+		return fail(body.error.issues[0]?.message ?? "Invalid body", 400);
+
+	const membership = membershipFrom(c);
+	const result = await changeOrganizationBranding(membership, body.data);
+	if (!result.ok) return respondWriteError(result.error);
+	const { fields } = result.data;
+	if (fields.length)
+		await recordActivity(membership.organizationId, sessionFrom(c).user, {
+			action: "organization.branding_changed",
+			details: { fields },
+		});
+	return ok(body.data, 200, "Branding saved");
 };
 
 export const uploadOrganizationLogoHandler: Handler = async (c) => {

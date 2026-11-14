@@ -7,6 +7,7 @@ import {
 import type { IApp } from "@backend/lib/app/types";
 import {
 	activateOrganizationHandler,
+	changeOrganizationBrandingHandler,
 	changeOrganizationTimezoneHandler,
 	completeOrganizationOnboardingHandler,
 	createOrganizationHandler,
@@ -54,6 +55,10 @@ export const registerOrganizationRoutes = (app: IApp) => {
 		routeMiddlewares: manageSettings,
 	});
 	app.route(organizationPath("timezone"), changeOrganizationTimezoneHandler, {
+		method: "PUT",
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("branding"), changeOrganizationBrandingHandler, {
 		method: "PUT",
 		routeMiddlewares: manageSettings,
 	});

@@ -16,6 +16,7 @@ export const Route = createFileRoute(
 
 const SETTINGS_TABS = [
 	{ label: "General", to: "/dashboard/$organizationSlug/settings" },
+	{ label: "Branding", to: "/dashboard/$organizationSlug/settings/branding" },
 	{ label: "Activity", to: "/dashboard/$organizationSlug/settings/activity" },
 	{
 		label: "Ownership & danger zone",

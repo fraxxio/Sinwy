@@ -1,3 +1,4 @@
+import type { OrganizationBrandingDto } from "../organization/OrganizationBranding";
 import type { OrganizationProfileDto } from "../organization/OrganizationProfile";
 import type { PublicServiceDto } from "../service/Service";
 
@@ -12,6 +13,7 @@ export type StorefrontDto = {
 		logo: string | null;
 		timezone: string;
 		currency: string;
+		branding: OrganizationBrandingDto;
 	};
 	services: PublicServiceDto[];
 };

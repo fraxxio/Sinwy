@@ -33,6 +33,7 @@ import { EmptyState } from "#/shared/components/EmptyState";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { brandAttributes } from "#/shared/lib/branding";
 import { addDaysToDate, localDateOf, todayIn } from "#/shared/lib/date";
 import { formatMinorUnits } from "#/shared/lib/money";
 
@@ -74,7 +75,10 @@ function BookPage() {
 		.filter(Boolean)
 		.join(", ");
 	return (
-		<div className="mx-auto w-full max-w-2xl space-y-8">
+		<div
+			{...brandAttributes(organization.branding)}
+			className="mx-auto w-full max-w-2xl space-y-8"
+		>
 			<header className="flex items-center gap-4">
 				{organization.logo && (
 					<img
