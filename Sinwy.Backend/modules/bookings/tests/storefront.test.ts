@@ -62,8 +62,11 @@ beforeEach(async () => {
 	await joinOrganization(orgId, owner.userId, "owner");
 	await activateOrganization(orgId);
 	({ userId: ownerId, cookie: ownerCookie } = owner);
+	await db
+		.update(organization)
+		.set({ timezone: TIMEZONE })
+		.where(eq(organization.id, orgId));
 	const hours = await staff("PUT", "availability", {
-		timezone: TIMEZONE,
 		weekly: [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
 			weekday,
 			start: "09:00",

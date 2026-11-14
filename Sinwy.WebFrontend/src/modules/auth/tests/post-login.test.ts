@@ -9,6 +9,7 @@ const org = (
 	id,
 	name: id,
 	slug: `slug-${id}`,
+	logo: null,
 	status: "active",
 	plan: "starter",
 	features: [],

@@ -4,7 +4,6 @@ import {
 	service,
 	serviceAvailability,
 } from "@db/schema/serviceSchema";
-import { setOrganizationTimezone } from "@organizationsModule";
 import { and, asc, between, eq, gte, isNull, or } from "drizzle-orm";
 
 export type ServiceRow = typeof service.$inferSelect;
@@ -126,10 +125,9 @@ export const findHoursForService = (
 			),
 		);
 
-/** Replaces the org-wide rows and sets the timezone together, so hours are never read in the wrong zone. */
+/** Replaces the org-wide rows. */
 export const saveOrganizationHours = (
 	organizationId: string,
-	timezone: string,
 	ranges: WeeklyRange[],
 ) =>
 	db.transaction(async (tx) => {
@@ -142,7 +140,6 @@ export const saveOrganizationHours = (
 					organizationId,
 				})),
 			);
-		await setOrganizationTimezone(organizationId, timezone, tx);
 	});
 
 const closureColumns = {

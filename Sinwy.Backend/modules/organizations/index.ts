@@ -41,7 +41,6 @@ export {
 	type PublicOrganization,
 	saveOrganizationProfile,
 	scheduleOwnedOrganizationsForDeletion,
-	setOrganizationTimezone,
 	withdrawInvitationOverCap,
 } from "./service";
 export {

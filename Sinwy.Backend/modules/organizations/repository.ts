@@ -1,4 +1,3 @@
-import type { Tx } from "@db";
 import db from "@db";
 import { memberHasRole } from "@db/memberRole";
 import {
@@ -93,6 +92,7 @@ export const findOrganizationBySlug = async (slug: string) => {
 			id: organization.id,
 			name: organization.name,
 			slug: organization.slug,
+			logo: organization.logo,
 			timezone: organization.timezone,
 			currency: organization.currency,
 			...organizationAccess,
@@ -191,15 +191,47 @@ export const findManagerEmails = async (organizationId: string) => {
 	return rows.map((row) => row.email);
 };
 
-export const updateOrganizationTimezone = (
-	executor: Tx | typeof db,
-	organizationId: string,
-	timezone: string,
-) =>
-	executor
-		.update(organization)
-		.set({ timezone })
+export const findOrganizationGeneral = async (organizationId: string) => {
+	const [row] = await db
+		.select({
+			id: organization.id,
+			name: organization.name,
+			slug: organization.slug,
+			logo: organization.logo,
+			timezone: organization.timezone,
+			currency: organization.currency,
+		})
+		.from(organization)
 		.where(eq(organization.id, organizationId));
+	return row ?? null;
+};
+
+type EditableFields = Partial<
+	Pick<typeof organization.$inferInsert, "name" | "timezone" | "logo">
+>;
+
+/** Sets the fields and returns their values from before; null for an unknown organization. */
+export const replaceOrganizationFields = (
+	organizationId: string,
+	values: EditableFields,
+) =>
+	db.transaction(async (tx) => {
+		const [before] = await tx
+			.select({
+				name: organization.name,
+				timezone: organization.timezone,
+				logo: organization.logo,
+			})
+			.from(organization)
+			.where(eq(organization.id, organizationId))
+			.for("update");
+		if (!before) return null;
+		await tx
+			.update(organization)
+			.set(values)
+			.where(eq(organization.id, organizationId));
+		return before;
+	});
 
 /** Idempotent: an organization keeps the timestamp of its first completion. */
 export const markOnboardingCompleted = async (organizationId: string) => {
@@ -444,6 +476,7 @@ export const findMemberOrganizations = (userId: string) =>
 			id: organization.id,
 			name: organization.name,
 			slug: organization.slug,
+			logo: organization.logo,
 			...organizationAccess,
 			role: member.role,
 			onboardingCompletedAt: organization.onboardingCompletedAt,

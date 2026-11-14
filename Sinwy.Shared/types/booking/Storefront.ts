@@ -9,6 +9,7 @@ export type StorefrontDto = {
 	> & {
 		name: string;
 		slug: string;
+		logo: string | null;
 		timezone: string;
 		currency: string;
 	};

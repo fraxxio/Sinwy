@@ -1,4 +1,5 @@
 import type { InviteRole } from "../access/OrgRole";
+import type { OrganizationProfileDto } from "./OrganizationProfile";
 
 export const ACTIVITY_RETENTION_DAYS = 90;
 
@@ -28,6 +29,11 @@ export type ActivityDetailsMap = {
 	"transfer.completed": { fromName: string; toName: string };
 	"organization.activated": Record<string, never>;
 	"organization.deactivated": Record<string, never>;
+	"organization.renamed": { fromName: string; toName: string };
+	"organization.logo_changed": Record<string, never>;
+	"organization.logo_removed": Record<string, never>;
+	"organization.profile_updated": { fields: (keyof OrganizationProfileDto)[] };
+	"organization.timezone_changed": { fromTimezone: string; toTimezone: string };
 };
 
 export type ActivityAction = keyof ActivityDetailsMap;

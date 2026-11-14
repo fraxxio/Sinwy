@@ -21,13 +21,6 @@ export const profileSchema = z.object({
 });
 export type ProfileInput = z.infer<typeof profileSchema>;
 
-export const AVATAR_LIMITS = {
-	maxBytes: 2 * 1024 * 1024,
-	mimeTypes: ["image/png", "image/jpeg", "image/webp"],
-} as const;
-
-export type AvatarMimeType = (typeof AVATAR_LIMITS.mimeTypes)[number];
-
 export type AvatarDto = { image: string };
 
 export type AccountDeletionPreviewDto = {

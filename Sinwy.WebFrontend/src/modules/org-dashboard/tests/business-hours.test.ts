@@ -7,10 +7,7 @@ import {
 	toBusinessHoursFormValues,
 } from "../lib/business-hours";
 
-const allClosed = toBusinessHoursFormValues({
-	timezone: "Europe/Vilnius",
-	weekly: [],
-});
+const allClosed = toBusinessHoursFormValues({ weekly: [] });
 
 const withDays = (
 	days: Record<number, [string, string]>,
@@ -39,7 +36,6 @@ it("sends no rule for closed days and open days as typed", () => {
 		withDays({ 1: ["09:00", "17:00"], 6: ["10:15", "14:45"] }),
 	);
 	expect(input).toEqual({
-		timezone: "Europe/Vilnius",
 		weekly: [
 			{ weekday: 1, start: "09:00", end: "17:00" },
 			{ weekday: 6, start: "10:15", end: "14:45" },

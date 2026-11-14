@@ -7,17 +7,23 @@ import {
 import type { IApp } from "@backend/lib/app/types";
 import {
 	activateOrganizationHandler,
+	changeOrganizationTimezoneHandler,
 	completeOrganizationOnboardingHandler,
 	createOrganizationHandler,
 	deactivateOrganizationHandler,
 	getInvitationPreviewHandler,
+	getOrganizationGeneralHandler,
 	getOrganizationOnboardingHandler,
 	listActivityHandler,
 	listOrganizationsHandler,
+	removeOrganizationLogoHandler,
+	renameOrganizationHandler,
 	saveOrganizationProfileHandler,
+	uploadOrganizationLogoHandler,
 } from "./controller";
 
 export const registerOrganizationRoutes = (app: IApp) => {
+	const manageSettings = [requireAuth, requirePermission("settings:manage")];
 	app.route("/api/organizations", createOrganizationHandler, {
 		method: "POST",
 		routeMiddlewares: [requireAuth],
@@ -39,6 +45,25 @@ export const registerOrganizationRoutes = (app: IApp) => {
 	app.route(organizationPath("profile"), saveOrganizationProfileHandler, {
 		method: "PUT",
 		routeMiddlewares: [requireAuth, requirePermission("settings:manage")],
+	});
+	app.route(organizationPath("general"), getOrganizationGeneralHandler, {
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("name"), renameOrganizationHandler, {
+		method: "PUT",
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("timezone"), changeOrganizationTimezoneHandler, {
+		method: "PUT",
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("logo"), uploadOrganizationLogoHandler, {
+		method: "POST",
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("logo"), removeOrganizationLogoHandler, {
+		method: "DELETE",
+		routeMiddlewares: manageSettings,
 	});
 	app.route(organizationPath("activity"), listActivityHandler, {
 		routeMiddlewares: [requireAuth, requirePermission("settings:manage")],

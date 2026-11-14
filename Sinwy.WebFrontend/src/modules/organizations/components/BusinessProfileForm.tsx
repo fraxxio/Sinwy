@@ -32,12 +32,15 @@ export function BusinessProfileForm({
 	submitLabel,
 	pendingLabel,
 	onSubmit,
+	countryDescription,
 	children,
 }: {
 	profile: OrganizationProfileDto;
 	submitLabel: string;
 	pendingLabel: string;
 	onSubmit: (values: BusinessProfileValues) => Promise<string | null>;
+	/** A hint under the country, from the country picked so far. */
+	countryDescription?: (country: string) => string;
 	children?: React.ReactNode;
 }) {
 	const [serverError, setServerError] = useState<string | null>(null);
@@ -138,6 +141,9 @@ export function BusinessProfileForm({
 							label="Country"
 							options={COUNTRY_OPTIONS}
 							placeholder="Select your country"
+							{...(countryDescription && {
+								description: countryDescription(field.state.value),
+							})}
 						/>
 					)}
 				</form.AppField>

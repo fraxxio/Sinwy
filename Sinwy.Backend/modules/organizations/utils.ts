@@ -4,6 +4,7 @@ import {
 	DEFAULT_TIME_ZONE,
 	isTimeZone,
 	ORGANIZATION_INDUSTRIES,
+	organizationNameSchema,
 	organizationProfileSchema,
 } from "@sinwy/shared";
 import z from "zod";
@@ -39,7 +40,7 @@ export const reservedSlugs = new Set([
 ]);
 
 export const createOrganizationBody = z.object({
-	name: z.string().trim().min(1).max(100),
+	name: organizationNameSchema,
 	industry: z
 		.enum(ORGANIZATION_INDUSTRIES)
 		.default(DEFAULT_ORGANIZATION_INDUSTRY),

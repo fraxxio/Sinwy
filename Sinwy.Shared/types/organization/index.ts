@@ -6,6 +6,7 @@ export * from "./Organization";
 export * from "./OrganizationActivity";
 export * from "./OrganizationProfile";
 export * from "./OrganizationProfileSchema";
+export * from "./OrganizationSettings";
 export * from "./OrganizationSummary";
 export * from "./OrganizationTransfer";
 export * from "./TimeZone";

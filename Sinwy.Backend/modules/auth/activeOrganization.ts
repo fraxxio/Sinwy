@@ -92,7 +92,6 @@ const scopedEndpoints: Record<string, ScopedEndpoint> = {
 	"/organization/get-active-member-role": { input: "query", manages: false },
 	"/organization/has-permission": { input: "body", manages: false },
 	"/organization/leave": { input: "body", manages: false },
-	"/organization/update": { input: "body", manages: true },
 	"/organization/delete": { input: "body", manages: true },
 	"/organization/invite-member": { input: "body", manages: true },
 	"/organization/cancel-invitation": { input: "body", manages: true },

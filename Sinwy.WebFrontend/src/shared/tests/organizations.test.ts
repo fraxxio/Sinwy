@@ -13,6 +13,7 @@ const org = (
 	id: "org-1",
 	name: "Acme",
 	slug: "acme",
+	logo: null,
 	status: "inactive",
 	suspended: false,
 	draft: false,

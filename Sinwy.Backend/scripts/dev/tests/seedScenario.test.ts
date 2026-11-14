@@ -168,6 +168,11 @@ test("bookable-org: a subscribed org with daily hours and two services", async (
 	const result = await seed("bookable-org");
 
 	expect((await orgRow(result.organization.id))?.status).toBe("active");
+	const [row] = await db
+		.select({ timezone: organization.timezone })
+		.from(organization)
+		.where(eq(organization.id, result.organization.id));
+	expect(row?.timezone).toBe("Europe/Vilnius");
 	expect(result.organization).toMatchObject({
 		timezone: "Europe/Vilnius",
 		services: [

@@ -8,6 +8,7 @@ export type OrganizationSummary = {
 	id: string;
 	name: string;
 	slug: string;
+	logo: string | null;
 	status: OrganizationStatus;
 	suspended: boolean;
 	/** Never finished setup and holds no slot: created at the cap or before a plan. */

@@ -7,8 +7,8 @@ import {
 	fileUrl,
 	keyFromFileUrl,
 } from "@backend/infrastructure/storage";
-import { AVATAR_LIMITS, type AvatarMimeType } from "@sinwy/shared";
-import { AvatarError, validateAvatar } from "../avatar";
+import { ImageError, validateImage } from "@backend/lib/image";
+import { IMAGE_UPLOAD_LIMITS, type ImageMimeType } from "@sinwy/shared";
 
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00];
 const JPEG = [0xff, 0xd8, 0xff, 0xe0, 0x00];
@@ -17,39 +17,39 @@ const WEBP = [...Buffer.from("RIFF"), 0, 0, 0, 0, ...Buffer.from("WEBP"), 0];
 const imageFile = (bytes: number[], type: string, name = "avatar") =>
 	new File([new Uint8Array(bytes)], name, { type });
 
-describe("validateAvatar", () => {
-	test.each<[AvatarMimeType, number[]]>([
+describe("validateImage", () => {
+	test.each<[ImageMimeType, number[]]>([
 		["image/png", PNG],
 		["image/jpeg", JPEG],
 		["image/webp", WEBP],
 	])("accepts %s with matching magic bytes", async (type, bytes) => {
-		const result = await validateAvatar(imageFile(bytes, type));
+		const result = await validateImage(imageFile(bytes, type));
 		expect(result.type).toBe(type);
 		expect([...result.bytes]).toEqual(bytes);
 	});
 
 	test("rejects an oversize file", async () => {
 		const oversize = new File(
-			[new Uint8Array(AVATAR_LIMITS.maxBytes + 1)],
+			[new Uint8Array(IMAGE_UPLOAD_LIMITS.maxBytes + 1)],
 			"big.png",
 			{ type: "image/png" },
 		);
-		await expect(validateAvatar(oversize)).rejects.toMatchObject({
-			name: "AvatarError",
+		await expect(validateImage(oversize)).rejects.toMatchObject({
+			name: "ImageError",
 			kind: "too-large",
 		});
 	});
 
 	test("rejects a disallowed mime type", async () => {
 		const gif = imageFile([...Buffer.from("GIF89a")], "image/gif");
-		await expect(validateAvatar(gif)).rejects.toMatchObject({
+		await expect(validateImage(gif)).rejects.toMatchObject({
 			kind: "unsupported-type",
 		});
 	});
 
 	test("rejects a mime type that does not match the magic bytes", async () => {
-		const attempt = validateAvatar(imageFile(JPEG, "image/png"));
-		await expect(attempt).rejects.toBeInstanceOf(AvatarError);
+		const attempt = validateImage(imageFile(JPEG, "image/png"));
+		await expect(attempt).rejects.toBeInstanceOf(ImageError);
 		await expect(attempt).rejects.toMatchObject({ kind: "unsupported-type" });
 	});
 });

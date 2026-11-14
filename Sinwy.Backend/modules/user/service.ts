@@ -4,6 +4,7 @@ import {
 	keyFromFileUrl,
 	storageClient,
 } from "@backend/infrastructure/storage";
+import { imageExtension, validateImage } from "@backend/lib/image";
 import {
 	countUpcomingCustomerBookings,
 	countUpcomingOrganizationBookings,
@@ -20,7 +21,6 @@ import {
 	type PostLoginFlags,
 	type SetPasswordInput,
 } from "@sinwy/shared";
-import { avatarExtension, validateAvatar } from "./avatar";
 
 type SessionUser = (typeof auth.$Infer.Session)["user"];
 
@@ -65,8 +65,8 @@ export const uploadAvatar = async (
 	user: SessionUser,
 	file: File,
 ): Promise<AvatarDto> => {
-	const { bytes, type } = await validateAvatar(file);
-	const key = `avatars/${user.id}/${crypto.randomUUID()}.${avatarExtension(type)}`;
+	const { bytes, type } = await validateImage(file);
+	const key = `avatars/${user.id}/${crypto.randomUUID()}.${imageExtension(type)}`;
 	await storageClient.put(key, bytes, type);
 	const image = fileUrl(key);
 	await auth.api.updateUser({ body: { image }, headers });

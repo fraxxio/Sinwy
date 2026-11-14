@@ -114,17 +114,18 @@ const daysFromToday = (days: number) => {
 	return date.toISOString().slice(0, 10);
 };
 
-test("PUT replaces the org's hours and timezone, leaving other orgs alone", async () => {
+test("PUT replaces the org's hours, leaving other orgs and the timezone alone", async () => {
 	const other = await seedOrg("Barber");
-	await save(
-		{ timezone: "Europe/Riga", weekly: weekdays },
-		other.ownerCookie,
-		other.orgId,
-	);
+	await save({ weekly: weekdays }, other.ownerCookie, other.orgId);
+	await db
+		.update(organization)
+		.set({ timezone: "Europe/Vilnius" })
+		.where(eq(organization.id, orgId));
 
-	await save({ timezone: "Europe/Vilnius", weekly: weekdays });
+	await save({ weekly: weekdays });
+	// the timezone is Settings' to change; a stray one is ignored
 	const saved = await save({
-		timezone: "Europe/Vilnius",
+		timezone: "Europe/Riga",
 		weekly: [
 			{ weekday: 6, start: "10:00", end: "14:30" },
 			{ weekday: 1, start: "08:45", end: "12:15" },
@@ -142,9 +143,8 @@ test("PUT replaces the org's hours and timezone, leaving other orgs alone", asyn
 	expect(await rowsOf(orgId)).toHaveLength(2);
 	expect(await timezoneOf(orgId)).toBe("Europe/Vilnius");
 	expect(await rowsOf(other.orgId)).toHaveLength(5);
-	expect(await timezoneOf(other.orgId)).toBe("Europe/Riga");
 
-	const cleared = await save({ timezone: "Europe/Vilnius", weekly: [] });
+	const cleared = await save({ weekly: [] });
 	expect(cleared.weekly).toEqual([]);
 	expect(await rowsOf(orgId)).toHaveLength(0);
 });
@@ -169,7 +169,7 @@ test("PUT and GET leave a service's own hours out of the org's", async () => {
 		endTime: "12:00",
 	});
 
-	const saved = await save({ timezone: "UTC", weekly: weekdays });
+	const saved = await save({ weekly: weekdays });
 	expect(saved.weekly).toEqual(weekdays);
 	const own = await db
 		.select({ weekday: serviceAvailability.weekday })
@@ -179,18 +179,17 @@ test("PUT and GET leave a service's own hours out of the org's", async () => {
 });
 
 test("invalid bodies are rejected with 400 and nothing is written", async () => {
-	await save({ timezone: "Europe/Vilnius", weekly: weekdays });
+	await save({ weekly: weekdays });
 
 	const invalid = [
-		{ timezone: "Mars/Olympus", weekly: [] },
-		{ timezone: "+02:00", weekly: [] },
-		{ timezone: "UTC", weekly: [{ weekday: 1, start: "17:00", end: "09:00" }] },
-		{ timezone: "UTC", weekly: [{ weekday: 1, start: "09:00", end: "09:00" }] },
-		{ timezone: "UTC", weekly: [{ weekday: 1, start: "09:10", end: "17:00" }] },
-		{ timezone: "UTC", weekly: [{ weekday: 1, start: "9:00", end: "17:00" }] },
-		{ timezone: "UTC", weekly: [{ weekday: 8, start: "09:00", end: "17:00" }] },
+		{},
+		{ weekly: "09:00-17:00" },
+		{ weekly: [{ weekday: 1, start: "17:00", end: "09:00" }] },
+		{ weekly: [{ weekday: 1, start: "09:00", end: "09:00" }] },
+		{ weekly: [{ weekday: 1, start: "09:10", end: "17:00" }] },
+		{ weekly: [{ weekday: 1, start: "9:00", end: "17:00" }] },
+		{ weekly: [{ weekday: 8, start: "09:00", end: "17:00" }] },
 		{
-			timezone: "UTC",
 			weekly: [
 				{ weekday: 2, start: "09:00", end: "12:00" },
 				{ weekday: 2, start: "13:00", end: "17:00" },
@@ -203,7 +202,6 @@ test("invalid bodies are rejected with 400 and nothing is written", async () => 
 	}
 
 	expect(await rowsOf(orgId)).toHaveLength(5);
-	expect(await timezoneOf(orgId)).toBe("Europe/Vilnius");
 });
 
 test("closures: same date twice is one row, GET lists today onwards, DELETE removes", async () => {
@@ -269,7 +267,6 @@ test("closure dates must be real calendar dates", async () => {
 test("staff can read availability but not write it", async () => {
 	const writes = [
 		call("PUT", "availability", staffCookie, {
-			timezone: "UTC",
 			weekly: weekdays,
 		}),
 		call("POST", "availability/closures", staffCookie, {
@@ -291,7 +288,6 @@ test("inactive organization: writes 409 ORGANIZATION_INACTIVE, reads 200", async
 
 	const writes = [
 		call("PUT", "availability", ownerCookie, {
-			timezone: "UTC",
 			weekly: weekdays,
 		}),
 		call("POST", "availability/closures", ownerCookie, {

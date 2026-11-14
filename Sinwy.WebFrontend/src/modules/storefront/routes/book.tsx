@@ -75,12 +75,21 @@ function BookPage() {
 		.join(", ");
 	return (
 		<div className="mx-auto w-full max-w-2xl space-y-8">
-			<header className="space-y-1">
-				<h1 className="font-semibold text-3xl">{organization.name}</h1>
-				{organization.tagline && (
-					<p className="text-muted-foreground">{organization.tagline}</p>
+			<header className="flex items-center gap-4">
+				{organization.logo && (
+					<img
+						src={organization.logo}
+						alt={`${organization.name} logo`}
+						className="size-16 shrink-0 rounded-xl object-cover"
+					/>
 				)}
-				{place && <p className="text-muted-foreground text-sm">{place}</p>}
+				<div className="space-y-1">
+					<h1 className="font-semibold text-3xl">{organization.name}</h1>
+					{organization.tagline && (
+						<p className="text-muted-foreground">{organization.tagline}</p>
+					)}
+					{place && <p className="text-muted-foreground text-sm">{place}</p>}
+				</div>
 			</header>
 			{booked ? (
 				<BookingSuccess

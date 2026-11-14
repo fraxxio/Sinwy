@@ -307,6 +307,11 @@ export const auth = betterAuth({
 				if (!session) throw new APIError("UNAUTHORIZED");
 				await ensurePolarCustomer(session.user);
 			}
+			// it can set the slug and the logo URL; Settings has its own endpoints
+			if (ctx.path === "/organization/update")
+				throw new APIError("FORBIDDEN", {
+					message: "Change the organization in Settings",
+				});
 			if (ctx.path.startsWith("/organization/")) {
 				const session = await getSessionFromCtx(ctx);
 				// the plugin has no beforeSetActive hook

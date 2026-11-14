@@ -26,7 +26,6 @@ export type DayValues = {
 };
 
 export type BusinessHoursFormValues = {
-	timezone: string;
 	days: DayValues[];
 };
 
@@ -52,14 +51,12 @@ const daySchema = z
 	});
 
 export const businessHoursFormSchema = z.object({
-	timezone: availabilitySchema.shape.timezone,
 	days: z.array(daySchema),
 });
 
 export const toBusinessHoursFormValues = (
-	availability: Pick<AvailabilityDto, "timezone" | "weekly">,
+	availability: Pick<AvailabilityDto, "weekly">,
 ): BusinessHoursFormValues => ({
-	timezone: availability.timezone,
 	days: WEEKDAYS.map((_, i) => {
 		const weekday = i + 1;
 		const range = availability.weekly.find((r) => r.weekday === weekday);
@@ -73,7 +70,6 @@ export const toAvailabilityInput = (
 	values: BusinessHoursFormValues,
 ): AvailabilityInput =>
 	availabilitySchema.parse({
-		timezone: values.timezone,
 		weekly: values.days
 			.filter((day) => day.open)
 			.map(({ weekday, start, end }) => ({ weekday, start, end })),

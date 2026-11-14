@@ -4,6 +4,7 @@ import {
 	type ActivityEvent,
 	ORG_ROLE_LABELS,
 	type OrganizationActivityPageDto,
+	type OrganizationProfileDto,
 } from "@sinwy/shared";
 import { infiniteQueryOptions } from "@tanstack/react-query";
 import { api } from "#/shared/lib/api";
@@ -29,6 +30,18 @@ export const activityQuery = (organizationId: string) =>
 	});
 
 const quoted = (text: string) => `“${text}”`;
+
+const zone = (timezone: string) => timezone.replaceAll("_", " ");
+
+const PROFILE_FIELD_LABELS: Record<keyof OrganizationProfileDto, string> = {
+	tagline: "tagline",
+	description: "description",
+	email: "contact email",
+	phone: "phone",
+	website: "website",
+	city: "city",
+	country: "country",
+};
 
 /** What the actor did, written to follow their name. */
 const SENTENCES: {
@@ -57,6 +70,14 @@ const SENTENCES: {
 		`completed the ownership transfer from ${fromName} to ${toName}`,
 	"organization.activated": () => "activated the organization",
 	"organization.deactivated": () => "deactivated the organization",
+	"organization.renamed": ({ fromName, toName }) =>
+		`renamed the organization from ${quoted(fromName)} to ${quoted(toName)}`,
+	"organization.logo_changed": () => "changed the logo",
+	"organization.logo_removed": () => "removed the logo",
+	"organization.profile_updated": ({ fields }) =>
+		`updated the business profile (${fields.map((field) => PROFILE_FIELD_LABELS[field]).join(", ")})`,
+	"organization.timezone_changed": ({ fromTimezone, toTimezone }) =>
+		`changed the timezone from ${zone(fromTimezone)} to ${zone(toTimezone)}`,
 };
 
 /** A generic sentence for an action newer than this page. */

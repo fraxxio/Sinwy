@@ -251,7 +251,6 @@ export const saveAvailability = async (
 	if (membership.status !== "active") return inactive;
 	await saveOrganizationHours(
 		membership.organizationId,
-		input.timezone,
 		input.weekly.map((range) => ({
 			weekday: range.weekday,
 			startTime: range.start,

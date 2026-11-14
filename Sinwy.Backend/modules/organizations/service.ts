@@ -1,11 +1,17 @@
 import type { Membership } from "@authModule";
+import {
+	fileUrl,
+	keyFromFileUrl,
+	storageClient,
+} from "@backend/infrastructure/storage";
+import { imageExtension, validateImage } from "@backend/lib/image";
 import { uniqueSlug } from "@backend/lib/slug";
 import {
 	type OrganizationProfileInput,
 	reservedSlugs,
 } from "@backend/modules/organizations/utils";
-import type { Tx } from "@db";
 import db from "@db";
+import { createLogger } from "@logger";
 import {
 	type AccountDeletionPreviewDto,
 	currencyForCountry,
@@ -17,7 +23,9 @@ import {
 	limitsFor,
 	ORGANIZATION_RETENTION_DAYS,
 	type OrganizationDto,
+	type OrganizationGeneralDto,
 	type OrganizationIndustry,
+	type OrganizationLogoDto,
 	type OrganizationOnboardingDto,
 	type OrganizationProfileDto,
 	type OrganizationStatus,
@@ -40,6 +48,7 @@ import {
 	findOnboardingCompletedAt,
 	findOrganizationAccess,
 	findOrganizationBySlug,
+	findOrganizationGeneral,
 	findOrganizationLocale,
 	findOwnedOrganizationIds,
 	findPendingInvitationPreview,
@@ -52,11 +61,13 @@ import {
 	insertOrganizationWithOwner,
 	isSlugTaken,
 	markOnboardingCompleted,
+	replaceOrganizationFields,
 	scheduleOrganizationsForDeletion,
-	updateOrganizationTimezone,
 	upsertProfile,
 } from "./repository";
 import { holdSlot, releaseSlot, type SlotHold } from "./slots";
+
+const organizationLogger = createLogger("organizations");
 
 export const createOrganization = async (
 	userId: string,
@@ -107,6 +118,7 @@ export const findPublicOrganization = async (slug: string) => {
 		id: row.id,
 		name: row.name,
 		slug: row.slug,
+		logo: row.logo,
 		timezone: row.timezone,
 		currency: row.currency,
 		tagline: row.tagline,
@@ -176,6 +188,7 @@ export const listOrganizations = async (
 			id: row.id,
 			name: row.name,
 			slug: row.slug,
+			logo: row.logo,
 			status: organizationStatusOf(row),
 			suspended: isSuspended(row),
 			draft: isDraft(row),
@@ -317,6 +330,10 @@ const findWizardTarget = async ({ organizationId, status }: Membership) => {
 	};
 };
 
+const PROFILE_FIELDS = Object.keys(
+	EMPTY_ORGANIZATION_PROFILE,
+) as (keyof OrganizationProfileDto)[];
+
 const toProfileDto = (
 	row: Awaited<ReturnType<typeof findProfile>> | undefined,
 ): OrganizationProfileDto =>
@@ -354,17 +371,29 @@ export const getOrganizationOnboarding = async ({
 export const saveOrganizationProfile = async (
 	membership: Membership,
 	input: OrganizationProfileInput,
-): Promise<WriteResult<OrganizationProfileDto>> => {
+): Promise<
+	WriteResult<{
+		profile: OrganizationProfileDto;
+		/** Field names only; their values never reach the Activity Log. */
+		changed: (keyof OrganizationProfileDto)[];
+	}>
+> => {
 	const target = await findWizardTarget(membership);
 	if (!target) return { ok: false, error: "not-found" };
 	if (!target.writable) return { ok: false, error: "inactive" };
 
-	const row = await upsertProfile(
-		membership.organizationId,
-		input,
-		currencyForCountry(input.country),
+	const before = toProfileDto(await findProfile(membership.organizationId));
+	const profile = toProfileDto(
+		await upsertProfile(
+			membership.organizationId,
+			input,
+			currencyForCountry(input.country),
+		),
 	);
-	return { ok: true, data: toProfileDto(row) };
+	const changed = PROFILE_FIELDS.filter(
+		(field) => before[field] !== profile[field],
+	);
+	return { ok: true, data: { profile, changed } };
 };
 
 export type OrganizationLocale = { timezone: string; currency: string };
@@ -378,13 +407,105 @@ export const getOrganizationLocale = (
 export const listOrganizationManagerEmails = (organizationId: string) =>
 	findManagerEmails(organizationId);
 
-/** Callers validate the zone (`isTimeZone`); pass `executor` to join their transaction. */
-export const setOrganizationTimezone = async (
+type Change<T> = { changed: false } | { changed: true; from: T };
+
+const editableTarget = (membership: Membership) =>
+	membership.status === "active"
+		? null
+		: ({ ok: false, error: "inactive" } as const);
+
+/** Settings → General; null for an unknown organization. */
+export const getOrganizationGeneral = async (
 	organizationId: string,
+): Promise<OrganizationGeneralDto | null> => {
+	const [row, profile] = await Promise.all([
+		findOrganizationGeneral(organizationId),
+		findProfile(organizationId),
+	]);
+	return row && { ...row, profile: toProfileDto(profile) };
+};
+
+const replaceField = async <K extends "name" | "timezone">(
+	membership: Membership,
+	field: K,
+	value: string,
+): Promise<WriteResult<Change<string>>> => {
+	const refused = editableTarget(membership);
+	if (refused) return refused;
+	const before = await replaceOrganizationFields(membership.organizationId, {
+		[field]: value,
+	});
+	if (!before) return { ok: false, error: "not-found" };
+	return {
+		ok: true,
+		data:
+			before[field] === value
+				? { changed: false }
+				: { changed: true, from: before[field] },
+	};
+};
+
+/** The slug never follows the name. */
+export const renameOrganization = (membership: Membership, name: string) =>
+	replaceField(membership, "name", name);
+
+/**
+ * Hours stay wall-clock times and bookings keep their instant, so a booking
+ * may show at a different local time. Analytics days already rolled up stay
+ * in the old zone. Callers validate the zone (`isTimeZone`).
+ */
+export const changeOrganizationTimezone = (
+	membership: Membership,
 	timezone: string,
-	executor: Tx | typeof db = db,
+) => replaceField(membership, "timezone", timezone);
+
+const deleteStoredLogo = async (
+	organizationId: string,
+	logo: string | null,
 ) => {
-	await updateOrganizationTimezone(executor, organizationId, timezone);
+	const key = keyFromFileUrl(logo);
+	if (!key) return;
+	await storageClient.delete(key).catch((error: unknown) => {
+		organizationLogger.warn("Failed to delete a replaced logo", {
+			organizationId,
+			error,
+		});
+	});
+};
+
+/** Validated like an avatar; the old file is deleted once the new one is stored. Throws `ImageError`. */
+export const uploadOrganizationLogo = async (
+	membership: Membership,
+	file: File,
+): Promise<WriteResult<OrganizationLogoDto>> => {
+	const refused = editableTarget(membership);
+	if (refused) return refused;
+	const { organizationId } = membership;
+	const { bytes, type } = await validateImage(file);
+	const key = `logos/${organizationId}/${crypto.randomUUID()}.${imageExtension(type)}`;
+	await storageClient.put(key, bytes, type);
+	const logo = fileUrl(key);
+	const before = await replaceOrganizationFields(organizationId, { logo });
+	if (!before) {
+		await deleteStoredLogo(organizationId, logo);
+		return { ok: false, error: "not-found" };
+	}
+	await deleteStoredLogo(organizationId, before.logo);
+	return { ok: true, data: { logo } };
+};
+
+export const removeOrganizationLogo = async (
+	membership: Membership,
+): Promise<WriteResult<{ changed: boolean }>> => {
+	const refused = editableTarget(membership);
+	if (refused) return refused;
+	const { organizationId } = membership;
+	const before = await replaceOrganizationFields(organizationId, {
+		logo: null,
+	});
+	if (!before) return { ok: false, error: "not-found" };
+	await deleteStoredLogo(organizationId, before.logo);
+	return { ok: true, data: { changed: before.logo !== null } };
 };
 
 /**
