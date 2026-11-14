@@ -4,5 +4,6 @@ export {
 	cancelTransfersToMember,
 	completeTransferOnPlan,
 	findTransferAwaitingCheckout,
+	isTransferAwaitingCheckout,
 	transferOwnershipBySupport,
 } from "./service";

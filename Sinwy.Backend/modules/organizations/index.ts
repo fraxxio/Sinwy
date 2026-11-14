@@ -13,6 +13,7 @@ export {
 	completeOrganizationOnboarding,
 	countHeldSlots,
 	createOrganization,
+	deleteStoredLogo,
 	findPublicOrganization,
 	findPublicOrganizationPlan,
 	getInvitationOrganizationId,

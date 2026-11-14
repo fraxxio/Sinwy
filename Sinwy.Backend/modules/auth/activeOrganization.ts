@@ -73,7 +73,8 @@ const TEAM_PERMISSION: Permission = "people:manage";
 
 /**
  * Plugin endpoints that act on one organization, and where each reads it
- * from. Leaving is the member's own choice, so it doesn't manage.
+ * from. Leaving is the member's own choice, so it doesn't manage; deleting is
+ * the owner's (the plugin's own check), active or not.
  */
 const scopedEndpoints: Record<string, ScopedEndpoint> = {
 	"/organization/get-organization": { input: "query", manages: false },
@@ -92,7 +93,7 @@ const scopedEndpoints: Record<string, ScopedEndpoint> = {
 	"/organization/get-active-member-role": { input: "query", manages: false },
 	"/organization/has-permission": { input: "body", manages: false },
 	"/organization/leave": { input: "body", manages: false },
-	"/organization/delete": { input: "body", manages: true },
+	"/organization/delete": { input: "body", manages: false },
 	"/organization/invite-member": { input: "body", manages: true },
 	"/organization/cancel-invitation": { input: "body", manages: true },
 	"/organization/remove-member": { input: "body", manages: true },

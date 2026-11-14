@@ -1,4 +1,3 @@
-import { keyFromFileUrl, storageClient } from "@backend/infrastructure/storage";
 import type { Job } from "@backend/lib/jobs";
 import { createLogger } from "@logger";
 import {
@@ -8,7 +7,7 @@ import {
 	scheduleOrganizationsForDeletion,
 	unscheduleOwnedOrganizations,
 } from "./repository";
-import { RETENTION_MS } from "./service";
+import { deleteStoredLogo, RETENTION_MS } from "./service";
 
 const purgeLogger = createLogger("organizations:purge");
 
@@ -49,17 +48,6 @@ const scheduleOwnerless = async (now: Date, hooks: PurgeHooks) => {
 	return orgs.length;
 };
 
-const deleteLogo = async (org: { id: string; logo: string | null }) => {
-	const key = keyFromFileUrl(org.logo);
-	if (!key) return;
-	await storageClient.delete(key).catch((error: unknown) => {
-		purgeLogger.warn("Failed to delete logo of purged org", {
-			organizationId: org.id,
-			error,
-		});
-	});
-};
-
 const purgeExpired = async (now: Date) => {
 	const cutoff = new Date(now.getTime() - RETENTION_MS);
 	let purged = 0;
@@ -67,7 +55,7 @@ const purgeExpired = async (now: Date) => {
 		const batch = await findExpiredOrganizations(cutoff, BATCH_SIZE);
 		if (batch.length === 0) break;
 		await deleteOrganizations(batch.map((org) => org.id));
-		for (const org of batch) await deleteLogo(org);
+		for (const org of batch) await deleteStoredLogo(org.id, org.logo);
 		purged += batch.length;
 		if (batch.length < BATCH_SIZE) break;
 	}

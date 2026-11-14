@@ -11,6 +11,7 @@ import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
 import {
+	deleteStoredLogo,
 	getSeatLimit,
 	getSeatUsage,
 	recordActivity,
@@ -31,6 +32,7 @@ import {
 import {
 	cancelTransfersToMember,
 	findTransferAwaitingCheckout,
+	isTransferAwaitingCheckout,
 } from "@transfersModule";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -428,9 +430,16 @@ export const auth = betterAuth({
 					cancelTransfersToMember(member.organizationId, member.userId),
 				// the emails go out before the deletion cascades the bookings away
 				beforeDeleteOrganization: async ({ organization }) => {
+					if (await isTransferAwaitingCheckout(organization.id))
+						throw new APIError("CONFLICT", {
+							message:
+								"An ownership transfer is waiting on the recipient's checkout. Cancel it before deleting the organization.",
+						});
 					const bookings = await bookingsModule();
 					await bookings.cancelUpcomingOrganizationBookings([organization.id]);
 				},
+				afterDeleteOrganization: ({ organization }) =>
+					deleteStoredLogo(organization.id, organization.logo ?? null),
 			},
 			schema: {
 				organization: {

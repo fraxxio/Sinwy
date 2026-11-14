@@ -10,6 +10,7 @@ import { setPasswordSchema } from "@sinwy/shared";
 import { APIError } from "better-auth/api";
 import {
 	getAccountDeletionPreview,
+	getOrganizationDeletionPreview,
 	getPostLoginFlags,
 	removeAvatar,
 	setPassword,
@@ -60,4 +61,11 @@ export const removeAvatarHandler: Handler = async (c) => {
 export const getDeletionPreviewHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
 	return ok(await getAccountDeletionPreview(user.id));
+};
+
+export const getOrganizationDeletionPreviewHandler: Handler = async (c) => {
+	const { user } = sessionFrom(c);
+	const { organizationId } = c.req.params as { organizationId: string };
+	const preview = await getOrganizationDeletionPreview(user.id, organizationId);
+	return preview ? ok(preview) : fail("Not found", 404);
 };

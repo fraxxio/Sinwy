@@ -70,6 +70,24 @@ export const findAcceptedTransfer = async (
 	return row ?? null;
 };
 
+/** Whether a transfer of the organization is accepted and waiting on the recipient's checkout. */
+export const hasAcceptedTransfer = async (
+	organizationId: string,
+	now: Date,
+) => {
+	const [row] = await db
+		.select({ id: organizationTransfer.id })
+		.from(organizationTransfer)
+		.where(
+			and(
+				eq(organizationTransfer.organizationId, organizationId),
+				eq(organizationTransfer.status, "accepted"),
+				gt(organizationTransfer.expiresAt, now),
+			),
+		);
+	return Boolean(row);
+};
+
 export const findOpenTransfer = async (organizationId: string) => {
 	const [row] = await db
 		.select({

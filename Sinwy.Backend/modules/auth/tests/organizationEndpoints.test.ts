@@ -77,7 +77,6 @@ const endpoints: Endpoint[] = [
 		body: () => ({ ...scoped(), permissions: { organization: ["update"] } }),
 	},
 	{ path: "leave", manages: false, body: scoped },
-	{ path: "delete", manages: true, body: scoped },
 	{
 		path: "invite-member",
 		manages: true,

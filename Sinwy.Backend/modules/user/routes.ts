@@ -2,6 +2,7 @@ import { requireAuth } from "@authModule";
 import type { IApp } from "@backend/lib/app/types";
 import {
 	getDeletionPreviewHandler,
+	getOrganizationDeletionPreviewHandler,
 	getPostLoginFlagsHandler,
 	removeAvatarHandler,
 	setPasswordHandler,
@@ -27,4 +28,10 @@ export const registerUserRoutes = (app: IApp) => {
 	app.route("/api/user/deletion-preview", getDeletionPreviewHandler, {
 		routeMiddlewares: [requireAuth],
 	});
+	// owner only; the service checks ownership
+	app.route(
+		"/api/account/organizations/:organizationId/deletion-preview",
+		getOrganizationDeletionPreviewHandler,
+		{ routeMiddlewares: [requireAuth] },
+	);
 };

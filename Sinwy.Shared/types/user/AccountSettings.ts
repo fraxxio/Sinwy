@@ -35,5 +35,15 @@ export type AccountDeletionPreviewDto = {
 	upcomingBookings: number;
 };
 
+/** What deleting one organization does; its owner sees it before confirming. */
+export type OrganizationDeletionPreviewDto = {
+	/** Pending and confirmed bookings that haven't started; deleting cancels them and emails the customers. */
+	upcomingBookings: number;
+	/** An accepted transfer waiting on the recipient's checkout; deletion is refused until it's cancelled. */
+	transferAwaitingCheckout: boolean;
+	/** Deleting frees one of the owner's plan slots. */
+	holdsSlot: boolean;
+};
+
 export const setPasswordSchema = z.object({ newPassword: passwordSchema });
 export type SetPasswordInput = z.infer<typeof setPasswordSchema>;

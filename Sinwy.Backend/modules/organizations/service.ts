@@ -459,14 +459,15 @@ export const changeOrganizationTimezone = (
 	timezone: string,
 ) => replaceField(membership, "timezone", timezone);
 
-const deleteStoredLogo = async (
+/** Best effort: a failure is logged, never thrown. */
+export const deleteStoredLogo = async (
 	organizationId: string,
 	logo: string | null,
 ) => {
 	const key = keyFromFileUrl(logo);
 	if (!key) return;
 	await storageClient.delete(key).catch((error: unknown) => {
-		organizationLogger.warn("Failed to delete a replaced logo", {
+		organizationLogger.warn("Failed to delete a logo", {
 			organizationId,
 			error,
 		});

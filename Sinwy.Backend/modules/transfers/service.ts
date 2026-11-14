@@ -36,6 +36,7 @@ import {
 	findOpenTransfer,
 	findTransfer,
 	findUserContacts,
+	hasAcceptedTransfer,
 	insertTransfer,
 	type TransferRow,
 } from "./repository";
@@ -328,6 +329,12 @@ export const findTransferAwaitingCheckout = (
 	transferId: string,
 	now = new Date(),
 ) => findAcceptedTransfer(transferId, userId, now);
+
+/** A late checkout would complete it, so the organization can't be deleted meanwhile (Default 7). */
+export const isTransferAwaitingCheckout = (
+	organizationId: string,
+	now = new Date(),
+) => hasAcceptedTransfer(organizationId, now);
 
 /**
  * Called when a plan bought for a transfer grants access. A transfer no longer

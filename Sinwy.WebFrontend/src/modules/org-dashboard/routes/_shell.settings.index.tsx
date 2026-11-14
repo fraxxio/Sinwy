@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { OrganizationSection } from "#/modules/org-dashboard/components/settings/OrganizationSection";
 import { TimezoneSection } from "#/modules/org-dashboard/components/settings/TimezoneSection";
-import { TransferSection } from "#/modules/org-dashboard/components/TransferSection";
 import { useUnwrapWrite } from "#/modules/org-dashboard/lib/service-queries";
 import {
 	generalQuery,
@@ -37,7 +36,7 @@ const currencyHint = (country: string) =>
 function SettingsPage() {
 	const { organization, member } = Route.useRouteContext();
 	const { plan } = useEntitlements();
-	// billing:manage is the owner's alone; the plan and a transfer are theirs
+	// billing:manage is the owner's alone; so is the plan
 	const isOwner = hasPermission(member.roles, "billing:manage");
 	const general = useQuery(generalQuery(organization.id));
 	const refresh = useRefreshGeneral(organization.id);
@@ -105,12 +104,6 @@ function SettingsPage() {
 					)
 				}
 			/>
-			{isOwner && (
-				<TransferSection
-					organizationId={organization.id}
-					organizationName={organization.name}
-				/>
-			)}
 		</ContentBox>
 	);
 }

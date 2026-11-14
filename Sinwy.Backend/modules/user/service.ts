@@ -10,6 +10,7 @@ import {
 	countUpcomingOrganizationBookings,
 } from "@bookingsModule";
 import {
+	getMembershipAccess,
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
 	listSoleOwnedOrganizations,
@@ -18,9 +19,12 @@ import {
 	type AccountDeletionPreviewDto,
 	type AvatarDto,
 	OnboardingStep,
+	type OrganizationDeletionPreviewDto,
 	type PostLoginFlags,
+	parseMemberRoles,
 	type SetPasswordInput,
 } from "@sinwy/shared";
+import { isTransferAwaitingCheckout } from "@transfersModule";
 
 type SessionUser = (typeof auth.$Infer.Session)["user"];
 
@@ -93,5 +97,28 @@ export const getAccountDeletionPreview = async (
 			upcomingBookings: upcoming.get(org.id) ?? 0,
 		})),
 		upcomingBookings: ownUpcoming,
+	};
+};
+
+/** Null unless the user owns the organization and it isn't scheduled for deletion. */
+export const getOrganizationDeletionPreview = async (
+	userId: string,
+	organizationId: string,
+): Promise<OrganizationDeletionPreviewDto | null> => {
+	const access = await getMembershipAccess(userId, { id: organizationId });
+	if (
+		!access ||
+		access.deletionScheduledAt ||
+		!parseMemberRoles(access.role).includes("owner")
+	)
+		return null;
+	const [upcoming, transferAwaitingCheckout] = await Promise.all([
+		countUpcomingOrganizationBookings([organizationId]),
+		isTransferAwaitingCheckout(organizationId),
+	]);
+	return {
+		upcomingBookings: upcoming.get(organizationId) ?? 0,
+		transferAwaitingCheckout,
+		holdsSlot: access.slotHeldAt !== null,
 	};
 };
