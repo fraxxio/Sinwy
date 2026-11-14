@@ -1,6 +1,10 @@
 import type { Membership } from "@authModule";
 import { uniqueSlug } from "@backend/lib/slug";
-import { getOrganizationLocale } from "@organizationsModule";
+import {
+	type ActivityActor,
+	getOrganizationLocale,
+	recordActivity,
+} from "@organizationsModule";
 import {
 	type AvailabilityDto,
 	type AvailabilityInput,
@@ -82,6 +86,7 @@ export const getService = async (
 
 export const createService = async (
 	membership: Membership,
+	actor: ActivityActor,
 	input: CreateServiceInput,
 ): Promise<Result<ServiceDto>> => {
 	if (membership.status !== "active") return inactive;
@@ -96,22 +101,39 @@ export const createService = async (
 		slug: await serviceSlug(organizationId, input.name),
 		currency: locale.currency,
 	});
+	await recordActivity(organizationId, actor, {
+		action: "service.created",
+		details: { name: row.name },
+	});
 	return { ok: true, data: toServiceDto(row) };
 };
 
 /** Renaming keeps the slug, so links to the service survive. */
 export const updateService = async (
 	membership: Membership,
+	actor: ActivityActor,
 	serviceId: string,
 	input: UpdateServiceInput,
 ): Promise<Result<ServiceDto>> => {
 	if (membership.status !== "active") return inactive;
-	const row = await updateServiceRow(
-		membership.organizationId,
-		serviceId,
-		input,
-	);
-	return row ? { ok: true, data: toServiceDto(row) } : notFound;
+	const { organizationId } = membership;
+	const before =
+		input.priceMinor === undefined
+			? null
+			: await findService(organizationId, serviceId);
+	const row = await updateServiceRow(organizationId, serviceId, input);
+	if (!row) return notFound;
+	if (before && before.priceMinor !== row.priceMinor)
+		await recordActivity(organizationId, actor, {
+			action: "service.price_changed",
+			details: {
+				name: row.name,
+				fromMinor: before.priceMinor,
+				toMinor: row.priceMinor,
+				currency: row.currency,
+			},
+		});
+	return { ok: true, data: toServiceDto(row) };
 };
 
 /** The copy starts inactive, so it can't be booked before it's been edited. */
@@ -148,13 +170,19 @@ export const duplicateService = async (
 /** Archived services leave every list but keep their row for bookings that point at them. */
 export const archiveService = async (
 	membership: Membership,
+	actor: ActivityActor,
 	serviceId: string,
 ): Promise<Result<null>> => {
 	if (membership.status !== "active") return inactive;
 	const row = await updateServiceRow(membership.organizationId, serviceId, {
 		archivedAt: new Date(),
 	});
-	return row ? { ok: true, data: null } : notFound;
+	if (!row) return notFound;
+	await recordActivity(membership.organizationId, actor, {
+		action: "service.archived",
+		details: { name: row.name },
+	});
+	return { ok: true, data: null };
 };
 
 // Postgres returns "HH:MM:SS"; the API speaks "HH:MM"
@@ -223,7 +251,6 @@ export const saveAvailability = async (
 	if (membership.status !== "active") return inactive;
 	await saveOrganizationHours(
 		membership.organizationId,
-		input.timezone,
 		input.weekly.map((range) => ({
 			weekday: range.weekday,
 			startTime: range.start,

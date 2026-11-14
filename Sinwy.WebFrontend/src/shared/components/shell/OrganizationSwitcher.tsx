@@ -37,6 +37,7 @@ import {
 	organizationsQuery,
 	reactivationLink,
 } from "#/shared/lib/organizations";
+import { cn } from "#/shared/lib/utils";
 
 const personalAccountLink = linkOptions({ to: "/account" });
 
@@ -73,9 +74,16 @@ export function OrganizationSwitcher({
 							/>
 						}
 					>
-						<div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-							{inOrganization ? <Building2Icon /> : <UserIcon />}
-						</div>
+						{inOrganization && activeOrganization?.logo ? (
+							<OrganizationLogo
+								logo={activeOrganization.logo}
+								className="size-8 rounded-lg"
+							/>
+						) : (
+							<div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+								{inOrganization ? <Building2Icon /> : <UserIcon />}
+							</div>
+						)}
 						<div className="grid flex-1 text-left text-sm leading-tight">
 							<span className="truncate font-medium">{label}</span>
 							<span className="truncate text-xs">{caption}</span>
@@ -130,6 +138,22 @@ export function OrganizationSwitcher({
 	);
 }
 
+function OrganizationLogo({
+	logo,
+	className,
+}: {
+	logo: string;
+	className: string;
+}) {
+	return (
+		<img
+			src={logo}
+			alt=""
+			className={cn("aspect-square shrink-0 object-cover", className)}
+		/>
+	);
+}
+
 /**
  * An organization that can't be opened leads its owner to the plan page and
  * is disabled for everyone else, with the reason on hover.
@@ -142,9 +166,16 @@ function OrganizationItem({
 	const open = isOrganizationOpen(organization);
 	const content = (
 		<>
-			<div className="flex size-6 items-center justify-center rounded-md border">
-				<Building2Icon className="size-4" />
-			</div>
+			{organization.logo ? (
+				<OrganizationLogo
+					logo={organization.logo}
+					className="size-6 rounded-md border"
+				/>
+			) : (
+				<div className="flex size-6 items-center justify-center rounded-md border">
+					<Building2Icon className="size-4" />
+				</div>
+			)}
 			{organization.name}
 			{!open && (
 				<Badge variant="outline" className="ml-auto">

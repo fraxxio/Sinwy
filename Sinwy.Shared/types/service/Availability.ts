@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { isTimeZone } from "../organization/TimeZone";
 
 /** "closed" shuts a date; "open" adds hours to it. The MVP writes only whole-day closures. */
 export const AVAILABILITY_EXCEPTION_KINDS = ["closed", "open"] as const;
@@ -56,8 +55,8 @@ export const weeklyRangeSchema = z
 		path: ["end"],
 	});
 
+/** Hours are wall-clock times in the organization's timezone, set in Settings. */
 export const availabilitySchema = z.object({
-	timezone: z.string().refine(isTimeZone, "Unknown timezone"),
 	weekly: z
 		.array(weeklyRangeSchema)
 		.refine(

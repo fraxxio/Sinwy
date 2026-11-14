@@ -93,6 +93,7 @@ Draft (no slot, setup unfinished)
 ├─ owner activates it, with a plan and a free slot → Active [6]
 ├─ owner finishes its setup, with a plan and a free slot → Active [4]
 ├─ owner's checkout succeeds → their oldest draft → Active [4]
+├─ owner deletes the organization → gone at once [11]
 └─ owner deletes their account → Scheduled for deletion [11]
 
 Active
@@ -107,17 +108,20 @@ Active
 
 Inactive without a slot (deactivated, or released by a lower cap)
 ├─ owner activates it → Active [6]
+├─ owner deletes the organization → gone at once [11]
 └─ owner deletes their account → Scheduled for deletion
 
 Suspended (slot kept)
 ├─ owner resumes → Active, the same organizations as before [8]
 ├─ plan ends while paused → Lapsed
 ├─ owner deactivates it → Inactive without a slot
+├─ owner deletes the organization → gone at once [11]
 └─ owner deletes their account → Scheduled for deletion
 
 Lapsed (slot kept, Default 8)
 ├─ owner buys a new plan → Active again, within the new cap [7]
 ├─ owner deactivates it → Inactive without a slot
+├─ owner deletes the organization → gone at once [11]
 └─ owner deletes their account → Scheduled for deletion
 
 Scheduled for deletion (no slot)
@@ -184,7 +188,7 @@ service currency), `modules/user/service.ts` (prompts),
 ```text
 One plan per user (D1), one invoice per period in one billing name (D2)
 ├─ Starter      cap 1; no extra features
-├─ Professional cap 2; page builder, custom domain, advanced analytics
+├─ Professional cap 2; advanced widgets, custom domain, advanced analytics
 └─ Enterprise   cap 5; Professional's features and multiple locations
 
 Features
@@ -196,11 +200,12 @@ Pages (every tier has them, up to a limit per organization)
 ├─ limit: Starter 1, Professional 5, Enterprise 25; an inactive organization 0
 ├─ every page counts, drafts included; creating one at or over the limit →
 │  refused, "page limit reached"; deleting a page frees its place
-├─ the page builder feature gates only premium templates (landing, services
-│  showcase) and premium blocks (gallery, testimonials), not pages themselves
-│   ├─ a premium template or a new premium block without it → refused,
+├─ the advanced widgets feature gates only premium templates (landing,
+│  services showcase) and premium widgets (gallery, testimonials), not pages
+│  or the Page Builder itself
+│   ├─ a premium template or a new premium widget without it → refused,
 │   │  "upgrade required"
-│   └─ a premium block the page's latest version already has stays editable,
+│   └─ a premium widget the page's latest version already has stays editable,
 │      so a downgraded page can still be saved
 ├─ content is versioned: every save is a new version; publishing pins the
 │  latest one, so later saves stay private until the next publish
@@ -255,7 +260,7 @@ One trial per user (D10)
 
 Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages,
 analytics retention and seats),
-`Sinwy.Shared/types/page/` (block and template registries),
+`Sinwy.Shared/types/page/` (widget and template registries),
 `Sinwy.Backend/modules/billing/` (`checkoutGuard.ts`, `projection.ts`),
 `modules/auth/auth.ts` (checkout hook; seats in `beforeCreateInvitation`,
 `afterCreateInvitation` and `membershipLimit`), `modules/organizations/`
@@ -414,8 +419,8 @@ Members' requests to an inactive organization
 ├─ setup writes, except on the owner's draft [4] → refused, "organization inactive"
 ├─ services, business hours (and timezone) and closures: reads and bookable
 │  times answered, writes refused, "organization inactive"
-├─ managing it (rename, delete, invite, cancel invitations, remove members,
-│  change roles) → refused, "organization inactive"
+├─ managing it (rename, invite, cancel invitations, remove members, change
+│  roles) → refused, "organization inactive"; the owner can still delete it [11]
 ├─ bookings: kept and readable; every staff write (create, status change,
 │  reschedule, edit) → refused, "organization inactive"
 ├─ payments: list, totals and CSV readable; mark as paid → refused,
@@ -487,6 +492,8 @@ Closing an offer
 ├─ 7 days pass → expired
 ├─ the recipient leaves or is removed → canceled
 ├─ the owner deletes their account → canceled [11]
+├─ the owner deletes the organization → a pending offer goes with it; an
+│  accepted one waiting on the recipient's checkout refuses the deletion [11]
 └─ a plan bought or upgraded for an offer that then closes → kept; nothing
    refunded (Default 11)
 
@@ -527,12 +534,20 @@ Leaving and removal (removal and role changes from Team; leaving has no screen y
 ├─ on an inactive organization: leaving works, removing and role changes are refused [9]
 └─ on one scheduled for deletion: everything is refused, so the members stay
 
-Deleting an organization (owner only; API only, no screen yet)
-├─ active → deleted at once with its data; frees its slot; no billing change (Default 1)
+Deleting an organization (owner only: Settings → Ownership & danger zone, or
+Delete on its row in Account → Organizations; admins see neither and the API
+refuses them)
+├─ the dialog shows the upcoming-booking count, says the plan isn't affected
+│  and whether a slot is freed, and needs the slug typed
+├─ in any state but scheduled for deletion → deleted at once with its data;
+│  frees its slot if it held one; no billing change (Default 1)
 │   ├─ first, its upcoming bookings are cancelled as below and the customers
 │   │  emailed; then every booking goes with the organization
-│   └─ its pages and all their versions go with it, as they do in the purge
-└─ inactive or a draft → refused, "organization inactive"
+│   ├─ its pages and all their versions go with it, as they do in the purge
+│   └─ its stored logo is deleted
+├─ a transfer accepted and waiting on the recipient's checkout → refused
+│  until the owner cancels it (Default 7 of the settings plan) [10]
+└─ scheduled for deletion → refused, "organization inactive"
 
 Bookings when an organization closes (deleted at once, or scheduled by the
 owner's account deletion or the purge repair)
@@ -562,8 +577,9 @@ Any user's account deletion, as a customer (one function, so regional rules
 can change it later)
 → the deletion dialog says how many of their own bookings will be cancelled
 → their pending and confirmed bookings that haven't started → cancelled by the
-  customer, cancellation window or not; each organization's owner and admins
-  are emailed, the customer isn't
+  customer, cancellation window or not; each organization's members who have
+  "Cancelled by customer" on are emailed (Notification Preferences), the
+  customer isn't
 → every booking keeps its contact snapshot (name, email, phone); the link to
   the account is cleared, but it stays a self-booking (`bookedBy`), so staff
   still can't edit its contact
@@ -585,17 +601,14 @@ Purge (hourly)
 → drafts and inactive organizations with an owner are never purged (Default 5)
 ```
 
-**Differs from decision (Default 1).** Default 1 keeps an owner's own
-deletion of an organization immediate. The code refuses it while the
-organization is inactive, drafts included, so an owner can't delete a draft
-or a lapsed organization without a plan and a free slot.
-
 Enforced in: `Sinwy.Backend/modules/auth/` (`auth.ts` user deletion and
 organization hooks, `activeOrganization.ts`), `modules/organizations/`
 (`repository.ts`, `purge.ts`), `modules/billing/service.ts` (revocation),
 `modules/transfers/`, `modules/bookings/service.ts`
 (`cancelUpcomingOrganizationBookings`, `handleCustomerAccountDeleted`),
-`Sinwy.Backend/jobs.ts` (the purge's booking hook).
+`modules/user/service.ts` (the organization deletion preview),
+`Sinwy.Backend/jobs.ts` (the purge's booking hook); web
+`src/modules/organizations/components/DeleteOrganizationDialog.tsx`.
 
 ## 12. Polar's part
 
@@ -750,7 +763,6 @@ Enforced in: `Sinwy.Shared/types/payment/`, `Sinwy.Shared/types/access/`,
 Differs from decision:
 - D7: a once-activated organization that never finished setup is a draft
   again after Deactivate and can refill a freed slot [6].
-- Default 1: an owner can't delete an inactive organization or a draft [11].
 
 Open, product or copy:
 - Booking retention: a deleted customer's bookings keep their name, email and
@@ -769,7 +781,7 @@ Open, product or copy:
 - A recipient with a pending downgrade can accept into a free slot; at the
   period end the transferred organization is the latest-activated, so it
   loses its slot and they are emailed (Default 9) [7, 10].
-- Leaving and deleting an organization have no screen yet [11].
+- Leaving an organization has no screen yet [11].
 - An invite withdrawn because another took the last seat at the same moment
   has already been emailed; its link says the invitation is no longer
   valid [5].
@@ -779,6 +791,20 @@ Open, product or copy:
   pending; accepting it answers "no free seats" [11].
 - Revoke on Team has no confirmation, and Create account from an invitation
   doesn't prefill the invited email [11].
+- The Activity Log records activating and deactivating only when the owner
+  does it from Account → Organizations. An organization activated by
+  finishing setup or by a plan starting, or deactivated by a lapse or a
+  downgrade, gets no entry [3, 8].
+- A notification's link can outlive what it opens: an invitation or a
+  booking of an organization deleted since. The pages say the invitation or
+  booking is no longer available, and the invitation's notification stays
+  unread [11].
+- A member demoted from admin keeps the "payment recorded" notifications
+  already in their organization inbox [2].
+- Deleting an organization checks for an accepted transfer without a lock,
+  so a transfer accepted at the same moment goes with the cascade; the
+  recipient's checkout then completes nothing and they keep the plan
+  (Default 11) [10, 11].
 - Customers is a static placeholder that says "No customers yet" even with
   bookings.
 - A non-owner's `/account/billing` picker says "Your organization activates
@@ -808,8 +834,7 @@ Open, product or copy:
   paused; offering or accepting for an organization scheduled for deletion;
   completion after the old owner's plan lapsed or paused; the 7-day offer
   length; the transfer routes' HTTP codes (`TRANSFER_PENDING`,
-  `RECIPIENT_NEEDS_PLAN`, `ORGANIZATION_SUSPENDED`, 410, 404); the owner's
-  own delete of an inactive organization; the purge repair leaving an
+  `RECIPIENT_NEEDS_PLAN`, `ORGANIZATION_SUSPENDED`, 410, 404); the purge repair leaving an
   organization without its slot; the account deletion copy.
 - The missed-webhook check takes Polar's state only when it is newer than the
   stored one, so a plan cleared by hand while the stored time stays current

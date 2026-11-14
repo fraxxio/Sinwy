@@ -21,13 +21,6 @@ export const profileSchema = z.object({
 });
 export type ProfileInput = z.infer<typeof profileSchema>;
 
-export const AVATAR_LIMITS = {
-	maxBytes: 2 * 1024 * 1024,
-	mimeTypes: ["image/png", "image/jpeg", "image/webp"],
-} as const;
-
-export type AvatarMimeType = (typeof AVATAR_LIMITS.mimeTypes)[number];
-
 export type AvatarDto = { image: string };
 
 export type AccountDeletionPreviewDto = {
@@ -40,6 +33,16 @@ export type AccountDeletionPreviewDto = {
 	}[];
 	/** The user's own pending and confirmed bookings that haven't started; deleting the account cancels them. */
 	upcomingBookings: number;
+};
+
+/** What deleting one organization does; its owner sees it before confirming. */
+export type OrganizationDeletionPreviewDto = {
+	/** Pending and confirmed bookings that haven't started; deleting cancels them and emails the customers. */
+	upcomingBookings: number;
+	/** An accepted transfer waiting on the recipient's checkout; deletion is refused until it's cancelled. */
+	transferAwaitingCheckout: boolean;
+	/** Deleting frees one of the owner's plan slots. */
+	holdsSlot: boolean;
 };
 
 export const setPasswordSchema = z.object({ newPassword: passwordSchema });

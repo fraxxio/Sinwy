@@ -1,17 +1,24 @@
-import type { Tx } from "@db";
 import db from "@db";
 import { memberHasRole } from "@db/memberRole";
 import {
 	invitation,
 	member,
+	memberNotificationPreference,
 	organization,
+	organizationActivity,
 	organizationProfile,
 	organizationTransfer,
 } from "@db/schema/organizationSchema";
 import { user, userSubscription } from "@db/schema/userSchema";
 import {
+	NOTIFICATION_EVENT_DEFAULTS,
+	NOTIFICATION_EVENT_ROLES,
+	type NotificationEvent,
+} from "@sinwy/shared";
+import {
 	and,
 	asc,
+	desc,
 	eq,
 	exists,
 	gt,
@@ -20,6 +27,7 @@ import {
 	isNull,
 	lt,
 	lte,
+	ne,
 	not,
 	or,
 	sql,
@@ -85,12 +93,19 @@ export const findOrganizationAccess = async (organizationId: string) => {
 };
 
 /** What a booking page needs, with the access fields that decide whether it may be shown. */
+const brandingColumns = {
+	brandColor: organization.brandColor,
+	brandFont: organization.brandFont,
+};
+
 export const findOrganizationBySlug = async (slug: string) => {
 	const [row] = await db
 		.select({
 			id: organization.id,
 			name: organization.name,
 			slug: organization.slug,
+			logo: organization.logo,
+			...brandingColumns,
 			timezone: organization.timezone,
 			currency: organization.currency,
 			...organizationAccess,
@@ -175,29 +190,153 @@ export const findOrganizationLocale = async (organizationId: string) => {
 	return row ?? null;
 };
 
-export const findManagerEmails = async (organizationId: string) => {
+const emailColumns = {
+	"booking.new": memberNotificationPreference.emailBookingNew,
+	"booking.cancelled_by_customer":
+		memberNotificationPreference.emailBookingCancelledByCustomer,
+	"payment.recorded": memberNotificationPreference.emailPaymentRecorded,
+} as const satisfies Record<NotificationEvent, unknown>;
+
+/** Emails of the members whose role receives the event and who have it on. */
+export const findNotificationRecipientEmails = async (
+	organizationId: string,
+	event: NotificationEvent,
+	exceptUserId?: string,
+) => {
 	const rows = await db
 		.selectDistinct({ email: user.email })
 		.from(member)
 		.innerJoin(user, eq(user.id, member.userId))
+		.leftJoin(
+			memberNotificationPreference,
+			eq(memberNotificationPreference.memberId, member.id),
+		)
 		.where(
 			and(
 				eq(member.organizationId, organizationId),
-				or(memberHasRole("owner"), memberHasRole("admin")),
+				or(...NOTIFICATION_EVENT_ROLES[event].map(memberHasRole)),
+				sql`coalesce(${emailColumns[event]}, ${NOTIFICATION_EVENT_DEFAULTS[event]})`,
+				exceptUserId ? ne(member.userId, exceptUserId) : undefined,
 			),
 		);
 	return rows.map((row) => row.email);
 };
 
-export const updateOrganizationTimezone = (
-	executor: Tx | typeof db,
+/** Members whose role receives the event, whatever their email choice. */
+export const findMembersForEvent = (
 	organizationId: string,
-	timezone: string,
+	event: NotificationEvent,
+	exceptUserId?: string,
 ) =>
-	executor
-		.update(organization)
-		.set({ timezone })
+	db
+		.select({ memberId: member.id, userId: member.userId })
+		.from(member)
+		.where(
+			and(
+				eq(member.organizationId, organizationId),
+				or(...NOTIFICATION_EVENT_ROLES[event].map(memberHasRole)),
+				exceptUserId ? ne(member.userId, exceptUserId) : undefined,
+			),
+		);
+
+/** The user's memberships with their saved email choices (null when never saved), skipping organizations scheduled for deletion. */
+export const findMemberNotificationPreferences = (
+	userId: string,
+	organizationId?: string,
+) =>
+	db
+		.select({
+			memberId: member.id,
+			role: member.role,
+			organizationId: organization.id,
+			organizationName: organization.name,
+			email: {
+				"booking.new": emailColumns["booking.new"],
+				"booking.cancelled_by_customer":
+					emailColumns["booking.cancelled_by_customer"],
+				"payment.recorded": emailColumns["payment.recorded"],
+			},
+		})
+		.from(member)
+		.innerJoin(organization, eq(organization.id, member.organizationId))
+		.leftJoin(
+			memberNotificationPreference,
+			eq(memberNotificationPreference.memberId, member.id),
+		)
+		.where(
+			and(
+				eq(member.userId, userId),
+				isNull(organization.deletionScheduledAt),
+				organizationId ? eq(organization.id, organizationId) : undefined,
+			),
+		)
+		.orderBy(asc(organization.createdAt), asc(organization.id));
+
+export const upsertMemberNotificationPreferences = (
+	memberId: string,
+	email: Partial<Record<NotificationEvent, boolean>>,
+) => {
+	const values = {
+		emailBookingNew: email["booking.new"],
+		emailBookingCancelledByCustomer: email["booking.cancelled_by_customer"],
+		emailPaymentRecorded: email["payment.recorded"],
+		updatedAt: new Date(),
+	};
+	return db
+		.insert(memberNotificationPreference)
+		.values({ memberId, ...values })
+		.onConflictDoUpdate({
+			target: memberNotificationPreference.memberId,
+			set: values,
+		});
+};
+
+export const findOrganizationGeneral = async (organizationId: string) => {
+	const [row] = await db
+		.select({
+			id: organization.id,
+			name: organization.name,
+			slug: organization.slug,
+			logo: organization.logo,
+			...brandingColumns,
+			timezone: organization.timezone,
+			currency: organization.currency,
+		})
+		.from(organization)
 		.where(eq(organization.id, organizationId));
+	return row ?? null;
+};
+
+type EditableFields = Partial<
+	Pick<
+		typeof organization.$inferInsert,
+		"name" | "timezone" | "logo" | "brandColor" | "brandFont"
+	>
+>;
+
+/** Sets the fields and returns their values from before; null for an unknown organization. */
+export const replaceOrganizationFields = (
+	organizationId: string,
+	values: EditableFields,
+) =>
+	db.transaction(async (tx) => {
+		const [before] = await tx
+			.select({
+				name: organization.name,
+				timezone: organization.timezone,
+				logo: organization.logo,
+				...brandingColumns,
+			})
+			.from(organization)
+			.where(eq(organization.id, organizationId))
+			.for("update");
+		if (!before) return null;
+		await tx
+			.update(organization)
+			.set(values)
+			.where(eq(organization.id, organizationId));
+		return before;
+	});
 
 /** Idempotent: an organization keeps the timestamp of its first completion. */
 export const markOnboardingCompleted = async (organizationId: string) => {
@@ -442,6 +581,8 @@ export const findMemberOrganizations = (userId: string) =>
 			id: organization.id,
 			name: organization.name,
 			slug: organization.slug,
+			logo: organization.logo,
+			...brandingColumns,
 			...organizationAccess,
 			role: member.role,
 			onboardingCompletedAt: organization.onboardingCompletedAt,
@@ -477,4 +618,61 @@ export const findUnfinishedOnboardingOrganization = async (
 		.orderBy(asc(organization.createdAt))
 		.limit(1);
 	return row?.organizationId ?? null;
+};
+
+export const insertActivity = (
+	values: typeof organizationActivity.$inferInsert,
+) => db.insert(organizationActivity).values(values);
+
+/** Newest first; strictly older than `before`, which is a (time, id) pair. */
+export const findActivity = (
+	organizationId: string,
+	before: { occurredAt: Date; id: string } | null,
+	limit: number,
+) =>
+	db
+		.select({
+			id: organizationActivity.id,
+			actorName: organizationActivity.actorName,
+			actorImage: user.image,
+			action: organizationActivity.action,
+			details: organizationActivity.details,
+			occurredAt: organizationActivity.occurredAt,
+		})
+		.from(organizationActivity)
+		.leftJoin(user, eq(organizationActivity.actorUserId, user.id))
+		.where(
+			and(
+				eq(organizationActivity.organizationId, organizationId),
+				before
+					? or(
+							lt(organizationActivity.occurredAt, before.occurredAt),
+							and(
+								eq(organizationActivity.occurredAt, before.occurredAt),
+								lt(organizationActivity.id, before.id),
+							),
+						)
+					: undefined,
+			),
+		)
+		.orderBy(
+			desc(organizationActivity.occurredAt),
+			desc(organizationActivity.id),
+		)
+		.limit(limit);
+
+export const deleteActivityBefore = async (cutoff: Date) =>
+	(
+		await db
+			.delete(organizationActivity)
+			.where(lt(organizationActivity.occurredAt, cutoff))
+			.returning({ id: organizationActivity.id })
+	).length;
+
+export const findUserName = async (userId: string) => {
+	const [row] = await db
+		.select({ name: user.name })
+		.from(user)
+		.where(eq(user.id, userId));
+	return row?.name ?? null;
 };

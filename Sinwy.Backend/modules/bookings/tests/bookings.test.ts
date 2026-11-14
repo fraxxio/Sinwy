@@ -347,10 +347,10 @@ const names = (dto: BookingListDto | BookingDto[]) =>
 
 /** Europe/Vilnius is UTC+2 in January. */
 const seedVilniusBookings = async () => {
-	await call("PUT", "availability", ownerCookie, {
-		timezone: "Europe/Vilnius",
-		weekly: [],
-	});
+	await db
+		.update(organization)
+		.set({ timezone: "Europe/Vilnius" })
+		.where(eq(organization.id, orgId));
 	const haircut = await createService();
 	const colour = await createService({
 		name: "Colouring",

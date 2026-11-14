@@ -13,14 +13,6 @@ export type BookingEmailProps = {
 	bookingUrl: string | null;
 };
 
-/** "Sunday 1 March 2099 at 10:00 (Europe/Vilnius)" */
-export const formatBookingTime = (instant: Date, timezone: string) =>
-	`${new Intl.DateTimeFormat("en-GB", {
-		timeZone: timezone,
-		dateStyle: "full",
-		timeStyle: "short",
-	}).format(instant)} (${timezone})`;
-
 const summary = ({ serviceName, organizationName, when }: BookingEmailProps) =>
 	`<p><strong>${escapeHtml(serviceName)}</strong> at ${escapeHtml(organizationName)}<br>${escapeHtml(when)}</p>`;
 

@@ -10,9 +10,12 @@ import {
 import appConfig from "@config";
 import db from "@db";
 import { createLogger } from "@logger";
+import { notifyEmail, readInvitationNotifications } from "@notificationsModule";
 import {
+	deleteStoredLogo,
 	getSeatLimit,
 	getSeatUsage,
+	recordActivity,
 	scheduleOwnedOrganizationsForDeletion,
 	withdrawInvitationOverCap,
 } from "@organizationsModule";
@@ -21,6 +24,7 @@ import {
 	AUTH_ERROR_CODES,
 	ac,
 	INVITATION_EXPIRY_DAYS,
+	isInviteRole,
 	orgAccessRoles,
 	PLAN_SLUGS,
 	profileSchema,
@@ -29,6 +33,7 @@ import {
 import {
 	cancelTransfersToMember,
 	findTransferAwaitingCheckout,
+	isTransferAwaitingCheckout,
 } from "@transfersModule";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -54,12 +59,24 @@ import { InvitationEmail } from "./emails/invitationEmail";
 import { ResetPasswordEmail } from "./emails/resetPasswordEmail";
 import { VerificationEmail } from "./emails/verificationEmail";
 import { refuseNonInviteRole, refuseOwnerRole } from "./singleOwner";
+import { recordTeamActivity } from "./teamActivity";
 
 const authLogger = createLogger("auth");
+
+// the team actions the after middleware records; it reads who did them from the session
+const TEAM_ACTIVITY_PATHS = new Set([
+	"/organization/invite-member",
+	"/organization/cancel-invitation",
+	"/organization/update-member-role",
+	"/organization/remove-member",
+	"/organization/leave",
+]);
 
 // better-auth only type-checks name; apply the shared length/character rule
 // imported on use: the bookings module's routes need this module loaded first
 const bookingsModule = () => import("@bookingsModule");
+
+const invitationPath = (id: string) => `/invite/${encodeURIComponent(id)}`;
 
 const validName = (name: unknown) => {
 	const result = profileSchema.safeParse({ name });
@@ -295,6 +312,11 @@ export const auth = betterAuth({
 				if (!session) throw new APIError("UNAUTHORIZED");
 				await ensurePolarCustomer(session.user);
 			}
+			// it can set the slug and the logo URL; Settings has its own endpoints
+			if (ctx.path === "/organization/update")
+				throw new APIError("FORBIDDEN", {
+					message: "Change the organization in Settings",
+				});
 			if (ctx.path.startsWith("/organization/")) {
 				const session = await getSessionFromCtx(ctx);
 				// the plugin has no beforeSetActive hook
@@ -323,11 +345,13 @@ export const auth = betterAuth({
 					));
 				return stripped ? ctx.json(stripped) : undefined;
 			}
-			// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
-			if (ctx.path !== "/organization/leave") return undefined;
-			const body = z.object({ organizationId: z.string() }).safeParse(ctx.body);
+			if (!TEAM_ACTIVITY_PATHS.has(ctx.path)) return undefined;
 			const session = await getSessionFromCtx(ctx);
-			if (body.success && session)
+			if (!session) return undefined;
+			await recordTeamActivity(ctx.path, session.user, ctx.context.returned);
+			// leaving fires no afterRemoveMember; the cancel is a no-op unless the user left
+			const body = z.object({ organizationId: z.string() }).safeParse(ctx.body);
+			if (ctx.path === "/organization/leave" && body.success)
 				await cancelTransfersToMember(
 					body.data.organizationId,
 					session.user.id,
@@ -357,6 +381,7 @@ export const auth = betterAuth({
 				organization,
 				inviter,
 			}) => {
+				const invitePath = invitationPath(id);
 				await emailClient.send({
 					to: email,
 					template: InvitationEmail,
@@ -364,12 +389,22 @@ export const auth = betterAuth({
 						organizationName: organization.name,
 						inviterName: inviter.user.name,
 						role,
-						inviteUrl: new URL(
-							`/invite/${encodeURIComponent(id)}`,
-							appConfig.WEB_APP_URL,
-						).toString(),
+						inviteUrl: new URL(invitePath, appConfig.WEB_APP_URL).toString(),
 					},
 				});
+				if (isInviteRole(role))
+					await notifyEmail(
+						email,
+						{
+							type: "invitation.received",
+							payload: {
+								organizationName: organization.name,
+								inviterName: inviter.user.name,
+								role,
+							},
+						},
+						invitePath,
+					);
 			},
 			// the plugin already keeps the only owner from leaving, being removed
 			// or demoted; these keep a second owner from ever appearing
@@ -393,6 +428,27 @@ export const auth = betterAuth({
 					refuseOwnerRole(invitation.role);
 					await refuseScheduledOrganization(invitation.organizationId);
 				},
+				afterAcceptInvitation: async ({ invitation, user }) => {
+					await readInvitationNotifications(
+						invitation.email,
+						invitationPath(invitation.id),
+					);
+					if (isInviteRole(invitation.role))
+						await recordActivity(invitation.organizationId, user, {
+							action: "member.joined",
+							details: { role: invitation.role },
+						});
+				},
+				afterRejectInvitation: ({ invitation }) =>
+					readInvitationNotifications(
+						invitation.email,
+						invitationPath(invitation.id),
+					),
+				afterCancelInvitation: ({ invitation }) =>
+					readInvitationNotifications(
+						invitation.email,
+						invitationPath(invitation.id),
+					),
 				beforeUpdateMemberRole: ({ member, newRole }) => {
 					refuseOwnerRole(member.role, newRole);
 					refuseNonInviteRole(newRole);
@@ -402,9 +458,16 @@ export const auth = betterAuth({
 					cancelTransfersToMember(member.organizationId, member.userId),
 				// the emails go out before the deletion cascades the bookings away
 				beforeDeleteOrganization: async ({ organization }) => {
+					if (await isTransferAwaitingCheckout(organization.id))
+						throw new APIError("CONFLICT", {
+							message:
+								"An ownership transfer is waiting on the recipient's checkout. Cancel it before deleting the organization.",
+						});
 					const bookings = await bookingsModule();
 					await bookings.cancelUpcomingOrganizationBookings([organization.id]);
 				},
+				afterDeleteOrganization: ({ organization }) =>
+					deleteStoredLogo(organization.id, organization.logo ?? null),
 			},
 			schema: {
 				organization: {

@@ -2,20 +2,42 @@ import { membershipFrom, sessionFrom } from "@authModule";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler } from "@backend/lib/app/types";
 import {
+	ImageError,
+	readImageUpload,
+	respondImageError,
+} from "@backend/lib/image";
+import {
 	createOrganizationBody,
 	organizationProfileBody,
 } from "@backend/modules/organizations/utils";
-import { API_ERROR_CODES } from "@sinwy/shared";
+import {
+	API_ERROR_CODES,
+	notificationPreferencesInputSchema,
+	organizationBrandingSchema,
+	organizationNameInputSchema,
+	organizationTimezoneInputSchema,
+} from "@sinwy/shared";
+import { listActivity, parseActivityCursor, recordActivity } from "./activity";
+import {
+	listNotificationPreferences,
+	saveNotificationPreferences,
+} from "./notificationPreferences";
 import {
 	activateOrganization,
+	changeOrganizationBranding,
+	changeOrganizationTimezone,
 	completeOrganizationOnboarding,
 	createOrganization,
 	deactivateOrganization,
 	getInvitationPreview,
+	getOrganizationGeneral,
 	getOrganizationOnboarding,
 	listOrganizations,
+	removeOrganizationLogo,
+	renameOrganization,
 	type SlotResult,
 	saveOrganizationProfile,
+	uploadOrganizationLogo,
 } from "./service";
 
 const respondWriteError = (error: "not-found" | "inactive") => {
@@ -85,10 +107,110 @@ export const saveOrganizationProfileHandler: Handler = async (c) => {
 	if (!body.success)
 		return fail(body.error.issues[0]?.message ?? "Invalid body", 400);
 
-	const result = await saveOrganizationProfile(membershipFrom(c), body.data);
+	const membership = membershipFrom(c);
+	const result = await saveOrganizationProfile(membership, body.data);
 	if (!result.ok) return respondWriteError(result.error);
 
-	return ok(result.data, 200, "Profile saved");
+	const { profile, changed } = result.data;
+	if (changed.length > 0)
+		await recordActivity(membership.organizationId, sessionFrom(c).user, {
+			action: "organization.profile_updated",
+			details: { fields: changed },
+		});
+	return ok(profile, 200, "Profile saved");
+};
+
+export const getOrganizationGeneralHandler: Handler = async (c) => {
+	const general = await getOrganizationGeneral(
+		membershipFrom(c).organizationId,
+	);
+	return general ? ok(general) : fail("Not found", 404);
+};
+
+export const renameOrganizationHandler: Handler = async (c) => {
+	const body = organizationNameInputSchema.safeParse(
+		await c.req.json().catch(() => null),
+	);
+	if (!body.success)
+		return fail(body.error.issues[0]?.message ?? "Invalid body", 400);
+
+	const membership = membershipFrom(c);
+	const result = await renameOrganization(membership, body.data.name);
+	if (!result.ok) return respondWriteError(result.error);
+	if (result.data.changed)
+		await recordActivity(membership.organizationId, sessionFrom(c).user, {
+			action: "organization.renamed",
+			details: { fromName: result.data.from, toName: body.data.name },
+		});
+	return ok({ name: body.data.name }, 200, "Name saved");
+};
+
+export const changeOrganizationTimezoneHandler: Handler = async (c) => {
+	const body = organizationTimezoneInputSchema.safeParse(
+		await c.req.json().catch(() => null),
+	);
+	if (!body.success)
+		return fail(body.error.issues[0]?.message ?? "Invalid body", 400);
+
+	const membership = membershipFrom(c);
+	const { timezone } = body.data;
+	const result = await changeOrganizationTimezone(membership, timezone);
+	if (!result.ok) return respondWriteError(result.error);
+	if (result.data.changed)
+		await recordActivity(membership.organizationId, sessionFrom(c).user, {
+			action: "organization.timezone_changed",
+			details: { fromTimezone: result.data.from, toTimezone: timezone },
+		});
+	return ok({ timezone }, 200, "Timezone saved");
+};
+
+export const changeOrganizationBrandingHandler: Handler = async (c) => {
+	const body = organizationBrandingSchema.safeParse(
+		await c.req.json().catch(() => null),
+	);
+	if (!body.success)
+		return fail(body.error.issues[0]?.message ?? "Invalid body", 400);
+
+	const membership = membershipFrom(c);
+	const result = await changeOrganizationBranding(membership, body.data);
+	if (!result.ok) return respondWriteError(result.error);
+	const { fields } = result.data;
+	if (fields.length)
+		await recordActivity(membership.organizationId, sessionFrom(c).user, {
+			action: "organization.branding_changed",
+			details: { fields },
+		});
+	return ok(body.data, 200, "Branding saved");
+};
+
+export const uploadOrganizationLogoHandler: Handler = async (c) => {
+	const membership = membershipFrom(c);
+	try {
+		const file = await readImageUpload(c.req);
+		if (!file) return fail("Missing file", 400);
+		const result = await uploadOrganizationLogo(membership, file);
+		if (!result.ok) return respondWriteError(result.error);
+		await recordActivity(membership.organizationId, sessionFrom(c).user, {
+			action: "organization.logo_changed",
+			details: {},
+		});
+		return ok(result.data, 200, "Logo saved");
+	} catch (error) {
+		if (error instanceof ImageError) return respondImageError(error);
+		throw error;
+	}
+};
+
+export const removeOrganizationLogoHandler: Handler = async (c) => {
+	const membership = membershipFrom(c);
+	const result = await removeOrganizationLogo(membership);
+	if (!result.ok) return respondWriteError(result.error);
+	if (result.data.changed)
+		await recordActivity(membership.organizationId, sessionFrom(c).user, {
+			action: "organization.logo_removed",
+			details: {},
+		});
+	return ok(null, 200, "Logo removed");
 };
 
 export const completeOrganizationOnboardingHandler: Handler = async (c) => {
@@ -104,17 +226,33 @@ export const activateOrganizationHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
 	const { organizationId } = c.req.params as { organizationId: string };
 	const result = await activateOrganization(user.id, organizationId);
-	return result.ok
-		? ok(null, 200, "Organization activated")
-		: respondSlotError(result.error);
+	if (!result.ok) return respondSlotError(result.error);
+	if (result.data.changed)
+		await recordActivity(organizationId, user, {
+			action: "organization.activated",
+			details: {},
+		});
+	return ok(null, 200, "Organization activated");
 };
 
 export const deactivateOrganizationHandler: Handler = async (c) => {
 	const { user } = sessionFrom(c);
 	const { organizationId } = c.req.params as { organizationId: string };
-	return (await deactivateOrganization(user.id, organizationId))
-		? ok(null, 200, "Organization deactivated")
-		: fail("Not found", 404);
+	const result = await deactivateOrganization(user.id, organizationId);
+	if (!result.found) return fail("Not found", 404);
+	if (result.changed)
+		await recordActivity(organizationId, user, {
+			action: "organization.deactivated",
+			details: {},
+		});
+	return ok(null, 200, "Organization deactivated");
+};
+
+export const listActivityHandler: Handler = async (c) => {
+	const raw = new URL(c.req.url).searchParams.get("before");
+	const before = raw ? parseActivityCursor(raw) : null;
+	if (raw && !before) return fail("Invalid cursor", 400);
+	return ok(await listActivity(membershipFrom(c).organizationId, before));
 };
 
 export const getInvitationPreviewHandler: Handler = async (c) => {
@@ -123,4 +261,22 @@ export const getInvitationPreviewHandler: Handler = async (c) => {
 	return preview
 		? ok(preview)
 		: fail("This invitation is no longer available", 404);
+};
+
+export const listNotificationPreferencesHandler: Handler = async (c) =>
+	ok(await listNotificationPreferences(sessionFrom(c).user.id));
+
+export const saveNotificationPreferencesHandler: Handler = async (c) => {
+	const body = notificationPreferencesInputSchema.safeParse(
+		await c.req.json().catch(() => null),
+	);
+	if (!body.success) return fail("Invalid body", 400);
+
+	const { organizationId } = c.req.params as { organizationId: string };
+	const saved = await saveNotificationPreferences(
+		sessionFrom(c).user.id,
+		organizationId,
+		body.data,
+	);
+	return saved ? ok(saved, 200, "Preferences saved") : fail("Not found", 404);
 };

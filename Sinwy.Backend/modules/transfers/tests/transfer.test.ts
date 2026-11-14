@@ -16,6 +16,7 @@ import {
 } from "@backend/test/helpers";
 import { applySubscriptionEvent } from "@billingModule";
 import db from "@db";
+import { notification } from "@db/schema/notificationSchema";
 import {
 	member,
 	organization,
@@ -168,6 +169,24 @@ test("offer emails the recipient and shows up in their incoming list, without th
 	]);
 	expect(incoming[0]?.organization).not.toHaveProperty("plan");
 	expect(await listIncomingTransfers(ownerId)).toEqual([]);
+	expect(
+		await db
+			.select({
+				userId: notification.userId,
+				organizationId: notification.organizationId,
+				type: notification.type,
+				link: notification.link,
+			})
+			.from(notification)
+			.where(eq(notification.userId, staffId)),
+	).toEqual([
+		{
+			userId: staffId,
+			organizationId: null,
+			type: "transfer.offered",
+			link: "/account/organizations",
+		},
+	]);
 });
 
 const planBoughtFor = (
@@ -253,7 +272,7 @@ test("the plan bought at acceptance completes the transfer when it lands; the ol
 test("a plan that lands after the transfer closed is kept, and nothing moves (Default 11)", async () => {
 	const id = await offered();
 	await acceptIncomingTransfer(staffId, id);
-	await cancelTransfer(membership);
+	await cancelTransfer(membership, null);
 
 	await planBoughtFor(id, "starter");
 
@@ -272,7 +291,7 @@ test("a plan naming a transfer that isn't the user's, or isn't waiting on a chec
 	});
 	expect((await transferRow(accepted))?.status).toBe("accepted");
 
-	await cancelTransfer(membership);
+	await cancelTransfer(membership, null);
 	const pending = await offered();
 	await planBoughtFor(pending, "starter");
 	expect((await transferRow(pending))?.status).toBe("pending");
@@ -472,9 +491,9 @@ test("decline and owner cancel close the offer", async () => {
 	expect((await transferRow(id))?.status).toBe("declined");
 
 	const next = await offered();
-	expect(await cancelTransfer(membership)).toBe(true);
+	expect(await cancelTransfer(membership, null)).toBe(true);
 	expect((await transferRow(next))?.status).toBe("canceled");
-	expect(await cancelTransfer(membership)).toBe(false);
+	expect(await cancelTransfer(membership, null)).toBe(false);
 });
 
 test("leaving or removal cancels transfers to that member; staying members keep theirs", async () => {

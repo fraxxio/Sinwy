@@ -1,3 +1,4 @@
+import type { OrganizationBrandingDto } from "../organization/OrganizationBranding";
 import type { PageContent } from "./PageContent";
 
 export const PAGE_STATUSES = ["draft", "published"] as const;
@@ -49,7 +50,11 @@ export type PageDetailDto = PageListItemDto & {
 
 /** What anyone can read of a live page; never the draft. */
 export type PublicPageDto = {
-	organization: { name: string; slug: string };
+	organization: {
+		name: string;
+		slug: string;
+		branding: OrganizationBrandingDto;
+	};
 	title: string;
 	/** Already resolved: falls back to the page title and the organization tagline. */
 	seoTitle: string;

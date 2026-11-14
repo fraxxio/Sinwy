@@ -2,12 +2,15 @@ import type { OrgRole } from "../access/OrgRole";
 import type { PlanSlug } from "../plan/Plan";
 import type { Feature } from "../plan/PlanFeatures";
 import type { OrganizationStatus } from "./Organization";
+import type { OrganizationBrandingDto } from "./OrganizationBranding";
 
 /** One of the caller's organizations, as the switcher and Account → Organizations list them. */
 export type OrganizationSummary = {
 	id: string;
 	name: string;
 	slug: string;
+	logo: string | null;
+	branding: OrganizationBrandingDto;
 	status: OrganizationStatus;
 	suspended: boolean;
 	/** Never finished setup and holds no slot: created at the cap or before a plan. */

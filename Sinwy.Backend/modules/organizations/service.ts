@@ -1,13 +1,20 @@
 import type { Membership } from "@authModule";
+import {
+	fileUrl,
+	keyFromFileUrl,
+	storageClient,
+} from "@backend/infrastructure/storage";
+import { imageExtension, validateImage } from "@backend/lib/image";
 import { uniqueSlug } from "@backend/lib/slug";
 import {
 	type OrganizationProfileInput,
 	reservedSlugs,
 } from "@backend/modules/organizations/utils";
-import type { Tx } from "@db";
 import db from "@db";
+import { createLogger } from "@logger";
 import {
 	type AccountDeletionPreviewDto,
+	type BrandFont,
 	currencyForCountry,
 	EMPTY_ORGANIZATION_PROFILE,
 	featuresFor,
@@ -16,8 +23,11 @@ import {
 	isInviteRole,
 	limitsFor,
 	ORGANIZATION_RETENTION_DAYS,
+	type OrganizationBrandingDto,
 	type OrganizationDto,
+	type OrganizationGeneralDto,
 	type OrganizationIndustry,
+	type OrganizationLogoDto,
 	type OrganizationOnboardingDto,
 	type OrganizationProfileDto,
 	type OrganizationStatus,
@@ -34,12 +44,12 @@ import {
 	deleteInvitation,
 	findDeletionScheduledAt,
 	findInvitationOrganizationId,
-	findManagerEmails,
 	findMemberOrganizations,
 	findMembershipAccess,
 	findOnboardingCompletedAt,
 	findOrganizationAccess,
 	findOrganizationBySlug,
+	findOrganizationGeneral,
 	findOrganizationLocale,
 	findOwnedOrganizationIds,
 	findPendingInvitationPreview,
@@ -47,15 +57,23 @@ import {
 	findSoleOwnedOrganizations,
 	findUnfinishedOnboardingOrganization,
 	findUnpaidOwnedOrganization,
+	findUserName,
 	hasFreeSlot,
 	insertOrganizationWithOwner,
 	isSlugTaken,
 	markOnboardingCompleted,
+	replaceOrganizationFields,
 	scheduleOrganizationsForDeletion,
-	updateOrganizationTimezone,
 	upsertProfile,
 } from "./repository";
 import { holdSlot, releaseSlot, type SlotHold } from "./slots";
+
+const organizationLogger = createLogger("organizations");
+
+const toBranding = (row: {
+	brandColor: string | null;
+	brandFont: BrandFont | null;
+}): OrganizationBrandingDto => ({ color: row.brandColor, font: row.brandFont });
 
 export const createOrganization = async (
 	userId: string,
@@ -106,8 +124,10 @@ export const findPublicOrganization = async (slug: string) => {
 		id: row.id,
 		name: row.name,
 		slug: row.slug,
+		logo: row.logo,
 		timezone: row.timezone,
 		currency: row.currency,
+		branding: toBranding(row),
 		tagline: row.tagline,
 		description: row.description,
 		city: row.city,
@@ -125,6 +145,7 @@ export const findPublicOrganizationPlan = async (slug: string) => {
 		slug: row.slug,
 		tagline: row.tagline,
 		timezone: row.timezone,
+		branding: toBranding(row),
 		plan: organizationPlanOf(row),
 	};
 };
@@ -175,6 +196,8 @@ export const listOrganizations = async (
 			id: row.id,
 			name: row.name,
 			slug: row.slug,
+			logo: row.logo,
+			branding: toBranding(row),
 			status: organizationStatusOf(row),
 			suspended: isSuspended(row),
 			draft: isDraft(row),
@@ -216,6 +239,8 @@ export const getInvitationPreview = async (
 
 /** The organization's name, owner and access; null for an unknown one. */
 export const getOrganizationAccess = findOrganizationAccess;
+
+export const getUserName = (userId: string) => findUserName(userId);
 
 /** The organization's plan seat cap; 0 while inactive or unknown. */
 export const getSeatLimit = async (organizationId: string) => {
@@ -284,10 +309,12 @@ export type SlotResult = Exclude<SlotHold, { result: "held" }>["result"];
 export const activateOrganization = async (
 	userId: string,
 	organizationId: string,
-): Promise<{ ok: true } | { ok: false; error: SlotResult }> => {
+): Promise<
+	{ ok: true; data: { changed: boolean } } | { ok: false; error: SlotResult }
+> => {
 	const hold = await holdSlot(userId, organizationId);
 	return hold.result === "held"
-		? { ok: true }
+		? { ok: true, data: { changed: hold.changed } }
 		: { ok: false, error: hold.result };
 };
 
@@ -311,6 +338,10 @@ const findWizardTarget = async ({ organizationId, status }: Membership) => {
 		ownerUserId: row.ownerUserId,
 	};
 };
+
+const PROFILE_FIELDS = Object.keys(
+	EMPTY_ORGANIZATION_PROFILE,
+) as (keyof OrganizationProfileDto)[];
 
 const toProfileDto = (
 	row: Awaited<ReturnType<typeof findProfile>> | undefined,
@@ -349,17 +380,29 @@ export const getOrganizationOnboarding = async ({
 export const saveOrganizationProfile = async (
 	membership: Membership,
 	input: OrganizationProfileInput,
-): Promise<WriteResult<OrganizationProfileDto>> => {
+): Promise<
+	WriteResult<{
+		profile: OrganizationProfileDto;
+		/** Field names only; their values never reach the Activity Log. */
+		changed: (keyof OrganizationProfileDto)[];
+	}>
+> => {
 	const target = await findWizardTarget(membership);
 	if (!target) return { ok: false, error: "not-found" };
 	if (!target.writable) return { ok: false, error: "inactive" };
 
-	const row = await upsertProfile(
-		membership.organizationId,
-		input,
-		currencyForCountry(input.country),
+	const before = toProfileDto(await findProfile(membership.organizationId));
+	const profile = toProfileDto(
+		await upsertProfile(
+			membership.organizationId,
+			input,
+			currencyForCountry(input.country),
+		),
 	);
-	return { ok: true, data: toProfileDto(row) };
+	const changed = PROFILE_FIELDS.filter(
+		(field) => before[field] !== profile[field],
+	);
+	return { ok: true, data: { profile, changed } };
 };
 
 export type OrganizationLocale = { timezone: string; currency: string };
@@ -369,17 +412,135 @@ export const getOrganizationLocale = (
 	organizationId: string,
 ): Promise<OrganizationLocale | null> => findOrganizationLocale(organizationId);
 
-/** Who hears about the organization's bookings: its owner and admins. */
-export const listOrganizationManagerEmails = (organizationId: string) =>
-	findManagerEmails(organizationId);
+type Change<T> = { changed: false } | { changed: true; from: T };
 
-/** Callers validate the zone (`isTimeZone`); pass `executor` to join their transaction. */
-export const setOrganizationTimezone = async (
+const editableTarget = (membership: Membership) =>
+	membership.status === "active"
+		? null
+		: ({ ok: false, error: "inactive" } as const);
+
+/** Settings → General; null for an unknown organization. */
+export const getOrganizationGeneral = async (
 	organizationId: string,
+): Promise<OrganizationGeneralDto | null> => {
+	const [row, profile] = await Promise.all([
+		findOrganizationGeneral(organizationId),
+		findProfile(organizationId),
+	]);
+	if (!row) return null;
+	const { brandColor, brandFont, ...general } = row;
+	return {
+		...general,
+		profile: toProfileDto(profile),
+		branding: toBranding({ brandColor, brandFont }),
+	};
+};
+
+const replaceField = async <K extends "name" | "timezone">(
+	membership: Membership,
+	field: K,
+	value: string,
+): Promise<WriteResult<Change<string>>> => {
+	const refused = editableTarget(membership);
+	if (refused) return refused;
+	const before = await replaceOrganizationFields(membership.organizationId, {
+		[field]: value,
+	});
+	if (!before) return { ok: false, error: "not-found" };
+	return {
+		ok: true,
+		data:
+			before[field] === value
+				? { changed: false }
+				: { changed: true, from: before[field] },
+	};
+};
+
+/** The slug never follows the name. */
+export const renameOrganization = (membership: Membership, name: string) =>
+	replaceField(membership, "name", name);
+
+/**
+ * Hours stay wall-clock times and bookings keep their instant, so a booking
+ * may show at a different local time. Analytics days already rolled up stay
+ * in the old zone. Callers validate the zone (`isTimeZone`).
+ */
+export const changeOrganizationTimezone = (
+	membership: Membership,
 	timezone: string,
-	executor: Tx | typeof db = db,
+) => replaceField(membership, "timezone", timezone);
+
+/** Null resets a part to Sinwy's default. Returns the parts that changed. */
+export const changeOrganizationBranding = async (
+	membership: Membership,
+	branding: OrganizationBrandingDto,
+): Promise<WriteResult<{ fields: (keyof OrganizationBrandingDto)[] }>> => {
+	const refused = editableTarget(membership);
+	if (refused) return refused;
+	const before = await replaceOrganizationFields(membership.organizationId, {
+		brandColor: branding.color,
+		brandFont: branding.font,
+	});
+	if (!before) return { ok: false, error: "not-found" };
+	const previous = toBranding(before);
+	return {
+		ok: true,
+		data: {
+			fields: (["color", "font"] as const).filter(
+				(field) => previous[field] !== branding[field],
+			),
+		},
+	};
+};
+
+/** Best effort: a failure is logged, never thrown. */
+export const deleteStoredLogo = async (
+	organizationId: string,
+	logo: string | null,
 ) => {
-	await updateOrganizationTimezone(executor, organizationId, timezone);
+	const key = keyFromFileUrl(logo);
+	if (!key) return;
+	await storageClient.delete(key).catch((error: unknown) => {
+		organizationLogger.warn("Failed to delete a logo", {
+			organizationId,
+			error,
+		});
+	});
+};
+
+/** Validated like an avatar; the old file is deleted once the new one is stored. Throws `ImageError`. */
+export const uploadOrganizationLogo = async (
+	membership: Membership,
+	file: File,
+): Promise<WriteResult<OrganizationLogoDto>> => {
+	const refused = editableTarget(membership);
+	if (refused) return refused;
+	const { organizationId } = membership;
+	const { bytes, type } = await validateImage(file);
+	const key = `logos/${organizationId}/${crypto.randomUUID()}.${imageExtension(type)}`;
+	await storageClient.put(key, bytes, type);
+	const logo = fileUrl(key);
+	const before = await replaceOrganizationFields(organizationId, { logo });
+	if (!before) {
+		await deleteStoredLogo(organizationId, logo);
+		return { ok: false, error: "not-found" };
+	}
+	await deleteStoredLogo(organizationId, before.logo);
+	return { ok: true, data: { logo } };
+};
+
+export const removeOrganizationLogo = async (
+	membership: Membership,
+): Promise<WriteResult<{ changed: boolean }>> => {
+	const refused = editableTarget(membership);
+	if (refused) return refused;
+	const { organizationId } = membership;
+	const before = await replaceOrganizationFields(organizationId, {
+		logo: null,
+	});
+	if (!before) return { ok: false, error: "not-found" };
+	await deleteStoredLogo(organizationId, before.logo);
+	return { ok: true, data: { changed: before.logo !== null } };
 };
 
 /**

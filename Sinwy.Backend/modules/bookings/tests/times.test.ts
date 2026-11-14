@@ -83,7 +83,6 @@ const openEveryDay = async (cookie: string, organizationId: string) => {
 		"availability",
 		cookie,
 		{
-			timezone: "UTC",
 			weekly: [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
 				weekday,
 				start: "09:00",

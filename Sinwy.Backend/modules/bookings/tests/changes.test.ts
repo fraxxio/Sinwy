@@ -10,6 +10,7 @@ import {
 } from "@backend/test/helpers";
 import db from "@db";
 import { booking, bookingEvent } from "@db/schema/bookingSchema";
+import { notification } from "@db/schema/notificationSchema";
 import { organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
 import { findBookableService, registerServiceRoutes } from "@servicesModule";
@@ -21,7 +22,7 @@ import {
 	type ServiceDto,
 } from "@sinwy/shared";
 import type { Server } from "bun";
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { registerBookingRoutes } from "../routes";
 import { createBooking } from "../service";
 
@@ -384,7 +385,7 @@ test("a manual booking emails the customer once, and only with an email", async 
 	expect(await outboxIds()).toEqual(before);
 });
 
-test("self-bookings email the customer and the owner and admins, not staff", async () => {
+test("self-bookings email the customer and every member", async () => {
 	const admin = await createUserWithSession();
 	const staff = await createUserWithSession();
 	await joinOrganization(orgId, admin.userId, "admin");
@@ -395,18 +396,83 @@ test("self-bookings email the customer and the owner and admins, not staff", asy
 	expect((await sentTo(email)).map((e) => e.subject)).toEqual([
 		"Request received: Haircut at Salon",
 	]);
-	for (const manager of [ownerId, admin.userId]) {
-		const [received] = await sentTo(`${manager}@test.dev`);
+	for (const member of [ownerId, admin.userId, staff.userId]) {
+		const [received] = await sentTo(`${member}@test.dev`);
 		expect(received?.subject).toStartWith("New booking request: Haircut");
 		expect(received?.html).toContain(`/bookings/${request.id}`);
 	}
-	expect(await sentTo(`${staff.userId}@test.dev`)).toEqual([]);
 
 	await action(request.id, "confirm");
 	const confirmed = (await sentTo(email)).find((e) =>
 		e.subject.startsWith("Booking confirmed"),
 	);
 	expect(confirmed?.html).toContain(`/account/bookings/${request.id}`);
+});
+
+const notificationsOf = (bookingId: string) =>
+	db
+		.select({
+			userId: notification.userId,
+			organizationId: notification.organizationId,
+			type: notification.type,
+			payload: notification.payload,
+		})
+		.from(notification)
+		.where(like(notification.link, `%/bookings/${bookingId}`));
+
+test("self-bookings notify every member in the organization inbox and the customer in theirs", async () => {
+	const admin = await createUserWithSession();
+	const staff = await createUserWithSession();
+	await joinOrganization(orgId, admin.userId, "admin");
+	await joinOrganization(orgId, staff.userId, "staff");
+
+	const created = await selfBook("confirmed", freshEmail());
+	const rows = await notificationsOf(created.id);
+	const forMembers = rows.filter((row) => row.organizationId === orgId);
+	expect(forMembers.map((row) => row.userId).sort()).toEqual(
+		[ownerId, admin.userId, staff.userId].sort(),
+	);
+	expect(forMembers[0]).toMatchObject({
+		type: "booking.new",
+		payload: { serviceName: "Haircut", customerName: "Bea" },
+	});
+	const [personal] = rows.filter((row) => row.organizationId === null);
+	expect(personal).toMatchObject({
+		userId: created.customerUserId,
+		type: "booking.confirmed",
+		payload: { organizationName: "Salon", serviceName: "Haircut" },
+	});
+	expect(JSON.stringify(rows)).not.toContain("@");
+
+	await action(created.id, "reschedule", {
+		startsAt: "2099-03-05T12:00:00+02:00",
+	});
+	expect(
+		(await notificationsOf(created.id)).filter(
+			(row) => row.type === "booking.moved",
+		),
+	).toHaveLength(1);
+});
+
+test("a declined request notifies the customer; a manual booking notifies no one", async () => {
+	const request = await selfBook("pending", freshEmail());
+	expect(
+		(await notificationsOf(request.id)).map((row) => row.type).sort(),
+	).toEqual(["booking.requested"]);
+
+	await action(request.id, "cancel", { reason: "Fully booked" });
+	expect(
+		(await notificationsOf(request.id))
+			.filter((row) => row.organizationId === null)
+			.map((row) => row.type),
+	).toEqual(["booking.declined"]);
+
+	const manual = await book(FUTURE, {
+		customerName: "Ana",
+		customerEmail: freshEmail(),
+	});
+	await action(manual.id, "cancel", {});
+	expect(await notificationsOf(manual.id)).toEqual([]);
 });
 
 test("cancelling a confirmed booking sends the cancellation, not a decline", async () => {

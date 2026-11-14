@@ -21,7 +21,7 @@ import {
 	updatePage,
 } from "./service";
 
-/** Far above what 200 blocks of builder props need, far below the server's own cap. */
+/** Far above what 200 widgets of builder props need, far below the server's own cap. */
 export const MAX_PAGE_CONTENT_BYTES = 256 * 1024;
 
 const respondError = (error: PageError) => {
@@ -139,19 +139,31 @@ export const savePageContentHandler: Handler = async (c) => {
 };
 
 export const deletePageHandler: Handler = async (c) => {
-	const result = await deletePage(membershipFrom(c), pageIdFrom(c));
+	const result = await deletePage(
+		membershipFrom(c),
+		sessionFrom(c).user,
+		pageIdFrom(c),
+	);
 	return result.ok ? ok(null, 200, "Page deleted") : respondError(result.error);
 };
 
 export const publishPageHandler: Handler = async (c) => {
-	const result = await publishPage(membershipFrom(c), pageIdFrom(c));
+	const result = await publishPage(
+		membershipFrom(c),
+		sessionFrom(c).user,
+		pageIdFrom(c),
+	);
 	return result.ok
 		? ok(result.data, 200, "Page published")
 		: respondError(result.error);
 };
 
 export const unpublishPageHandler: Handler = async (c) => {
-	const result = await unpublishPage(membershipFrom(c), pageIdFrom(c));
+	const result = await unpublishPage(
+		membershipFrom(c),
+		sessionFrom(c).user,
+		pageIdFrom(c),
+	);
 	return result.ok
 		? ok(result.data, 200, "Page unpublished")
 		: respondError(result.error);

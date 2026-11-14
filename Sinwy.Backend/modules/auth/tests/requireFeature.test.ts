@@ -43,7 +43,7 @@ const seedMember = async () => {
 
 test("inactive org (no plan) → 402 with the upgrade code", async () => {
 	const { params, cookie } = await seedMember();
-	const res = await run("page-builder", { params, cookie });
+	const res = await run("advanced-widgets", { params, cookie });
 	expect(res.status).toBe(402);
 	expect(((await res.json()) as { code: number }).code).toBe(
 		API_ERROR_CODES.PLAN_UPGRADE_REQUIRED,
@@ -54,21 +54,21 @@ test("inactive org (no plan) → 402 with the upgrade code", async () => {
 test("plan without the feature → 402", async () => {
 	const { organizationId, params, cookie } = await seedMember();
 	await activateOrganization(organizationId, "starter");
-	expect((await run("page-builder", { params, cookie })).status).toBe(402);
+	expect((await run("advanced-widgets", { params, cookie })).status).toBe(402);
 	expect(nextCalls).toBe(0);
 });
 
 test("org holding a slot while its owner has no plan → 402", async () => {
 	const { organizationId, params, cookie } = await seedMember();
 	await activateOrganization(organizationId, null);
-	expect((await run("page-builder", { params, cookie })).status).toBe(402);
+	expect((await run("advanced-widgets", { params, cookie })).status).toBe(402);
 	expect(nextCalls).toBe(0);
 });
 
 test("plan with the feature → next", async () => {
 	const { organizationId, params, cookie } = await seedMember();
 	await activateOrganization(organizationId, "professional");
-	expect((await run("page-builder", { params, cookie })).status).toBe(200);
+	expect((await run("advanced-widgets", { params, cookie })).status).toBe(200);
 	expect(nextCalls).toBe(1);
 });
 
@@ -76,7 +76,10 @@ test("non-member → 404", async () => {
 	const organizationId = await insertOrganization("Acme");
 	await activateOrganization(organizationId, "enterprise");
 	const { cookie } = await createUserWithSession();
-	const res = await run("page-builder", { params: { organizationId }, cookie });
+	const res = await run("advanced-widgets", {
+		params: { organizationId },
+		cookie,
+	});
 	expect(res.status).toBe(404);
 });
 
@@ -91,7 +94,7 @@ test("stacks after requirePermission: role first, then plan", async () => {
 		const ctx = fakeCtx({ params, cookie });
 		return requireAuth(ctx, () =>
 			requirePermission("pages:write")(ctx, () =>
-				requireFeature("page-builder")(ctx, next),
+				requireFeature("advanced-widgets")(ctx, next),
 			),
 		);
 	};

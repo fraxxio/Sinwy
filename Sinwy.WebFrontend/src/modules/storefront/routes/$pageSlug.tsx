@@ -5,6 +5,7 @@ import { publicPageQuery } from "#/modules/storefront/lib/storefront-queries";
 import { useTrackEvent } from "#/modules/storefront/lib/track";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageRenderer } from "#/shared/components/page-content/PageRenderer";
+import { brandAttributes } from "#/shared/lib/branding";
 
 export const Route = createFileRoute("/$organizationSlug/$pageSlug")({
 	loader: async ({ params, context }) => {
@@ -47,7 +48,10 @@ function PublicPage() {
 	if (!page) return <PageUnavailable />;
 
 	return (
-		<article className="mx-auto w-full max-w-3xl space-y-8">
+		<article
+			{...brandAttributes(page.organization.branding)}
+			className="mx-auto w-full max-w-3xl space-y-8"
+		>
 			<Link
 				to="/$organizationSlug/book"
 				params={{ organizationSlug: page.organization.slug }}

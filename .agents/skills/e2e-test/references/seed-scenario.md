@@ -11,7 +11,7 @@ This creates fresh users and an org through the backend's HTTP API, the way the 
 | `user` | one verified user with no org (start here to test org creation in the browser) |
 | `owner-with-org` | verified owner with no plan, org `inactive` without a slot, no onboarding (the state right after `/organizations/new`) |
 | `subscribed-org` | as above, then a simulated Starter `subscription.active` for the owner, the org activated on its slot, profile filled in and onboarding complete |
-| `pro-org` | `subscribed-org` with the owner on Professional instead of Starter (5 pages, `page-builder`) |
+| `pro-org` | `subscribed-org` with the owner on Professional instead of Starter (5 pages, `advanced-widgets`) |
 | `org-with-staff` | `subscribed-org` plus `--staff` verified staff members (default 1); Starter seats 3, so `--staff 2` at most |
 | `bookable-org` | `subscribed-org` in `Europe/Vilnius` with Mon–Sun 09:00–17:00 hours, an auto-confirmed "Haircut" (30 min, €25) and a "Colouring" that needs approval (90 min, €80); `organization` adds `timezone`, `hours` and `services` (ids, prices, `requiresApproval`) |
 

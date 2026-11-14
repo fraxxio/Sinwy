@@ -1,4 +1,13 @@
 export {
+	type ActivityActor,
+	purgeActivityJob,
+	recordActivity,
+} from "./activity";
+export {
+	listEventMembers,
+	listNotificationRecipients,
+} from "./notificationPreferences";
+export {
 	createPurgeOrganizationsJob,
 	purgeScheduledOrganizations,
 } from "./purge";
@@ -8,6 +17,7 @@ export {
 	completeOrganizationOnboarding,
 	countHeldSlots,
 	createOrganization,
+	deleteStoredLogo,
 	findPublicOrganization,
 	findPublicOrganizationPlan,
 	getInvitationOrganizationId,
@@ -21,10 +31,10 @@ export {
 	getSeatUsage,
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
+	getUserName,
 	isOrganizationPublic,
 	isScheduledForDeletion,
 	isSuspended,
-	listOrganizationManagerEmails,
 	listOrganizations,
 	listOwnedOrganizationIds,
 	listSoleOwnedOrganizations,
@@ -35,7 +45,6 @@ export {
 	type PublicOrganization,
 	saveOrganizationProfile,
 	scheduleOwnedOrganizationsForDeletion,
-	setOrganizationTimezone,
 	withdrawInvitationOverCap,
 } from "./service";
 export {

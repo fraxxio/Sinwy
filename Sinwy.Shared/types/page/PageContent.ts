@@ -1,108 +1,114 @@
 import { z } from "zod";
 import type { Feature } from "../plan";
 
-export type BlockDefinition = {
+export type WidgetDefinition = {
 	label: string;
-	/** Saving a new block of this type needs the feature; existing ones stay editable. */
+	/** Saving a new widget of this type needs the feature; existing ones stay editable. */
 	requires?: Feature;
 };
 
-const blockTypes = {
+const widgetTypes = {
 	heading: { label: "Heading" },
 	text: { label: "Text" },
 	image: { label: "Image" },
 	button: { label: "Button" },
-	gallery: { label: "Gallery", requires: "page-builder" },
-	testimonials: { label: "Testimonials", requires: "page-builder" },
-} satisfies Record<string, BlockDefinition>;
+	gallery: { label: "Gallery", requires: "advanced-widgets" },
+	testimonials: { label: "Testimonials", requires: "advanced-widgets" },
+} satisfies Record<string, WidgetDefinition>;
 
-export type BlockType = keyof typeof blockTypes;
+export type WidgetType = keyof typeof widgetTypes;
 
-export const BLOCK_TYPES: Record<BlockType, BlockDefinition> = blockTypes;
+export const WIDGET_TYPES: Record<WidgetType, WidgetDefinition> = widgetTypes;
 
-const blockTypeNames = Object.keys(blockTypes) as [BlockType, ...BlockType[]];
+const widgetTypeNames = Object.keys(widgetTypes) as [
+	WidgetType,
+	...WidgetType[],
+];
 
 export const PAGE_CONTENT_LIMITS = {
 	maxDepth: 5,
-	maxBlocks: 200,
-	blockId: 64,
+	maxWidgets: 200,
+	widgetId: 64,
 } as const;
 
 /** Props belong to the page builder, so only their shape is checked here. */
-export type PageBlock = {
+export type PageWidget = {
 	id: string;
-	type: BlockType;
+	type: WidgetType;
 	props: Record<string, unknown>;
-	children?: PageBlock[];
+	children?: PageWidget[];
 };
 
 export type PageContent = {
 	schemaVersion: 1;
-	blocks: PageBlock[];
+	widgets: PageWidget[];
 };
 
-const blockList = (schema: z.ZodType<PageBlock>) =>
+const widgetList = (schema: z.ZodType<PageWidget>) =>
 	z
 		.array(schema)
 		.max(
-			PAGE_CONTENT_LIMITS.maxBlocks,
-			`A page holds at most ${PAGE_CONTENT_LIMITS.maxBlocks} blocks`,
+			PAGE_CONTENT_LIMITS.maxWidgets,
+			`A page holds at most ${PAGE_CONTENT_LIMITS.maxWidgets} widgets`,
 		);
 
 // One schema per nesting level, so an over-deep tree is refused without recursing into it.
-const blockAt = (depth: number): z.ZodType<PageBlock> =>
+const widgetAt = (depth: number): z.ZodType<PageWidget> =>
 	z.object({
-		id: z.string().min(1).max(PAGE_CONTENT_LIMITS.blockId),
-		type: z.enum(blockTypeNames, "Unknown block type"),
+		id: z.string().min(1).max(PAGE_CONTENT_LIMITS.widgetId),
+		type: z.enum(widgetTypeNames, "Unknown widget type"),
 		props: z.record(z.string(), z.unknown()),
 		children:
 			depth < PAGE_CONTENT_LIMITS.maxDepth
-				? blockList(blockAt(depth + 1)).optional()
+				? widgetList(widgetAt(depth + 1)).optional()
 				: z
 						.array(z.unknown())
 						.max(
 							0,
-							`Blocks nest at most ${PAGE_CONTENT_LIMITS.maxDepth} levels deep`,
+							`Widgets nest at most ${PAGE_CONTENT_LIMITS.maxDepth} levels deep`,
 						)
 						.optional(),
-	}) as z.ZodType<PageBlock>;
+	}) as z.ZodType<PageWidget>;
 
-const eachBlock = (blocks: PageBlock[], visit: (block: PageBlock) => void) => {
-	for (const block of blocks) {
-		visit(block);
-		if (block.children) eachBlock(block.children, visit);
+const eachWidget = (
+	widgets: PageWidget[],
+	visit: (widget: PageWidget) => void,
+) => {
+	for (const widget of widgets) {
+		visit(widget);
+		if (widget.children) eachWidget(widget.children, visit);
 	}
 };
 
-/** Every block type a content tree uses, nested ones included. */
-export const blockTypesIn = (content: PageContent): Set<BlockType> => {
-	const types = new Set<BlockType>();
-	eachBlock(content.blocks, (block) => types.add(block.type));
+/** Every widget type a content tree uses, nested ones included. */
+export const widgetTypesIn = (content: PageContent): Set<WidgetType> => {
+	const types = new Set<WidgetType>();
+	eachWidget(content.widgets, (widget) => types.add(widget.type));
 	return types;
 };
 
 export const pageContentSchema = z
-	.object({
+	.strictObject({
 		schemaVersion: z.literal(1),
-		blocks: blockList(blockAt(1)),
+		widgets: widgetList(widgetAt(1)),
 	})
 	.superRefine((content, ctx) => {
 		const ids = new Set<string>();
 		let count = 0;
-		eachBlock(content.blocks, (block) => {
+		eachWidget(content.widgets, (widget) => {
 			count++;
-			if (ids.has(block.id))
+			if (ids.has(widget.id))
 				ctx.addIssue({
 					code: "custom",
-					path: ["blocks"],
-					message: `Block id "${block.id}" is used twice`,
+					path: ["widgets"],
+					message: `Widget id "${widget.id}" is used twice`,
 				});
-			ids.add(block.id);
+			ids.add(widget.id);
 		});
-		if (count > PAGE_CONTENT_LIMITS.maxBlocks)
+		if (count > PAGE_CONTENT_LIMITS.maxWidgets)
 			ctx.addIssue({
 				code: "custom",
-				path: ["blocks"],
-				message: `A page holds at most ${PAGE_CONTENT_LIMITS.maxBlocks} blocks`,
+				path: ["widgets"],
+				message: `A page holds at most ${PAGE_CONTENT_LIMITS.maxWidgets} widgets`,
 			});
 	}) satisfies z.ZodType<PageContent>;

@@ -50,7 +50,7 @@ const plans = [
 		],
 		includes: [
 			"Everything in Starter, plus:",
-			"Full page builder customization",
+			"Advanced widgets",
 			"Custom domain",
 			"Featured placement in discovery",
 		],

@@ -1,7 +1,14 @@
 import { type EmailTemplate, emailClient } from "@backend/infrastructure/email";
+import { formatLocalTime } from "@backend/lib/localDate";
 import appConfig from "@config";
 import { createLogger } from "@logger";
-import { listOrganizationManagerEmails } from "@organizationsModule";
+import { notifyOrganization, notifyUser } from "@notificationsModule";
+import { listNotificationRecipients } from "@organizationsModule";
+import {
+	ORGANIZATION_NOTIFICATION_EVENTS,
+	type OrganizationNotificationContent,
+	type PersonalNotificationContent,
+} from "@sinwy/shared";
 import {
 	BookingCancelledByCustomerEmail,
 	BookingCancelledEmail,
@@ -11,7 +18,6 @@ import {
 	BookingRequestDeclinedEmail,
 	BookingRequestReceivedEmail,
 	CancellationConfirmedEmail,
-	formatBookingTime,
 	NewBookingEmail,
 	NewBookingRequestEmail,
 } from "./emails/bookingEmails";
@@ -24,39 +30,82 @@ import {
 const logger = createLogger("bookings");
 
 type Template = EmailTemplate<BookingEmailProps>;
-type Emails = { customer?: Template; organization?: Template };
+type OrganizationType = Extract<
+	OrganizationNotificationContent["type"],
+	`booking.${string}`
+>;
+type PersonalType = Extract<
+	PersonalNotificationContent["type"],
+	`booking.${string}`
+>;
+/** Each side's email, and the in-app notification it comes with, if any. */
+type Notices = {
+	customer?: { template: Template; notification?: PersonalType };
+	organization?: { template: Template; notification: OrganizationType };
+};
 
-/** The email matrix: who hears about each event. */
-const emailsFor = (
+const confirmed = {
+	template: BookingConfirmedEmail,
+	notification: "booking.confirmed",
+} as const;
+const cancelledByCustomer = {
+	template: BookingCancelledByCustomerEmail,
+	notification: "booking.cancelled_by_customer",
+} as const;
+
+/** The notice matrix: who hears about each event, by email and in the app. */
+const noticesFor = (
 	event: BookingEventRow,
 	context: BookingEmailContext,
-): Emails => {
+): Notices => {
 	switch (event.type) {
 		case "created":
-			if (event.actorType !== "customer")
-				return { customer: BookingConfirmedEmail };
+			if (event.actorType !== "customer") return { customer: confirmed };
 			return event.toStatus === "pending"
 				? {
-						customer: BookingRequestReceivedEmail,
-						organization: NewBookingRequestEmail,
+						customer: { template: BookingRequestReceivedEmail },
+						organization: {
+							template: NewBookingRequestEmail,
+							notification: "booking.requested",
+						},
 					}
-				: { customer: BookingConfirmedEmail, organization: NewBookingEmail };
+				: {
+						customer: confirmed,
+						organization: {
+							template: NewBookingEmail,
+							notification: "booking.new",
+						},
+					};
 		case "status_changed":
-			if (event.toStatus === "confirmed")
-				return { customer: BookingConfirmedEmail };
+			if (event.toStatus === "confirmed") return { customer: confirmed };
 			if (event.toStatus !== "cancelled") return {};
 			if (context.booking.cancelledBy === "customer")
 				return event.payload["accountDeleted"]
-					? { organization: BookingCancelledByCustomerEmail }
+					? { organization: cancelledByCustomer }
 					: {
-							customer: CancellationConfirmedEmail,
-							organization: BookingCancelledByCustomerEmail,
+							customer: { template: CancellationConfirmedEmail },
+							organization: cancelledByCustomer,
 						};
 			return event.fromStatus === "pending" && event.actorType === "member"
-				? { customer: BookingRequestDeclinedEmail }
-				: { customer: BookingCancelledEmail };
+				? {
+						customer: {
+							template: BookingRequestDeclinedEmail,
+							notification: "booking.declined",
+						},
+					}
+				: {
+						customer: {
+							template: BookingCancelledEmail,
+							notification: "booking.cancelled",
+						},
+					};
 		case "rescheduled":
-			return { customer: BookingMovedEmail };
+			return {
+				customer: {
+					template: BookingMovedEmail,
+					notification: "booking.moved",
+				},
+			};
 		default:
 			return {};
 	}
@@ -82,12 +131,12 @@ const send = async (
 	}
 };
 
-/** Sends the event's emails from an already loaded context, so callers that delete the booking can load it first. */
+/** Sends the event's emails and writes its notifications from an already loaded context, so callers that delete the booking can load it first. */
 export const sendBookingEmails = async (
 	event: BookingEventRow,
 	context: BookingEmailContext,
 ) => {
-	const emails = emailsFor(event, context);
+	const notices = noticesFor(event, context);
 	const { booking, organization } = context;
 	const { timezone } = organization;
 	const { previousStartsAt } = event.payload;
@@ -96,31 +145,59 @@ export const sendBookingEmails = async (
 		organizationName: organization.name,
 		serviceName: context.serviceName,
 		customerName: booking.customerName,
-		when: formatBookingTime(booking.startsAt, timezone),
-		previousWhen: previous ? formatBookingTime(previous, timezone) : null,
+		when: formatLocalTime(booking.startsAt, timezone),
+		previousWhen: previous ? formatLocalTime(previous, timezone) : null,
 		reason: booking.cancellationReason,
 	};
 
-	if (emails.customer && booking.customerEmail)
-		await send(booking.customerEmail, emails.customer, {
-			...props,
-			// manual bookings have no account to open the booking in, and a
-			// system cancel closes the organization, which takes the booking with it
-			bookingUrl:
-				booking.customerUserId && event.actorType !== "system"
-					? url(`/account/bookings/${booking.id}`)
-					: null,
-		});
-	if (emails.organization) {
-		const template = emails.organization;
-		const bookingUrl = url(
-			`/dashboard/${organization.slug}/bookings/${booking.id}`,
-		);
-		const managers = await listOrganizationManagerEmails(
+	const time = {
+		serviceName: context.serviceName,
+		startsAt: booking.startsAt.toISOString(),
+		timezone,
+	};
+
+	if (notices.customer) {
+		const { template, notification } = notices.customer;
+		// manual bookings have no account to open the booking in, and a
+		// system cancel closes the organization, which takes the booking with it
+		const bookingPath =
+			booking.customerUserId && event.actorType !== "system"
+				? `/account/bookings/${booking.id}`
+				: null;
+		if (booking.customerEmail)
+			await send(booking.customerEmail, template, {
+				...props,
+				bookingUrl: bookingPath && url(bookingPath),
+			});
+		if (notification && booking.customerUserId)
+			await notifyUser(
+				booking.customerUserId,
+				{
+					type: notification,
+					payload: { ...time, organizationName: organization.name },
+				},
+				bookingPath,
+			);
+	}
+	if (notices.organization) {
+		const { template, notification } = notices.organization;
+		const bookingPath = `/dashboard/${organization.slug}/bookings/${booking.id}`;
+		const recipients = await listNotificationRecipients(
 			booking.organizationId,
+			ORGANIZATION_NOTIFICATION_EVENTS[notification],
 		);
 		await Promise.all(
-			managers.map((to) => send(to, template, { ...props, bookingUrl })),
+			recipients.map((to) =>
+				send(to, template, { ...props, bookingUrl: url(bookingPath) }),
+			),
+		);
+		await notifyOrganization(
+			booking.organizationId,
+			{
+				type: notification,
+				payload: { ...time, customerName: booking.customerName },
+			},
+			bookingPath,
 		);
 	}
 };

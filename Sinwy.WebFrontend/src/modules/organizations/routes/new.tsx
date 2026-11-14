@@ -3,6 +3,7 @@ import {
 	ORGANIZATION_INDUSTRIES,
 	ORGANIZATION_INDUSTRY_OPTIONS,
 	type OrganizationDto,
+	organizationNameSchema,
 } from "@sinwy/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -75,11 +76,7 @@ function NewOrganizationPending() {
 }
 
 const createOrgSchema = z.object({
-	name: z
-		.string()
-		.trim()
-		.min(1, "Name is required")
-		.max(100, "Max 100 characters"),
+	name: organizationNameSchema,
 	industry: z
 		.string()
 		.min(1, "Industry is required")

@@ -1,12 +1,11 @@
 import type { AvailabilityInput } from "@sinwy/shared";
 import { type AnyFieldApi, revalidateLogic } from "@tanstack/react-form";
 import { CopyIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
 	type BusinessHoursFormValues,
 	businessHoursFormSchema,
 	copyMondayToWeekdays,
-	timeZoneOptions,
 	toAvailabilityInput,
 	WEEKDAYS,
 } from "#/modules/org-dashboard/lib/business-hours";
@@ -50,17 +49,16 @@ function TimeInput({ field, label }: { field: AnyFieldApi; label: string }) {
 export function BusinessHoursForm({
 	values,
 	readOnly,
+	timezoneNote,
 	onSubmit,
 }: {
 	values: BusinessHoursFormValues;
 	readOnly: boolean;
+	/** Which zone the times are in; the zone itself is changed in Settings. */
+	timezoneNote: ReactNode;
 	onSubmit: (input: AvailabilityInput) => Promise<string | null>;
 }) {
 	const [serverError, setServerError] = useState<string | null>(null);
-	const timeZones = useMemo(
-		() => timeZoneOptions(values.timezone),
-		[values.timezone],
-	);
 
 	const form = useAppForm({
 		defaultValues: values,
@@ -82,23 +80,6 @@ export function BusinessHoursForm({
 			}}
 		>
 			<fieldset disabled={readOnly} className="contents divide-y">
-				<SettingsSection
-					id="timezone"
-					title="Timezone"
-					description="Your hours and closures follow this clock."
-				>
-					<form.AppField name="timezone">
-						{(field) => (
-							<field.ComboboxField
-								label="Timezone"
-								options={timeZones}
-								placeholder="Search timezones"
-								disabled={readOnly}
-							/>
-						)}
-					</form.AppField>
-				</SettingsSection>
-
 				<SettingsSection
 					id="weekly"
 					title="Weekly hours"
@@ -122,6 +103,7 @@ export function BusinessHoursForm({
 						)
 					}
 				>
+					<p className="text-muted-foreground text-sm">{timezoneNote}</p>
 					{!hasHours && (
 						<p className="rounded-md border border-dashed px-4 py-3 text-muted-foreground text-sm">
 							Every day is closed, so customers can't book yet.

@@ -7,16 +7,26 @@ import {
 import type { IApp } from "@backend/lib/app/types";
 import {
 	activateOrganizationHandler,
+	changeOrganizationBrandingHandler,
+	changeOrganizationTimezoneHandler,
 	completeOrganizationOnboardingHandler,
 	createOrganizationHandler,
 	deactivateOrganizationHandler,
 	getInvitationPreviewHandler,
+	getOrganizationGeneralHandler,
 	getOrganizationOnboardingHandler,
+	listActivityHandler,
+	listNotificationPreferencesHandler,
 	listOrganizationsHandler,
+	removeOrganizationLogoHandler,
+	renameOrganizationHandler,
+	saveNotificationPreferencesHandler,
 	saveOrganizationProfileHandler,
+	uploadOrganizationLogoHandler,
 } from "./controller";
 
 export const registerOrganizationRoutes = (app: IApp) => {
+	const manageSettings = [requireAuth, requirePermission("settings:manage")];
 	app.route("/api/organizations", createOrganizationHandler, {
 		method: "POST",
 		routeMiddlewares: [requireAuth],
@@ -39,6 +49,32 @@ export const registerOrganizationRoutes = (app: IApp) => {
 		method: "PUT",
 		routeMiddlewares: [requireAuth, requirePermission("settings:manage")],
 	});
+	app.route(organizationPath("general"), getOrganizationGeneralHandler, {
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("name"), renameOrganizationHandler, {
+		method: "PUT",
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("timezone"), changeOrganizationTimezoneHandler, {
+		method: "PUT",
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("branding"), changeOrganizationBrandingHandler, {
+		method: "PUT",
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("logo"), uploadOrganizationLogoHandler, {
+		method: "POST",
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("logo"), removeOrganizationLogoHandler, {
+		method: "DELETE",
+		routeMiddlewares: manageSettings,
+	});
+	app.route(organizationPath("activity"), listActivityHandler, {
+		routeMiddlewares: [requireAuth, requirePermission("settings:manage")],
+	});
 	// owner only: the slot is the owner's, so the repository checks ownership
 	app.route(
 		"/api/account/organizations/:organizationId/activate",
@@ -49,6 +85,17 @@ export const registerOrganizationRoutes = (app: IApp) => {
 		"/api/account/organizations/:organizationId/deactivate",
 		deactivateOrganizationHandler,
 		{ method: "POST", routeMiddlewares: [requireAuth] },
+	);
+	// the session user's own memberships only
+	app.route(
+		"/api/account/notification-preferences",
+		listNotificationPreferencesHandler,
+		{ routeMiddlewares: [requireAuth] },
+	);
+	app.route(
+		"/api/account/organizations/:organizationId/notification-preferences",
+		saveNotificationPreferencesHandler,
+		{ method: "PUT", routeMiddlewares: [requireAuth] },
 	);
 	app.route(
 		"/api/public/invitations/:invitationId",

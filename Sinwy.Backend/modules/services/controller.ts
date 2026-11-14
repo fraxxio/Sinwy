@@ -1,4 +1,4 @@
-import { membershipFrom } from "@authModule";
+import { membershipFrom, sessionFrom } from "@authModule";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler, IReqContext } from "@backend/lib/app/types";
 import {
@@ -60,7 +60,11 @@ export const createServiceHandler: Handler = async (c) => {
 	const body = await parseBody(c, createServiceBody);
 	if (!body.ok) return body.response;
 
-	const result = await createService(membershipFrom(c), body.data);
+	const result = await createService(
+		membershipFrom(c),
+		sessionFrom(c).user,
+		body.data,
+	);
 	return result.ok
 		? ok(result.data, 201, "Service created")
 		: respondError(result.error);
@@ -72,6 +76,7 @@ export const updateServiceHandler: Handler = async (c) => {
 
 	const result = await updateService(
 		membershipFrom(c),
+		sessionFrom(c).user,
 		serviceIdFrom(c),
 		body.data,
 	);
@@ -88,7 +93,11 @@ export const duplicateServiceHandler: Handler = async (c) => {
 };
 
 export const archiveServiceHandler: Handler = async (c) => {
-	const result = await archiveService(membershipFrom(c), serviceIdFrom(c));
+	const result = await archiveService(
+		membershipFrom(c),
+		sessionFrom(c).user,
+		serviceIdFrom(c),
+	);
 	return result.ok
 		? ok(null, 200, "Service archived")
 		: respondError(result.error);

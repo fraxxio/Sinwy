@@ -40,3 +40,11 @@ export const datesIn = ({ from, to }: { from: string; to: string }) => {
 		dates.push(date);
 	return dates;
 };
+
+/** "Sunday 1 March 2099 at 10:00 (Europe/Vilnius)" */
+export const formatLocalTime = (instant: Date, timezone: string) =>
+	`${new Intl.DateTimeFormat("en-GB", {
+		timeZone: timezone,
+		dateStyle: "full",
+		timeStyle: "short",
+	}).format(instant)} (${timezone})`;

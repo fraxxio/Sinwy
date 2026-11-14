@@ -189,10 +189,13 @@ const setUpBookings = async (
 	cookie: string,
 ) => {
 	const path = (rest: string) => `/api/organizations/${organizationId}/${rest}`;
+	await callApp(baseUrl, "PUT", path("timezone"), {
+		cookie,
+		body: { timezone: BOOKABLE_TIMEZONE },
+	});
 	await callApp(baseUrl, "PUT", path("availability"), {
 		cookie,
 		body: {
-			timezone: BOOKABLE_TIMEZONE,
 			weekly: [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
 				weekday,
 				start: "09:00",

@@ -1,4 +1,4 @@
-import type { PageBlock, PageContent } from "@sinwy/shared";
+import type { PageContent, PageWidget } from "@sinwy/shared";
 import type { ReactNode } from "react";
 import { Img } from "#/shared/components/Img";
 import { Button } from "#/shared/components/ui/button";
@@ -39,15 +39,15 @@ const HEADINGS = {
 	3: "text-xl font-heading font-medium",
 } as const;
 
-function Block({
-	block,
+function Widget({
+	widget,
 	organizationSlug,
 }: {
-	block: PageBlock;
+	widget: PageWidget;
 	organizationSlug: string;
 }): ReactNode {
-	const { props } = block;
-	switch (block.type) {
+	const { props } = widget;
+	switch (widget.type) {
 		case "heading": {
 			const text = str(props, "text");
 			if (!text) return null;
@@ -128,26 +128,29 @@ function Block({
 	}
 }
 
-function Blocks({
-	blocks,
+function Widgets({
+	widgets,
 	organizationSlug,
 }: {
-	blocks: PageBlock[];
+	widgets: PageWidget[];
 	organizationSlug: string;
 }) {
-	return blocks.map((block) => (
-		<div key={block.id} data-block={block.type} className="contents">
-			<Block block={block} organizationSlug={organizationSlug} />
-			{block.children && (
+	return widgets.map((widget) => (
+		<div key={widget.id} data-widget={widget.type} className="contents">
+			<Widget widget={widget} organizationSlug={organizationSlug} />
+			{widget.children && (
 				<div className="grid gap-4">
-					<Blocks blocks={block.children} organizationSlug={organizationSlug} />
+					<Widgets
+						widgets={widget.children}
+						organizationSlug={organizationSlug}
+					/>
 				</div>
 			)}
 		</div>
 	));
 }
 
-/** The MVP rendering of a content tree; unknown block types are skipped. */
+/** The MVP rendering of a content tree; unknown widget types are skipped. */
 export function PageRenderer({
 	content,
 	organizationSlug,
@@ -157,7 +160,7 @@ export function PageRenderer({
 }) {
 	return (
 		<article className="grid gap-6">
-			<Blocks blocks={content.blocks} organizationSlug={organizationSlug} />
+			<Widgets widgets={content.widgets} organizationSlug={organizationSlug} />
 		</article>
 	);
 }

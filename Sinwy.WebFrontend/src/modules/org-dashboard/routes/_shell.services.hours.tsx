@@ -1,6 +1,6 @@
 import { type AvailabilityInput, hasPermission } from "@sinwy/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { BusinessHoursForm } from "#/modules/org-dashboard/components/BusinessHoursForm";
 import { ClosuresList } from "#/modules/org-dashboard/components/ClosuresList";
 import { toBusinessHoursFormValues } from "#/modules/org-dashboard/lib/business-hours";
@@ -26,6 +26,7 @@ export const Route = createFileRoute(
 function BusinessHoursPage() {
 	const { organization, member } = Route.useRouteContext();
 	const canWrite = hasPermission(member.roles, "services:write");
+	const canChangeZone = hasPermission(member.roles, "settings:manage");
 	const queryClient = useQueryClient();
 	const unwrap = useUnwrapWrite();
 	const availability = useQuery(availabilityQuery(organization.id));
@@ -77,6 +78,27 @@ function BusinessHoursPage() {
 				<BusinessHoursForm
 					values={toBusinessHoursFormValues(availability.data)}
 					readOnly={!canWrite}
+					timezoneNote={
+						<>
+							Times are in{" "}
+							<span className="font-medium text-foreground">
+								{availability.data.timezone.replaceAll("_", " ")}
+							</span>
+							{canChangeZone && (
+								<>
+									{" · "}
+									<Link
+										to="/dashboard/$organizationSlug/settings"
+										params={{ organizationSlug: organization.slug }}
+										hash="timezone"
+										className="underline underline-offset-4 hover:text-foreground"
+									>
+										Change in Settings
+									</Link>
+								</>
+							)}
+						</>
+					}
 					onSubmit={save}
 				/>
 				<ClosuresList

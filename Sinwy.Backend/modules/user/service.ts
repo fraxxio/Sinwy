@@ -4,11 +4,13 @@ import {
 	keyFromFileUrl,
 	storageClient,
 } from "@backend/infrastructure/storage";
+import { imageExtension, validateImage } from "@backend/lib/image";
 import {
 	countUpcomingCustomerBookings,
 	countUpcomingOrganizationBookings,
 } from "@bookingsModule";
 import {
+	getMembershipAccess,
 	getUnfinishedOnboardingOrganizationId,
 	getUnpaidOwnedOrganizationId,
 	listSoleOwnedOrganizations,
@@ -17,10 +19,12 @@ import {
 	type AccountDeletionPreviewDto,
 	type AvatarDto,
 	OnboardingStep,
+	type OrganizationDeletionPreviewDto,
 	type PostLoginFlags,
+	parseMemberRoles,
 	type SetPasswordInput,
 } from "@sinwy/shared";
-import { avatarExtension, validateAvatar } from "./avatar";
+import { isTransferAwaitingCheckout } from "@transfersModule";
 
 type SessionUser = (typeof auth.$Infer.Session)["user"];
 
@@ -65,8 +69,8 @@ export const uploadAvatar = async (
 	user: SessionUser,
 	file: File,
 ): Promise<AvatarDto> => {
-	const { bytes, type } = await validateAvatar(file);
-	const key = `avatars/${user.id}/${crypto.randomUUID()}.${avatarExtension(type)}`;
+	const { bytes, type } = await validateImage(file);
+	const key = `avatars/${user.id}/${crypto.randomUUID()}.${imageExtension(type)}`;
 	await storageClient.put(key, bytes, type);
 	const image = fileUrl(key);
 	await auth.api.updateUser({ body: { image }, headers });
@@ -93,5 +97,28 @@ export const getAccountDeletionPreview = async (
 			upcomingBookings: upcoming.get(org.id) ?? 0,
 		})),
 		upcomingBookings: ownUpcoming,
+	};
+};
+
+/** Null unless the user owns the organization and it isn't scheduled for deletion. */
+export const getOrganizationDeletionPreview = async (
+	userId: string,
+	organizationId: string,
+): Promise<OrganizationDeletionPreviewDto | null> => {
+	const access = await getMembershipAccess(userId, { id: organizationId });
+	if (
+		!access ||
+		access.deletionScheduledAt ||
+		!parseMemberRoles(access.role).includes("owner")
+	)
+		return null;
+	const [upcoming, transferAwaitingCheckout] = await Promise.all([
+		countUpcomingOrganizationBookings([organizationId]),
+		isTransferAwaitingCheckout(organizationId),
+	]);
+	return {
+		upcomingBookings: upcoming.get(organizationId) ?? 0,
+		transferAwaitingCheckout,
+		holdsSlot: access.slotHeldAt !== null,
 	};
 };

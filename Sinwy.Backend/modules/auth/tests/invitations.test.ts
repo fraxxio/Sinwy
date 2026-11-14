@@ -9,6 +9,7 @@ import {
 	joinOrganization,
 } from "@backend/test/helpers";
 import db from "@db";
+import { notification } from "@db/schema/notificationSchema";
 import {
 	invitation,
 	member,
@@ -17,7 +18,7 @@ import {
 import { user } from "@db/schema/userSchema";
 import { AUTH_ERROR_CODES } from "@sinwy/shared";
 import type { Server } from "bun";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { registerAuthRoutes } from "../routes";
 
 let server: Server<never>;
@@ -105,6 +106,37 @@ test("an invite sends one email to the invitee with the invite link", async () =
 	expect(sent).toHaveLength(1);
 	expect(sent[0]?.email.html).toContain(`/invite/${id}"`);
 	expect(sent[0]?.email.html).toContain("as admin");
+});
+
+test("an invite notifies an existing account in the app, until it's answered or withdrawn", async () => {
+	const unreadInvitationId = async ({ userId }: { userId: string }) => {
+		const rows = await db
+			.select({ link: notification.link })
+			.from(notification)
+			.where(
+				and(
+					eq(notification.userId, userId),
+					eq(notification.type, "invitation.received"),
+					isNull(notification.readAt),
+				),
+			);
+		return rows[0]?.link?.replace("/invite/", "") ?? null;
+	};
+	const answer = async (
+		as: { userId: string; cookie: string },
+		path: string,
+	) => {
+		expect((await invite(`${as.userId}@test.dev`)).status).toBe(200);
+		const id = await unreadInvitationId(as);
+		expect(id).not.toBeNull();
+		const cookie = path === "cancel-invitation" ? ownerCookie : as.cookie;
+		expect((await post(path, cookie, { invitationId: id })).status).toBe(200);
+		expect(await unreadInvitationId(as)).toBeNull();
+	};
+
+	await answer(await createUserWithSession(), "reject-invitation");
+	await answer(await createUserWithSession(), "cancel-invitation");
+	await answer(await createUserWithSession(), "accept-invitation");
 });
 
 test("an invitation lasts 7 days", async () => {
@@ -333,6 +365,21 @@ test("staff can't read the invitations or the member list", async () => {
 	expect(body.id).toBe(orgId);
 	expect(body.members).toEqual([]);
 	expect(body.invitations).toEqual([]);
+});
+
+test("staff can't read the invitations by naming an organization they manage", async () => {
+	await invite(freshAddress());
+	const staff = await addStaff();
+	const managedId = await insertOrganization("Managed Co");
+	await activateOrganization(managedId);
+	await joinOrganization(managedId, staff.userId, "admin");
+
+	const res = await get(
+		`list-invitations?organizationId=${orgId}&organizationSlug=${managedId}`,
+		staff.cookie,
+	);
+
+	expect(res.status).toBe(403);
 });
 
 test("an admin reads the invitations and the member list", async () => {

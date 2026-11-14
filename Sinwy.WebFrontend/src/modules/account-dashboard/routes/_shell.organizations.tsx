@@ -15,6 +15,7 @@ import {
 	runOrganizationSlotAction,
 	subscriptionQuery,
 } from "#/modules/account-dashboard/lib/billing-queries";
+import { DeleteOrganizationDialog } from "#/modules/organizations/components/DeleteOrganizationDialog";
 import { postLoginFlagsKey } from "#/modules/user/lib/usePostLoginFlags";
 import { ContentBox } from "#/shared/components/ContentBox";
 import { EmptyState } from "#/shared/components/EmptyState";
@@ -249,6 +250,20 @@ function OrganizationRow({
 				)}
 			</div>
 			<div className="flex shrink-0 items-center gap-2">
+				{organization.isOwner && !organization.deletesAt && (
+					<DeleteOrganizationDialog
+						organization={organization}
+						label="Delete"
+						trigger={
+							<Button
+								variant="ghost"
+								size="sm"
+								className="text-destructive"
+								disabled={slotAction.isPending}
+							/>
+						}
+					/>
+				)}
 				{open && organization.isOwner && (
 					<DeactivateButton
 						organization={organization}

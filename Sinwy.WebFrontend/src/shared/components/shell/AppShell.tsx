@@ -51,16 +51,19 @@ const readSidebarCookie = () =>
  *
  * `banner` is for state of the whole shell (e.g. an inactive organization),
  * not notifications: it stays pinned above the page body until the state ends.
+ * `actions` sit at the right end of the header (e.g. the notification bell).
  */
 export function AppShell({
 	sidebar,
 	rootCrumb,
 	banner,
+	actions,
 	children,
 }: {
 	sidebar: ReactNode;
 	rootCrumb: Crumb;
 	banner?: ReactNode;
+	actions?: ReactNode;
 	children: ReactNode;
 }) {
 	const matches = useMatches();
@@ -114,6 +117,9 @@ export function AppShell({
 							</BreadcrumbList>
 						</Breadcrumb>
 					</div>
+					{actions && (
+						<div className="ml-auto flex items-center gap-1">{actions}</div>
+					)}
 				</header>
 				{banner && (
 					<div

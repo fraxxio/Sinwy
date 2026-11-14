@@ -33,6 +33,7 @@ import { EmptyState } from "#/shared/components/EmptyState";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { authClient } from "#/shared/lib/auth/auth-client";
+import { brandAttributes } from "#/shared/lib/branding";
 import { addDaysToDate, localDateOf, todayIn } from "#/shared/lib/date";
 import { formatMinorUnits } from "#/shared/lib/money";
 
@@ -74,13 +75,25 @@ function BookPage() {
 		.filter(Boolean)
 		.join(", ");
 	return (
-		<div className="mx-auto w-full max-w-2xl space-y-8">
-			<header className="space-y-1">
-				<h1 className="font-semibold text-3xl">{organization.name}</h1>
-				{organization.tagline && (
-					<p className="text-muted-foreground">{organization.tagline}</p>
+		<div
+			{...brandAttributes(organization.branding)}
+			className="mx-auto w-full max-w-2xl space-y-8"
+		>
+			<header className="flex items-center gap-4">
+				{organization.logo && (
+					<img
+						src={organization.logo}
+						alt={`${organization.name} logo`}
+						className="size-16 shrink-0 rounded-xl object-cover"
+					/>
 				)}
-				{place && <p className="text-muted-foreground text-sm">{place}</p>}
+				<div className="space-y-1">
+					<h1 className="font-semibold text-3xl">{organization.name}</h1>
+					{organization.tagline && (
+						<p className="text-muted-foreground">{organization.tagline}</p>
+					)}
+					{place && <p className="text-muted-foreground text-sm">{place}</p>}
+				</div>
 			</header>
 			{booked ? (
 				<BookingSuccess

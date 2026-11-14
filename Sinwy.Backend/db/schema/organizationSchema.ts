@@ -1,8 +1,16 @@
+import { jsonb } from "@db/jsonb";
 import { oneOf } from "@db/oneOf";
 import { user } from "@db/schema/userSchema";
-import { ORGANIZATION_TRANSFER_STATUSES } from "@sinwy/shared";
+import {
+	type ActivityEvent,
+	BRAND_FONTS,
+	type BrandFont,
+	NOTIFICATION_EVENT_DEFAULTS,
+	ORGANIZATION_TRANSFER_STATUSES,
+} from "@sinwy/shared";
 import { relations, sql } from "drizzle-orm";
 import {
+	boolean,
 	check,
 	index,
 	pgTable,
@@ -26,10 +34,20 @@ export const organization = pgTable(
 		onboardingCompletedAt: timestamp("onboarding_completed_at"),
 		deletionScheduledAt: timestamp("deletion_scheduled_at"),
 		logo: text("logo"),
+		// null means Sinwy's default
+		brandColor: text("brand_color"),
+		brandFont: text("brand_font").$type<BrandFont>(),
 		createdAt: timestamp("created_at").notNull(),
 		metadata: text("metadata"),
 	},
-	(table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
+	(table) => [
+		uniqueIndex("organization_slug_uidx").on(table.slug),
+		check(
+			"organization_brand_color_check",
+			sql`${table.brandColor} ~ '^#[0-9a-f]{6}$'`,
+		),
+		check("organization_brand_font_check", oneOf("brand_font", BRAND_FONTS)),
+	],
 );
 
 export const organizationProfile = pgTable("organization_profile", {
@@ -68,6 +86,28 @@ export const member = pgTable(
 			.on(table.organizationId)
 			.where(sql`'owner' = ANY(string_to_array(${table.role}, ','))`),
 	],
+);
+
+/** A member's email choices; no row means the defaults. */
+export const memberNotificationPreference = pgTable(
+	"member_notification_preference",
+	{
+		memberId: text("member_id")
+			.primaryKey()
+			.references(() => member.id, { onDelete: "cascade" }),
+		emailBookingNew: boolean("email_booking_new")
+			.notNull()
+			.default(NOTIFICATION_EVENT_DEFAULTS["booking.new"]),
+		emailBookingCancelledByCustomer: boolean(
+			"email_booking_cancelled_by_customer",
+		)
+			.notNull()
+			.default(NOTIFICATION_EVENT_DEFAULTS["booking.cancelled_by_customer"]),
+		emailPaymentRecorded: boolean("email_payment_recorded")
+			.notNull()
+			.default(NOTIFICATION_EVENT_DEFAULTS["payment.recorded"]),
+		updatedAt: timestamp("updated_at").notNull().defaultNow(),
+	},
 );
 
 export const invitation = pgTable(
@@ -119,6 +159,36 @@ export const organizationTransfer = pgTable(
 			"organization_transfer_status_check",
 			oneOf("status", ORGANIZATION_TRANSFER_STATUSES),
 		),
+	],
+);
+
+export const organizationActivity = pgTable(
+	"organization_activity",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		actorUserId: text("actor_user_id").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		// a snapshot, so the entry outlives the account; null for Sinwy itself
+		actorName: text("actor_name"),
+		action: text("action").$type<ActivityEvent["action"]>().notNull(),
+		details: jsonb<ActivityEvent["details"]>("details").notNull(),
+		// set in JS, so the millisecond cursor matches the stored value exactly
+		occurredAt: timestamp("occurred_at")
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [
+		index("organization_activity_org_occurred_idx").on(
+			table.organizationId,
+			table.occurredAt,
+			table.id,
+		),
+		index("organization_activity_occurred_idx").on(table.occurredAt),
+		index("organization_activity_actor_idx").on(table.actorUserId),
 	],
 );
 

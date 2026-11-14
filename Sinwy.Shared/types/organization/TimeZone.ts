@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const DEFAULT_TIME_ZONE = "UTC";
 
 const TIME_ZONES = new Set(Intl.supportedValuesOf("timeZone"));
@@ -17,3 +19,5 @@ const isKnownAlias = (value: string) => {
 export const isTimeZone = (value: unknown): value is string =>
 	typeof value === "string" &&
 	(value === DEFAULT_TIME_ZONE || TIME_ZONES.has(value) || isKnownAlias(value));
+
+export const timeZoneSchema = z.string().refine(isTimeZone, "Unknown timezone");

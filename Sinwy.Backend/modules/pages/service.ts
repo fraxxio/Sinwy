@@ -1,11 +1,11 @@
 import type { Membership } from "@authModule";
 import {
+	type ActivityActor,
 	findPublicOrganizationPlan,
 	getOrganizationProfile,
+	recordActivity,
 } from "@organizationsModule";
 import {
-	BLOCK_TYPES,
-	blockTypesIn,
 	type CreatePageInput,
 	hasFeature,
 	limitsFor,
@@ -18,6 +18,8 @@ import {
 	type PublicPageDto,
 	type SavePageContentInput,
 	type UpdatePageInput,
+	WIDGET_TYPES,
+	widgetTypesIn,
 } from "@sinwy/shared";
 import {
 	type ContentSaveCheck,
@@ -190,14 +192,14 @@ export const updatePage = async (
 	return { ok: true, data: await toDetailDto(membership, updated.value) };
 };
 
-/** A premium block the plan lacks may stay if the latest version already has it, so downgraded pages remain editable. */
+/** A premium widget the plan lacks may stay if the latest version already has it, so downgraded pages remain editable. */
 const contentSaveCheck =
 	(membership: Membership, input: SavePageContentInput): ContentSaveCheck =>
 	(latest) => {
 		if (latest.version !== input.baseVersion) return "version-conflict";
-		const existing = blockTypesIn(latest.content);
-		for (const type of blockTypesIn(input.content)) {
-			const requires = BLOCK_TYPES[type].requires;
+		const existing = widgetTypesIn(latest.content);
+		for (const type of widgetTypesIn(input.content)) {
+			const requires = WIDGET_TYPES[type].requires;
 			if (
 				requires &&
 				!existing.has(type) &&
@@ -228,31 +230,43 @@ export const savePageContent = async (
 
 export const deletePage = async (
 	membership: Membership,
+	actor: ActivityActor,
 	pageId: string,
 ): Promise<Result<null>> => {
 	if (membership.status !== "active") return fail("inactive");
-	return (await deletePageRow(membership.organizationId, pageId))
-		? { ok: true, data: null }
-		: fail("not-found");
+	const deleted = await deletePageRow(membership.organizationId, pageId);
+	if (!deleted) return fail("not-found");
+	await recordActivity(membership.organizationId, actor, {
+		action: "page.deleted",
+		details: { title: deleted.title },
+	});
+	return { ok: true, data: null };
 };
 
 const changeStatus =
-	(write: typeof publishPageRow) =>
+	(
+		write: typeof publishPageRow,
+		action: "page.published" | "page.unpublished",
+	) =>
 	async (
 		membership: Membership,
+		actor: ActivityActor,
 		pageId: string,
 	): Promise<Result<PageDetailDto>> => {
 		if (membership.status !== "active") return fail("inactive");
 		const row = await write(membership.organizationId, pageId);
-		return row
-			? { ok: true, data: await toDetailDto(membership, row) }
-			: fail("not-found");
+		if (!row) return fail("not-found");
+		await recordActivity(membership.organizationId, actor, {
+			action,
+			details: { title: row.title },
+		});
+		return { ok: true, data: await toDetailDto(membership, row) };
 	};
 
 /** Always allowed: a page outside the plan's served set is published but not live. */
-export const publishPage = changeStatus(publishPageRow);
+export const publishPage = changeStatus(publishPageRow, "page.published");
 
-export const unpublishPage = changeStatus(unpublishPageRow);
+export const unpublishPage = changeStatus(unpublishPageRow, "page.unpublished");
 
 /** Published and within the plan's page limit: the only pages the public may see. */
 const isServed = async (
@@ -284,7 +298,11 @@ export const getPublicPage = async (
 	if (!(await isServed(organization.id, organization.plan, row.id)))
 		return null;
 	return {
-		organization: { name: organization.name, slug: organization.slug },
+		organization: {
+			name: organization.name,
+			slug: organization.slug,
+			branding: organization.branding,
+		},
 		title: row.title,
 		seoTitle: row.seoTitle ?? row.title,
 		seoDescription: row.seoDescription ?? (organization.tagline || null),

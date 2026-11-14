@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { OrganizationSidebar } from "#/modules/org-dashboard/components/OrganizationSidebar";
 import { PaymentFailedBanner } from "#/modules/org-dashboard/components/PaymentFailedBanner";
+import { NotificationBell } from "#/shared/components/notifications/NotificationBell";
 import { AppShell } from "#/shared/components/shell/AppShell";
 import { raiseAccessDenied } from "#/shared/lib/auth/access-denied";
 import { authClient } from "#/shared/lib/auth/auth-client";
@@ -93,6 +94,7 @@ function OrganizationShell() {
 	return (
 		<AppShell
 			banner={paymentFailed && <PaymentFailedBanner />}
+			actions={<NotificationBell scope={{ organizationId: organization.id }} />}
 			sidebar={<OrganizationSidebar organizationSlug={organization.slug} />}
 			rootCrumb={{
 				label: organization.name,

@@ -14,6 +14,7 @@ import {
 } from "@bookingsModule";
 import appConfig from "@config";
 import { registerFileRoutes } from "@filesModule";
+import { registerNotificationRoutes } from "@notificationsModule";
 import { registerOrganizationRoutes } from "@organizationsModule";
 import { registerPageRoutes, registerPublicPageRoutes } from "@pagesModule";
 import {
@@ -41,6 +42,7 @@ registerPublicPageRoutes(app);
 registerAnalyticsRoutes(app);
 registerPublicAnalyticsRoutes(app);
 registerUserRoutes(app);
+registerNotificationRoutes(app);
 registerFileRoutes(app);
 
 const server = app.listen(appConfig.PORT);

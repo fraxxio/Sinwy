@@ -18,6 +18,7 @@
 			"@paymentsModule": ["./modules/payments"],
 			"@pagesModule": ["./modules/pages"],
 			"@analyticsModule": ["./modules/analytics"],
+			"@notificationsModule": ["./modules/notifications"],
 			"@backend/*": ["./*"]
 		}
 	},

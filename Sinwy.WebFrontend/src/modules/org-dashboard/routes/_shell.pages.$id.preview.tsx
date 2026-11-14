@@ -7,6 +7,8 @@ import { PageRenderer } from "#/shared/components/page-content/PageRenderer";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
+import { brandAttributes } from "#/shared/lib/branding";
+import { organizationsQuery } from "#/shared/lib/organizations";
 
 export const Route = createFileRoute(
 	"/dashboard/$organizationSlug/_shell/pages/$id/preview",
@@ -19,6 +21,11 @@ function PagePreviewPage() {
 	const { id } = Route.useParams();
 	const { organization } = Route.useRouteContext();
 	const page = useQuery(pageQuery(organization.id, id));
+	const { data: branding } = useQuery({
+		...organizationsQuery,
+		select: (organizations) =>
+			organizations.find((org) => org.id === organization.id)?.branding,
+	});
 
 	const backButton = (
 		<Button
@@ -74,8 +81,11 @@ function PagePreviewPage() {
 				action={backButton}
 			/>
 			<ContentBox>
-				{latestVersion.content.blocks.length ? (
-					<div className="mx-auto max-w-3xl">
+				{latestVersion.content.widgets.length ? (
+					<div
+						{...(branding && brandAttributes(branding))}
+						className="mx-auto max-w-3xl"
+					>
 						<PageRenderer
 							content={latestVersion.content}
 							organizationSlug={organization.slug}

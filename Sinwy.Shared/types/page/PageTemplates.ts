@@ -1,6 +1,6 @@
 import { COUNTRY_OPTIONS, type OrganizationProfileDto } from "../organization";
 import type { Feature } from "../plan";
-import type { BlockType, PageBlock, PageContent } from "./PageContent";
+import type { PageContent, PageWidget, WidgetType } from "./PageContent";
 
 export type PageTemplateDefinition = {
 	label: string;
@@ -10,10 +10,10 @@ export type PageTemplateDefinition = {
 	build: (profile: OrganizationProfileDto) => PageContent;
 };
 
-const blocksFrom = (
-	parts: (Omit<PageBlock, "id"> | null | false)[],
-): PageBlock[] => {
-	const counts = new Map<BlockType, number>();
+const widgetsFrom = (
+	parts: (Omit<PageWidget, "id"> | null | false)[],
+): PageWidget[] => {
+	const counts = new Map<WidgetType, number>();
 	return parts
 		.filter((part) => !!part)
 		.map((part) => {
@@ -24,8 +24,8 @@ const blocksFrom = (
 };
 
 const content = (
-	...parts: (Omit<PageBlock, "id"> | null | false)[]
-): PageContent => ({ schemaVersion: 1, blocks: blocksFrom(parts) });
+	...parts: (Omit<PageWidget, "id"> | null | false)[]
+): PageContent => ({ schemaVersion: 1, widgets: widgetsFrom(parts) });
 
 const heading = (text: string, level: 1 | 2 | 3 = 2) => ({
 	type: "heading" as const,
@@ -80,7 +80,7 @@ const pageTemplates = {
 	landing: {
 		label: "Landing",
 		description: "A headline, a gallery, reviews and a call to book.",
-		requires: "page-builder",
+		requires: "advanced-widgets",
 		build: (profile) =>
 			content(
 				heading(profile.tagline ?? "Welcome", 1),
@@ -94,7 +94,7 @@ const pageTemplates = {
 	"services-showcase": {
 		label: "Services showcase",
 		description: "Your services with pictures and a booking button.",
-		requires: "page-builder",
+		requires: "advanced-widgets",
 		build: (profile) =>
 			content(
 				heading("Our services", 1),

@@ -2,12 +2,15 @@ import type { Membership } from "@authModule";
 import { emailClient } from "@backend/infrastructure/email";
 import appConfig from "@config";
 import { createLogger } from "@logger";
+import { notifyUser } from "@notificationsModule";
 import {
+	type ActivityActor,
 	getMembershipAccess,
 	getOrganizationAccess,
 	isSuspended,
 	moveOwnership,
 	organizationStatusOf,
+	recordActivity,
 } from "@organizationsModule";
 import {
 	type AcceptTransferDto,
@@ -34,6 +37,7 @@ import {
 	findOpenTransfer,
 	findTransfer,
 	findUserContacts,
+	hasAcceptedTransfer,
 	insertTransfer,
 	type TransferRow,
 } from "./repository";
@@ -100,6 +104,10 @@ export const transferOwnershipBySupport = async ({
 		return { ok: false, error: `Roles not swapped: ${swap.result}` };
 	// an in-app offer made by the previous owner no longer applies
 	await cancelOpenTransfer(organizationId);
+	await recordActivity(organizationId, null, {
+		action: "transfer.completed",
+		details: { fromName: owner.name, toName: target.name },
+	});
 	return { ok: true, applied: true, ...report, slotHeld: swap.slotHeld };
 };
 
@@ -193,10 +201,26 @@ export const offerTransfer = async (
 			}),
 		{ transferId: row.id },
 	);
+	await notifyUser(
+		to.userId,
+		{
+			type: "transfer.offered",
+			payload: {
+				organizationName: org?.name ?? "",
+				fromName: from?.name ?? "",
+			},
+		},
+		"/account/organizations",
+	);
 	transferLogger.info("Transfer offered", {
 		transferId: row.id,
 		organizationId,
 	});
+	await recordActivity(
+		organizationId,
+		{ id: fromUserId, name: from?.name ?? "" },
+		{ action: "transfer.offered", details: { recipientName: to.name } },
+	);
 	return {
 		ok: true,
 		data: {
@@ -209,8 +233,19 @@ export const offerTransfer = async (
 };
 
 /** True when there was an open transfer to cancel. */
-export const cancelTransfer = async (membership: Membership) =>
-	(await cancelOpenTransfer(membership.organizationId)).length > 0;
+export const cancelTransfer = async (
+	membership: Membership,
+	actor: ActivityActor,
+) => {
+	const canceled =
+		(await cancelOpenTransfer(membership.organizationId)).length > 0;
+	if (canceled)
+		await recordActivity(membership.organizationId, actor, {
+			action: "transfer.cancelled",
+			details: {},
+		});
+	return canceled;
+};
 
 export const listIncomingTransfers = async (
 	userId: string,
@@ -284,7 +319,7 @@ const finishTransfer = async (
 				transferId,
 				organizationId: completion.transfer.organizationId,
 			});
-			await sendCompletionEmails(completion.transfer);
+			await announceCompletion(completion.transfer);
 			return "completed";
 		case "refused":
 			transferLogger.warn("Transfer refused on completion", {
@@ -306,6 +341,12 @@ export const findTransferAwaitingCheckout = (
 	transferId: string,
 	now = new Date(),
 ) => findAcceptedTransfer(transferId, userId, now);
+
+/** A late checkout would complete it, so the organization can't be deleted meanwhile (Default 7). */
+export const isTransferAwaitingCheckout = (
+	organizationId: string,
+	now = new Date(),
+) => hasAcceptedTransfer(organizationId, now);
 
 /**
  * Called when a plan bought for a transfer grants access. A transfer no longer
@@ -351,13 +392,18 @@ export const cancelTransfersToMember = async (
 		});
 };
 
-const sendCompletionEmails = async (transfer: TransferRow) => {
+/** The recipient completed it, by accepting or by the checkout it waited on. */
+const announceCompletion = async (transfer: TransferRow) => {
 	const [org, contacts] = await Promise.all([
 		getOrganizationAccess(transfer.organizationId),
 		findUserContacts([transfer.fromUserId, transfer.toUserId]),
 	]);
 	const from = contacts.find((contact) => contact.id === transfer.fromUserId);
 	const to = contacts.find((contact) => contact.id === transfer.toUserId);
+	await recordActivity(transfer.organizationId, to ?? null, {
+		action: "transfer.completed",
+		details: { fromName: from?.name ?? "", toName: to?.name ?? "" },
+	});
 	const organizationName = org?.name ?? "";
 	const context = { transferId: transfer.id };
 	if (to)
