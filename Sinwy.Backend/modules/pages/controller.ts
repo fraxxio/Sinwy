@@ -21,7 +21,7 @@ import {
 	updatePage,
 } from "./service";
 
-/** Far above what 200 blocks of builder props need, far below the server's own cap. */
+/** Far above what 200 widgets of builder props need, far below the server's own cap. */
 export const MAX_PAGE_CONTENT_BYTES = 256 * 1024;
 
 const respondError = (error: PageError) => {

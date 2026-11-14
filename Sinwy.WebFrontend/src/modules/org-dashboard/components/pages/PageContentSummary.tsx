@@ -14,7 +14,7 @@ export function PageContentSummary({
 	page: PageDetailDto;
 }) {
 	const { latestVersion } = page;
-	const blocks = latestVersion.content.blocks.length;
+	const widgets = latestVersion.content.widgets.length;
 
 	return (
 		<SettingsSection
@@ -44,8 +44,8 @@ export function PageContentSummary({
 				/>
 				<div className="grid gap-1 text-sm">
 					<p className="font-medium">
-						Version {latestVersion.version} · {blocks}{" "}
-						{blocks === 1 ? "block" : "blocks"}
+						Version {latestVersion.version} · {widgets}{" "}
+						{widgets === 1 ? "widget" : "widgets"}
 					</p>
 					<p className="text-muted-foreground">
 						Last saved{" "}

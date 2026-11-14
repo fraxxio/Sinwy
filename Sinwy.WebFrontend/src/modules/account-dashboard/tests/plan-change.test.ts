@@ -9,7 +9,7 @@ describe("describePlanChange", () => {
 	it("lists what an upgrade adds and takes nothing away", () => {
 		expect(describePlanChange("starter", "professional")).toEqual({
 			direction: "upgrade",
-			gained: ["page-builder", "custom-domain", "analytics-advanced"],
+			gained: ["advanced-widgets", "custom-domain", "analytics-advanced"],
 			lost: [],
 		});
 	});
@@ -26,7 +26,7 @@ describe("describePlanChange", () => {
 		expect(describePlanChange("enterprise", "starter")).toMatchObject({
 			direction: "downgrade",
 			lost: [
-				"page-builder",
+				"advanced-widgets",
 				"custom-domain",
 				"analytics-advanced",
 				"multi-location",

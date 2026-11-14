@@ -40,7 +40,7 @@ The experience inside an active organization context: dashboard, CMS/page builde
 _Avoid_: Business mode, admin mode
 
 **Page Builder**:
-The editor where an organization lays out and fills its hosted pages. Available on every plan; higher tiers unlock extra blocks and extra options on ordinary blocks, never the editor itself.
+The editor where an organization lays out and fills its hosted pages. Available on every plan; higher tiers unlock extra widgets and extra options on ordinary widgets (Advanced Widgets), never the editor itself.
 _Avoid_: CMS (for the editor), premium editor
 
 **Widget**:

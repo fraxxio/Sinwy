@@ -74,7 +74,7 @@ function PagePreviewPage() {
 				action={backButton}
 			/>
 			<ContentBox>
-				{latestVersion.content.blocks.length ? (
+				{latestVersion.content.widgets.length ? (
 					<div className="mx-auto max-w-3xl">
 						<PageRenderer
 							content={latestVersion.content}

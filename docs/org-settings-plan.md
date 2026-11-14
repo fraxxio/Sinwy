@@ -8,7 +8,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
-| 1 | Block → Widget rename | – | todo | |
+| 1 | Block → Widget rename | – | done | `feat(shared, backend, web): rename page blocks to widgets` |
 | 2 | Activity Log foundation | – | todo | |
 | 3 | Settings tabs and General | 2 | todo | |
 | 4 | Ownership & danger zone | 3 | todo | |
@@ -53,7 +53,7 @@ Settled with the product owner. Ask before changing any of them.
 
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
-- **Block usage:** page content is jsonb `{ schemaVersion: 1, blocks: PageBlock[] }`, with nested `children` (`Sinwy.Shared/types/page/PageContent.ts`). Every saved version is kept in `page_content.content`. Gated blocks and templates use `requires: "page-builder"` (`PageContent.ts:15-16`, `PageTemplates.ts:83,97`), and the server checks it in `pages/service.ts:193-200`. There's no editor UI yet, only templates, the renderer (`shared/components/page-content/PageRenderer.tsx`), the preview and `PageContentSummary`.
+- **Widgets:** page content is `{ schemaVersion: 1, widgets: PageWidget[] }` with nested `children`, a strict schema (unknown keys refused). Premium widgets and templates use `requires: "advanced-widgets"`. The renderer tags each widget with `data-widget="<type>"`. There's still no editor UI. See the Phase 1 log.
 - **Better Auth hooks** (installed version): leaving fires no hook, which is why `auth.ts:327` handles `/organization/leave` in the `after` middleware. Hook payloads name the affected user, not the actor, except `afterCancelInvitation`, which has `cancelledBy`. `afterAcceptInvitation` gets `{ invitation, member, user, organization }`, `afterUpdateMemberRole` gets `{ member, previousRole, user, organization }`, and `afterRemoveMember` gets `{ member, user, organization }`. The `after` middleware has the session (`getSessionFromCtx`), `ctx.path`, `ctx.body` and `ctx.context.returned`.
 - **`Membership`** (`auth/requirePermission.ts:21`) has no user id. Controllers take the actor from the session user.
 - **Inactive refusal:** `/organization/update` and `/organization/delete` are `manages: true` in `auth/activeOrganization.ts:95-96`, so they're refused while the organization is inactive. That's the cause of the Default 1 gap.
@@ -83,30 +83,6 @@ Reminder for whoever plans next: these were raised and consciously left out of P
 - Real-time notifications (SSE/WebSocket), and a feed across organizations.
 - Activity Log filters, longer retention as a tier gate, and in-transaction ("never misses") logging.
 - Payment notifications from a real provider (Stripe Connect).
-
----
-
-## Phase 1: Block → Widget rename
-
-**Goal:** the code, stored data, UI and plan feature all say "widget"; nothing says "block" for a piece of a page.
-
-**Files:** `Sinwy.Shared/types/page/PageContent.ts` (`blockTypes`, `BLOCK_TYPES`, `BlockType`, `BlockDefinition`, `PageBlock`, `PAGE_CONTENT_LIMITS.maxBlocks/blockId`, `blockList`, `blockAt`, `eachBlock`, `blockTypesIn`, error messages), `PageTemplates.ts`, `Sinwy.Shared/types/plan/PlanFeatures.ts`, `Sinwy.Backend/modules/pages/service.ts:193-200`, `pages/controller.ts:24`, `pages/tests/pages.test.ts`, `pages/tests/pageContracts.test.ts:103`, `auth/tests/requireFeature.test.ts`, `billing/tests/planFeatures.test.ts`, `Sinwy.WebFrontend/src/shared/components/page-content/PageRenderer.tsx` (`Block`, `Blocks`, `data-block`), `shared/tests/page-renderer.test.ts`, `shared/lib/plans.ts:25`, `shared/tests/plans.test.ts:22`, `account-dashboard/tests/plan-change.test.ts`, `org-dashboard/components/pages/PageContentSummary.tsx:17,47-48`, `org-dashboard/routes/_shell.pages.$id.preview.tsx:77`, `org-dashboard/components/pages/TemplatePicker.tsx`, `Sinwy.Backend/drizzle/` (new migration), `docs/org-rules-map.md:200-203,258`, `.agents/skills/e2e-test/references/seed-scenario.md:14`.
-
-**Steps:**
-- Rename every page-piece identifier and message from block to widget (`WidgetType`, `PageWidget`, `WIDGET_TYPES`, `widgetTypesIn`, `maxWidgets`, …). Leave unrelated "block" words alone: CSS `block`, calendar time blocks, "blocker".
-- The content key becomes `widgets`, keeping `schemaVersion: 1`. Add a custom Drizzle migration (`drizzle-kit generate --custom`) that renames the top-level key on every `page_content` row that has `blocks`. Nested `children` keep their name.
-- Rename the feature `page-builder` to `advanced-widgets`, labelled "Advanced widgets". Nothing stores feature keys in the DB or Polar, so this is code only.
-- Update the rules map and the seed-scenario reference to the new words.
-
-**Tests that matter:**
-- The migration turns a stored `{ blocks: [...] }` version into `{ widgets: [...] }` and the page still renders. A Starter org can't save a new gallery widget, and an existing one stays editable (the downgrade rule in `pages/service.ts`).
-- The content schema refuses the old `blocks` key, so no stale client writes it back.
-
-**Done when:**
-- `grep -rniw "block\|blocks\|page-builder"` finds no page-related hits outside the migration file.
-- Existing pages render unchanged in preview and on the storefront.
-
-**Verify:** Seed `pro-org`. As the owner, create a page from a template that contains a gallery, publish it, and open it on the storefront. It renders, and the stored version in `page_content.content` has a `widgets` key. Plan cards and billing show "Advanced widgets". Nothing is simulated beyond the seed.
 
 ---
 

@@ -1,18 +1,18 @@
 import { expect, it } from "bun:test";
-import type { PageBlock, PageContent } from "@sinwy/shared";
+import type { PageContent, PageWidget } from "@sinwy/shared";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PageRenderer } from "../components/page-content/PageRenderer";
 
-const render = (blocks: PageBlock[]) =>
+const render = (widgets: PageWidget[]) =>
 	renderToStaticMarkup(
 		createElement(PageRenderer, {
-			content: { schemaVersion: 1, blocks } satisfies PageContent,
+			content: { schemaVersion: 1, widgets } satisfies PageContent,
 			organizationSlug: "acme",
 		}),
 	);
 
-it("renders every MVP block type", () => {
+it("renders every MVP widget type", () => {
 	const html = render([
 		{ id: "h", type: "heading", props: { text: "Welcome", level: 1 } },
 		{ id: "t", type: "text", props: { text: "We cut hair." } },
@@ -42,7 +42,7 @@ it("renders every MVP block type", () => {
 	expect(html).toContain("Ana");
 });
 
-it("skips an unknown block type and keeps the rest", () => {
+it("skips an unknown widget type and keeps the rest", () => {
 	const html = render([
 		{ id: "x", type: "carousel", props: { text: "Hidden" } } as never,
 		{ id: "t", type: "text", props: { text: "Still here" } },

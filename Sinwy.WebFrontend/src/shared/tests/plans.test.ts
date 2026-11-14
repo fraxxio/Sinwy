@@ -19,7 +19,7 @@ it("names the cheapest plan that includes each feature", () => {
 	expect(
 		Object.fromEntries(FEATURES.map((f) => [f, minimumPlanFor(f)])),
 	).toEqual({
-		"page-builder": "professional",
+		"advanced-widgets": "professional",
 		"custom-domain": "professional",
 		"analytics-advanced": "professional",
 		"multi-location": "enterprise",

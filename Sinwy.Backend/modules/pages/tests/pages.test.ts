@@ -25,7 +25,7 @@ import {
 	type PublicPageDto,
 } from "@sinwy/shared";
 import type { Server } from "bun";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { MAX_PAGE_CONTENT_BYTES } from "../controller";
 import { registerPageRoutes, registerPublicPageRoutes } from "../routes";
 
@@ -109,7 +109,7 @@ const create = async (fields: Record<string, unknown> = {}) => {
 const content = (...types: string[]): PageContent =>
 	({
 		schemaVersion: 1,
-		blocks: types.map((type, n) => ({ id: `${type}-${n}`, type, props: {} })),
+		widgets: types.map((type, n) => ({ id: `${type}-${n}`, type, props: {} })),
 	}) as PageContent;
 
 const save = (
@@ -289,7 +289,7 @@ test("content: each save adds the next version and bumps updatedAt", async () =>
 	expect(res.status).toBe(200);
 	const saved = await unwrap<PageDetailDto>(res);
 	expect(saved.latestVersion.version).toBe(2);
-	expect(saved.latestVersion.content.blocks.map((b) => b.type)).toEqual([
+	expect(saved.latestVersion.content.widgets.map((w) => w.type)).toEqual([
 		"heading",
 		"text",
 	]);
@@ -315,7 +315,7 @@ test("content: a stale baseVersion → 409 PAGE_VERSION_CONFLICT, and concurrent
 	expect(racing.map((res) => res.status).sort()).toEqual([200, 409]);
 });
 
-test("content: a new premium block → 402 on Starter; one the page already has → 200", async () => {
+test("content: a new premium widget → 402 on Starter; one the page already has → 200", async () => {
 	const created = await create();
 	const refused = await save(created.id, 1, content("heading", "gallery"));
 	expect(refused.status).toBe(402);
@@ -333,7 +333,7 @@ test("content: a new premium block → 402 on Starter; one the page already has 
 	).toBe(402);
 });
 
-test("content: unknown block types → 400; an oversized body → 413", async () => {
+test("content: unknown widget types → 400; an oversized body → 413", async () => {
 	const created = await create();
 	const unknown = await save(created.id, 1, content("marquee"));
 	expect(unknown.status).toBe(400);
@@ -342,7 +342,7 @@ test("content: unknown block types → 400; an oversized body → 413", async ()
 		baseVersion: 1,
 		content: {
 			schemaVersion: 1,
-			blocks: [
+			widgets: [
 				{
 					id: "text-1",
 					type: "text",
@@ -358,6 +358,47 @@ test("content: unknown block types → 400; an oversized body → 413", async ()
 		huge,
 	);
 	expect(tooLarge.status).toBe(413);
+});
+
+test("the widgets migration renames a stored blocks version; the page still renders and keeps its premium widgets", async () => {
+	const created = await create({ title: "Welcome", slug: "welcome" });
+	const widgets = [
+		{ id: "heading-1", type: "heading", props: { text: "Hi", level: 1 } },
+		{
+			id: "gallery-1",
+			type: "gallery",
+			props: { images: [] },
+			children: [{ id: "text-1", type: "text", props: { text: "Inside" } }],
+		},
+	];
+	const version1 = and(
+		eq(pageContent.pageId, created.id),
+		eq(pageContent.version, 1),
+	);
+	await db
+		.update(pageContent)
+		.set({ content: { schemaVersion: 1, blocks: widgets } as never })
+		.where(version1);
+
+	const migration = await Bun.file(
+		new URL("../../../drizzle/0027_page_content_widgets.sql", import.meta.url),
+	).text();
+	await db.execute(sql.raw(migration));
+
+	const [stored] = await db
+		.select({ content: pageContent.content })
+		.from(pageContent)
+		.where(version1);
+	expect(stored?.content).toEqual({ schemaVersion: 1, widgets } as never);
+
+	await publish(created.id);
+	const live = await unwrap<PublicPageDto>(await readPublic("welcome"));
+	expect(live.content).toEqual({ schemaVersion: 1, widgets } as never);
+
+	expect((await save(created.id, 1, content("gallery", "text"))).status).toBe(
+		200,
+	);
+	expect((await save(created.id, 2, content("testimonials"))).status).toBe(402);
 });
 
 test("list: usage, newest edit first, and only the oldest published pages within the limit are live", async () => {

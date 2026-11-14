@@ -1,29 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import {
-	BLOCK_TYPES,
 	EMPTY_ORGANIZATION_PROFILE,
 	type OrganizationProfileDto,
 	PAGE_CONTENT_LIMITS,
 	PAGE_TEMPLATE_IDS,
 	PAGE_TEMPLATES,
-	type PageBlock,
+	type PageWidget,
 	pageContentSchema,
 	pageSlugSchema,
 	RESERVED_PAGE_SLUGS,
+	WIDGET_TYPES,
 } from "@sinwy/shared";
 
-const block = (id: string, children?: PageBlock[]): PageBlock => ({
+const widget = (id: string, children?: PageWidget[]): PageWidget => ({
 	id,
 	type: "text",
 	props: { text: id },
 	...(children && { children }),
 });
 
-const nested = (depth: number): PageBlock =>
-	depth === 1 ? block("b1") : block(`b${depth}`, [nested(depth - 1)]);
+const nested = (depth: number): PageWidget =>
+	depth === 1 ? widget("b1") : widget(`b${depth}`, [nested(depth - 1)]);
 
-const parse = (blocks: unknown[]) =>
-	pageContentSchema.safeParse({ schemaVersion: 1, blocks });
+const parse = (widgets: unknown[]) =>
+	pageContentSchema.safeParse({ schemaVersion: 1, widgets });
 
 const profile: OrganizationProfileDto = {
 	tagline: "Calm haircuts in the old town",
@@ -36,20 +36,20 @@ const profile: OrganizationProfileDto = {
 };
 
 describe("page content schema", () => {
-	test("accepts every registered block type", () => {
-		const blocks = Object.keys(BLOCK_TYPES).map((type) => ({
+	test("accepts every registered widget type", () => {
+		const widgets = Object.keys(WIDGET_TYPES).map((type) => ({
 			id: type,
 			type,
 			props: {},
 		}));
-		expect(parse(blocks).success).toBe(true);
+		expect(parse(widgets).success).toBe(true);
 	});
 
-	test("rejects an unknown block type, nested ones included", () => {
+	test("rejects an unknown widget type, nested ones included", () => {
 		expect(parse([{ id: "x", type: "script", props: {} }]).success).toBe(false);
 		expect(
 			parse([
-				{ ...block("a"), children: [{ id: "x", type: "script", props: {} }] },
+				{ ...widget("a"), children: [{ id: "x", type: "script", props: {} }] },
 			]).success,
 		).toBe(false);
 	});
@@ -61,24 +61,37 @@ describe("page content schema", () => {
 		);
 	});
 
-	test(`counts blocks across the tree, up to ${PAGE_CONTENT_LIMITS.maxBlocks}`, () => {
-		const max = PAGE_CONTENT_LIMITS.maxBlocks;
+	test(`counts widgets across the tree, up to ${PAGE_CONTENT_LIMITS.maxWidgets}`, () => {
+		const max = PAGE_CONTENT_LIMITS.maxWidgets;
 		const flat = (n: number) =>
-			Array.from({ length: n }, (_, i) => block(`b${i}`));
+			Array.from({ length: n }, (_, i) => widget(`b${i}`));
 		expect(parse(flat(max)).success).toBe(true);
 		expect(parse(flat(max + 1)).success).toBe(false);
 
 		const half = max / 2;
-		const children = Array.from({ length: half }, (_, i) => block(`c${i}`));
+		const children = Array.from({ length: half }, (_, i) => widget(`c${i}`));
 		const parents = Array.from({ length: half }, (_, i) =>
-			block(`p${i}`, i === 0 ? children : undefined),
+			widget(`p${i}`, i === 0 ? children : undefined),
 		);
 		expect(parse(parents).success).toBe(true);
-		expect(parse([...parents, block("extra")]).success).toBe(false);
+		expect(parse([...parents, widget("extra")]).success).toBe(false);
 	});
 
-	test("rejects a block id used twice", () => {
-		expect(parse([block("a"), block("b", [block("a")])]).success).toBe(false);
+	test("rejects a widget id used twice", () => {
+		expect(parse([widget("a"), widget("b", [widget("a")])]).success).toBe(
+			false,
+		);
+	});
+
+	test("rejects the old blocks key, alone or next to widgets", () => {
+		const blocks = [widget("a")];
+		expect(
+			pageContentSchema.safeParse({ schemaVersion: 1, blocks }).success,
+		).toBe(false);
+		expect(
+			pageContentSchema.safeParse({ schemaVersion: 1, widgets: [], blocks })
+				.success,
+		).toBe(false);
 	});
 });
 
@@ -100,11 +113,11 @@ describe("page templates", () => {
 		expect(text).toContain("hello@example.com");
 	});
 
-	test("only page-builder templates use page-builder blocks", () => {
+	test("only advanced-widgets templates use advanced widgets", () => {
 		for (const id of PAGE_TEMPLATE_IDS) {
 			const template = PAGE_TEMPLATES[id];
-			const { blocks } = template.build(profile);
-			const needs = blocks.flatMap((b) => BLOCK_TYPES[b.type].requires ?? []);
+			const { widgets } = template.build(profile);
+			const needs = widgets.flatMap((w) => WIDGET_TYPES[w.type].requires ?? []);
 			for (const feature of needs) expect(template.requires).toBe(feature);
 		}
 	});

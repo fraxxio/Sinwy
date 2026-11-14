@@ -184,7 +184,7 @@ service currency), `modules/user/service.ts` (prompts),
 ```text
 One plan per user (D1), one invoice per period in one billing name (D2)
 ├─ Starter      cap 1; no extra features
-├─ Professional cap 2; page builder, custom domain, advanced analytics
+├─ Professional cap 2; advanced widgets, custom domain, advanced analytics
 └─ Enterprise   cap 5; Professional's features and multiple locations
 
 Features
@@ -196,11 +196,12 @@ Pages (every tier has them, up to a limit per organization)
 ├─ limit: Starter 1, Professional 5, Enterprise 25; an inactive organization 0
 ├─ every page counts, drafts included; creating one at or over the limit →
 │  refused, "page limit reached"; deleting a page frees its place
-├─ the page builder feature gates only premium templates (landing, services
-│  showcase) and premium blocks (gallery, testimonials), not pages themselves
-│   ├─ a premium template or a new premium block without it → refused,
+├─ the advanced widgets feature gates only premium templates (landing,
+│  services showcase) and premium widgets (gallery, testimonials), not pages
+│  or the Page Builder itself
+│   ├─ a premium template or a new premium widget without it → refused,
 │   │  "upgrade required"
-│   └─ a premium block the page's latest version already has stays editable,
+│   └─ a premium widget the page's latest version already has stays editable,
 │      so a downgraded page can still be saved
 ├─ content is versioned: every save is a new version; publishing pins the
 │  latest one, so later saves stay private until the next publish
@@ -255,7 +256,7 @@ One trial per user (D10)
 
 Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages,
 analytics retention and seats),
-`Sinwy.Shared/types/page/` (block and template registries),
+`Sinwy.Shared/types/page/` (widget and template registries),
 `Sinwy.Backend/modules/billing/` (`checkoutGuard.ts`, `projection.ts`),
 `modules/auth/auth.ts` (checkout hook; seats in `beforeCreateInvitation`,
 `afterCreateInvitation` and `membershipLimit`), `modules/organizations/`
