@@ -63,13 +63,20 @@ export const refuseScheduledOrganization = async (organizationId: string) => {
 	if (await isScheduledForDeletion(organizationId)) throw scheduledError();
 };
 
+type ScopeKey = "organizationSlug" | "organizationId" | "invitationId";
+
 type ScopedEndpoint = {
 	input: "query" | "body";
+	/** The keys the plugin itself reads the organization from; the first one set wins. */
+	reads: readonly ScopeKey[];
 	manages: boolean;
 	permission?: Permission;
 };
 
 const TEAM_PERMISSION: Permission = "people:manage";
+
+const SLUG_OR_ID = ["organizationSlug", "organizationId"] as const;
+const ID = ["organizationId"] as const;
 
 /**
  * Plugin endpoints that act on one organization, and where each reads it
@@ -77,27 +84,53 @@ const TEAM_PERMISSION: Permission = "people:manage";
  * the owner's (the plugin's own check), active or not.
  */
 const scopedEndpoints: Record<string, ScopedEndpoint> = {
-	"/organization/get-organization": { input: "query", manages: false },
-	"/organization/get-full-organization": { input: "query", manages: false },
+	"/organization/get-organization": {
+		input: "query",
+		reads: SLUG_OR_ID,
+		manages: false,
+	},
+	"/organization/get-full-organization": {
+		input: "query",
+		reads: SLUG_OR_ID,
+		manages: false,
+	},
 	"/organization/list-members": {
 		input: "query",
+		reads: SLUG_OR_ID,
 		manages: false,
 		permission: TEAM_PERMISSION,
 	},
 	"/organization/list-invitations": {
 		input: "query",
+		reads: ID,
 		manages: false,
 		permission: TEAM_PERMISSION,
 	},
-	"/organization/get-active-member": { input: "query", manages: false },
-	"/organization/get-active-member-role": { input: "query", manages: false },
-	"/organization/has-permission": { input: "body", manages: false },
-	"/organization/leave": { input: "body", manages: false },
-	"/organization/delete": { input: "body", manages: false },
-	"/organization/invite-member": { input: "body", manages: true },
-	"/organization/cancel-invitation": { input: "body", manages: true },
-	"/organization/remove-member": { input: "body", manages: true },
-	"/organization/update-member-role": { input: "body", manages: true },
+	"/organization/get-active-member": {
+		input: "query",
+		reads: [],
+		manages: false,
+	},
+	"/organization/get-active-member-role": {
+		input: "query",
+		reads: SLUG_OR_ID,
+		manages: false,
+	},
+	"/organization/has-permission": { input: "body", reads: ID, manages: false },
+	"/organization/leave": { input: "body", reads: ID, manages: false },
+	"/organization/delete": { input: "body", reads: ID, manages: false },
+	"/organization/invite-member": { input: "body", reads: ID, manages: true },
+	"/organization/cancel-invitation": {
+		input: "body",
+		reads: ["invitationId"],
+		manages: true,
+	},
+	"/organization/remove-member": { input: "body", reads: ID, manages: true },
+	"/organization/update-member-role": {
+		input: "body",
+		reads: ID,
+		manages: true,
+	},
 };
 
 const scopeInput = z.object({
@@ -106,19 +139,22 @@ const scopeInput = z.object({
 	invitationId: z.string().nullish(),
 });
 
-// resolved the way the plugin resolves it: a slug beats the id, and both
-// fall back to the session's active organization
+// resolved the way the plugin resolves it: only from the keys that endpoint
+// reads, falling back to the session's active organization. A key the plugin
+// ignores must not pick the organization that gets checked.
 const scopedOrganization = async (
+	endpoint: ScopedEndpoint,
 	input: unknown,
 	activeOrganizationId: string | null | undefined,
 ) => {
 	const parsed = scopeInput.safeParse(input ?? {});
 	if (!parsed.success) return null;
-	const { organizationId, organizationSlug, invitationId } = parsed.data;
-	if (organizationSlug) return { slug: organizationSlug };
-	const id = invitationId
-		? await getInvitationOrganizationId(invitationId)
-		: organizationId || activeOrganizationId;
+	const key = endpoint.reads.find((candidate) => parsed.data[candidate]);
+	const value = key && parsed.data[key];
+	if (!value) return activeOrganizationId ? { id: activeOrganizationId } : null;
+	if (key === "organizationSlug") return { slug: value };
+	const id =
+		key === "invitationId" ? await getInvitationOrganizationId(value) : value;
 	return id ? { id } : null;
 };
 
@@ -135,6 +171,7 @@ export const refuseOrganizationEndpoint = async (
 	const endpoint = scopedEndpoints[path];
 	if (!endpoint) return;
 	const ref = await scopedOrganization(
+		endpoint,
 		request[endpoint.input],
 		session.activeOrganizationId,
 	);

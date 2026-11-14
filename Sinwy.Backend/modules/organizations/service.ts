@@ -240,7 +240,7 @@ export const getInvitationPreview = async (
 /** The organization's name, owner and access; null for an unknown one. */
 export const getOrganizationAccess = findOrganizationAccess;
 
-export const getUserName = findUserName;
+export const getUserName = (userId: string) => findUserName(userId);
 
 /** The organization's plan seat cap; 0 while inactive or unknown. */
 export const getSeatLimit = async (organizationId: string) => {

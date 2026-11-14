@@ -2,7 +2,7 @@
 
 Phase 11 of the MVP: the basic organization settings and polish. It adds a Settings area with tabs (General, Branding, Activity, Ownership & danger zone), the Activity Log, Branding on hosted pages, a screen for deleting an organization, per-member Notification Preferences and an in-app notification center in both shells. Every part is a basic version to build on later. It also renames "block" to "widget" across the Page Builder, so code and product use one word. Terms are defined in [CONTEXT.md](../CONTEXT.md).
 
-Run a phase with the `implementation-phase` skill. Finished phases and their logs are in [org-settings-log.md](org-settings-log.md).
+**The plan is done.** Every phase and its log is in [org-settings-log.md](org-settings-log.md); what was left open is in [org-rules-map.md](org-rules-map.md) §15 and under Deferred to other tickets.
 
 ## Status
 
@@ -15,7 +15,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 5 | Branding | 1, 3 | done | `feat(shared, backend, web): add organization branding` |
 | 6 | Notification Preferences and staff emails | 2 | done | `feat(shared, backend, web): add member notification preferences` |
 | 7 | In-app notification center | 6 | done | `feat(shared, backend, web): add in-app notification center` |
-| 8 | Code review | 1–7 | todo | |
+| 8 | Code review | 1–7 | done | `fix(backend): scope organization endpoint checks to the keys better-auth reads` |
 
 ## Decisions
 
@@ -37,7 +37,9 @@ Settled with the product owner. Ask before changing any of them.
 - **Activity is written after the change commits**, best effort. A failed write is logged and never fails the action.
 - **Settings tabs:** General, Branding, Activity (owner and admin) and Ownership & danger zone (owner only, holding the existing Transfer section).
 
-### Defaults (not yet confirmed; change only if asked)
+### Defaults that held
+
+Built as written and checked in the Phase 8 review. The product owner hasn't confirmed them one by one, so ask before relying on one as a product rule.
 
 1. Name, timezone and logo get Sinwy endpoints under the organizations module. Better Auth's `/organization/update` is refused for everyone, because it can change the slug and the logo URL.
 2. Branding is stored as two nullable columns on `organization` (`brand_color` as `#rrggbb`, `brand_font` as a key). Null means Sinwy's defaults.
@@ -51,13 +53,13 @@ Settled with the product owner. Ask before changing any of them.
 
 ## Standing notes
 
-Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
+Verified facts and gotchas for whoever builds on this work. No phase remains, so nothing here is pending.
 
 - **Widgets:** page content is `{ schemaVersion: 1, widgets: PageWidget[] }` with nested `children`, a strict schema (unknown keys refused). Premium widgets and templates use `requires: "advanced-widgets"`. The renderer tags each widget with `data-widget="<type>"`. There's still no editor UI. See the Phase 1 log.
 - **Activity Log:** record with `recordActivity(organizationId, actor, { action, details })` from `@organizationsModule`, after the write; `actor` is the session user (`sessionFrom(c).user`) or `null` for Sinwy. A new action needs a key in `ActivityDetailsMap` (`Sinwy.Shared/types/organization/OrganizationActivity.ts`) and a sentence in `SENTENCES` (`org-dashboard/lib/activity.ts`). Details hold names and roles only, never contact details or field values. Seeded active orgs start with one `organization.activated` entry. See the Phase 2 log.
 - **Settings tabs:** `_shell.settings.tsx` is the layout (PageHeader + `SETTINGS_TABS` in a shared `RouteTabs` nav (`shared/components/RouteTabs.tsx`, also used by `/account/notifications`): General, Branding, Activity, Ownership) and guards `settings:manage`; tab pages render only their `ContentBox`. An owner-only tab needs its own `beforeLoad` guard and a filtered tab list. Settings content is capped at `max-w-3xl`. General (`_shell.settings.index.tsx`) holds Organization, Business profile, Timezone and Plan; Ownership holds `TransferSection` and Delete; its sections are in `org-dashboard/components/settings/`.
 - **General data:** `GET …/general` (`OrganizationGeneralDto`) via `generalQuery` in `org-dashboard/lib/settings-queries.ts`; after a change `useRefreshGeneral` invalidates it, availability, the organizations list and the router (so breadcrumbs and switcher update). `OrganizationSummary` and `StorefrontDto` carry `logo`. The org shell's route-context `organization` is Better Auth's, not the summary; read the summary from `organizationsQuery` by id.
-- **Better Auth hooks** (installed version): leaving fires no hook, so the `after` middleware in `auth.ts` handles `/organization/leave`; it also records team activity for `TEAM_ACTIVITY_PATHS` from `ctx.context.returned` (`auth/teamActivity.ts`). A refused call's `returned` is an `APIError`. Hook payloads name the affected user, not the actor, except `afterCancelInvitation`, which has `cancelledBy`. `afterAcceptInvitation` gets `{ invitation, member, user, organization }`, `afterUpdateMemberRole` gets `{ member, previousRole, user, organization }`, and `afterRemoveMember` gets `{ member, user, organization }`. The `after` middleware has the session (`getSessionFromCtx`), `ctx.path`, `ctx.body` and `ctx.context.returned`.
+- **Better Auth hooks** (installed version): leaving fires no hook, so the `after` middleware in `auth.ts` handles `/organization/leave`; it also records team activity for `TEAM_ACTIVITY_PATHS` from `ctx.context.returned` (`auth/teamActivity.ts`). A refused call's `returned` is an `APIError`. Hook payloads name the affected user, not the actor, except `afterCancelInvitation`, which has `cancelledBy`. `afterAcceptInvitation` gets `{ invitation, member, user, organization }`, `afterUpdateMemberRole` gets `{ member, previousRole, user, organization }`, and `afterRemoveMember` gets `{ member, user, organization }`. The `after` middleware has the session (`getSessionFromCtx`), `ctx.path`, `ctx.body` and `ctx.context.returned`. `recordTeamActivity` catches its own errors, name lookup included.
 - **`Membership`** (`auth/requirePermission.ts:21`) has no user id. Controllers take the actor from the session user and pass it to the service.
 - **Organization deletion** is Better Auth's `/organization/delete` (owner only by the plugin; allowed inactive or draft, refused when scheduled or during an accepted transfer: `beforeDeleteOrganization` in `auth.ts`; `afterDeleteOrganization` deletes the logo through `deleteStoredLogo`). Its sessions' `active_organization_id` becomes NULL. Preview: `GET /api/account/organizations/:id/deletion-preview` in `user/`. The web dialog is `modules/organizations/components/DeleteOrganizationDialog.tsx`. `/organization/update` is refused outright at the top of the `before` middleware's `/organization/` branch (`auth.ts`). See the Phase 4 log.
 - **Slots:** `holdSlot` returns `{ result: "held", changed }` and `releaseSlot` returns `{ found, changed }`, so callers can tell a no-op from a change.
@@ -71,8 +73,9 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Branding:** `organization.brand_color`/`brand_font` (nullable, check-constrained), `PUT …/branding` (`organizationBrandingSchema`). `branding` rides on `OrganizationGeneralDto`, `OrganizationSummary`, `StorefrontDto.organization` and `PublicPageDto.organization`. The web applies it with `brandAttributes()` (`shared/lib/branding.ts`) spread on the hosted content's wrapper; unbranded adds nothing. See the Phase 5 log.
 - **shadcn CLI:** `shadcn add` writes `import { cn } from "cn"` and adds the npm package `cn`; change the import to `@/shared/lib/utils` and revert `package.json`/`bun.lock`.
 - **Dependencies:** the web's TanStack packages are `"latest"`, so any lockfile change (even `bun add` of something else) bumps them. If the type check then fails with two `query-core` versions, run `bun install --force` to relink Bun's store.
-- **Dev servers:** the backend (`bun run start:server`, log `/tmp/sinwy-server.log`, port 3001) runs without watch; restart it after backend changes before an e2e check. Killing a server the session didn't start is blocked by auto mode, so ask the user first. Phase 7 restarted it from this session's work (log as above), so it can be stopped at cleanup. The web server (`/tmp/sinwy-web.log`) hot-reloads and regenerates the route tree.
+- **Dev servers:** none are left running; Phase 8 stopped the backend and web servers the plan had started and deleted their logs. Start them as the `e2e-test` skill says. The backend runs without watch, so restart it after backend changes; the web server hot-reloads and regenerates the route tree.
 - **Notifications:** `@notificationsModule` (`notifyOrganization`, `notifyUser`, `notifyEmail`, `readInvitationNotifications`), best effort. Org rows have `organization_id` + `member_id` (cascade; no org FK), personal rows neither; org routes run behind `requireMember`, personal under `/api/account/notifications`, mark one at `/api/notifications/:id/read`. Web: `shared/lib/notifications.ts`, `shared/components/notifications/`, `AppShell` `actions` slot. See the Phase 7 log.
+- **Plugin endpoint checks:** `scopedEndpoints` (`auth/activeOrganization.ts`) names, per Better Auth organization endpoint, the keys the plugin itself reads the organization from (`reads`). The `before` hook sees the raw body and query, so a key the plugin ignores must never pick the organization that gets checked. Check the list against the plugin source (`plugins/organization/routes/`) when adding an endpoint or upgrading Better Auth (verified on 1.7.12). See the Phase 8 log.
 - **Seed scenarios** (`e2e-test` skill): `subscribed-org`, `pro-org`, `org-with-staff --staff n`, `bookable-org`, `owner-with-org`, `user`. `--staff` only applies to `org-with-staff` and is silently ignored elsewhere; to give `bookable-org` staff, seed a `user` and invite them through the real flow (`invite-member` + accept on `/invite/<id>`). `bookable-org` sets its timezone through `PUT …/timezone`, so it starts with a "changed the timezone" Activity entry. `org-with-staff` has no admin; promote a staff member with `POST /api/auth/organization/update-member-role` as the owner. Seeded subscriptions exist only in the DB, so the backend logs `WARN [billing] Polar subscription read failed` for them, which is expected.
 
 ## Deferred to other tickets
@@ -87,25 +90,3 @@ Reminder for whoever plans next: these were raised and consciously left out of P
 - Real-time notifications (SSE/WebSocket), and a feed across organizations.
 - Activity Log filters, longer retention as a tier gate, and in-transaction ("never misses") logging.
 - Payment notifications from a real provider (Stripe Connect).
-
----
-
-## Phase 8: Code review
-
-**Goal:** the deletion, permission and notification paths are reviewed and the plan is closed.
-
-**Files:** every file changed in phases 1–7 (`git diff 39d4936`, the plan's first commit). Focus files: org deletion in `modules/auth/auth.ts` (`before`/`after` middleware, organization hooks), `modules/user/` deletion preview, `modules/organizations/{controller,routes,service,activity,notificationPreferences,repository}.ts`, `modules/notifications/`, `modules/bookings/dispatch.ts`, `modules/payments/emails.ts`, `modules/transfers/service.ts`, migrations `drizzle/0027`–`0032` (0027 is Phase 1's widget jsonb migration), `Sinwy.Shared/types/{organization,notification}/`, web `shared/components/notifications/`, `shared/lib/notifications.ts`, `org-dashboard/routes/_shell.settings*.tsx`, `modules/organizations/components/DeleteOrganizationDialog.tsx`; plus `docs/org-rules-map.md`, `CONTEXT.md`, this plan and its log.
-
-**Steps:**
-- Review with focus on: org deletion (owner-only, inactive allowed, the transfer refusal, logo cleanup, booking emails before the cascade); every new endpoint's permission and organization scoping; that activity and notification writes can't fail their action; the jsonb migration on real-shaped data; that notification and activity payloads don't leak contact details.
-- Fix what the review finds, run `bun run verify` once, and update the rules map's "Known gaps" with anything left open.
-- Move the remaining Defaults that held into Decisions or the log, and mark the plan done.
-- Final cleanup: stop every dev server started during the plan's work unless the user asked to keep it running, and delete the temporary files and artifacts the work created (probe scripts, screenshots, browser console logs, scratch data).
-
-**Tests that matter:**
-- Whatever the review flags, with a regression test for each real bug.
-
-**Done when:**
-- `bun run verify` exits 0, the review findings are fixed or written down as known gaps, and the plan's status table is complete.
-
-**Verify:** None (each phase ran its own e2e check).

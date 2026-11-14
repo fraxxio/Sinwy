@@ -30,6 +30,7 @@ afterAll(() => server.stop(true));
 
 let orgId: string;
 let ownerId: string;
+let adminId: string;
 let adminCookie: string;
 let staffId: string;
 
@@ -39,8 +40,9 @@ beforeEach(async () => {
 	orgId = await insertOrganization("Guarded Co");
 	ownerId = await activateOrganization(orgId);
 	const admin = await createUserWithSession({ activeOrganizationId: orgId });
+	adminId = admin.userId;
 	adminCookie = admin.cookie;
-	await joinOrganization(orgId, admin.userId, "admin");
+	await joinOrganization(orgId, adminId, "admin");
 	({ userId: staffId } = await createUserWithSession());
 	await joinOrganization(orgId, staffId, "staff");
 	await db.insert(invitation).values({
@@ -106,14 +108,16 @@ const endpoints: Endpoint[] = [
 	},
 ];
 
-const call = ({ path, query, body }: Endpoint) => {
+const call = ({ path, query, body }: Endpoint, extraBody: object = {}) => {
 	const url = new URL(`/api/auth/organization/${path}`, base);
 	for (const [key, value] of Object.entries(query?.() ?? {}))
 		url.searchParams.set(key, value);
 	return fetch(url, {
 		method: body ? "POST" : "GET",
 		headers: { "content-type": "application/json", cookie: adminCookie },
-		body: body ? JSON.stringify(body()) : undefined,
+		body: body
+			? JSON.stringify({ ...(body() as object), ...extraBody })
+			: undefined,
 	});
 };
 
@@ -158,6 +162,42 @@ test.each(
 		expect(await codeOf(res)).toBe(AUTH_ERROR_CODES.ORGANIZATION_INACTIVE);
 		expect(await nameOf()).toBe("Guarded Co");
 	} else expect(res.status).toBe(200);
+});
+
+test.each(
+	endpoints.filter((endpoint) => endpoint.manages),
+)("inactive: $path isn't let through by naming an active organization", async (endpoint) => {
+	await db
+		.update(organization)
+		.set({ slotHeldAt: null })
+		.where(eq(organization.id, orgId));
+	const activeId = await insertOrganization("Open Co");
+	const activeOwnerId = await activateOrganization(activeId);
+	await joinOrganization(activeId, adminId, "staff");
+	await db.insert(invitation).values({
+		id: "invitation_active",
+		organizationId: activeId,
+		email: "other@test.dev",
+		role: "staff",
+		status: "pending",
+		expiresAt: new Date(Date.now() + 86_400_000),
+		createdAt: new Date(),
+		inviterId: activeOwnerId,
+	});
+
+	const decoys =
+		endpoint.path === "cancel-invitation"
+			? [{ organizationSlug: activeId }]
+			: [{ organizationSlug: activeId }, { invitationId: "invitation_active" }];
+	for (const decoy of decoys) {
+		const res = await call(endpoint, decoy);
+
+		expect({ decoy, status: res.status, code: await codeOf(res) }).toEqual({
+			decoy,
+			status: 403,
+			code: AUTH_ERROR_CODES.ORGANIZATION_INACTIVE,
+		});
+	}
 });
 
 test("active: reads pass", async () => {

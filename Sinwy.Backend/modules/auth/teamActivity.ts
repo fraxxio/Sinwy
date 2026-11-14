@@ -1,3 +1,4 @@
+import { createLogger } from "@logger";
 import {
 	type ActivityActor,
 	getUserName,
@@ -6,6 +7,8 @@ import {
 import { INVITE_ROLES, parseMemberRoles } from "@sinwy/shared";
 import { isAPIError } from "better-auth/api";
 import { z } from "zod";
+
+const logger = createLogger("auth:team-activity");
 
 const withRole = z.object({ organizationId: z.string(), role: z.string() });
 const member = withRole.extend({ userId: z.string() });
@@ -21,11 +24,7 @@ const inviteRoleOf = (role: string) => {
 const nameOf = async (userId: string, known?: string) =>
 	known ?? (await getUserName(userId)) ?? "";
 
-/**
- * Records what a better-auth team endpoint did, from what it returned. A
- * refused call returns an APIError, which none of these shapes match.
- */
-export const recordTeamActivity = async (
+const record = async (
 	path: string,
 	actor: ActivityActor,
 	returned: unknown,
@@ -71,5 +70,22 @@ export const recordTeamActivity = async (
 				details: {},
 			});
 		}
+	}
+};
+
+/**
+ * Records what a better-auth team endpoint did, from what it returned. A
+ * refused call returns an APIError, which none of these shapes match. Best
+ * effort: the change has committed, so a failure is logged and never thrown.
+ */
+export const recordTeamActivity = async (
+	path: string,
+	actor: ActivityActor,
+	returned: unknown,
+) => {
+	try {
+		await record(path, actor, returned);
+	} catch (error) {
+		logger.error("Failed to record team activity", { path, error });
 	}
 };

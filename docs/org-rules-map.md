@@ -791,6 +791,20 @@ Open, product or copy:
   pending; accepting it answers "no free seats" [11].
 - Revoke on Team has no confirmation, and Create account from an invitation
   doesn't prefill the invited email [11].
+- The Activity Log records activating and deactivating only when the owner
+  does it from Account → Organizations. An organization activated by
+  finishing setup or by a plan starting, or deactivated by a lapse or a
+  downgrade, gets no entry [3, 8].
+- A notification's link can outlive what it opens: an invitation or a
+  booking of an organization deleted since. The pages say the invitation or
+  booking is no longer available, and the invitation's notification stays
+  unread [11].
+- A member demoted from admin keeps the "payment recorded" notifications
+  already in their organization inbox [2].
+- Deleting an organization checks for an accepted transfer without a lock,
+  so a transfer accepted at the same moment goes with the cascade; the
+  recipient's checkout then completes nothing and they keep the plan
+  (Default 11) [10, 11].
 - Customers is a static placeholder that says "No customers yet" even with
   bookings.
 - A non-owner's `/account/billing` picker says "Your organization activates

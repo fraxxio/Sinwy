@@ -275,6 +275,19 @@ test("a failed activity write doesn't fail the action", async () => {
 	expect(await db.select().from(organizationActivity)).toEqual([]);
 });
 
+test("a failed name lookup doesn't fail a team change", async () => {
+	spies.push(
+		spyOn(repository, "findUserName").mockRejectedValue(new Error("down")),
+	);
+	const res = await call("POST", auth("update-member-role"), owner.cookie, {
+		memberId: `member_${staff.userId}_${orgId}`,
+		role: "admin",
+		organizationId: orgId,
+	});
+	expect(res.status).toBe(200);
+	expect(await db.select().from(organizationActivity)).toEqual([]);
+});
+
 test("activating and deactivating are recorded only when the slot changes", async () => {
 	const path = (action: string) =>
 		`/api/account/organizations/${orgId}/${action}`;

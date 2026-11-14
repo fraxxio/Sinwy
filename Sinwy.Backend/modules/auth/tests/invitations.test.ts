@@ -367,6 +367,21 @@ test("staff can't read the invitations or the member list", async () => {
 	expect(body.invitations).toEqual([]);
 });
 
+test("staff can't read the invitations by naming an organization they manage", async () => {
+	await invite(freshAddress());
+	const staff = await addStaff();
+	const managedId = await insertOrganization("Managed Co");
+	await activateOrganization(managedId);
+	await joinOrganization(managedId, staff.userId, "admin");
+
+	const res = await get(
+		`list-invitations?organizationId=${orgId}&organizationSlug=${managedId}`,
+		staff.cookie,
+	);
+
+	expect(res.status).toBe(403);
+});
+
 test("an admin reads the invitations and the member list", async () => {
 	await invite(freshAddress());
 	const admin = await createUserWithSession();
