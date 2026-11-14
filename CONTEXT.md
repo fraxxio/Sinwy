@@ -39,6 +39,30 @@ _Avoid_: Personal dashboard, customer account
 The experience inside an active organization context: dashboard, CMS/page builder, management features. Entered by selecting an organization (or landing in the last active one on login).
 _Avoid_: Business mode, admin mode
 
+**Page Builder**:
+The editor where an organization lays out and fills its hosted pages. Available on every plan; higher tiers unlock extra blocks and extra options on ordinary blocks, never the editor itself.
+_Avoid_: CMS (for the editor), premium editor
+
+**Widget**:
+One piece of a hosted page placed in the Page Builder (heading, text, image, gallery, …). Some widgets, and some options on ordinary widgets, are reserved for higher tiers (Advanced Widgets).
+_Avoid_: Block, component, section
+
+**Branding**:
+An organization's accent color and font, applied to all of its hosted pages and its booking flow. The base set is on every plan; finer customization may be tier-gated.
+_Avoid_: Theme, styling
+
+**Notification**:
+An in-app message to one user about something that happened. An organization notification concerns work in one organization and is seen in Organization Mode; a personal notification concerns the user themself (their bookings, invitations, transfer offers) and is seen in Customer Mode.
+_Avoid_: Alert, activity (see Activity Log)
+
+**Notification Preference**:
+A member's per-organization choice of which organization events also reach them by email. Customer emails are transactional and have no preference.
+_Avoid_: Notification settings, subscriptions
+
+**Activity Log**:
+The organization's record of management actions (settings, team, pages, services, ownership, lifecycle) and who took them. Booking changes are not in it; each booking keeps its own history.
+_Avoid_: Audit log, audit trail, history
+
 **Registration Source**:
 Where a user started registration (discovery platform vs business marketing page). Transient — carried only through the signup redirect (callbackURL) to pick the first post-verification destination; never persisted.
 _Avoid_: CTA source, user type
