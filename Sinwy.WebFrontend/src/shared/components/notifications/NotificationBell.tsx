@@ -50,7 +50,7 @@ export function NotificationBell({
 			<PopoverTrigger
 				render={
 					<Button
-						variant="ghost"
+						variant="secondary"
 						size="icon-sm"
 						className="relative text-muted-foreground"
 						aria-label={
