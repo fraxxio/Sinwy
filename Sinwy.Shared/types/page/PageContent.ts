@@ -39,10 +39,29 @@ export type PageWidget = {
 	children?: PageWidget[];
 };
 
-export type PageContent = {
+export type PageContentV1 = {
 	schemaVersion: 1;
 	widgets: PageWidget[];
 };
+
+/** A Puck document; its props belong to the page builder config. */
+export type PuckComponentData = {
+	type: string;
+	props: Record<string, unknown> & { id: string };
+};
+
+export type PuckDocument = {
+	root: { props?: Record<string, unknown> };
+	content: PuckComponentData[];
+	zones?: Record<string, PuckComponentData[]>;
+};
+
+export type PageContentV2 = {
+	schemaVersion: 2;
+	data: PuckDocument;
+};
+
+export type PageContent = PageContentV1 | PageContentV2;
 
 const widgetList = (schema: z.ZodType<PageWidget>) =>
 	z
@@ -83,11 +102,12 @@ const eachWidget = (
 /** Every widget type a content tree uses, nested ones included. */
 export const widgetTypesIn = (content: PageContent): Set<WidgetType> => {
 	const types = new Set<WidgetType>();
+	if (content.schemaVersion !== 1) return types;
 	eachWidget(content.widgets, (widget) => types.add(widget.type));
 	return types;
 };
 
-export const pageContentSchema = z
+const pageContentV1Schema = z
 	.strictObject({
 		schemaVersion: z.literal(1),
 		widgets: widgetList(widgetAt(1)),
@@ -111,4 +131,53 @@ export const pageContentSchema = z
 				path: ["widgets"],
 				message: `A page holds at most ${PAGE_CONTENT_LIMITS.maxWidgets} widgets`,
 			});
-	}) satisfies z.ZodType<PageContent>;
+	}) satisfies z.ZodType<PageContentV1>;
+
+const puckComponentSchema = z.looseObject({
+	type: z.string().min(1),
+	props: z.looseObject({ id: z.string().min(1) }),
+});
+
+const pageContentV2Schema = z.strictObject({
+	schemaVersion: z.literal(2),
+	data: z.looseObject({
+		root: z.looseObject({}),
+		content: z.array(puckComponentSchema),
+	}),
+}) as z.ZodType<PageContentV2>;
+
+const isComponent = (value: unknown): value is PuckComponentData =>
+	typeof value === "object" &&
+	value !== null &&
+	"type" in value &&
+	"props" in value;
+
+/** Components in a Puck document, counting those nested in slots; slots are prop arrays of components. */
+export const countPuckComponents = (components: PuckComponentData[]): number =>
+	components.reduce(
+		(sum, component) =>
+			sum +
+			1 +
+			Object.values(component.props).reduce<number>(
+				(nested, value) =>
+					Array.isArray(value) && value.every(isComponent)
+						? nested + countPuckComponents(value)
+						: nested,
+				0,
+			),
+		0,
+	);
+
+/** Widgets in version 1, components in version 2. */
+export const pageContentSize = (content: PageContent): number => {
+	if (content.schemaVersion === 2)
+		return countPuckComponents(content.data.content);
+	let count = 0;
+	eachWidget(content.widgets, () => count++);
+	return count;
+};
+
+export const pageContentSchema = z.union([
+	pageContentV1Schema,
+	pageContentV2Schema,
+]) satisfies z.ZodType<PageContent>;

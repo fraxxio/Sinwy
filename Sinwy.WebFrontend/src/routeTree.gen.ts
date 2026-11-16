@@ -67,6 +67,7 @@ import { Route as DashboardOrganizationSlugShellDotsettingsDotactivityRouteImpor
 import { Route as DashboardOrganizationSlugShellDotsettingsDotbrandingRouteImport } from './modules/org-dashboard/routes/_shell.settings.branding'
 import { Route as DashboardOrganizationSlugShellDotsettingsDotownershipRouteImport } from './modules/org-dashboard/routes/_shell.settings.ownership'
 import { Route as DashboardOrganizationSlugShellDotpagesDotidDotindexRouteImport } from './modules/org-dashboard/routes/_shell.pages.$id.index'
+import { Route as DashboardOrganizationSlugShellDotpagesDotidDoteditRouteImport } from './modules/org-dashboard/routes/_shell.pages.$id.edit'
 import { Route as DashboardOrganizationSlugShellDotpagesDotidDotpreviewRouteImport } from './modules/org-dashboard/routes/_shell.pages.$id.preview'
 
 const IndexRoute = IndexRouteImport.update({
@@ -396,6 +397,12 @@ const DashboardOrganizationSlugShellDotpagesDotidDotindexRoute =
     path: '/',
     getParentRoute: () => DashboardOrganizationSlugShellDotpagesDotidRoute,
   } as any)
+const DashboardOrganizationSlugShellDotpagesDotidDoteditRoute =
+  DashboardOrganizationSlugShellDotpagesDotidDoteditRouteImport.update({
+    id: '/edit',
+    path: '/edit',
+    getParentRoute: () => DashboardOrganizationSlugShellDotpagesDotidRoute,
+  } as any)
 const DashboardOrganizationSlugShellDotpagesDotidDotpreviewRoute =
   DashboardOrganizationSlugShellDotpagesDotidDotpreviewRouteImport.update({
     id: '/preview',
@@ -461,6 +468,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/$organizationSlug/pages/': typeof DashboardOrganizationSlugShellDotpagesDotindexRoute
   '/dashboard/$organizationSlug/services/': typeof DashboardOrganizationSlugShellDotservicesDotindexRoute
   '/dashboard/$organizationSlug/settings/': typeof DashboardOrganizationSlugShellDotsettingsDotindexRoute
+  '/dashboard/$organizationSlug/pages/$id/edit': typeof DashboardOrganizationSlugShellDotpagesDotidDoteditRoute
   '/dashboard/$organizationSlug/pages/$id/preview': typeof DashboardOrganizationSlugShellDotpagesDotidDotpreviewRoute
   '/dashboard/$organizationSlug/pages/$id/': typeof DashboardOrganizationSlugShellDotpagesDotidDotindexRoute
 }
@@ -510,6 +518,7 @@ export interface FileRoutesByTo {
   '/dashboard/$organizationSlug/pages': typeof DashboardOrganizationSlugShellDotpagesDotindexRoute
   '/dashboard/$organizationSlug/services': typeof DashboardOrganizationSlugShellDotservicesDotindexRoute
   '/dashboard/$organizationSlug/settings': typeof DashboardOrganizationSlugShellDotsettingsDotindexRoute
+  '/dashboard/$organizationSlug/pages/$id/edit': typeof DashboardOrganizationSlugShellDotpagesDotidDoteditRoute
   '/dashboard/$organizationSlug/pages/$id/preview': typeof DashboardOrganizationSlugShellDotpagesDotidDotpreviewRoute
   '/dashboard/$organizationSlug/pages/$id': typeof DashboardOrganizationSlugShellDotpagesDotidDotindexRoute
 }
@@ -572,6 +581,7 @@ export interface FileRoutesById {
   '/dashboard/$organizationSlug/_shell/pages/': typeof DashboardOrganizationSlugShellDotpagesDotindexRoute
   '/dashboard/$organizationSlug/_shell/services/': typeof DashboardOrganizationSlugShellDotservicesDotindexRoute
   '/dashboard/$organizationSlug/_shell/settings/': typeof DashboardOrganizationSlugShellDotsettingsDotindexRoute
+  '/dashboard/$organizationSlug/_shell/pages/$id/edit': typeof DashboardOrganizationSlugShellDotpagesDotidDoteditRoute
   '/dashboard/$organizationSlug/_shell/pages/$id/preview': typeof DashboardOrganizationSlugShellDotpagesDotidDotpreviewRoute
   '/dashboard/$organizationSlug/_shell/pages/$id/': typeof DashboardOrganizationSlugShellDotpagesDotidDotindexRoute
 }
@@ -635,6 +645,7 @@ export interface FileRouteTypes {
     | '/dashboard/$organizationSlug/pages/'
     | '/dashboard/$organizationSlug/services/'
     | '/dashboard/$organizationSlug/settings/'
+    | '/dashboard/$organizationSlug/pages/$id/edit'
     | '/dashboard/$organizationSlug/pages/$id/preview'
     | '/dashboard/$organizationSlug/pages/$id/'
   fileRoutesByTo: FileRoutesByTo
@@ -684,6 +695,7 @@ export interface FileRouteTypes {
     | '/dashboard/$organizationSlug/pages'
     | '/dashboard/$organizationSlug/services'
     | '/dashboard/$organizationSlug/settings'
+    | '/dashboard/$organizationSlug/pages/$id/edit'
     | '/dashboard/$organizationSlug/pages/$id/preview'
     | '/dashboard/$organizationSlug/pages/$id'
   id:
@@ -745,6 +757,7 @@ export interface FileRouteTypes {
     | '/dashboard/$organizationSlug/_shell/pages/'
     | '/dashboard/$organizationSlug/_shell/services/'
     | '/dashboard/$organizationSlug/_shell/settings/'
+    | '/dashboard/$organizationSlug/_shell/pages/$id/edit'
     | '/dashboard/$organizationSlug/_shell/pages/$id/preview'
     | '/dashboard/$organizationSlug/_shell/pages/$id/'
   fileRoutesById: FileRoutesById
@@ -1176,6 +1189,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardOrganizationSlugShellDotpagesDotidDotindexRouteImport
       parentRoute: typeof DashboardOrganizationSlugShellDotpagesDotidRoute
     }
+    '/dashboard/$organizationSlug/_shell/pages/$id/edit': {
+      id: '/dashboard/$organizationSlug/_shell/pages/$id/edit'
+      path: '/edit'
+      fullPath: '/dashboard/$organizationSlug/pages/$id/edit'
+      preLoaderRoute: typeof DashboardOrganizationSlugShellDotpagesDotidDoteditRouteImport
+      parentRoute: typeof DashboardOrganizationSlugShellDotpagesDotidRoute
+    }
     '/dashboard/$organizationSlug/_shell/pages/$id/preview': {
       id: '/dashboard/$organizationSlug/_shell/pages/$id/preview'
       path: '/preview'
@@ -1319,12 +1339,15 @@ const DashboardOrganizationSlugShellDotcustomersRouteWithChildren =
   )
 
 interface DashboardOrganizationSlugShellDotpagesDotidRouteChildren {
+  DashboardOrganizationSlugShellDotpagesDotidDoteditRoute: typeof DashboardOrganizationSlugShellDotpagesDotidDoteditRoute
   DashboardOrganizationSlugShellDotpagesDotidDotpreviewRoute: typeof DashboardOrganizationSlugShellDotpagesDotidDotpreviewRoute
   DashboardOrganizationSlugShellDotpagesDotidDotindexRoute: typeof DashboardOrganizationSlugShellDotpagesDotidDotindexRoute
 }
 
 const DashboardOrganizationSlugShellDotpagesDotidRouteChildren: DashboardOrganizationSlugShellDotpagesDotidRouteChildren =
   {
+    DashboardOrganizationSlugShellDotpagesDotidDoteditRoute:
+      DashboardOrganizationSlugShellDotpagesDotidDoteditRoute,
     DashboardOrganizationSlugShellDotpagesDotidDotpreviewRoute:
       DashboardOrganizationSlugShellDotpagesDotidDotpreviewRoute,
     DashboardOrganizationSlugShellDotpagesDotidDotindexRoute:

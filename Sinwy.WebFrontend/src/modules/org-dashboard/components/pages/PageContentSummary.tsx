@@ -1,40 +1,59 @@
-import type { PageDetailDto } from "@sinwy/shared";
+import { type PageDetailDto, pageContentSize } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
-import { EyeIcon, LayoutTemplateIcon } from "lucide-react";
+import { EyeIcon, LayoutTemplateIcon, PencilIcon } from "lucide-react";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Button } from "#/shared/components/ui/button";
 
-/** Where the page builder goes; until then it shows what the latest version holds. */
+/** What the latest version holds, with the way into the page builder. */
 export function PageContentSummary({
 	organizationSlug,
 	page,
+	canWrite,
 }: {
 	organizationSlug: string;
 	page: PageDetailDto;
+	canWrite: boolean;
 }) {
 	const { latestVersion } = page;
-	const widgets = latestVersion.content.widgets.length;
+	const count = pageContentSize(latestVersion.content);
+	const noun = latestVersion.content.schemaVersion === 2 ? "block" : "widget";
 
 	return (
 		<SettingsSection
 			id="content"
 			title="Content"
-			description="What's on the page. Editing it comes with the page builder."
+			description="What's on the page."
 			action={
-				<Button
-					variant="outline"
-					nativeButton={false}
-					render={
-						<Link
-							to="/dashboard/$organizationSlug/pages/$id/preview"
-							params={{ organizationSlug, id: page.id }}
-						/>
-					}
-				>
-					<EyeIcon />
-					Preview
-				</Button>
+				<div className="flex gap-2">
+					{canWrite && (
+						<Button
+							nativeButton={false}
+							render={
+								<Link
+									to="/dashboard/$organizationSlug/pages/$id/edit"
+									params={{ organizationSlug, id: page.id }}
+								/>
+							}
+						>
+							<PencilIcon />
+							Edit
+						</Button>
+					)}
+					<Button
+						variant="outline"
+						nativeButton={false}
+						render={
+							<Link
+								to="/dashboard/$organizationSlug/pages/$id/preview"
+								params={{ organizationSlug, id: page.id }}
+							/>
+						}
+					>
+						<EyeIcon />
+						Preview
+					</Button>
+				</div>
 			}
 		>
 			<div className="flex items-center gap-4 rounded-md border border-dashed p-6">
@@ -44,8 +63,8 @@ export function PageContentSummary({
 				/>
 				<div className="grid gap-1 text-sm">
 					<p className="font-medium">
-						Version {latestVersion.version} · {widgets}{" "}
-						{widgets === 1 ? "widget" : "widgets"}
+						Version {latestVersion.version} · {count} {noun}
+						{count === 1 ? "" : "s"}
 					</p>
 					<p className="text-muted-foreground">
 						Last saved{" "}

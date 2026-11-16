@@ -289,10 +289,9 @@ test("content: each save adds the next version and bumps updatedAt", async () =>
 	expect(res.status).toBe(200);
 	const saved = await unwrap<PageDetailDto>(res);
 	expect(saved.latestVersion.version).toBe(2);
-	expect(saved.latestVersion.content.widgets.map((w) => w.type)).toEqual([
-		"heading",
-		"text",
-	]);
+	expect(saved.latestVersion.content).toMatchObject({
+		widgets: [{ type: "heading" }, { type: "text" }],
+	});
 	expect(saved.updatedAt > created.updatedAt).toBe(true);
 
 	const versions = await db
@@ -356,6 +355,50 @@ test("content: unknown widget types → 400; an oversized body → 413", async (
 		`pages/${created.id}/content`,
 		org.ownerCookie,
 		huge,
+	);
+	expect(tooLarge.status).toBe(413);
+});
+
+const puckDocument = (headingText = "Hello") =>
+	({
+		schemaVersion: 2,
+		data: {
+			root: { props: {} },
+			content: [
+				{
+					type: "Section",
+					props: {
+						id: "Section-1",
+						items: [
+							{
+								type: "Heading",
+								props: { id: "Heading-1", text: headingText },
+							},
+						],
+					},
+				},
+			],
+		},
+	}) satisfies PageContent;
+
+test("content v2: a Puck document saves as the next version and over 256 KB → 413", async () => {
+	const created = await create();
+	const res = await save(created.id, 1, puckDocument());
+	expect(res.status).toBe(200);
+	const saved = await unwrap<PageDetailDto>(res);
+	expect(saved.latestVersion).toMatchObject({
+		version: 2,
+		content: puckDocument(),
+	});
+
+	const tooLarge = await call(
+		"PUT",
+		`pages/${created.id}/content`,
+		org.ownerCookie,
+		JSON.stringify({
+			baseVersion: 2,
+			content: puckDocument("x".repeat(MAX_PAGE_CONTENT_BYTES)),
+		}),
 	);
 	expect(tooLarge.status).toBe(413);
 });

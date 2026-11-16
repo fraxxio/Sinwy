@@ -1,13 +1,13 @@
 import { COUNTRY_OPTIONS, type OrganizationProfileDto } from "../organization";
 import type { Feature } from "../plan";
-import type { PageContent, PageWidget, WidgetType } from "./PageContent";
+import type { PageContentV1, PageWidget, WidgetType } from "./PageContent";
 
 export type PageTemplateDefinition = {
 	label: string;
 	description: string;
 	requires?: Feature;
 	/** Builds a page's first version, prefilled from whatever the profile has. */
-	build: (profile: OrganizationProfileDto) => PageContent;
+	build: (profile: OrganizationProfileDto) => PageContentV1;
 };
 
 const widgetsFrom = (
@@ -25,7 +25,7 @@ const widgetsFrom = (
 
 const content = (
 	...parts: (Omit<PageWidget, "id"> | null | false)[]
-): PageContent => ({ schemaVersion: 1, widgets: widgetsFrom(parts) });
+): PageContentV1 => ({ schemaVersion: 1, widgets: widgetsFrom(parts) });
 
 const heading = (text: string, level: 1 | 2 | 3 = 2) => ({
 	type: "heading" as const,

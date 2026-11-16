@@ -83,3 +83,35 @@ it("drops unsafe links and malformed props", () => {
 	expect(html).not.toContain("<img");
 	expect(html).not.toContain("<h");
 });
+
+it("renders a Puck document server-side, slots included", () => {
+	const html = renderToStaticMarkup(
+		createElement(PageRenderer, {
+			content: {
+				schemaVersion: 2,
+				data: {
+					root: { props: {} },
+					content: [
+						{
+							type: "Section",
+							props: {
+								id: "Section-1",
+								tone: "muted",
+								items: [
+									{
+										type: "Heading",
+										props: { id: "Heading-1", text: "Welcome in", level: "1" },
+									},
+								],
+							},
+						},
+						{ type: "Unknown", props: { id: "Unknown-1" } },
+					],
+				},
+			},
+			organizationSlug: "acme",
+		}),
+	);
+	expect(html).toContain("<section");
+	expect(html).toMatch(/<h1[^>]*>Welcome in<\/h1>/);
+});

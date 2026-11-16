@@ -1,3 +1,4 @@
+import { pageContentSize } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { pageQuery } from "#/modules/org-dashboard/lib/page-queries";
@@ -81,7 +82,7 @@ function PagePreviewPage() {
 				action={backButton}
 			/>
 			<ContentBox>
-				{latestVersion.content.widgets.length ? (
+				{pageContentSize(latestVersion.content) ? (
 					<div
 						{...(branding && brandAttributes(branding))}
 						className="mx-auto max-w-3xl"

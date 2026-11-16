@@ -1,6 +1,7 @@
 import type { PageContent, PageWidget } from "@sinwy/shared";
 import type { ReactNode } from "react";
 import { Img } from "#/shared/components/Img";
+import { PuckPage } from "#/shared/components/page-builder/PuckPage";
 import { Button } from "#/shared/components/ui/button";
 
 type Props = Record<string, unknown>;
@@ -150,7 +151,7 @@ function Widgets({
 	));
 }
 
-/** The MVP rendering of a content tree; unknown widget types are skipped. */
+/** Version 1 is the MVP widget tree, where unknown widget types are skipped; version 2 is a Puck document. */
 export function PageRenderer({
 	content,
 	organizationSlug,
@@ -158,6 +159,7 @@ export function PageRenderer({
 	content: PageContent;
 	organizationSlug: string;
 }) {
+	if (content.schemaVersion === 2) return <PuckPage data={content.data} />;
 	return (
 		<article className="grid gap-6">
 			<Widgets widgets={content.widgets} organizationSlug={organizationSlug} />

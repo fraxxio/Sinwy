@@ -5,11 +5,14 @@ import {
 	PAGE_CONTENT_LIMITS,
 	PAGE_TEMPLATE_IDS,
 	PAGE_TEMPLATES,
+	type PageContent,
 	type PageWidget,
 	pageContentSchema,
 	pageSlugSchema,
 	RESERVED_PAGE_SLUGS,
+	savePageContentSchema,
 	WIDGET_TYPES,
+	widgetTypesIn,
 } from "@sinwy/shared";
 
 const widget = (id: string, children?: PageWidget[]): PageWidget => ({
@@ -92,6 +95,55 @@ describe("page content schema", () => {
 			pageContentSchema.safeParse({ schemaVersion: 1, widgets: [], blocks })
 				.success,
 		).toBe(false);
+	});
+});
+
+describe("page content v2 (Puck)", () => {
+	const body = {
+		baseVersion: 3,
+		content: {
+			schemaVersion: 2 as const,
+			data: {
+				root: { props: { title: "Home" } },
+				content: [
+					{
+						type: "Section",
+						props: {
+							id: "Section-1",
+							items: [
+								{ type: "Heading", props: { id: "Heading-1", text: "Hi" } },
+							],
+						},
+					},
+				],
+				zones: {},
+			},
+		},
+	};
+
+	test("round-trips through the save schema unchanged", () => {
+		const parsed = savePageContentSchema.safeParse(body);
+		expect(parsed.success).toBe(true);
+		expect(parsed.data as unknown).toEqual(body);
+		expect(widgetTypesIn(body.content as PageContent).size).toBe(0);
+	});
+
+	test("refuses a v2 body without a content array or with widgets", () => {
+		const { content } = body;
+		const bad = [
+			{ ...content, data: { root: {} } },
+			{
+				...content,
+				data: { ...content.data, content: [{ type: "Heading", props: {} }] },
+			},
+			{ schemaVersion: 2, widgets: [] },
+			{ ...content, widgets: [] },
+		];
+		for (const candidate of bad)
+			expect(
+				savePageContentSchema.safeParse({ baseVersion: 1, content: candidate })
+					.success,
+			).toBe(false);
 	});
 });
 
