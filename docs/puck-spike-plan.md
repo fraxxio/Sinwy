@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Puck editor and SSR render on the real pages flow | – | done | `feat(backend, web, shared): puck spike phase 1, editor and ssr render` |
-| 2 | FreeGrid: grid-snapped mode in a slot | 1 | todo | |
+| 2 | FreeGrid: grid-snapped mode in a slot | 1 | done | `feat(web): puck spike phase 2, freegrid` |
 | 3 | Component set, rich text, theme tokens, Tailwind | 1 | todo | |
 | 4 | Per-breakpoint styles | 2, 3 | todo | |
 | 5 | Server validation, plan gating, migrations | 3 | todo | |
@@ -61,7 +61,17 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Issue #1848: `richtext` paste ignores `textAlign: false`.
   - Rich text rendering may pull Tiptap and happy-dom into the server bundle (happy-dom is a direct Puck dependency).
   - TanStack Start recipe: PR #1542, not merged.
-  - RGL 2.3.0 has a drag regression (#2303), so pin 2.2.4 if it reproduces.
+- **FreeGrid (phase 2, verified; details in the phase 2 log):**
+  - `react-grid-layout` is pinned to exactly 2.2.4, because #2303 reproduces on 2.3.0. Don't upgrade it until a fixed release is out.
+  - Layout is `{ desktop, tablet?, mobile? }`, each a map of child id to `{ x, y, w, h }` on 12 columns × 40 px rows with a 16 px gap (`free-grid-layout.ts`). The editor and the storefront read only `desktop` so far. Children without a cell stack at the bottom.
+  - Placement has two paths. The editor uses a generated `<style>` targeting Puck's `[data-puck-component="<id>"]` wrapper inside the slot element. The storefront uses `<Items as={FreeGridCells}>`, which wraps children by their React key (the id). Per-breakpoint work must change both.
+  - Gestures write back through one `replace` dispatch (one history entry); `setUi` adds none. The compactor prevents collisions.
+  - Grid children keep Puck drag. `drag: false` makes them `aria-disabled` and drags the parent instead.
+- **Puck editor DOM and events (phase 2):**
+  - `[data-puck-component] *` gets `pointer-events: none` in the editor, so interactive UI inside a block needs `pointer-events: auto !important`.
+  - Puck's drag starts on `pointerdown` on the component wrapper.
+  - React listens at the iframe portal root: a native `stopPropagation` on `click` also blocks React `onClick` below it.
+  - Every prop needs a field; hidden data uses a `custom` field.
 - **Existing content contract:**
   - `pageContentSchema` in `Sinwy.Shared/types/page/PageContent.ts` is a strict object with `schemaVersion: z.literal(1)`.
   - `savePageContentSchema` (`PageSchema.ts:53`) wraps it.
@@ -75,56 +85,30 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Dev and browser:**
   - Dev servers run in the background with logs in `/tmp/sinwy-backend.log` and `/tmp/sinwy-web.log`.
   - The first visit after importing a new Puck entry makes Vite re-optimize deps and reload, with a one-off "Invalid hook call". Reload and the console is clean.
+  - After changing a dependency's version, Vite keeps serving the old pre-bundle. Stop the web server, delete `Sinwy.WebFrontend/node_modules/.vite/deps`, and start it again (`bun run start:web > /tmp/sinwy-web.log`).
+  - The canvas auto-zooms to about 57% at 1440×900, so compute click points from `boundingBox()`.
+  - The DOM can hold two action bars; the live one is `.last()`.
+  - Field inputs: `input[name="<prop>"]:visible`.
+  - `window.__puckActions` lists every dispatched action type.
   - Puck drag and drop needs stepped `page.mouse` moves through `run-code`. The recipe is in the phase 1 log.
   - The editor's Save button gives no success feedback yet (phase 6 header).
 - React Compiler is on through `reactCompilerPreset()` in `Sinwy.WebFrontend/vite.config.ts`. Tailwind 4 is loaded from `Sinwy.WebFrontend/src/styles.css`, and the brand variables are applied at `[data-brand-color]` / `[data-brand-font]` (around line 791).
 
 ---
 
-## Phase 2: FreeGrid: grid-snapped mode in a slot
-
-**Goal:** a FreeGrid component, nested inside a Section, lets the editor drag and resize its children on a snapping grid. It renders as plain CSS Grid on the storefront. This is the riskiest part of the spike.
-
-**Files:**
-- `Sinwy.WebFrontend/src/shared/components/page-builder/render-config.tsx`: component types (`BuilderComponents`), fields and render functions. FreeGrid's public render goes here.
-- `page-builder/editor-config.tsx`: labels, `defaultProps`, categories. FreeGrid's editor-only render (RGL) and `resolvePermissions` go here, so RGL never reaches the storefront.
-- `page-builder/PageEditor.tsx`: the `<Puck>` wrapper (save through `useGetPuck`, header actions). Add `onAction` logging here.
-- `page-builder/PuckPage.tsx`: storefront `<Render>` from `@puckeditor/core/rsc`.
-- `Sinwy.WebFrontend/src/shared/tests/page-renderer.test.ts`: SSR render tests. Put the layout-to-CSS-Grid unit test next to it.
-- `Sinwy.WebFrontend/package.json`: add `react-grid-layout` v2.
-
-**Steps:**
-- `items` is a normal Puck slot, so outline, selection, copy/paste and permissions keep working.
-- `layout` is a per-breakpoint map (`desktop`, `tablet`, `mobile`) of RGL items `{ i, x, y, w, h }`, keyed by child id.
-- Editor render (`puck.isEditing`): RGL with no compaction. Overlap stays off unless it proves useful. Public render: CSS Grid using `grid-column` and `grid-row`, with no RGL in the storefront bundle.
-- Children of a FreeGrid get `drag: false` through `resolvePermissions` when the parent is FreeGrid, so Puck's DnD and RGL don't both grab the gesture.
-- Write each RGL `onDragStop` / `onResizeStop` back as one Puck dispatch. Use `onAction` to confirm that one gesture is one history entry.
-- Try inserting from the Puck drawer straight into a FreeGrid, and dragging a child out of one. Record what works and what needed a workaround.
-- If RGL inside the iframe can't be made to work, try the iframe-disabled mode and record the cost (viewports are lost).
-
-**Tests that matter:**
-- The layout-to-CSS-Grid mapping is pure and deterministic, so a unit test pins its output for a sample layout.
-
-**Done when:**
-- Inside a FreeGrid, move, resize, select, edit fields, duplicate, delete and undo all work, with one undo step per gesture.
-- The storefront shows the same arrangement.
-- Phase 9 needs these results to make its go/no-go call, so the Findings must state them plainly.
-
-**Verify:**
-- Seed: `subscribed-org`.
-- In the editor, add Section > FreeGrid with three Heading children, then drag and resize them.
-- Undo once: only the last gesture reverts.
-- Save and publish. The public page shows the same positions, and the page's JS has no react-grid-layout chunk (check the network tab).
-
 ## Phase 3: Component set, rich text, theme tokens, Tailwind
 
 **Goal:** a realistic block set exists, with inline rich text, theme tokens with live preview, and a working rule for user-chosen styles under Tailwind 4.
 
 **Files:**
-- `page-builder/` config and components.
+- `Sinwy.WebFrontend/src/shared/components/page-builder/render-config.tsx`: `BuilderComponents`, fields (every prop needs one) and the storefront renders. New blocks go here.
+- `page-builder/editor-config.tsx`: labels, `defaultProps`, categories and editor-only renders. The BookingWidget's custom field UI (shadcn service picker) goes here, so the storefront never imports it.
+- `page-builder/free-grid-layout.ts`: `gridStyle` has a hard-coded 16 px gap. Switch it to the spacing token if tokens should reach the grid.
+- `page-builder/PuckPage.tsx` (storefront `<Render>`) and `page-builder/PageEditor.tsx` (`<Puck>`, where the iframe's page background gets set).
+- `Sinwy.WebFrontend/src/shared/tests/page-renderer.test.ts`: SSR render tests, including the rich-text sanitizing test.
 - `Sinwy.WebFrontend/src/shared/lib/branding.ts`: `brandAttributes`, `BRAND_FONT_FAMILIES`.
 - `Sinwy.WebFrontend/src/styles.css`: brand variables around line 791.
-- `Sinwy.WebFrontend/src/modules/storefront/components/ServiceList.tsx`: can serve as the real data for the booking widget.
+- `Sinwy.WebFrontend/src/modules/storefront/components/ServiceList.tsx`: can serve as the real data for the booking widget. `shared/` must not import from `modules/`, so pass the data or render through a prop, or move what's needed into `shared/`.
 
 **Steps:**
 - Components:

@@ -1,10 +1,19 @@
 import type { Config, Slot } from "@puckeditor/core";
+import { Children, isValidElement, type ReactNode } from "react";
+import {
+	type CellMap,
+	cellPlacement,
+	type FreeGridLayout,
+	gridStyle,
+	resolveCells,
+} from "./free-grid-layout";
 
 export type HeadingLevel = "1" | "2" | "3";
 
 export type BuilderComponents = {
 	Section: { items: Slot; tone: "plain" | "muted" };
 	Heading: { text: string; level: HeadingLevel };
+	FreeGrid: { items: Slot; layout: FreeGridLayout };
 };
 
 export type BuilderConfig = Config<BuilderComponents>;
@@ -19,6 +28,33 @@ const TONES = {
 	plain: "",
 	muted: "bg-muted",
 } as const;
+
+/** Wraps each slot child (keyed by its id) in its grid cell. */
+function FreeGridCells({
+	layout,
+	children,
+	...rest
+}: {
+	layout: CellMap | undefined;
+	children?: ReactNode;
+	className?: string;
+}) {
+	const items = Children.toArray(children).filter(isValidElement);
+	const ids = items.map((child) => String(child.key).replace(/^\.\$/, ""));
+	const cells = resolveCells(ids, layout);
+	return (
+		<div {...rest} style={gridStyle}>
+			{items.map((child, index) => {
+				const cell = cells[index];
+				return (
+					<div key={child.key} style={cell && cellPlacement(cell)}>
+						{child}
+					</div>
+				);
+			})}
+		</div>
+	);
+}
 
 /** What the storefront renders with; it must stay free of editor-only code. Fields are plain data, and `<Render>` needs the slot ones. */
 export const renderConfig: BuilderConfig = {
@@ -59,6 +95,15 @@ export const renderConfig: BuilderConfig = {
 				const Tag = `h${safe}` as const;
 				return <Tag className={HEADINGS[safe]}>{text}</Tag>;
 			},
+		},
+		FreeGrid: {
+			fields: {
+				items: { type: "slot" },
+				layout: { type: "custom", render: () => <></> },
+			},
+			render: ({ items: Items, layout }) => (
+				<Items as={FreeGridCells} layout={layout?.desktop} />
+			),
 		},
 	},
 	root: {

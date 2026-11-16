@@ -59,6 +59,10 @@ export function PageEditor({
 			headerTitle={title}
 			headerPath={path}
 			height="100%"
+			onAction={(action) => {
+				const w = window as { __puckActions?: string[] };
+				w.__puckActions = [...(w.__puckActions ?? []), action.type];
+			}}
 			overrides={{
 				headerActions: () => (
 					<>

@@ -91,3 +91,103 @@ Finished phases of the [Puck spike plan](puck-spike-plan.md), each with its spec
 - Tailwind in the editor canvas: ✅ native.
 - Nested layout (slots): ✅ native.
 - Typing the config against our stored document type: 🟡 S (casts).
+
+## Phase 2: FreeGrid: grid-snapped mode in a slot
+
+**Goal:** a FreeGrid component, nested inside a Section, lets the editor drag and resize its children on a snapping grid. It renders as plain CSS Grid on the storefront. This is the riskiest part of the spike.
+
+**Files:**
+- `Sinwy.WebFrontend/src/shared/components/page-builder/render-config.tsx`: component types (`BuilderComponents`), fields and render functions. FreeGrid's public render goes here.
+- `page-builder/editor-config.tsx`: labels, `defaultProps`, categories. FreeGrid's editor-only render (RGL) and `resolvePermissions` go here, so RGL never reaches the storefront.
+- `page-builder/PageEditor.tsx`: the `<Puck>` wrapper (save through `useGetPuck`, header actions). Add `onAction` logging here.
+- `page-builder/PuckPage.tsx`: storefront `<Render>` from `@puckeditor/core/rsc`.
+- `Sinwy.WebFrontend/src/shared/tests/page-renderer.test.ts`: SSR render tests. Put the layout-to-CSS-Grid unit test next to it.
+- `Sinwy.WebFrontend/package.json`: add `react-grid-layout` v2.
+
+**Steps:**
+- `items` is a normal Puck slot, so outline, selection, copy/paste and permissions keep working.
+- `layout` is a per-breakpoint map (`desktop`, `tablet`, `mobile`) of RGL items `{ i, x, y, w, h }`, keyed by child id.
+- Editor render (`puck.isEditing`): RGL with no compaction. Overlap stays off unless it proves useful. Public render: CSS Grid using `grid-column` and `grid-row`, with no RGL in the storefront bundle.
+- Children of a FreeGrid get `drag: false` through `resolvePermissions` when the parent is FreeGrid, so Puck's DnD and RGL don't both grab the gesture.
+- Write each RGL `onDragStop` / `onResizeStop` back as one Puck dispatch. Use `onAction` to confirm that one gesture is one history entry.
+- Try inserting from the Puck drawer straight into a FreeGrid, and dragging a child out of one. Record what works and what needed a workaround.
+- If RGL inside the iframe can't be made to work, try the iframe-disabled mode and record the cost (viewports are lost).
+
+**Tests that matter:**
+- The layout-to-CSS-Grid mapping is pure and deterministic, so a unit test pins its output for a sample layout.
+
+**Done when:**
+- Inside a FreeGrid, move, resize, select, edit fields, duplicate, delete and undo all work, with one undo step per gesture.
+- The storefront shows the same arrangement.
+- Phase 9 needs these results to make its go/no-go call, so the Findings must state them plainly.
+
+**Verify:**
+- Seed: `subscribed-org`.
+- In the editor, add Section > FreeGrid with three Heading children, then drag and resize them.
+- Undo once: only the last gesture reverts.
+- Save and publish. The public page shows the same positions, and the page's JS has no react-grid-layout chunk (check the network tab).
+
+### Log (2026-11-16, `feat(web): puck spike phase 2, freegrid`)
+- Shipped:
+  - `free-grid-layout.ts`: the layout types (`{ desktop, tablet?, mobile? }`, each a map of child id to `{ x, y, w, h }`) and the 12-column grid constants. `resolveCells` turns a stored map plus the child order into one cell per child: it clamps bad values, ignores entries for deleted children, and stacks unplaced children below the placed ones. `cellPlacement` and `gridStyle` give the CSS Grid styles.
+  - Storefront FreeGrid in `render-config.tsx`: `<Items as={FreeGridCells}>`. Puck's server `SlotRender` keys each child element by its id, so `FreeGridCells` wraps each one in a `grid-column` / `grid-row` div. No ids go into the HTML and there is no RGL.
+  - Editor FreeGrid (`FreeGridEditor.tsx`, imported only by `editor-config.tsx`):
+    - The slot renders as the same CSS Grid. A generated `<style>` places each `[data-puck-component="<childId>"]` wrapper Puck puts around a slot child.
+    - A transparent RGL 2.2.4 layer on top has a ⠿ move handle per child and e/s/se resize handles.
+    - Live drag and resize positions drive the content, so the content follows the placeholder. On stop, one `replace` dispatch writes `layout.desktop` and the moved child is selected.
+    - Child ids come from `createUsePuck()` → `getItemById(id).props.items`.
+  - An "Arrangement" custom field explains the handles and has a "Reset layout" button (one dispatch).
+  - `PageEditor` records every action type in `window.__puckActions` (`onAction`).
+  - Tests: the layout-to-CSS-Grid unit test (`free-grid-layout.test.ts`), and an SSR test that renders a FreeGrid with one placed and one unplaced child.
+- Differs from plan:
+  - **Grid children keep Puck drag.** The plan wanted `drag: false` through `resolvePermissions`, and that works natively: `params.parent.type` is right. But it has two side effects:
+    - dnd-kit marks every grid child `aria-disabled="true"` on a `role="button"`, so it's announced as disabled. Playwright refuses to click it.
+    - Pressing on a child and dragging starts Puck's drag on the nearest draggable ancestor, which moves the whole FreeGrid.
+    
+    The two gestures don't collide anyway: RGL only listens on its own handle, and the grid layer stops native `pointerdown`. So children stay Puck-draggable, and that is what lets them be dragged out of the grid. The helper was removed.
+  - **Compactor:** `getCompactor(null, false, true)` instead of `noCompactor`. On 2.2.4, `noCompactor` let a resize overlap its neighbour (cols 5–10 over 9–12). On 2.3.0 it pushed the resized item itself down 8 rows. With collisions prevented, a move or resize into an occupied cell snaps back and records no history.
+  - **RGL pinned to 2.2.4:** #2303 reproduced on 2.3.0. The dragged item stayed at `translate(815px, 6px)` for 5 pointer moves, then jumped.
+  - The iframe-disabled fallback wasn't needed.
+- Checked in the running app:
+  - Inline (org `seed-15d6fba8`, page "Grid test"):
+    - Content and the RGL layer line up to the pixel inside the iframe at 57% zoom, and `useContainerWidth` measures across the iframe.
+    - Each move or resize adds exactly one `replace` (plus a `setUi`), and one undo reverts exactly one gesture.
+    - Editing a field, duplicating (the copy is auto-placed at the bottom), deleting, Ctrl+Z / Ctrl+Shift+Z and Reset layout all work.
+    - Drawer → FreeGrid insert works. A child dragged out of the grid lands at the page root, as one `move`. Reordering children by Puck drag inside the grid changes only the slot order, and positions keep.
+    - Console and web log are clean.
+  - E2E subagent (org `seed-68aff329`, page `fg-verify`): it built Section > Free grid > 3 Headings from the drawer and made 3 gestures. Undo reverted only the resize. The save wrote version 2 with matching `layout.desktop`, and publishing set `published_version_id` to it. The SSR HTML and the browser render match the editor arrangement, with no hydration warning.
+  - Of 391 storefront requests, none is RGL, react-draggable or react-resizable. None of the 89 pre-bundled deps the storefront loads contains `DraggableCore` / `ResizableBox` / `GridLayout`. The storefront loads only `PuckPage`, `@puckeditor_core_rsc`, `render-config` and `free-grid-layout`.
+  - Not checked: production build chunks (phase 7) and touch (phase 7).
+
+**Findings**
+- **Verdict for the go/no-go:** grid-snapped free layout inside Puck works. Move, resize, select, edit fields, duplicate, delete and undo all work inside a FreeGrid, with one undo step per gesture, and the storefront shows the same arrangement as plain CSS Grid with zero RGL in its JS. It needed custom work (about 200 lines across two files) and knowledge of Puck's DOM, but no fork and no patch of Puck.
+- What worked natively:
+  - Slots stay normal Puck slots, so outline, selection, the action bar, duplicate, delete, field editing and drawer insert need no glue.
+  - `dispatch({ type: "replace" })` from inside a component makes one history entry, and `setUi` makes none.
+  - `getPuck()` (`getItemById`, `getSelectorForId`, `dispatch`) is usable from a component render inside the iframe.
+  - `<Items as={Component}>` forwards extra props to `as`. On the server it receives children keyed by component id, which is a clean hook for a per-child wrapper.
+  - RGL works inside Puck's iframe: react-draggable uses `ownerDocument`, and the ResizeObserver measures there.
+- Friction and workarounds (Puck internals relied on):
+  - In the editor every element inside a component gets `pointer-events: none` (`[data-puck-component] *`). Interactive UI inside a block needs `pointer-events: auto !important`.
+  - Puck starts a drag on `pointerdown` on the component wrapper, so the grid layer stops native `pointerdown`.
+  - React listens at the iframe portal root, so stopping a native `click` on a container also kills React `onClick` below it. Selection on handle click is done in the native listener.
+  - The click that ends a gesture would select the FreeGrid. It's swallowed with a one-shot capture listener, and the moved child is selected instead.
+  - Editor placement relies on Puck putting `data-puck-component="<id>"` on a wrapper that is a direct child of the slot element (`<div ref=dragRef>` in `DropZoneChild`). The editor DOM differs from `<Render>` (no wrappers there), so editor and storefront need two placement mechanisms. A Puck change to the wrapper would break the editor (not the storefront).
+  - Every prop needs a field: hidden data (`layout`) needs a `custom` field. Reusing `renderConfig.components.X.fields` with an override spread fails `Fields<Props>` typing (props become optional), so the slot field is spelled out again.
+  - A shared `resolvePermissions` helper typed as `ComponentConfig["resolvePermissions"]` isn't assignable to specific components under `exactOptionalPropertyTypes` (the `changed` record's `id`). It needs a structurally minimal signature.
+  - Rows are a fixed 40 px in both the editor and the storefront, so text taller than its cell overflows. That's a real design limit to solve in phase 4 (auto-height rows would break the editor overlay's pixel match).
+  - Inserting from the drawer ignores the drop point: new children stack at the bottom (cols 1–6). Placing at the drop point would need the slot's insert index or pointer position (not tried).
+  - During a Puck drag over the grid there's no clear 2D drop indicator: Puck's collision is 1D, and the dragged cell is just tinted.
+  - A collision-blocked resize snaps all the way back instead of growing up to the neighbour (RGL `preventCollision`).
+- Bugs hit:
+  - RGL #2303 (2.3.0, closed upstream but unreleased) reproduced. Pinned 2.2.4.
+  - Vite kept serving the old pre-bundled 2.3.0 after the downgrade, until the dev server was restarted with `node_modules/.vite/deps` deleted.
+- Rough time: about 2.5 h, roughly half reading Puck's DOM and event model, the rest browser checks.
+
+**Scores**
+- Free (grid-snapped) layout inside a slot: 🟡 M (RGL overlay plus per-child CSS, relying on Puck's wrapper DOM).
+- One undo step per gesture: ✅ native (one `replace` dispatch).
+- Plain CSS Grid on the storefront, no editor JS: ✅ native, through `<Items as>`.
+- Select, edit, duplicate, delete inside the grid: ✅ native.
+- Drag into and out of the grid: 🟡 S (works; insert position is ignored, and the 2D drop feedback is weak).
+- Per-parent permissions (`resolvePermissions` + `parent`): ✅ native, but `drag: false` has the a11y and parent-drag side effects above.

@@ -115,3 +115,45 @@ it("renders a Puck document server-side, slots included", () => {
 	expect(html).toContain("<section");
 	expect(html).toMatch(/<h1[^>]*>Welcome in<\/h1>/);
 });
+
+it("renders a FreeGrid as CSS Grid cells keyed by child id", () => {
+	const html = renderToStaticMarkup(
+		createElement(PageRenderer, {
+			content: {
+				schemaVersion: 2,
+				data: {
+					root: { props: {} },
+					content: [
+						{
+							type: "FreeGrid",
+							props: {
+								id: "FreeGrid-1",
+								layout: {
+									desktop: { "Heading-b": { x: 6, y: 0, w: 6, h: 2 } },
+								},
+								items: [
+									{
+										type: "Heading",
+										props: { id: "Heading-a", text: "A", level: "2" },
+									},
+									{
+										type: "Heading",
+										props: { id: "Heading-b", text: "B", level: "2" },
+									},
+								],
+							},
+						},
+					],
+				},
+			},
+			organizationSlug: "acme",
+		}),
+	);
+	expect(html).toContain("grid-template-columns:repeat(12, minmax(0, 1fr))");
+	expect(html).toMatch(
+		/grid-column:1 \/ span 6;grid-row:3 \/ span 2"><h2[^>]*>A</,
+	);
+	expect(html).toMatch(
+		/grid-column:7 \/ span 6;grid-row:1 \/ span 2"><h2[^>]*>B</,
+	);
+});
