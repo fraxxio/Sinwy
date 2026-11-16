@@ -7,10 +7,12 @@ import {
 	savePageContent,
 	storePage,
 } from "#/modules/org-dashboard/lib/page-queries";
+import { activeServicesQuery } from "#/modules/org-dashboard/lib/service-queries";
 import { PageEditor } from "#/shared/components/page-builder/PageEditor";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
+import { organizationsQuery } from "#/shared/lib/organizations";
 
 export const Route = createFileRoute(
 	"/dashboard/$organizationSlug/_shell/pages/$id/edit",
@@ -24,6 +26,12 @@ function PageEditPage() {
 	const { organization, member } = Route.useRouteContext();
 	const queryClient = useQueryClient();
 	const page = useQuery(pageQuery(organization.id, id));
+	const services = useQuery(activeServicesQuery(organization.id));
+	const { data: branding } = useQuery({
+		...organizationsQuery,
+		select: (organizations) =>
+			organizations.find((org) => org.id === organization.id)?.branding,
+	});
 	const [baseVersion, setBaseVersion] = useState<number | null>(null);
 
 	const backButton = (
@@ -41,7 +49,7 @@ function PageEditPage() {
 		</Button>
 	);
 
-	if (page.isPending)
+	if (page.isPending || services.isPending)
 		return (
 			<div className="fixed inset-0 z-50 bg-background p-6">
 				<Skeleton className="size-full rounded-md" />
@@ -83,6 +91,11 @@ function PageEditPage() {
 				title={page.data.title}
 				path={`/${organization.slug}/${page.data.slug}`}
 				actions={backButton}
+				metadata={{
+					organizationSlug: organization.slug,
+					services: services.data ?? [],
+					branding,
+				}}
 				onSave={save}
 			/>
 		</div>

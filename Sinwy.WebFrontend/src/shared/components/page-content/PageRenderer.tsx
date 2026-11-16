@@ -1,8 +1,9 @@
-import type { PageContent, PageWidget } from "@sinwy/shared";
+import type { PageContent, PageWidget, PublicServiceDto } from "@sinwy/shared";
 import type { ReactNode } from "react";
 import { Img } from "#/shared/components/Img";
 import { PuckPage } from "#/shared/components/page-builder/PuckPage";
 import { Button } from "#/shared/components/ui/button";
+import { imageSrc, resolveHref } from "#/shared/lib/page-urls";
 
 type Props = Record<string, unknown>;
 
@@ -19,20 +20,6 @@ const list = (props: Props, key: string): Props[] => {
 			)
 		: [];
 };
-
-const SAFE_URL = /^(https?:|mailto:|tel:|\/|#)/i;
-
-/** Absolute and root links pass through; a bare path like "book" is under the organization. */
-const resolveHref = (href: string | null, organizationSlug: string) => {
-	if (!href) return null;
-	if (SAFE_URL.test(href)) return href;
-	if (/^[a-z0-9-]+(\/[\w-]*)*$/i.test(href))
-		return `/${organizationSlug}/${href}`;
-	return null;
-};
-
-const imageSrc = (src: string | null) =>
-	src && /^(https?:|\/)/i.test(src) ? src : null;
 
 const HEADINGS = {
 	1: "text-3xl font-heading font-semibold tracking-tight sm:text-4xl",
@@ -155,11 +142,17 @@ function Widgets({
 export function PageRenderer({
 	content,
 	organizationSlug,
+	services = [],
 }: {
 	content: PageContent;
 	organizationSlug: string;
+	/** Shown by the page builder's booking widget. */
+	services?: PublicServiceDto[] | undefined;
 }) {
-	if (content.schemaVersion === 2) return <PuckPage data={content.data} />;
+	if (content.schemaVersion === 2)
+		return (
+			<PuckPage data={content.data} metadata={{ organizationSlug, services }} />
+		);
 	return (
 		<article className="grid gap-6">
 			<Widgets widgets={content.widgets} organizationSlug={organizationSlug} />

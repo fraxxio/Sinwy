@@ -1,17 +1,26 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { FileXIcon } from "lucide-react";
-import { publicPageQuery } from "#/modules/storefront/lib/storefront-queries";
+import {
+	publicPageQuery,
+	storefrontQuery,
+} from "#/modules/storefront/lib/storefront-queries";
 import { useTrackEvent } from "#/modules/storefront/lib/track";
 import { EmptyState } from "#/shared/components/EmptyState";
 import { PageRenderer } from "#/shared/components/page-content/PageRenderer";
 import { brandAttributes } from "#/shared/lib/branding";
+import { cn } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/$organizationSlug/$pageSlug")({
 	loader: async ({ params, context }) => {
-		const page = await context.queryClient.ensureQueryData(
-			publicPageQuery(params.organizationSlug, params.pageSlug),
-		);
+		const [page] = await Promise.all([
+			context.queryClient.ensureQueryData(
+				publicPageQuery(params.organizationSlug, params.pageSlug),
+			),
+			context.queryClient.ensureQueryData(
+				storefrontQuery(params.organizationSlug),
+			),
+		]);
 		if (!page) throw notFound();
 		return page;
 	},
@@ -44,13 +53,19 @@ function PublicPage() {
 	const { data: page } = useSuspenseQuery(
 		publicPageQuery(organizationSlug, pageSlug),
 	);
+	const { data: storefront } = useSuspenseQuery(
+		storefrontQuery(organizationSlug),
+	);
 	useTrackEvent(organizationSlug, "view", pageSlug);
 	if (!page) return <PageUnavailable />;
 
 	return (
 		<article
 			{...brandAttributes(page.organization.branding)}
-			className="mx-auto w-full max-w-3xl space-y-8"
+			className={cn(
+				"mx-auto w-full space-y-8",
+				page.content.schemaVersion === 1 && "max-w-3xl",
+			)}
 		>
 			<Link
 				to="/$organizationSlug/book"
@@ -62,6 +77,7 @@ function PublicPage() {
 			<PageRenderer
 				content={page.content}
 				organizationSlug={page.organization.slug}
+				services={storefront?.services}
 			/>
 		</article>
 	);

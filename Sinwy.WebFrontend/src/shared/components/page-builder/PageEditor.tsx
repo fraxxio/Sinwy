@@ -3,6 +3,8 @@ import type { PuckDocument } from "@sinwy/shared";
 import { type ReactNode, useState } from "react";
 import { Button } from "#/shared/components/ui/button";
 import { editorConfig } from "./editor-config";
+import { BuilderServicesContext } from "./ServicePicker";
+import type { BuilderMetadata } from "./theme-tokens";
 
 const EMPTY: PuckDocument = { root: { props: {} }, content: [] };
 
@@ -44,33 +46,38 @@ export function PageEditor({
 	title,
 	path,
 	actions,
+	metadata,
 	onSave,
 }: {
 	initialData: PuckDocument | null;
 	title: string;
 	path: string;
 	actions?: ReactNode;
+	metadata: BuilderMetadata;
 	onSave: (data: PuckDocument) => Promise<SaveResult>;
 }) {
 	return (
-		<Puck
-			config={editorConfig}
-			data={(initialData ?? EMPTY) as Data}
-			headerTitle={title}
-			headerPath={path}
-			height="100%"
-			onAction={(action) => {
-				const w = window as { __puckActions?: string[] };
-				w.__puckActions = [...(w.__puckActions ?? []), action.type];
-			}}
-			overrides={{
-				headerActions: () => (
-					<>
-						{actions}
-						<SaveAction onSave={onSave} />
-					</>
-				),
-			}}
-		/>
+		<BuilderServicesContext value={metadata.services}>
+			<Puck
+				config={editorConfig}
+				metadata={metadata}
+				data={(initialData ?? EMPTY) as Data}
+				headerTitle={title}
+				headerPath={path}
+				height="100%"
+				onAction={(action) => {
+					const w = window as { __puckActions?: string[] };
+					w.__puckActions = [...(w.__puckActions ?? []), action.type];
+				}}
+				overrides={{
+					headerActions: () => (
+						<>
+							{actions}
+							<SaveAction onSave={onSave} />
+						</>
+					),
+				}}
+			/>
+		</BuilderServicesContext>
 	);
 }

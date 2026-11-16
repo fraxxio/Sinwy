@@ -810,3 +810,9 @@ body:has([data-slot="sidebar-wrapper"]) {
 [data-brand-font] :is(h1, h2, h3, h4, h5, h6, .font-heading, .font-sans) {
 	font-family: var(--brand-font);
 }
+
+/* Page builder: the canvas's inline rich text editors don't get Puck's ProseMirror styles. */
+.ProseMirror {
+	white-space: pre-wrap;
+	word-wrap: break-word;
+}

@@ -35,6 +35,13 @@ export const servicesQuery = (organizationId: string) =>
 		},
 	});
 
+/** The services a storefront shows, for previews of the organization's pages. */
+export const activeServicesQuery = (organizationId: string) =>
+	queryOptions({
+		...servicesQuery(organizationId),
+		select: (services) => services.filter((service) => service.isActive),
+	});
+
 export const serviceQuery = (organizationId: string, serviceId: string) =>
 	queryOptions({
 		queryKey: serviceKeys.detail(organizationId, serviceId),

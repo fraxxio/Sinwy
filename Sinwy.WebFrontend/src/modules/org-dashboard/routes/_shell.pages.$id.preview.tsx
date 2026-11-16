@@ -2,6 +2,7 @@ import { pageContentSize } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { pageQuery } from "#/modules/org-dashboard/lib/page-queries";
+import { activeServicesQuery } from "#/modules/org-dashboard/lib/service-queries";
 import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { PageRenderer } from "#/shared/components/page-content/PageRenderer";
@@ -22,6 +23,7 @@ function PagePreviewPage() {
 	const { id } = Route.useParams();
 	const { organization } = Route.useRouteContext();
 	const page = useQuery(pageQuery(organization.id, id));
+	const { data: services } = useQuery(activeServicesQuery(organization.id));
 	const { data: branding } = useQuery({
 		...organizationsQuery,
 		select: (organizations) =>
@@ -90,6 +92,7 @@ function PagePreviewPage() {
 						<PageRenderer
 							content={latestVersion.content}
 							organizationSlug={organization.slug}
+							services={services}
 						/>
 					</div>
 				) : (

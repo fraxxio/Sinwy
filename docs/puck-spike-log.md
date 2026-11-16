@@ -191,3 +191,105 @@ Finished phases of the [Puck spike plan](puck-spike-plan.md), each with its spec
 - Select, edit, duplicate, delete inside the grid: ✅ native.
 - Drag into and out of the grid: 🟡 S (works; insert position is ignored, and the 2D drop feedback is weak).
 - Per-parent permissions (`resolvePermissions` + `parent`): ✅ native, but `drag: false` has the a11y and parent-drag side effects above.
+
+## Phase 3: Component set, rich text, theme tokens, Tailwind
+
+**Goal:** a realistic block set exists, with inline rich text, theme tokens with live preview, and a working rule for user-chosen styles under Tailwind 4.
+
+**Files:**
+- `Sinwy.WebFrontend/src/shared/components/page-builder/render-config.tsx`: `BuilderComponents`, fields (every prop needs one) and the storefront renders. New blocks go here.
+- `page-builder/editor-config.tsx`: labels, `defaultProps`, categories and editor-only renders. The BookingWidget's custom field UI (shadcn service picker) goes here, so the storefront never imports it.
+- `page-builder/free-grid-layout.ts`: `gridStyle` has a hard-coded 16 px gap. Switch it to the spacing token if tokens should reach the grid.
+- `page-builder/PuckPage.tsx` (storefront `<Render>`) and `page-builder/PageEditor.tsx` (`<Puck>`, where the iframe's page background gets set).
+- `Sinwy.WebFrontend/src/shared/tests/page-renderer.test.ts`: SSR render tests, including the rich-text sanitizing test.
+- `Sinwy.WebFrontend/src/shared/lib/branding.ts`: `brandAttributes`, `BRAND_FONT_FAMILIES`.
+- `Sinwy.WebFrontend/src/styles.css`: brand variables around line 791.
+- `Sinwy.WebFrontend/src/modules/storefront/components/ServiceList.tsx`: can serve as the real data for the booking widget. `shared/` must not import from `modules/`, so pass the data or render through a prop, or move what's needed into `shared/`.
+
+**Steps:**
+- Components:
+  - Columns (2–4 slots), Container, RichText (Puck `richtext` field, `contentEditable`), Image, Button.
+  - A BookingWidget that renders the org's services, with a custom field UI (a service picker built with shadcn).
+  - Two prebuilt "good-looking" sections (hero, services) whose slots are pre-filled through `defaultProps`.
+- Theme tokens: brand color and font come from org branding. Radius and spacing are root fields, written as CSS variables at the root render. Check the live preview inside the iframe.
+- Tailwind rule: blocks use static classes that reference CSS variables. User choices are enums mapped to fixed class strings, and free values go through inline CSS variables. Don't use the Tailwind CDN in the iframe.
+- Rich text on SSR: check what `<Render>` pulls into the server and client bundles for `richtext` (the happy-dom lead). If it's heavy, sketch a small renderer of our own and note the cost.
+
+**Tests that matter:**
+- Rich text output is sanitized: a stored `<script>` or `javascript:` link doesn't reach the public HTML.
+
+**Done when:**
+- A salon-style homepage can be built from these blocks and looks the same in the editor and on the storefront.
+- Changing a root token updates the preview live.
+
+**Verify:**
+- Seed: `pro-org`.
+- Build a page with a hero, columns, rich text with a bold word, a link and a list, and a booking widget. Change the radius token: every block's corners update in the preview.
+- Publish. The public HTML has the formatted text and the services list, styled the same as in the editor.
+
+### Log (2026-11-16, `feat(web): puck spike phase 3, component set, rich text and tokens`)
+- Shipped:
+  - Blocks in `render-config.tsx`: Section (Plain / Muted / Brand), Hero (slot, optional background image passed as an inline `--pb-hero-image` variable, alignment), ServicesSection, Columns (2–4 fixed slots; `resolveFields` hides the unused ones), Container (width, alignment), Heading (plus alignment), RichText (Puck `richtext`, inline editing, `textAlign`/code off, headings 2–3), Image (safe `src` only, shape, placeholder), Button (link resolved like v1 widgets, filled/outline) and BookingWidget.
+  - BookingWidget renders the org's services from Puck `metadata`, in the order picked, with a "Book" link to `/<org>/book?service=<id>`. Its editor field is a shadcn `Combobox` chips picker (`ServicePicker.tsx`, empty means all services), fed by `BuilderServicesContext`.
+  - Prebuilt "Hero" and "Services" sections under a "Ready-made sections" category, with slots pre-filled through `defaultProps` (Puck generates the child ids on insert).
+  - Theme tokens (`theme-tokens.ts`): root fields "Corner roundness" and "Spacing" become `--pb-radius` / `--pb-space` at the root render, which also applies org branding (color, font) from `metadata.branding` in the editor. The root render centres the page at `max-w-5xl`, and the storefront article drops `max-w-3xl` for v2 pages.
+  - Data flow: the editor route loads active services and branding. The storefront route also loads `storefrontQuery` (services) in its loader. `PageRenderer` takes `services`, and the dashboard preview passes them too (`activeServicesQuery`). The URL helpers moved from `PageRenderer` to `shared/lib/page-urls.ts`.
+  - Storefront rich text: `renderRichText` (`rich-text.tsx`, about 130 lines, no dependencies) through `<Render fieldTransforms={{ richtext }}>`. It keeps only allowlisted tags, a safe `href` and `target="_blank"`. Unknown tags are unwrapped, `script`/`style`/`iframe` and the like are dropped with their content, and an open `p`/`li` is closed the way HTML does.
+  - `.ProseMirror { white-space: pre-wrap }` in `styles.css` for the canvas's inline editors.
+  - Tests (`page-renderer.test.ts`): rich text keeps bold, list and https link and drops `<script>`, `onerror` and `javascript:`; malformed and odd HTML (entities, unknown tags, unclosed tags, mixed-case `javascript:`); the booking widget order and links; tokens to CSS variables with a fallback for unknown values.
+- Differs from plan:
+  - **Rich text renderer of our own instead of Puck's.** Puck's `<Render>` wraps each richtext prop in `Suspense` + `lazy(import("Render-*"))`, which runs `@tiptap/html` (`generateJSON` → `generateHTML`). It sanitizes well (schema-based), but:
+    - In a production build the lazy chunk pulls about 117 KB gzip into the storefront client (Tiptap/ProseMirror core 90 KB, Puck's extension set 25 KB), just to hydrate HTML the server already sent.
+    - In the streamed SSR, each block goes out twice: once as the `Suspense` fallback and once as the resolved boundary, swapped by React's inline `$RC` script.
+
+    Puck skips its own renderer for any field type that has a user `fieldTransforms` entry, so a small allowlist renderer plugs in cleanly. Cost: about 1 h with tests. Risk: a hand-written HTML tokenizer; the server should still validate or normalize rich text on save (phase 5).
+  - **happy-dom lead: not true for us.** Neither `dist/client` nor `dist/server` contains happy-dom: Vite resolves `@tiptap/html`'s non-server entry. Static `renderToStaticMarkup` of Puck's lazy rich text also worked in Bun tests.
+  - **#1848 (paste ignores `textAlign: false`): not reproduced.** The e2e pasted `<p style="text-align:center">` as a synthetic `ClipboardEvent` into both the inline and the panel editor; it stored plain `<p>`. A real OS paste from Google Docs or Word wasn't tried.
+  - **No iframe page background.** The storefront also sits on the app's body gradient, so the canvas keeping it matches the public page.
+  - **Alignment through `text-align`, not `justify-items`.** The editor wraps each slot child in Puck's `[data-puck-component]` div and `<Render>` doesn't. With `justify-items-center` the wrapper shrinks to fit in the editor, while the storefront's `w-full` child stretched, so the hero button was centred in the editor and left-aligned on the storefront. Inherited `text-align` behaves the same in both.
+  - FreeGrid's gap wasn't moved to `--pb-space`: the editor's RGL overlay needs pixel margins, so the CSS gap and RGL would drift apart.
+- Checked in the running app:
+  - Inline (org `seed-8cb1127f`, page `home`):
+    - Hero and Services insert from the drawer with their pre-filled children, and the save stores generated ids for them.
+    - The service picker filters the canvas live.
+    - Radius "Rounded" → "Very rounded" changed the hero, list and Book buttons from 12 px to 24 px live.
+    - Published SSR HTML holds the text, the services and the token variables. The storefront loads no Tiptap/ProseMirror resource, and there's no hydration warning.
+    - After the `.ProseMirror` fix, typing "We are ", Ctrl+B "open", Ctrl+B " late" in the canvas stores `We are <strong>open</strong> late`.
+  - E2E subagent (same org, new page `salon`):
+    - Built Hero, Columns with Text and Booking widget, and another Text, all by drag and drop.
+    - Typed bold, a list and an auto-linked URL inline.
+    - Changed the radius token: every `rounded-(--pb-radius)` element went from 12 to 24 px.
+    - Saved v2 and v3, and published v3.
+    - Computed styles on the public page matched the editor canvas (text, list, link, services list, buttons, hero).
+    - It found two mismatches, both fixed afterwards and covered by the inline check and the tests: `target="_blank"` was dropped on the storefront, and the canvas's inline editor lacked `pre-wrap`, which stored `is<strong> bold</strong>&nbsp;after`.
+  - Not checked: production-build network for the storefront after the switch to `renderRichText` (the dev-server check is clean; phase 7 measures bundles); a real OS clipboard paste; dark mode.
+
+**Findings**
+- **Verdict for the go/no-go:** a realistic block set with presets, a custom shadcn field, real org data, theme tokens and rich text took about 2.5 h, and the editor and storefront look the same. The friction is in rich text and in the editor's extra DOM: Puck's rich-text render path is too heavy for a public storefront and needed replacing, and the editor's wrapper DOM made one layout rule behave differently from the storefront.
+- What worked natively:
+  - Slot `defaultProps` with nested components: presets insert with fresh ids, no glue.
+  - `metadata` on both `<Puck>` and `<Render>` reaches every render as `puck.metadata`, including the root.
+  - Root fields plus a root render make page-level tokens trivial. The canvas updates live, and Tailwind 4 classes like `rounded-(--pb-radius)` and `bg-(image:--pb-hero-image)` work in the iframe through the synced host styles.
+  - `resolveFields` hides the unused column slots.
+  - Puck's `richtext`: inline editing, Ctrl+B, markdown-style lists, URL auto-linking, and paste that drops `javascript:` links and `text-align` styles.
+  - `fieldTransforms` on `<Render>` is a clean override point for a field type.
+- Friction and workarounds:
+  - Custom fields don't get `metadata`, so editor data has to go through a React context.
+  - The rich-text toolbar has no "add link" button (only typing or pasting a URL). A link UI would be custom work through `renderMenu` / Tiptap extensions (not tried).
+  - Puck's canvas inline editor lacks ProseMirror's `white-space` CSS (a console warning, plus wrong spaces around marks) until we add `.ProseMirror { white-space: pre-wrap }`.
+  - Typing: `Fields<Props>` doesn't accept a spread of `renderConfig` fields with one override (again, as in phase 2), and slot `defaultProps` arrays need `as never` because `Slot` is typed as resolved content. Data typing needs `Config<{ components, root }>` and a cast at `<Render data>`.
+  - Puck stores rich text as HTML, so the server can't validate it with a schema alone. Phase 5 needs an HTML allowlist check, or a conversion to Tiptap JSON on save.
+  - The editor's `select` field renders JSON option values; harmless, but odd for testing.
+  - The storefront's org-name link above a wide v2 page looks out of place (layout, not Puck).
+- Bugs hit: none in Puck. ProseMirror's missing CSS in inline mode is arguably a Puck omission.
+- Rough time: about 2.5 h (blocks and wiring 1 h, the rich-text investigation and renderer 1 h, browser checks 0.5 h).
+
+**Scores**
+- Block set with slots and presets: ✅ native (`defaultProps` slots, categories, `resolveFields`).
+- Custom field with our own UI (shadcn picker): 🟡 S (works; needs a context for data).
+- Org data in blocks on both editor and storefront: ✅ native (`metadata`).
+- Theme tokens with live preview: ✅ native (root fields plus CSS variables).
+- Tailwind 4 in the canvas: ✅ native (synced host styles; static classes with CSS variables).
+- Inline rich text editing: 🟡 S (works; we added the ProseMirror CSS, and there's no link UI).
+- Rich text on the storefront (SSR, light JS, safe): 🟡 M (Puck's path is safe but ships about 117 KB gzip and duplicate SSR; replaced by our own renderer).
+- Editor and storefront look the same: 🟡 S (true once layout rules avoid the editor's extra wrapper).

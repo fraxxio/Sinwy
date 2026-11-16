@@ -10,7 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Puck editor and SSR render on the real pages flow | – | done | `feat(backend, web, shared): puck spike phase 1, editor and ssr render` |
 | 2 | FreeGrid: grid-snapped mode in a slot | 1 | done | `feat(web): puck spike phase 2, freegrid` |
-| 3 | Component set, rich text, theme tokens, Tailwind | 1 | todo | |
+| 3 | Component set, rich text, theme tokens, Tailwind | 1 | done | `feat(web): puck spike phase 3, component set, rich text and tokens` |
 | 4 | Per-breakpoint styles | 2, 3 | todo | |
 | 5 | Server validation, plan gating, migrations | 3 | todo | |
 | 6 | Editor chrome with shadcn, and guardrails | 3 | todo | |
@@ -51,16 +51,20 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - The storefront imports `Render` from `@puckeditor/core/rsc`, an editor-free entry that also exports `transformProps`, `walkTree`, `migrate` and `resolveAllData`. The main entry has no `sideEffects` field, so never import it from storefront code.
   - Field definitions live in `render-config.tsx`, because they are plain data and `<Render>` needs the slot ones. `editor-config.tsx` only adds labels, `defaultProps` and categories.
   - Puck 0.22+ injects its own CSS at runtime, so there's no `puck.css` import.
-  - The iframe picks up host styles by default, so Tailwind classes work in the canvas. It also gets the app's `body` gradient background (phase 3 or 6 should set a page background).
+  - The iframe picks up host styles by default, so Tailwind classes work in the canvas. It also gets the app's `body` gradient, which the storefront shows too, so it was kept (phase 3).
   - Render skips unknown component types silently.
   - Ids are `Type-<uuid>` (about 45 characters, under `PAGE_CONTENT_LIMITS.widgetId` of 64).
   - `select` and `radio` values are stored as strings (`level: "2"`).
   - #1884 reproduces: children of `<Puck>` remount once (4 mounts in StrictMode), with the iframe on or off. Log phase 1.
-  - Rich text in `<Render>` is a `React.lazy` + `Suspense` import of `@tiptap/html`; check what that does to SSR in phase 3.
-- **Leads from the research reports, unverified.** Check each one in the phase that needs it:
-  - Issue #1848: `richtext` paste ignores `textAlign: false`.
-  - Rich text rendering may pull Tiptap and happy-dom into the server bundle (happy-dom is a direct Puck dependency).
-  - TanStack Start recipe: PR #1542, not merged.
+- **Leads from the research reports, unverified.** TanStack Start recipe: PR #1542, not merged. (#1848 and the happy-dom lead were checked in phase 3: neither reproduced.)
+- **Blocks, tokens and rich text (phase 3, verified; details in the phase 3 log):**
+  - Services, org slug and branding reach renders through Puck `metadata` (`builderMetadata()` in `theme-tokens.ts`). Custom fields don't get `metadata`, so the editor also provides services through `BuilderServicesContext`.
+  - Root tokens are CSS variables `--pb-radius` / `--pb-space`, set by the root render; blocks use static classes like `rounded-(--pb-radius)`. Every enum maps to a fixed class string through `known()`, unknown values fall back.
+  - The editor wraps each slot child in Puck's `[data-puck-component]` div and `<Render>` doesn't, so `justify-items` and `w-full` behave differently in the two. Alignment uses inherited `text-align` instead; keep that rule for responsive layout.
+  - The storefront renders rich text through `fieldTransforms.richtext` → `renderRichText` (`rich-text.tsx`), an allowlist HTML-to-React converter. Puck's own renderer lazy-loads about 117 KB gzip of Tiptap and sends each block twice in the SSR stream. The editor still uses Puck's.
+  - FreeGrid's gap stays a fixed 16 px: RGL needs pixel margins, so it doesn't follow `--pb-space`.
+  - Puck `select` options are JSON in the DOM (`{"value":"large"}`): use `selectOption({ label })`. The root fields open from the "Page" breadcrumb (`button[class*=breadcrumbLabel]`, click it via `evaluate`).
+  - Editing `render-config.tsx` makes Vite do a full reload ("Could not Fast Refresh"), not HMR.
 - **FreeGrid (phase 2, verified; details in the phase 2 log):**
   - `react-grid-layout` is pinned to exactly 2.2.4, because #2303 reproduces on 2.3.0. Don't upgrade it until a fixed release is out.
   - Layout is `{ desktop, tablet?, mobile? }`, each a map of child id to `{ x, y, w, h }` on 12 columns × 40 px rows with a 16 px gap (`free-grid-layout.ts`). The editor and the storefront read only `desktop` so far. Children without a cell stack at the bottom.
@@ -79,6 +83,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Plan gating lives in `contentSaveCheck` (`Sinwy.Backend/modules/pages/service.ts`, around line 200). It rejects a newly added widget whose `WIDGET_TYPES[type].requires` feature the plan lacks; widgets already on the page stay allowed.
   - `advanced-widgets` is in professional and enterprise, not starter (`Sinwy.Shared/types/plan/PlanFeatures.ts`).
 - **Seeds:**
+  - Phase 3's pro org `seed-8cb1127f` (owner `webdevrokas+seed-8cb1127f-owner@gmail.com`) has 3 services and two published v2 pages, `home` and `salon`.
   - `bun run dev:seed-scenario subscribed-org` gives a starter org. Its page limit is reached after one page, so each e2e run seeds a fresh org.
   - `pro-org` gives a professional org.
   - Log in with `bun run dev:login-as`. Polar is seeded and simulated; none of these phases touch it.
@@ -96,48 +101,17 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 ---
 
-## Phase 3: Component set, rich text, theme tokens, Tailwind
-
-**Goal:** a realistic block set exists, with inline rich text, theme tokens with live preview, and a working rule for user-chosen styles under Tailwind 4.
-
-**Files:**
-- `Sinwy.WebFrontend/src/shared/components/page-builder/render-config.tsx`: `BuilderComponents`, fields (every prop needs one) and the storefront renders. New blocks go here.
-- `page-builder/editor-config.tsx`: labels, `defaultProps`, categories and editor-only renders. The BookingWidget's custom field UI (shadcn service picker) goes here, so the storefront never imports it.
-- `page-builder/free-grid-layout.ts`: `gridStyle` has a hard-coded 16 px gap. Switch it to the spacing token if tokens should reach the grid.
-- `page-builder/PuckPage.tsx` (storefront `<Render>`) and `page-builder/PageEditor.tsx` (`<Puck>`, where the iframe's page background gets set).
-- `Sinwy.WebFrontend/src/shared/tests/page-renderer.test.ts`: SSR render tests, including the rich-text sanitizing test.
-- `Sinwy.WebFrontend/src/shared/lib/branding.ts`: `brandAttributes`, `BRAND_FONT_FAMILIES`.
-- `Sinwy.WebFrontend/src/styles.css`: brand variables around line 791.
-- `Sinwy.WebFrontend/src/modules/storefront/components/ServiceList.tsx`: can serve as the real data for the booking widget. `shared/` must not import from `modules/`, so pass the data or render through a prop, or move what's needed into `shared/`.
-
-**Steps:**
-- Components:
-  - Columns (2–4 slots), Container, RichText (Puck `richtext` field, `contentEditable`), Image, Button.
-  - A BookingWidget that renders the org's services, with a custom field UI (a service picker built with shadcn).
-  - Two prebuilt "good-looking" sections (hero, services) whose slots are pre-filled through `defaultProps`.
-- Theme tokens: brand color and font come from org branding. Radius and spacing are root fields, written as CSS variables at the root render. Check the live preview inside the iframe.
-- Tailwind rule: blocks use static classes that reference CSS variables. User choices are enums mapped to fixed class strings, and free values go through inline CSS variables. Don't use the Tailwind CDN in the iframe.
-- Rich text on SSR: check what `<Render>` pulls into the server and client bundles for `richtext` (the happy-dom lead). If it's heavy, sketch a small renderer of our own and note the cost.
-
-**Tests that matter:**
-- Rich text output is sanitized: a stored `<script>` or `javascript:` link doesn't reach the public HTML.
-
-**Done when:**
-- A salon-style homepage can be built from these blocks and looks the same in the editor and on the storefront.
-- Changing a root token updates the preview live.
-
-**Verify:**
-- Seed: `pro-org`.
-- Build a page with a hero, columns, rich text with a bold word, a link and a list, and a booking widget. Change the radius token: every block's corners update in the preview.
-- Publish. The public HTML has the formatted text and the services list, styled the same as in the editor.
-
 ## Phase 4: Per-breakpoint styles
 
 **Goal:** spacing, visibility, layout and FreeGrid positions can be set separately for desktop, tablet and mobile, and the storefront honours them.
 
 **Files:**
-- `page-builder/` config, components and FreeGrid from phases 2 and 3.
-- `Sinwy.WebFrontend/src/styles.css`.
+- `page-builder/render-config.tsx`: block renders and fields. Alignment, columns (`COLUMNS`), widths and the Section/Hero padding (`p-(--pb-space)`) are the props to make responsive. Fields are plain data here; `editor-config.tsx` adds labels, `defaultProps` and the editor-only FreeGrid render.
+- `page-builder/theme-tokens.ts`: `tokenStyle()` writes the root CSS variables; per-breakpoint values follow the same pattern.
+- `page-builder/free-grid-layout.ts` (`resolveCells`, `gridStyle`, `cellPlacement`), `FreeGridEditor.tsx` (generated `<style>` per child id, RGL `layout.desktop` write-back) and `FreeGridCells` in `render-config.tsx`: both placement paths read only `desktop` today.
+- `page-builder/PageEditor.tsx`: `<Puck>` props, where `viewports` and a viewport-aware field would hook in.
+- `Sinwy.WebFrontend/src/styles.css`: the static stylesheet for the responsive variables (the `.ProseMirror` rule from phase 3 is at the end).
+- `Sinwy.WebFrontend/src/shared/tests/page-renderer.test.ts` (`renderPuck` helper streams with `renderToReadableStream`) and `src/shared/tests/free-grid-layout.test.ts`.
 
 **Steps:**
 - Add a `responsive<T>` custom field storing `{ base, tablet?, mobile? }`. Components turn it into CSS variables, which a small static stylesheet reads inside media or container queries.
