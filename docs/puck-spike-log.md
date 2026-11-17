@@ -622,3 +622,136 @@ Finished phases of the [Puck spike plan](puck-spike-plan.md), each with its spec
 - Required children: ✅ native.
 - Defaults on insert: ✅ native.
 - Keyboard-only editing: 🟡 M.
+
+## Phase 7: Stress tests and performance
+
+**Goal:** there are numbers and observations for large pages, bundle sizes, SSR cost, deep nesting, touch editing, and breaking the page on purpose.
+
+**Files:**
+- `Sinwy.WebFrontend/src/shared/components/page-builder/`:
+  - `PageEditor.tsx` (the `<Puck>` props) and `EditorChrome.tsx` (layout, `EditorCanvas` scaling, header save and publish).
+  - `use-block-actions.ts`: insert, duplicate, paste and move. Use it to build the large page in the browser, or generate the JSON directly.
+  - `editor-config.tsx`, `render-config.tsx`, `rich-text.tsx` (the storefront rich text renderer), `FreeGridEditor.tsx` (RGL, editor only).
+  - `PuckPage.tsx`: `<Render>` from `@puckeditor/core/rsc`, used by `Sinwy.WebFrontend/src/shared/components/page-content/PageRenderer.tsx`.
+- `Sinwy.WebFrontend/src/modules/storefront/routes/$pageSlug.tsx`: the SSR storefront page.
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.pages.$id.edit.tsx`: save with `baseVersion`, which is the version-conflict path for the two-tab test.
+- `Sinwy.Shared/types/page/PuckContent.ts` (`PUCK_LIMITS`: depth 6, 400 blocks) and `Sinwy.Backend/modules/pages/controller.ts` (`MAX_PAGE_CONTENT_BYTES`, 256 KB).
+- The build output from `bun run build` in `Sinwy.WebFrontend`.
+
+**Steps:**
+- Bundle sizes, gzipped:
+  - editor route chunk(s)
+  - storefront page route JS with and without the Puck renderer
+  - whether Puck, Tiptap, RGL or happy-dom leak into the storefront
+  - whether a lighter Render-only entry exists
+- Large page: generate a document with 50+ sections and around 200 components through the API.
+  - Measure editor load time, drag and typing responsiveness, and save time.
+  - Measure SSR render time and HTML size.
+  - Check whether the document hits the 256 KB cap.
+  - Use a Chrome DevTools performance trace for editor interactions; ask the user to enable that MCP if it's off.
+- Deep nesting: Section > Columns > Container > FreeGrid > block. Drag between nested slots and in and out of containers.
+- Touch: an emulated tablet with touch, covering drag, select, resize in FreeGrid and rich text editing.
+- Break it like a novice would:
+  - drop blocks in odd places
+  - delete required children
+  - paste junk HTML into rich text
+  - undo far back
+  - open the same page in two tabs and save both (the existing `version-conflict` path)
+
+**Tests that matter:**
+- None new. Record measurements in Findings as numbers, with the machine and build mode stated.
+
+**Done when:**
+- Findings hold a table of bundle sizes and timings, and a list of what broke.
+
+**Verify:**
+- Seed: `pro-org` plus the generated large page.
+- Open the large page in the editor, drag a section to the end, and type in a rich text block. Save and publish. The public page renders server-side.
+- The second tab's save shows the "saved somewhere else" error and doesn't overwrite.
+
+### Log (2026-11-17, `docs: puck spike phase 7, stress tests and performance`)
+- Shipped: measurements only, no code changes. Scratch scripts (bundle closure, Playwright probes, page generator) lived in `/tmp/sinwy-p7` and aren't committed.
+- Differs from plan:
+  - Editor timings were taken on the production build (`vite preview` on :4173). Better Auth refuses that origin (`set-active` → 403 `INVALID_ORIGIN`), so the Playwright probes proxied `/api` through `route.fetch` with `Origin: http://localhost:3000`; save timings include that hop. Moving the preview to :3000 would have meant stopping the user's dev server, which wasn't allowed.
+  - The Chrome DevTools MCP trace ran against the dev server (the only origin its browser could log in to), so its absolute numbers are dev-mode React. It was used for attribution; the numbers in the table come from Playwright on the production build.
+  - Seed: pro org `seed-861ca6a6` (id `56364cfe-7e0b-45fb-82bd-f84c489e6333`) with pages `large` (252 blocks, published), `small` (18 blocks), `nesting` and `shallow-grid`.
+- Checked in the running app: everything below, plus the e2e subagent run (org `seed-861ca6a6`, page `large`; all items passed):
+  - A real mouse drag (wheel-scrolling while held) moved Section 1 to the end. Typed text in its Text block, saved (v9: Hero, Section 2 … 52, Section 1, with the typed text) and published (`published_version_id` → v9).
+  - `curl` of the public page: 200, the 52 headings in the new order, and the typed text inside the rendered `<p>`, not only in a script.
+  - Two tabs on v9: tab A saved v10; tab B got the "saved somewhere else" toast, one 409, stayed "Unsaved changes", and no version holds its text.
+  - Console: only the expected 409. Web and backend logs clean.
+  - Left behind: v8 (Section 1 accidentally nested, see Findings) and v10 (an unpublished draft ahead of published v9).
+
+**Findings**
+
+Machine: AMD Ryzen 5 7600X (6 cores / 12 threads), 30 GB RAM, Linux 6.18, system Chromium headless through Playwright 1.64, viewport 1440×900. Production build (`vite build`, served by `vite preview`); backend `bun run index.ts` without watch, local Postgres. "4× CPU" is Chrome's CPU throttling, a stand-in for a mid-range phone or tablet. Event Timing durations are rounded to 8 ms by the browser.
+
+- **Bundle sizes** (gzip of each built chunk, summed over the static import graph; "transferred" is what the browser fetched):
+
+  | What | Size |
+  | --- | --- |
+  | App baseline (main entry and its static imports, every page) | 274.5 KB |
+  | Storefront `$pageSlug` route, static | 293.5 KB |
+  | … of which the Puck render path | 14.5 KB: `PuckPage` 7.7 (our block renders + `renderRichText`), `@puckeditor/core/rsc` 6.3, misc 0.4 |
+  | Storefront without the Puck renderer | 279.0 KB |
+  | Storefront transferred at runtime (`/large` and `/salon`) | 321.6 KB JS (74 files, incl. headers) + 28.9 KB CSS |
+  | Puck's lazy rich-text `Render` (Tiptap 89.3 + ProseMirror/Puck 24.8) | 119.6 KB, referenced by `PuckPage` but never fetched: `fieldTransforms.richtext` replaces it |
+  | Editor route, static | 531.4 KB (+257 KB over baseline; route chunk 157.0 holds Puck core, dnd-kit, RGL and our editor) |
+  | Editor transferred at runtime | 721.8 KB JS (adds the lazy Tiptap editor, about 120 KB, loaded on open because Text blocks edit inline) |
+
+  - No leaks: the storefront's static graph contains none of Tiptap, ProseMirror, react-grid-layout, react-draggable, react-resizable, happy-dom, dnd-kit or Puck's store.
+  - A lighter render-only entry isn't needed: `@puckeditor/core/rsc` already is one, about 6 KB gzip.
+
+- **Large page** (52 Sections + Hero = 252 blocks: 71 Text, 17 Columns, one Section > Columns > Container > FreeGrid nest, ~500-character paragraphs):
+
+  | Measurement | 252 blocks | Small page (18 blocks, or `salon` for SSR) |
+  | --- | --- | --- |
+  | Document size | 69.8 KB JSON | 5.0 KB |
+  | API save (curl) / publish | 14 ms / 8 ms | – |
+  | Editor save: click → response / → "All changes saved" (68 KB body) | 56–61 / 75–83 ms | 42–56 / 51–65 ms |
+  | SSR TTFB, warm, 5 runs (388 blocks: 23 ms) | 15 ms | 4 ms |
+  | SSR HTML raw / gzip (388 blocks: 274 / 30.3 KB) | 250 / 25.4 KB (169 KB markup + 81 KB inline hydration data, i.e. the document again) | 32.5 KB raw |
+  | Storefront hydration, unthrottled: DCL / load / long tasks | 134–214 / 307–420 ms / none (1014 DOM nodes) | 110–118 / 172–187 ms / none |
+  | Storefront hydration, 4× CPU: TBT / longest task | 171–193 / 152–158 ms | 86–91 / 136–141 ms |
+  | Editor load: navigation → all blocks in the canvas | 935–1052 ms; long tasks 3–4, longest 216–228 ms, 478–541 ms in total | 440–550 ms; one 77–83 ms task |
+  | Typing, side-panel rich text field: p50 / max per event | 32 / 56 ms | 16 / 48 ms |
+  | Typing, inline in the canvas: p50 / max | 24 / 32 ms | 16 / 24 ms |
+  | Typing, panel, 4× CPU: p50 / max (long tasks) | 104 / 144 ms (40) | 32 / 80 ms (1) |
+  | Typing, inline, 4× CPU: p50 / max (long tasks) | 96 / 120 ms (every keystroke) | 32 / 40 ms (0) |
+  | Panel edit → canvas updated | 2 ms after the last key | 2 ms |
+  | Drag a section, 15 s held: average frame / frames > 50 ms / worst | 17.2 ms / 6 / 100 ms | – |
+  | Move the first section to the end with Alt+↓ ×51 | 1.6 s (≈31 ms per move) | – |
+
+  - Caps: a 400-block page with short text is only about 65 KB, so `PUCK_LIMITS.maxComponents` binds long before the 256 KB byte cap. The byte cap only bites with about 4 KB of text per section (242 blocks → 308 KB → 413 "This page is too large to save"). 430 blocks → 400 "A page holds at most 400 blocks". Both only show at save time.
+  - Where typing time goes (DevTools MCP trace, dev build, 252 blocks; one keystroke INP 388 ms, 568 ms of it processing; 633 ms for a burst): React re-renders only about 8 components per keystroke (`EditorInner` twice, then the one `DraggableComponent`, `DropZoneProvider`, `RenderComponent`, `InlineEditorWrapper` and `Editor`), so memoisation holds. The CPU goes to React's event dispatch and Puck's state code (`step`, `__spreadValues`/`__spreadProps`, `compareEntries`), i.e. Puck rebuilds its whole-tree index on every change. That is O(blocks) per keystroke, which matches the 3× slowdown from 18 to 252 blocks under throttling.
+  - Every Text block mounts its own inline Tiptap editor in the canvas (71 on the large page), which is most of the load-time long tasks.
+- **What broke or got in the way:**
+  - **No auto-scroll while dragging.** Held at the bottom edge of the canvas for 15 s, the iframe's scroll stayed at 0 and the section dropped near the top. Moving a section to the end of a long page only works by wheel-scrolling during the drag (it then landed last, after about 8 s) or with Alt+↓. Layers can't drag.
+  - **"Drop after the last section" nests it instead.** The canvas ends flush with the last root section, so a drop on its lower part goes into that Section's slot; the e2e run saved such a nested state by accident (v8). The only root target was the page margin beside the last section, and once nested as the last child the move-down button is disabled. Root needs bottom padding or an end drop area.
+  - **Text blocks can't be dragged in the canvas.** The whole block is the inline editor, so a press-and-drag selects text. A Heading or Button can only be grabbed beside its text, and a Section only in its padding: a press near its top grabs its first child instead. The action bar has no drag handle (Select parent, Duplicate, Delete). Workarounds: Alt+↑/↓, copy/paste, the panel toolbar.
+  - **FreeGrid children:** the cell's edges are RGL resize handles (e, s, se), so a drag that starts near an edge resizes the cell (`replace`) instead of moving the block out. From the cell's centre, Puck's drag works: out to the page root, and out of a nested grid into another Section. Drawer → FreeGrid works.
+  - A Container whose only child is a FreeGrid has no drop area of its own: a drop aimed at it lands inside the grid.
+  - **Nonsense nesting is allowed and saves:** Hero, Services and Booking widget inside a Section; Columns inside a Hero; a whole Section inside a FreeGrid. Section and Hero slots have no `allow` lists.
+  - **Depth over 6 can be built in the editor** (Section in a FreeGrid > Columns > Heading = 7). Save then fails with a 400 toast "Blocks nest at most 6 levels deep", without saying which block. The editor doesn't enforce `PUCK_LIMITS` at all.
+  - Required children held: Delete and Backspace on the Hero's required Heading or Button do nothing. Deleting the whole Hero is allowed.
+  - Junk HTML pasted into rich text was cleaned by Tiptap's schema: script, style, iframe, `img onerror`, SVG script and the `javascript:` link (text kept) were gone. `h1` and a table became paragraphs, `font` and Word's `o:p` became plain text, the safe link kept `rel="noopener noreferrer nofollow"`. It saved (200) and the stored version has no `javascript`, `onerror` or `<script`.
+  - Undo far back: 24 edits (12 duplicates, 6 deletes, 6 moves; 30 → 120 blocks), then 40× Ctrl+Z returned exactly to the start with Undo disabled, and 40× redo returned to the edited state.
+  - Two tabs: tab B's save got 409 and the toast "This page was saved somewhere else. Reload to get the latest version.". B stays "Unsaved changes", and the stored version holds only tab A's edit. There's no merge, and reloading discards B's work.
+- **Touch** (emulated landscape tablet 1194×834, touch events through CDP, production build):
+  - Tap selects a block. Tap twice in a Text block and type: works (the on-screen keyboard isn't emulated).
+  - Drawer → canvas needs a press-and-hold: no hold did nothing, 400 ms inserted the block. Moving a block in the canvas needs at least a 300 ms hold on a non-text area (an Image dragged out of a FreeGrid worked). A Heading pressed on its text didn't move.
+  - FreeGrid by touch: resize from the se handle and move by the ⠿ handle both work. The move handle is 10×10 CSS px on screen at the canvas zoom, and the resize handles 20–28 px, all below a comfortable touch target.
+  - At 1194 px the side panels take about a third of the width; the canvas is still usable.
+- Rough time: about 4 h (bundle analysis 0.5 h, large page and SSR 0.5 h, editor timings and trace 1 h, nesting and drag debugging 1 h, break-it and touch 1 h).
+
+**Scores**
+- Storefront weight of the renderer: ✅ native (`@puckeditor/core/rsc` ≈ 6 KB; Tiptap avoided with a 🟡 S rich-text transform from phase 3).
+- SSR cost on large pages: ✅ native (15–23 ms, HTML ≈ 25–30 KB gzip).
+- Editor bundle: 🟡 (≈ 450 KB gzip over the app baseline including the lazy Tiptap editor; acceptable for a dashboard route, no work needed).
+- Editor responsiveness on 250+ blocks: 🟡 M (fine on desktop; ≈ 100 ms per keystroke at 4× CPU, because Puck's per-change work is O(blocks), which we can't fix from outside).
+- Drag on long pages: 🟡 M (no auto-scroll in our scaled iframe canvas; needs a fix in `EditorCanvas` or Puck, or keyboard/outline moves).
+- Draggability of text blocks: 🟡 S–M (add a drag handle to the action bar or the toolbar).
+- Nesting rules and the depth limit in the editor: 🟡 S (slot `allow` lists plus a depth check in `resolvePermissions`).
+- Touch editing: 🟡 M (works with press-and-hold; FreeGrid handles need larger touch targets).
+- Sanitising pasted HTML: ✅ native (Tiptap schema) plus our server URL checks.
+- Version conflicts: ✅ (409 path works; no merge).
