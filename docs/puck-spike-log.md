@@ -755,3 +755,99 @@ Machine: AMD Ryzen 5 7600X (6 cores / 12 threads), 30 GB RAM, Linux 6.18, system
 - Touch editing: 🟡 M (works with press-and-hold; FreeGrid handles need larger touch targets).
 - Sanitising pasted HTML: ✅ native (Tiptap schema) plus our server URL checks.
 - Version conflicts: ✅ (409 path works; no merge).
+## Phase 8: Editor usability review (agent + user)
+
+**Goal:** a judgement, from both a scripted run and the user's own hands-on session, of how easy the editor is for a non-technical business owner.
+
+**Files:**
+- New: `docs/puck-usability-tasks.md`, the task script.
+- What the tasks touch (read, don't change):
+  - `Sinwy.WebFrontend/src/shared/components/page-builder/`: `EditorChrome.tsx` (header, Add/Layers/Templates, toolbar), `editor-config.tsx` (drawer labels and categories, guardrails, `editorConfigFor` plan gating), `templates.ts` ("Salon homepage", "Simple page"), `render-config.tsx` (field labels).
+  - `Sinwy.WebFrontend/src/modules/org-dashboard/routes/`: `_shell.pages.new.tsx` (new page), `_shell.pages.$id.edit.tsx` (editor), `_shell.settings.branding.tsx` (brand colour and font live here, not in the editor).
+- There's no "premium gallery" block. The only plan-gated block is Booking widget (`advanced-widgets`, professional and up); use it for the starter-plan task.
+- Known friction from phase 7 (log): no auto-scroll while dragging, Text blocks can't be dragged in the canvas, nonsense nesting is allowed, depth errors only at save.
+
+**Steps:**
+- Write 6–8 tasks in a salon owner's words, for example:
+  - "make a homepage with your services and a booking button"
+  - "change your brand color"
+  - "put two photos side by side"
+  - "make it look right on a phone"
+  - "fix a typo"
+  - "undo a mistake"
+  - "add the premium gallery on a starter plan"
+- Agent run: drive each task with `playwright-cli`, cold, from the task wording alone. Record:
+  - steps taken
+  - dead ends
+  - unclear labels
+  - moments a broken design was possible
+  - a 1–5 ease score per task
+  - screenshots of friction points only
+- Hand the same script to the user. Wait for their notes, and add them next to the agent's.
+
+**Tests that matter:**
+- None.
+
+**Done when:**
+- `docs/puck-usability-tasks.md` holds the tasks, the agent's results and the user's notes.
+
+**Verify:** None; the review is the flow.
+
+
+### Log (2026-11-17, `docs: puck spike phase 8, editor usability review`)
+- Shipped: [puck-usability-tasks.md](puck-usability-tasks.md) holds 8 tasks in a salon owner's words, the agent's run (steps, dead ends, unclear labels, 1–5 ease) with 6 friction screenshots in `docs/puck-usability/`, and the product owner's hand run with notes and scores. No code changes.
+- Differs from plan:
+  - "Add the premium gallery on a starter plan" became "add an online booking form", because Booking widget is the only gated block.
+  - "Put two photos side by side" was split in two. The Salon homepage template already has a photo row, so the second half builds one from scratch under "Find us".
+  - The agent used a pro org (`seed-5b981653`, page `home`, three services added through the API) for tasks 1–6 and 8 and a starter `bookable-org` (`seed-aa372f19`) for task 7. The task 5 typo was planted through the content API. The user ran everything on a fresh `bookable-org`.
+- Checked in the running app: everything in the task file, driven with `playwright-cli` on the dev server at 1440×900. Live pages were checked with `curl` and a second tab. Not checked: a real phone browser, and dragging a whole section (phase 7 covered it).
+
+**Findings**
+- **Ease scores (agent / user):**
+  1. Homepage 4 / 3
+  2. Brand colour 3 / 1
+  3. Two photos 2 / 2
+  4. Phone 4 / 4
+  5. Typo 4 / 4
+  6. Undo 4 (1 after leaving) / 4
+  7. Booking on starter 3 / 1
+  8. Move a section 4 / 4
+
+  The user rated the discovery tasks (colour, gated block) lowest, and the agent rated work loss lowest.
+- **Bugs:**
+  - Selecting the Hero, or an Image right after load, dispatches two `setUi` actions that enter history: "Unsaved changes" and an active Undo with no edit.
+  - Undo also restores the preview size: the user saw it jump from desktop to phone. Puck's history records `ui`, viewport included.
+  - Back discards unsaved edits with no prompt.
+  - The Hero's Heading shows Alignment "Left" while rendering centred.
+  - The rich-text panel once showed an older value than the canvas (not reproduced).
+  - In phone view, two Columns of images have overlapping placeholder backgrounds. Columns has no gap setting, so images touch the screen edges (user).
+- **Gaps:**
+  - No image upload or media library: Image is a URL field.
+  - No version history or "revert to published" after leaving the editor.
+  - The new-page wizard still offers v1 templates (made "0 widgets"), so the user picks a template twice.
+  - Placeholder images and template instruction text publish without a warning.
+  - No "View page" link after publishing.
+  - Ctrl/⌘+S doesn't save (user expected it). The user wants autosave instead of a Save button.
+- **Discoverability (the user's main theme):**
+  - Brand colour lives only in Settings → Branding. The user wants branding (colours, tokens) in a panel inside the editor as well as in settings.
+  - Gated blocks vanish on lower plans with no lock or upgrade prompt.
+  - Drawer and template cards are text-only. The user wants visual previews and bigger cards.
+  - Section, Container, Columns and Free grid read as developer words.
+  - + inserts after the selected block (or at the bottom with nothing selected) without scrolling there, which the user found unclear.
+  - Building a photo row means Columns, then dragging into each cell, which is finicky. The user wants ready-made, less flexible blocks first and low-level blocks further down.
+  - Panel action icons need text labels. Button's Link is free text (`book`).
+- **What worked:**
+  - The Salon homepage template: one click to a credible page with services and booking buttons.
+  - Inline text editing in the canvas.
+  - The phone and tablet preview with automatic stacking, and clear per-breakpoint labels.
+  - Undo and Redo, Ctrl/⌘+Z, Move up and down, and dragging.
+  - The branding page and its live preview.
+  - The user's overall view: the UI looks good and is a good foundation. Viability depends on how far Puck's UI and behaviour can be customised or injected into. Forking it is the fallback, but a costly one.
+- Rough time: about 2 h for the agent run and write-up.
+
+**Scores**
+- Editor ease of use for a non-technical owner: 🟡 L. Most fixes are our chrome and blocks, not Puck:
+  - S: templates, previews, labels, the leave guard, Ctrl+S or autosave, and an upgrade hint.
+  - M: media upload and version history.
+- Undo that doesn't touch the viewport and a clean dirty state: 🟡 S–M (filter `ui` out of Puck's history, or track dirty state by data).
+- Customisability of Puck's own UI (drawer cards, insert behaviour, action bar): open question for phase 9. Answer it from the phase 6 overrides work.
