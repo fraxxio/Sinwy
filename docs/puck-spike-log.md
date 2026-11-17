@@ -486,3 +486,139 @@ Finished phases of the [Puck spike plan](puck-spike-plan.md), each with its spec
 - Plan gating of blocks (save refusal and the editor drawer): 🟡 S (category filtering is native, the rule is ours).
 - Prop migrations of stored documents: ✅ native for read (`transformProps`), 🟡 S for one shared source with the server.
 - One source of truth for config and schema: 🟡 M (enum values shared now, fields still duplicated and guarded by a drift test).
+
+## Phase 6: Editor chrome with shadcn, and guardrails
+
+**Goal:** we know how far Puck's UI can be replaced with our own shadcn components, and which guardrails for non-technical users come built in versus need building.
+
+**Files:**
+- `Sinwy.WebFrontend/src/shared/components/page-builder/`:
+  - `PageEditor.tsx`: `<Puck>` with `overrides.headerActions` and `SaveAction` (save through `getPuck()`), `VIEWPORTS`, the `onAction` hook.
+  - `editor-config.tsx`: `categories`, `defaultProps` (the Hero and Services presets), `editorConfigFor(features)`. Templates, locked props and required children go here (Puck `permissions`, `resolvePermissions`).
+  - `ResponsiveField.tsx`: already reuses Puck's `AutoField` / `FieldLabel`; a shadcn fields panel replaces these.
+  - `render-config.tsx`: field definitions (plain data shared with the storefront).
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.pages.$id.edit.tsx`: the editor route (the Back button, save and `baseVersion`, the publish link target).
+- `Sinwy.WebFrontend/src/shared/components/ui/`: the shadcn components.
+- `docs/design-rules.md`, and `Sinwy.WebFrontend/src/styles.css` for theming Puck's CSS variables.
+
+**Steps:**
+- Recompose the editor with `<Puck>` children and overrides:
+  - our own header (save, publish, undo/redo, viewport switch)
+  - component drawer
+  - outline
+  - a fields panel that uses shadcn inputs for the common field types
+- Record which parts couldn't be replaced, and how the result looks against our design rules (`docs/design-rules.md`).
+- Guardrails to try:
+  - undo and redo with the keyboard
+  - copy/paste and duplicate
+  - templates (start a page from a preset)
+  - locked props (a preset section whose layout can't be changed)
+  - required children that can't be deleted
+  - sensible defaults on insert
+  - keyboard-only navigation
+- Theme the leftover Puck chrome through its CSS custom properties to match ours.
+
+**Tests that matter:**
+- None beyond keeping verify green; this phase is UI exploration.
+
+**Done when:**
+- The editor reads as part of Sinwy, and Findings list every guardrail as native, custom (with effort), or not possible.
+
+**Verify:**
+- Seed: `pro-org`.
+- Start a new page from a template, duplicate a section, try to delete a locked child (refused), undo twice with the keyboard, and save from the custom header. A new version row appears.
+
+### Log (2026-11-17, `feat(web): puck spike phase 6, editor chrome and guardrails`)
+- Shipped:
+  - The editor is composed from `<Puck>` children (`EditorChrome.tsx`), which replace Puck's whole layout:
+    - Our header: Back, title and path, a viewport switch, Undo/Redo, a save status ("Unsaved changes" / "All changes saved", from the history index), Save and Publish. Both show toasts. Publish saves first if needed, then calls `POST …/publish`.
+    - Left panel tabs: **Add** (`Puck.Components` with a `drawerItem` override that adds a + button), **Layers** (`Puck.Outline`) and **Templates**. An empty page opens on Templates.
+    - The canvas is ours (`EditorCanvas`): the iframe at the viewport's exact width, scaled to fit, and a click on the backdrop deselects.
+    - Right panel: a block toolbar (select parent, move up/down, duplicate, copy, paste, delete; each disabled by Puck permissions), then `Puck.Fields`. With nothing selected it reads "Page settings".
+  - Fields: `editor-fields.tsx` overrides `fieldTypes` text, textarea, select and radio, plus `fieldLabel`, with shadcn `Input`, `Textarea` and `Select` and a segmented control of native radios. `ResponsiveField` uses the same controls, not Puck's `AutoField`/`FieldLabel`. Rich text, slot and custom fields stay Puck's.
+  - `actionBar` override (`CanvasActionBar`): Puck's `ActionBar` primitives with our duplicate and delete, counter-scaled by the canvas zoom.
+  - Block commands (`use-block-actions.ts`) and pure helpers (`editor-actions.ts`):
+    - `cloneBlock` gives new ids to a block and its children, and rewrites references to the old ids (FreeGrid layout keys).
+    - `placementFor` decides where Add/paste put a block: into the selected block's first slot, else after the selected block, else at the end of the page. Slot `allow` lists are respected.
+    - Blocks are placed with `insert` + `replace` (one history step).
+  - Hotkeys (`useEditorHotkeys`, on the host document and the iframe): Ctrl/⌘+C/V copy and paste through a localStorage clipboard, refusing types the drawer doesn't offer (plan-locked); Ctrl/⌘+D duplicate; Alt+↑/↓ move; Escape deselects. Undo, redo and Delete stay Puck's.
+  - Templates (`templates.ts`): "Salon homepage" and "Simple page", built from the config's `defaultProps`, so starter gets them without a booking widget. Applying one is `setData` plus `resolveDataById` for every block, asks to confirm on a non-empty page, and is undoable.
+  - Guardrails (`editor-config.tsx`, `withGuardrails`):
+    - Required children: the first Heading and Button in a Hero can't be deleted, duplicated or dragged out (`resolvePermissions` with `parent`).
+    - Locked layout: Services' children are pinned the same way. Its slot is `allow: []`, and `resolveData` marks `tone` and `padding` `readOnly`; the fields show a lock and are disabled.
+  - Theme: `styles.css` maps Puck's azure scale and its surface, border, text, font and radius tokens to ours at `:root`. They sit outside `@layer puck-tokens`, so they win, and the iframe picks them up through the host-style sync.
+  - Tests: `page-builder-editor-actions.test.ts`: the clone keeps FreeGrid cells on the new ids; placement into a slot, after a leaf, or at the end; a locked slot is skipped; both templates parse with `pageContentSchema` and have no BookingWidget on starter.
+- Differs from plan:
+  - `docs/design-rules.md` is the backend architecture guide, and there are no written UI rules. The chrome was judged against the dashboard's existing look (shadcn on Base UI, `--line-soft` borders, card surfaces, Manrope).
+  - Publish lives in the editor header (the plan listed it; before this phase it was only on the page detail screen).
+- Checked in the running app:
+  - Inline (`seed-8cb1127f/salon`, not saved):
+    - Ctrl+D on a FreeGrid copies its 3-column arrangement, and one Ctrl+Z removes the copy.
+    - The + button adds after the selection; Alt+↑ moves it; Copy then Ctrl+V pastes after.
+    - Switching to Phone keeps the selection, and the iframe is 375 px.
+    - Dragging "Text" from our drawer item onto the scaled canvas inserts it.
+    - Layers items select with Enter or Space.
+    - Theme applied in the canvas overlays and the outline.
+  - E2E subagent (pro org `seed-76cc4ae3`, page `phase-six-test`, id `8eb5b26e-7032-4ba8-9531-52966f1b4309`):
+    - The new page opened on Templates; Salon homepage applied: Hero, Services, Section, Section.
+    - Duplicate on a Section gave 3 Sections.
+    - On the Services BookingWidget and heading, delete was disabled ("This block can't be removed"), and Delete/Backspace dispatched nothing.
+    - A text edit, then Ctrl+Z twice: undo 1 reverted the text, undo 2 removed the duplicate.
+    - Header Save wrote `page_content` version 2 (`schemaVersion` 2) with the same four root ids as the canvas. The "Changes saved" toast was seen on an extra save (version 3).
+    - The console had no errors; web and backend logs were clean.
+  - Not checked:
+    - Starter-plan paste refusal in the browser (the rule is unit-level: drawer types).
+    - Touch (phase 7).
+    - Dark mode.
+
+**Findings**
+- **How far Puck's UI can be replaced:**
+  - Native and clean:
+    - Header and panels: `<Puck>` children replace the entire layout.
+    - Drawer items (`drawerItem`), the action bar (`actionBar` plus exported `ActionBar` primitives), field inputs (`fieldTypes`) and labels (`fieldLabel`).
+    - Every editing command is reachable through `useGetPuck().dispatch` and `getPermissions`.
+  - Rebuilt by us: the canvas. `Canvas` isn't exported, so composing loses:
+    - viewport sizing and auto-zoom (`EditorCanvas`, about 60 lines)
+    - the starting viewport (Puck's canvas picks it, so it stayed at 360 px until we passed `ui.viewports`)
+    - deselect on a backdrop click
+    - the action bar's zoom compensation (it reads a store zoom only `Canvas` sets, hence our `CanvasZoom` context)
+  - Only themable, not replaceable:
+    - drawer category headings, outline rows and their "Outline" title
+    - slot placeholders, drop indicators, the hover and selection overlay, and the drag preview
+    - the rich text field and toolbar
+  - The theme tokens make these read as ours.
+- **Result against the app's look:** reads as part of Sinwy (screens in the session). What's still off: Puck's dark action bar, uppercase category headings, and the outline's typography. The app toaster (top right) briefly covers Publish.
+- **Guardrails:**
+
+  | Guardrail | Puck | Effort / notes |
+  | --- | --- | --- |
+  | Undo/redo with the keyboard | ✅ native (Ctrl/⌘+Z, Shift+Z, Y, also in the iframe) | Header buttons from `usePuck` history. Ctrl+Z inside a field input runs Puck's undo, not the input's. |
+  | Copy/paste | ❌ none | 🟡 S: localStorage clipboard, fresh ids, plan check, placement |
+  | Duplicate | ✅ native, but wrong for FreeGrid | 🟡 S: Puck renews child ids but not references, so a duplicated grid lost its arrangement. Our `cloneBlock` is used in the action bar, the panel and Ctrl+D. |
+  | Templates | ❌ none | 🟡 S: `setData` plus `resolveDataById` |
+  | Locked props | ✅ native (`resolveData` → `readOnly`, stored in the document; the server schema already allows it) | Our field overrides must honour `readOnly` themselves. Needs an explicit resolve after `setData`. |
+  | Required children | ✅ native (`resolvePermissions` with `parent`; Delete honours it) | The "first child of each type" rule is ours (S). A locked layout also needs slot `allow: []`. |
+  | Sensible defaults on insert | ✅ native (`defaultProps`) | Click-to-add reuses them. |
+  | Keyboard-only navigation | 🟡 partly | 🟡 M: Puck has no keyboard insert or move, canvas blocks aren't focusable, and each layer has a dead extra tab stop. Ours: + buttons, Alt+↑/↓, the toolbar, Escape. Not possible without much more work: moving a block into another slot by keyboard. |
+
+- **Puck behaviour hit:**
+  - `setData` isn't recorded in history unless `recordHistory: true`.
+  - `setData` doesn't run `resolveData`, and logs a dev warning that it's expensive. Single blocks therefore use `insert` + `replace`, which the 300 ms history debounce merges into one undo step.
+  - The `componentItem` override logs a deprecation warning (renamed `drawerItem`), though the types still offer it.
+  - Each drawer item renders twice (a draggable copy over a background copy), and the wrapper is a `role=button` whose name contains the item's text, so locators and screen readers see duplicates.
+  - `usePuck` selectors must return primitives or stable references (a fresh object would loop the store).
+  - Puck's CSS still `@import`s Inter from `rsms.me`: an external request from the editor.
+  - The action bar of a block at the very top of the page is clipped by the iframe's top edge.
+- Rough time: about 3.5 h (composition and canvas 1 h, fields 0.5 h, block actions and hotkeys 1 h, guardrails and templates 0.5 h, theming and browser checks 0.5 h).
+
+**Scores**
+- Replace the editor UI with our own components: 🟡 M (layout, fields, drawer items and action bar native; canvas rebuilt; overlays and outline only themable).
+- Theme the remaining Puck chrome: ✅ native tokens (S).
+- Undo/redo with the keyboard: ✅ native.
+- Copy/paste: 🟡 S.
+- Duplicate: ✅ native, 🟡 S to keep FreeGrid layouts.
+- Templates: 🟡 S.
+- Locked props: ✅ native.
+- Required children: ✅ native.
+- Defaults on insert: ✅ native.
+- Keyboard-only editing: 🟡 M.

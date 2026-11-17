@@ -1,10 +1,6 @@
-import {
-	AutoField,
-	type CustomField,
-	createUsePuck,
-	FieldLabel,
-} from "@puckeditor/core";
+import { type CustomField, createUsePuck } from "@puckeditor/core";
 import { MonitorIcon, SmartphoneIcon, TabletIcon } from "lucide-react";
+import { EditorFieldLabel, RadioControl, SelectControl } from "./editor-fields";
 import {
 	asResponsive,
 	BREAKPOINT_LABELS,
@@ -16,7 +12,7 @@ import {
 	responsiveOptions,
 } from "./responsive";
 
-const usePuck = createUsePuck();
+export const usePuck = createUsePuck();
 
 const ICONS: Record<Breakpoint, typeof MonitorIcon> = {
 	base: MonitorIcon,
@@ -61,9 +57,9 @@ export function ResponsiveField({
 	};
 
 	return (
-		<FieldLabel
+		<EditorFieldLabel
 			label={field.label ?? ""}
-			readOnly={readOnly ?? false}
+			readOnly={readOnly}
 			el="div"
 			endIcon={
 				<span
@@ -75,17 +71,24 @@ export function ResponsiveField({
 				</span>
 			}
 		>
-			<AutoField
-				field={{
-					type: options.length > 3 ? "select" : "radio",
-					options: [...options],
-				}}
-				value={effective}
-				onChange={(next) => set(String(next))}
-				readOnly={readOnly ?? false}
-			/>
+			{options.length > 3 ? (
+				<SelectControl
+					options={options}
+					value={effective}
+					onChange={(next) => set(String(next))}
+					readOnly={readOnly}
+				/>
+			) : (
+				<RadioControl
+					label={field.label ?? ""}
+					options={options}
+					value={effective}
+					onChange={(next) => set(String(next))}
+					readOnly={readOnly}
+				/>
+			)}
 			{breakpoint !== "base" && (
-				<p className="mt-1.5 flex items-center justify-between gap-2 text-muted-foreground text-xs">
+				<p className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
 					{own === undefined ? (
 						<span>
 							Same as{" "}
@@ -96,6 +99,7 @@ export function ResponsiveField({
 							<span>Only on {BREAKPOINT_LABELS[breakpoint].toLowerCase()}</span>
 							<button
 								type="button"
+								disabled={readOnly}
 								className="font-medium text-foreground underline underline-offset-2"
 								onClick={() => set(undefined)}
 							>
@@ -105,6 +109,6 @@ export function ResponsiveField({
 					)}
 				</p>
 			)}
-		</FieldLabel>
+		</EditorFieldLabel>
 	);
 }

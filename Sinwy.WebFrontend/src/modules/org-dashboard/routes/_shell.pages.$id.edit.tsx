@@ -4,6 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
 	pageQuery,
+	publishPage,
 	savePageContent,
 	storePage,
 } from "#/modules/org-dashboard/lib/page-queries";
@@ -37,7 +38,7 @@ function PageEditPage() {
 
 	const backButton = (
 		<Button
-			variant="outline"
+			variant="ghost"
 			nativeButton={false}
 			render={
 				<Link
@@ -79,6 +80,12 @@ function PageEditPage() {
 		await storePage(queryClient, organization.id, res.data);
 		return { ok: true } as const;
 	};
+	const publish = async () => {
+		const res = await publishPage(organization.id, id);
+		if (!res.isSuccess) return { ok: false, message: res.message } as const;
+		await storePage(queryClient, organization.id, res.data);
+		return { ok: true } as const;
+	};
 
 	return (
 		<div className="fixed inset-0 z-50 bg-background">
@@ -92,13 +99,14 @@ function PageEditPage() {
 				}
 				title={page.data.title}
 				path={`/${organization.slug}/${page.data.slug}`}
-				actions={backButton}
+				back={backButton}
 				metadata={{
 					organizationSlug: organization.slug,
 					services: services.data ?? [],
 					branding,
 				}}
 				onSave={save}
+				onPublish={publish}
 			/>
 		</div>
 	);

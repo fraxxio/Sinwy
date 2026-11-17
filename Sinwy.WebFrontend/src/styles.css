@@ -817,6 +817,32 @@ body:has([data-slot="sidebar-wrapper"]) {
 	word-wrap: break-word;
 }
 
+/* Page builder: Puck's own chrome (drawer headings, outline, rich text toolbar, canvas overlays) in our palette. Its tokens sit in `@layer puck-tokens`, so these win. The canvas iframe syncs host styles and gets them too. */
+:root {
+	--puck-font-family: var(--font-sans);
+	--puck-color-azure-01: color-mix(in oklab, var(--primary), black 45%);
+	--puck-color-azure-02: color-mix(in oklab, var(--primary), black 30%);
+	--puck-color-azure-03: color-mix(in oklab, var(--primary), black 15%);
+	--puck-color-azure-04: var(--primary);
+	--puck-color-azure-05: var(--ring);
+	--puck-color-azure-06: color-mix(in oklab, var(--primary), white 30%);
+	--puck-color-azure-07: color-mix(in oklab, var(--primary), white 45%);
+	--puck-color-azure-08: color-mix(in oklab, var(--primary), white 60%);
+	--puck-color-azure-09: color-mix(in oklab, var(--primary), white 72%);
+	--puck-color-azure-10: color-mix(in oklab, var(--primary), white 84%);
+	--puck-color-azure-11: color-mix(in oklab, var(--primary), white 92%);
+	--puck-color-azure-12: color-mix(in oklab, var(--primary), white 96%);
+	--puck-color-surface: var(--card);
+	--puck-color-surface-muted: var(--muted);
+	--puck-color-border: var(--border);
+	--puck-color-text: var(--foreground);
+	--puck-color-text-secondary: var(--muted-foreground);
+	--puck-color-text-muted: var(--muted-foreground);
+	--puck-color-focus-ring: var(--ring);
+	--puck-radius-m: 0.5rem;
+	--puck-radius-l: 0.75rem;
+}
+
 /* Page builder: blocks hidden per breakpoint (`data-pb-hide`, same edges as `max-lg` / `max-sm`). The editor fades them so they stay selectable. */
 [data-pb-hide] {
 	display: contents;

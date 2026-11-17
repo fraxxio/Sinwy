@@ -1,7 +1,18 @@
-import { type Data, Puck, useGetPuck, type Viewports } from "@puckeditor/core";
+import {
+	type Data,
+	Puck,
+	type UiState,
+	type Viewports,
+} from "@puckeditor/core";
 import type { PuckDocument } from "@sinwy/shared";
-import { type ReactNode, useState } from "react";
-import { Button } from "#/shared/components/ui/button";
+import type { ReactNode } from "react";
+import {
+	chromeOverrides,
+	EditorLayout,
+	type SaveResult,
+	VIEWPORTS,
+} from "./EditorChrome";
+import { fieldOverrides } from "./editor-fields";
 import { migrateDocument } from "./PuckPage";
 import type { BuilderConfig } from "./render-config";
 import { BuilderServicesContext } from "./ServicePicker";
@@ -9,62 +20,35 @@ import type { BuilderMetadata } from "./theme-tokens";
 
 const EMPTY: PuckDocument = { root: { props: {} }, content: [] };
 
-/** One per breakpoint in `responsive.ts`; responsive fields edit the value of the selected one. */
-const VIEWPORTS: Viewports = [
-	{ width: 1280, height: "auto", icon: "Monitor", label: "Desktop" },
-	{ width: 768, height: "auto", icon: "Tablet", label: "Tablet" },
-	{ width: 375, height: "auto", icon: "Smartphone", label: "Phone" },
-];
+const overrides = { ...fieldOverrides, ...chromeOverrides };
 
-type SaveResult = { ok: true } | { ok: false; message: string };
-
-function SaveAction({
-	onSave,
-}: {
-	onSave: (data: PuckDocument) => Promise<SaveResult>;
-}) {
-	const getPuck = useGetPuck();
-	const [saving, setSaving] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-
-	const save = async () => {
-		setSaving(true);
-		setError(null);
-		const result = await onSave(getPuck().appState.data as PuckDocument);
-		setSaving(false);
-		if (!result.ok) setError(result.message);
-	};
-
-	return (
-		<>
-			{error && (
-				<span role="alert" className="text-destructive text-sm">
-					{error}
-				</span>
-			)}
-			<Button onClick={save} disabled={saving}>
-				{saving ? "Saving…" : "Save"}
-			</Button>
-		</>
-	);
-}
+/** Puck's canvas picks the starting viewport, and the composed layout has no canvas, so it starts on desktop here. */
+const ui: Partial<UiState> = {
+	viewports: {
+		current: { width: VIEWPORTS[0].width, height: "auto" },
+		controlsVisible: true,
+		options: VIEWPORTS as unknown as Viewports,
+	},
+};
 
 export function PageEditor({
 	config,
 	initialData,
 	title,
 	path,
-	actions,
+	back,
 	metadata,
 	onSave,
+	onPublish,
 }: {
 	config: BuilderConfig;
 	initialData: PuckDocument | null;
 	title: string;
 	path: string;
-	actions?: ReactNode;
+	back: ReactNode;
 	metadata: BuilderMetadata;
 	onSave: (data: PuckDocument) => Promise<SaveResult>;
+	onPublish?: () => Promise<SaveResult>;
 }) {
 	return (
 		<BuilderServicesContext value={metadata.services}>
@@ -72,23 +56,23 @@ export function PageEditor({
 				config={config}
 				metadata={metadata}
 				data={migrateDocument(initialData ?? EMPTY) as Data}
-				headerTitle={title}
-				headerPath={path}
 				height="100%"
-				viewports={VIEWPORTS}
+				ui={ui}
+				viewports={VIEWPORTS as unknown as Viewports}
 				onAction={(action) => {
 					const w = window as { __puckActions?: string[] };
 					w.__puckActions = [...(w.__puckActions ?? []), action.type];
 				}}
-				overrides={{
-					headerActions: () => (
-						<>
-							{actions}
-							<SaveAction onSave={onSave} />
-						</>
-					),
-				}}
-			/>
+				overrides={overrides}
+			>
+				<EditorLayout
+					title={title}
+					path={path}
+					back={back}
+					onSave={(data) => onSave(data as PuckDocument)}
+					onPublish={onPublish}
+				/>
+			</Puck>
 		</BuilderServicesContext>
 	);
 }

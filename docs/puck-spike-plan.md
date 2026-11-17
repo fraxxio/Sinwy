@@ -13,7 +13,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 3 | Component set, rich text, theme tokens, Tailwind | 1 | done | `feat(web): puck spike phase 3, component set, rich text and tokens` |
 | 4 | Per-breakpoint styles | 2, 3 | done | `feat(web): puck spike phase 4, per-breakpoint styles` |
 | 5 | Server validation, plan gating, migrations | 3 | done | `feat(backend, web, shared): puck spike phase 5, validation, plan gating and migrations` |
-| 6 | Editor chrome with shadcn, and guardrails | 3 | todo | |
+| 6 | Editor chrome with shadcn, and guardrails | 3 | done | `feat(web): puck spike phase 6, editor chrome and guardrails` |
 | 7 | Stress tests and performance | 2–6 | todo | |
 | 8 | Editor usability review (agent + user) | 7 | todo | |
 | 9 | Evaluation write-up and cleanup | 8 | todo | |
@@ -73,13 +73,19 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Values are `{ base, tablet?, mobile? }`, or a plain value saved before a prop became responsive (read as `base`). Responsive props: Section/Services `padding`, `align` (Hero, Container, Heading, Button), Container `width`, Columns `count`, and `visibility` on every block (added by `withVisibility`, not in `BuilderComponents`).
   - Fields carry their options in Puck field `metadata.responsive` (`responsiveField()`), so phase 5's per-prop Zod schemas can be derived from the same data.
   - Breakpoints: phone < 640, tablet 640–1023, desktop ≥ 1024 (Tailwind `max-sm` / `max-lg`). Editor viewports: Desktop 1280, Tablet 768, Phone 375. The canvas iframe has the viewport's width, so media queries apply in the editor.
-  - Clicking a viewport button deselects the block (Puck's canvas `onClick`). Phase 6's own switcher should keep the selection.
-  - The editor has no Publish button; publish is "Publish changes" on `/dashboard/<org>/pages/<id>`. The pages API takes the org UUID, not the slug: `PUT /api/organizations/<orgId>/pages/<pageId>/content`, `POST …/publish`.
+  - The pages API takes the org UUID, not the slug: `PUT /api/organizations/<orgId>/pages/<pageId>/content`, `POST …/publish`.
 - **Puck editor DOM and events (phase 2):**
   - `[data-puck-component] *` gets `pointer-events: none` in the editor, so interactive UI inside a block needs `pointer-events: auto !important`.
   - Puck's drag starts on `pointerdown` on the component wrapper.
   - React listens at the iframe portal root: a native `stopPropagation` on `click` also blocks React `onClick` below it.
   - Every prop needs a field; hidden data uses a `custom` field.
+- **Editor chrome (phase 6, verified; details in the phase 6 log):**
+  - `EditorChrome.tsx` composes the editor from `<Puck>` children (header, Add/Layers/Templates, `EditorCanvas`, block toolbar + `Puck.Fields`). Puck's `Canvas` isn't exported: our canvas sizes and scales the iframe, `PageEditor` passes `ui.viewports` to start on Desktop, and a `CanvasZoom` context counter-scales our action bar. The header has Save (toast, dirty state from the history index) and Publish.
+  - Editing commands live in `use-block-actions.ts`. Place blocks with `insert` + `replace` (one undo step, runs `resolveData`). `setData` needs `recordHistory: true` and skips `resolveData`. Puck's duplicate breaks FreeGrid layouts; use `cloneBlock`.
+  - Hotkeys: Ctrl/⌘+Z/Shift+Z/Y and Delete are Puck's; Ctrl/⌘+C/V/D, Alt+↑/↓ and Escape are ours. History is debounced 300 ms, so wait about 400 ms between steps in tests.
+  - Guardrails: `REQUIRED_CHILDREN` (Hero's first Heading and Button) and `LOCKED_LAYOUTS` (Services: slot `allow: []`, `tone`/`padding` read-only) in `editor-config.tsx`. A protected block's delete button reads "This block can't be removed".
+  - Each drawer item renders twice: match `getByRole('button', { name: 'Add <Label>', exact: true }).first()` and click its box centre. Field overrides render their own label. `usePuck` selectors must return primitives or stable references.
+  - Puck's tokens are overridden at `:root` in `styles.css` ("Page builder: Puck's own chrome").
 - **Content contract (phase 5, verified; details in the phase 5 log):**
   - `Sinwy.Shared/types/page/PuckContent.ts`: `BLOCKS` (a strict Zod schema per block's props, its slots, `requires`), `BLOCK_VALUES`, `ROOT_PROPS`, `PUCK_LIMITS` (depth 6, 400 blocks), `BLOCK_MIGRATIONS`.
   - Adding a block or prop: update `BLOCKS` and the Puck fields together. `page-builder-contract.test.ts` fails when they drift, and the server refuses unknown props with 400.
@@ -91,6 +97,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - URL rules (`resolveHref`, `imageSrc`) live in `Sinwy.Shared/types/page/PageUrls.ts`.
   - The backend dev server runs without `--watch`: restart it after changing Shared or backend code.
 - **Seeds:**
+  - Phase 6: pro org `seed-76cc4ae3` (owner `webdevrokas+seed-76cc4ae3-owner@gmail.com`), page `phase-six-test` built from the Salon homepage template (versions 1–3).
   - Phase 5: pro org `seed-ec82fe5b` (page `pro-booking`, has a BookingWidget) and starter org `seed-c2b0a828` (page `starter-page`, page limit used).
   - Phase 3's pro org `seed-8cb1127f` (id `049b0269-7a40-4af6-9b5c-b0c548212db6`, owner `webdevrokas+seed-8cb1127f-owner@gmail.com`) has 3 services and two published v2 pages: `home` (plain-value props from before phase 4) and `salon` (responsive props and a FreeGrid with `layout.mobile`).
   - Phase 4's starter org `seed-8a603a43` has published page `p4-e2e` with responsive values.
@@ -101,63 +108,28 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Dev servers run in the background with logs in `/tmp/sinwy-backend.log` and `/tmp/sinwy-web.log`.
   - The first visit after importing a new Puck entry makes Vite re-optimize deps and reload, with a one-off "Invalid hook call". Reload and the console is clean.
   - After changing a dependency's version, Vite keeps serving the old pre-bundle. Stop the web server, delete `Sinwy.WebFrontend/node_modules/.vite/deps`, and start it again (`bun run start:web > /tmp/sinwy-web.log`).
-  - The canvas auto-zooms to about 57% at 1440×900, so compute click points from `boundingBox()`.
+  - Our canvas scales the iframe to fit (about 60% for Desktop at 1440×900). Plain `locator.click()` inside the frame times out; click with `page.mouse` at points from `boundingBox()`.
   - The DOM can hold two action bars; the live one is `.last()`.
   - Field inputs: `input[name="<prop>"]:visible`.
   - `window.__puckActions` lists every dispatched action type.
   - Puck drag and drop needs stepped `page.mouse` moves through `run-code`. The recipe is in the phase 1 log.
-  - The editor's Save button gives no success feedback yet, and a refused save shows only the API message (phase 6 header).
 - React Compiler is on through `reactCompilerPreset()` in `Sinwy.WebFrontend/vite.config.ts`. Tailwind 4 is loaded from `Sinwy.WebFrontend/src/styles.css`, and the brand variables are applied at `[data-brand-color]` / `[data-brand-font]` (around line 791).
 
 ---
-
-## Phase 6: Editor chrome with shadcn, and guardrails
-
-**Goal:** we know how far Puck's UI can be replaced with our own shadcn components, and which guardrails for non-technical users come built in versus need building.
-
-**Files:**
-- `Sinwy.WebFrontend/src/shared/components/page-builder/`:
-  - `PageEditor.tsx`: `<Puck>` with `overrides.headerActions` and `SaveAction` (save through `getPuck()`), `VIEWPORTS`, the `onAction` hook.
-  - `editor-config.tsx`: `categories`, `defaultProps` (the Hero and Services presets), `editorConfigFor(features)`. Templates, locked props and required children go here (Puck `permissions`, `resolvePermissions`).
-  - `ResponsiveField.tsx`: already reuses Puck's `AutoField` / `FieldLabel`; a shadcn fields panel replaces these.
-  - `render-config.tsx`: field definitions (plain data shared with the storefront).
-- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.pages.$id.edit.tsx`: the editor route (the Back button, save and `baseVersion`, the publish link target).
-- `Sinwy.WebFrontend/src/shared/components/ui/`: the shadcn components.
-- `docs/design-rules.md`, and `Sinwy.WebFrontend/src/styles.css` for theming Puck's CSS variables.
-
-**Steps:**
-- Recompose the editor with `<Puck>` children and overrides:
-  - our own header (save, publish, undo/redo, viewport switch)
-  - component drawer
-  - outline
-  - a fields panel that uses shadcn inputs for the common field types
-- Record which parts couldn't be replaced, and how the result looks against our design rules (`docs/design-rules.md`).
-- Guardrails to try:
-  - undo and redo with the keyboard
-  - copy/paste and duplicate
-  - templates (start a page from a preset)
-  - locked props (a preset section whose layout can't be changed)
-  - required children that can't be deleted
-  - sensible defaults on insert
-  - keyboard-only navigation
-- Theme the leftover Puck chrome through its CSS custom properties to match ours.
-
-**Tests that matter:**
-- None beyond keeping verify green; this phase is UI exploration.
-
-**Done when:**
-- The editor reads as part of Sinwy, and Findings list every guardrail as native, custom (with effort), or not possible.
-
-**Verify:**
-- Seed: `pro-org`.
-- Start a new page from a template, duplicate a section, try to delete a locked child (refused), undo twice with the keyboard, and save from the custom header. A new version row appears.
 
 ## Phase 7: Stress tests and performance
 
 **Goal:** there are numbers and observations for large pages, bundle sizes, SSR cost, deep nesting, touch editing, and breaking the page on purpose.
 
 **Files:**
-- Everything above.
+- `Sinwy.WebFrontend/src/shared/components/page-builder/`:
+  - `PageEditor.tsx` (the `<Puck>` props) and `EditorChrome.tsx` (layout, `EditorCanvas` scaling, header save and publish).
+  - `use-block-actions.ts`: insert, duplicate, paste and move. Use it to build the large page in the browser, or generate the JSON directly.
+  - `editor-config.tsx`, `render-config.tsx`, `rich-text.tsx` (the storefront rich text renderer), `FreeGridEditor.tsx` (RGL, editor only).
+  - `PuckPage.tsx`: `<Render>` from `@puckeditor/core/rsc`, used by `Sinwy.WebFrontend/src/shared/components/page-content/PageRenderer.tsx`.
+- `Sinwy.WebFrontend/src/modules/storefront/routes/$pageSlug.tsx`: the SSR storefront page.
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.pages.$id.edit.tsx`: save with `baseVersion`, which is the version-conflict path for the two-tab test.
+- `Sinwy.Shared/types/page/PuckContent.ts` (`PUCK_LIMITS`: depth 6, 400 blocks) and `Sinwy.Backend/modules/pages/controller.ts` (`MAX_PAGE_CONTENT_BYTES`, 256 KB).
 - The build output from `bun run build` in `Sinwy.WebFrontend`.
 
 **Steps:**
