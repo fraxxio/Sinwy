@@ -851,3 +851,52 @@ Machine: AMD Ryzen 5 7600X (6 cores / 12 threads), 30 GB RAM, Linux 6.18, system
   - M: media upload and version history.
 - Undo that doesn't touch the viewport and a clean dirty state: 🟡 S–M (filter `ui` out of Puck's history, or track dirty state by data).
 - Customisability of Puck's own UI (drawer cards, insert behaviour, action bar): open question for phase 9. Answer it from the phase 6 overrides work.
+
+## Phase 9: Evaluation write-up and cleanup
+
+**Goal:** `docs/puck-evaluation.md` gives a go/no-go on Puck, backed by everything the spike found. The workspace is clean.
+
+**Files:**
+- New: `docs/puck-evaluation.md`.
+- `docs/puck-spike-log.md`: every phase's Findings and Scores. Phase 7 holds the performance numbers, phase 8 the ease scores, and phases 1 and 6 the customisation evidence (overrides, chrome, action bar, hotkeys).
+- `docs/puck-usability-tasks.md`: both runs, task by task, plus the user's closing summary.
+- `Sinwy.WebFrontend/src/shared/components/page-builder/`: `EditorChrome.tsx` and `PageEditor.tsx` show how far the UI was replaced. Use them to answer the customisability question.
+- `report1.md` and `report2.md` at the repo root (untracked): the predictions to compare against.
+- Issue #72 (`gh issue view 72`).
+
+**Steps:**
+- Write `docs/puck-evaluation.md` with these sections:
+  - **Verdict:** go, no-go, or go with conditions, plus the runner-up (the assemble-it-ourselves stack) if no-go.
+  - **Requirements scorecard:** requirements 1–9 from the research prompt as ✅ / 🟡 (S/M/L) / ❌, with evidence from the log, compared against what the reports predicted.
+  - **Pros and cons.**
+  - **Performance review:** bundle sizes, editor responsiveness, SSR timings, large-page behaviour.
+  - **Ease of development:** API ergonomics, TypeScript quality, docs, workarounds, Puck bugs hit, and time spent against expectations.
+  - **Ease of use for editors:** the agent's and the user's usability findings.
+  - **What we'd build ourselves:** each item with S/M/L effort.
+  - **Risks and lock-in.**
+- Post a short summary comment on issue #72 linking the evaluation (ask the user before posting).
+- Stop every dev server started during the plan's work.
+- Delete the scratch artifacts: probe scripts, screenshots, generated large-page fixtures, browser logs.
+- Keep the spike code on the branch.
+
+**Tests that matter:**
+- None.
+
+**Done when:**
+- The evaluation is written.
+- The issue comment is posted or explicitly skipped.
+- No dev servers or scratch files remain.
+
+**Verify:** None.
+
+### Log (2026-11-17, `docs: puck spike phase 9, evaluation write-up and cleanup`)
+- Shipped:
+  - [puck-evaluation.md](puck-evaluation.md): verdict (go, with conditions; runner-up the assemble-it-ourselves stack), requirements scorecard against both reports, the customisability answer, pros and cons, performance, ease of development and use, what we'd build (S/M/L), risks and lock-in.
+  - The research reports moved from the repo root to `docs/puck-research-report1.md` and `docs/puck-research-report2.md` and were committed (the user's choice).
+  - Summary comment on issue #72: https://github.com/fraxxio/Sinwy/issues/72#issuecomment-6957964521
+  - Cleanup: both dev servers stopped; deleted `/tmp/sinwy-p7`, `/tmp/sinwy-p8`, the build, preview, web and backend logs in `/tmp`, `Sinwy.WebFrontend/dist/` and `.playwright-cli/` (snapshots, console logs, login state).
+- Differs from plan:
+  - The customisability answer also draws on Puck 0.24's type definitions and source, beyond what phase 6 used. Found there and not tried in the browser: an exported `Drawer` / `Drawer.Item`, the `componentOverlay` and `outline` overrides, `dnd.enableDragHandle` (passes a drag handle to the `actionBar` override), `dnd.disableAutoScroll` and `disableOutlineDrag` (so auto-scroll and outline drag are on by default in Puck, which phase 7 didn't see in our composed canvas), the public history API (`setHistories`, `setHistoryIndex`), and `setUi` not recording history by default. Trying them is the verdict's first condition.
+  - The issue comment names the file path instead of linking it, because `pagebuilder-tryout` has no upstream yet.
+  - Left in place: `/tmp/sinwy-e2e` (14 Nov, before the spike) and `/tmp/sinwy-issue` (the issue #72 body draft). `docs/puck-usability/` is kept, as the task file links its screenshots.
+- Checked in the running app: nothing; no code changed, so `bun run verify` wasn't run.

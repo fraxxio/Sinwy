@@ -2,7 +2,7 @@
 
 An experiment to find out whether Puck (`@puckeditor/core`) is a good base for Sinwy's page builder (issue #72). It wires Puck into the real pages flow (editor, versioned save, plan gating, SSR storefront), builds the risky parts (a grid-snapped FreeGrid, per-breakpoint styles, server validation), and stress-tests them. It ends in a written evaluation with a go/no-go. Code quality is secondary: the output is evidence, not production code.
 
-Run a phase with the `implementation-phase` skill. Finished phases and their logs are in [puck-spike-log.md](puck-spike-log.md). Background research: `report1.md` and `report2.md` at the repo root.
+Run a phase with the `implementation-phase` skill. Finished phases and their logs are in [puck-spike-log.md](puck-spike-log.md). Background research: [puck-research-report1.md](puck-research-report1.md) and [puck-research-report2.md](puck-research-report2.md). Outcome: [puck-evaluation.md](puck-evaluation.md).
 
 ## Status
 
@@ -16,7 +16,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 6 | Editor chrome with shadcn, and guardrails | 3 | done | `feat(web): puck spike phase 6, editor chrome and guardrails` |
 | 7 | Stress tests and performance | 2–6 | done | `docs: puck spike phase 7, stress tests and performance` |
 | 8 | Editor usability review (agent + user) | 7 | done | `docs: puck spike phase 8, editor usability review` |
-| 9 | Evaluation write-up and cleanup | 8 | todo | |
+| 9 | Evaluation write-up and cleanup | 8 | done | `docs: puck spike phase 9, evaluation write-up and cleanup` |
 
 ## Decisions
 
@@ -38,51 +38,4 @@ Settled with the product owner. Ask before changing any of them.
 
 ## Standing notes
 
-Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
-
-- **Evidence lives in the log.** Every phase's log entry has a **Findings** list and a **Scores** line (✅ native, 🟡 custom work S/M/L, ❌). Phase 8's entry adds the agent and user ease scores; the details and the user's own words are in `docs/puck-usability-tasks.md`.
-- **The user's deciding question:** viability depends on how far Puck's own UI and behaviour can be customised (drawer cards with previews, insert position and scroll, the action bar, history without `ui`, dirty state). Forking Puck is the fallback, but a costly one. The verdict must answer this from what phases 1 and 6 did with `overrides`, `getPuck`, `resolvePermissions` and the custom `EditorChrome`, and say what can't be reached without a fork.
-- **Dev servers:** web on :3000 and backend on :3001, run in the background with logs in `/tmp/sinwy-web.log` and `/tmp/sinwy-backend.log`. Stop both in phase 9.
-- **Phase 9 cleanup:**
-  - Delete: `/tmp/sinwy-p7`, `/tmp/sinwy-p8` (incl. the `pw` wrapper), `/tmp/sinwy-build.log`, `/tmp/sinwy-preview.log`, `Sinwy.WebFrontend/dist/`, `.playwright-cli/` snapshots and the login state files in `.playwright-cli/auth/`.
-  - Keep: `docs/puck-usability/`, whose screenshots the task file links to.
-  - `report1.md` and `report2.md` are untracked at the repo root: ask whether to commit or delete them.
-
----
-
-## Phase 9: Evaluation write-up and cleanup
-
-**Goal:** `docs/puck-evaluation.md` gives a go/no-go on Puck, backed by everything the spike found. The workspace is clean.
-
-**Files:**
-- New: `docs/puck-evaluation.md`.
-- `docs/puck-spike-log.md`: every phase's Findings and Scores. Phase 7 holds the performance numbers, phase 8 the ease scores, and phases 1 and 6 the customisation evidence (overrides, chrome, action bar, hotkeys).
-- `docs/puck-usability-tasks.md`: both runs, task by task, plus the user's closing summary.
-- `Sinwy.WebFrontend/src/shared/components/page-builder/`: `EditorChrome.tsx` and `PageEditor.tsx` show how far the UI was replaced. Use them to answer the customisability question.
-- `report1.md` and `report2.md` at the repo root (untracked): the predictions to compare against.
-- Issue #72 (`gh issue view 72`).
-
-**Steps:**
-- Write `docs/puck-evaluation.md` with these sections:
-  - **Verdict:** go, no-go, or go with conditions, plus the runner-up (the assemble-it-ourselves stack) if no-go.
-  - **Requirements scorecard:** requirements 1–9 from the research prompt as ✅ / 🟡 (S/M/L) / ❌, with evidence from the log, compared against what the reports predicted.
-  - **Pros and cons.**
-  - **Performance review:** bundle sizes, editor responsiveness, SSR timings, large-page behaviour.
-  - **Ease of development:** API ergonomics, TypeScript quality, docs, workarounds, Puck bugs hit, and time spent against expectations.
-  - **Ease of use for editors:** the agent's and the user's usability findings.
-  - **What we'd build ourselves:** each item with S/M/L effort.
-  - **Risks and lock-in.**
-- Post a short summary comment on issue #72 linking the evaluation (ask the user before posting).
-- Stop every dev server started during the plan's work.
-- Delete the scratch artifacts: probe scripts, screenshots, generated large-page fixtures, browser logs.
-- Keep the spike code on the branch.
-
-**Tests that matter:**
-- None.
-
-**Done when:**
-- The evaluation is written.
-- The issue comment is posted or explicitly skipped.
-- No dev servers or scratch files remain.
-
-**Verify:** None.
+- **The spike is finished.** The verdict (go, with conditions) is in [puck-evaluation.md](puck-evaluation.md); the research reports it compares against are `docs/puck-research-report1.md` and `report2.md`. A production plan starts from the evaluation's conditions and its "What we'd build ourselves" table.
