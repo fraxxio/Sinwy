@@ -1,18 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import {
 	EMPTY_ORGANIZATION_PROFILE,
+	gatedTypesIn,
 	type OrganizationProfileDto,
 	PAGE_CONTENT_LIMITS,
 	PAGE_TEMPLATE_IDS,
 	PAGE_TEMPLATES,
 	type PageContent,
 	type PageWidget,
+	PUCK_LIMITS,
 	pageContentSchema,
 	pageSlugSchema,
 	RESERVED_PAGE_SLUGS,
 	savePageContentSchema,
 	WIDGET_TYPES,
-	widgetTypesIn,
 } from "@sinwy/shared";
 
 const widget = (id: string, children?: PageWidget[]): PageWidget => ({
@@ -99,51 +100,225 @@ describe("page content schema", () => {
 });
 
 describe("page content v2 (Puck)", () => {
-	const body = {
-		baseVersion: 3,
-		content: {
-			schemaVersion: 2 as const,
-			data: {
-				root: { props: { title: "Home" } },
-				content: [
-					{
-						type: "Section",
-						props: {
-							id: "Section-1",
-							items: [
-								{ type: "Heading", props: { id: "Heading-1", text: "Hi" } },
-							],
-						},
-					},
-				],
-				zones: {},
-			},
-		},
+	const block = (type: string, props: Record<string, unknown> = {}) => ({
+		type,
+		props: { id: `${type}-${crypto.randomUUID()}`, ...props },
+	});
+
+	const doc = (content: unknown[], root: Record<string, unknown> = {}) => ({
+		schemaVersion: 2 as const,
+		data: { root: { props: root }, content, zones: {} },
+	});
+
+	const parseDoc = (content: unknown[], root?: Record<string, unknown>) =>
+		pageContentSchema.safeParse(doc(content, root));
+
+	const messages = (content: unknown[]) => {
+		const parsed = parseDoc(content);
+		return parsed.success
+			? []
+			: parsed.error.issues.flatMap((issue) =>
+					"errors" in issue
+						? (issue.errors as { message: string }[][])
+								.flat()
+								.map((e) => e.message)
+						: [issue.message],
+				);
 	};
 
+	const everyBlock = [
+		block("Hero", {
+			image: "https://example.com/a.jpg",
+			align: "center",
+			items: [
+				block("Heading", {
+					text: "Hi",
+					size: "1",
+					align: { base: "center", mobile: "start" },
+				}),
+				block("RichText", {
+					content: '<p>See <a href="/acme/book">times</a></p>',
+				}),
+				block("Button", { label: "Book", href: "book", variant: "outline" }),
+			],
+		}),
+		block("ServicesSection", {
+			tone: "muted",
+			padding: { base: "large", mobile: "small" },
+			items: [block("BookingWidget", { title: "Book", serviceIds: ["s-1"] })],
+		}),
+		block("Section", {
+			visibility: { base: "show", mobile: "hide" },
+			items: [
+				block("Columns", {
+					count: { base: "3", mobile: "1" },
+					column1: [block("Image", { src: "/a.png", alt: "", aspect: "wide" })],
+					column2: [],
+					column3: [
+						block("Container", {
+							width: "narrow",
+							align: { base: "start" },
+							items: [
+								block("FreeGrid", {
+									layout: {
+										desktop: { a: { x: 0, y: 0, w: 6, h: 2 } },
+										mobile: {},
+									},
+									items: [block("Heading", { text: "Deep" })],
+								}),
+							],
+						}),
+					],
+					column4: [],
+				}),
+			],
+		}),
+	];
+
+	test("accepts every block, responsive and plain values, and the root tokens", () => {
+		expect(
+			parseDoc(everyBlock, { radius: "large", spacing: "compact" }).success,
+		).toBe(true);
+	});
+
 	test("round-trips through the save schema unchanged", () => {
+		const body = {
+			baseVersion: 3,
+			content: doc(everyBlock, { radius: "small" }),
+		};
 		const parsed = savePageContentSchema.safeParse(body);
 		expect(parsed.success).toBe(true);
 		expect(parsed.data as unknown).toEqual(body);
-		expect(widgetTypesIn(body.content as PageContent).size).toBe(0);
 	});
 
-	test("refuses a v2 body without a content array or with widgets", () => {
-		const { content } = body;
+	test("refuses an unknown type, nested ones included", () => {
+		expect(messages([block("Section", { items: [block("Marquee")] })])).toEqual(
+			['Unknown block type "Marquee"'],
+		);
+	});
+
+	test("refuses a bad prop value, an unknown prop and a slot that isn't a list", () => {
+		expect(parseDoc([block("Heading", { size: "7" })]).success).toBe(false);
+		expect(
+			parseDoc([block("Section", { padding: { base: "huge" } })]).success,
+		).toBe(false);
+		expect(parseDoc([block("Heading", { onClick: "alert(1)" })]).success).toBe(
+			false,
+		);
+		expect(parseDoc([block("Section", { items: "<script>" })]).success).toBe(
+			false,
+		);
+		expect(parseDoc([block("Heading", { visibility: "gone" })]).success).toBe(
+			false,
+		);
+		expect(parseDoc([], { theme: "dark" }).success).toBe(false);
+	});
+
+	test("refuses javascript: and other unsafe URLs", () => {
+		for (const bad of [
+			block("Button", { href: "javascript:alert(1)" }),
+			block("Button", { href: " JavaScript:alert(1)" }),
+			block("Image", { src: "javascript:alert(1)" }),
+			block("Image", { src: "data:image/svg+xml,<svg/>" }),
+			block("Hero", { image: "javascript:alert(1)" }),
+			block("RichText", {
+				content: '<p><a href="javascript:alert(1)">x</a></p>',
+			}),
+			block("RichText", {
+				content: "<a href='&#106;avascript:alert(1)'>x</a>",
+			}),
+		])
+			expect(parseDoc([bad]).success).toBe(false);
+	});
+
+	test("refuses an id used twice, across slots", () => {
+		const twin = block("Heading");
+		expect(messages([twin, block("Section", { items: [twin] })])).toEqual([
+			`Block id "${twin.props.id}" is used twice`,
+		]);
+	});
+
+	test(`allows ${PUCK_LIMITS.maxDepth} levels and refuses one more`, () => {
+		const nest = (depth: number): unknown =>
+			depth === 1
+				? block("Heading")
+				: block("Container", { items: [nest(depth - 1)] });
+		expect(parseDoc([nest(PUCK_LIMITS.maxDepth)]).success).toBe(true);
+		expect(messages([nest(PUCK_LIMITS.maxDepth + 1)])).toEqual([
+			`Blocks nest at most ${PUCK_LIMITS.maxDepth} levels deep`,
+		]);
+	});
+
+	test(`counts blocks across slots, up to ${PUCK_LIMITS.maxComponents}`, () => {
+		const max = PUCK_LIMITS.maxComponents;
+		const section = (count: number) =>
+			block("Section", {
+				items: Array.from({ length: count - 1 }, () => block("Heading")),
+			});
+		expect(parseDoc([section(max / 2), section(max / 2)]).success).toBe(true);
+		expect(messages([section(max / 2), section(max / 2 + 1)])).toEqual([
+			`A page holds at most ${max} blocks`,
+		]);
+	});
+
+	test("refuses a v2 body without a content array, with widgets or with drop zones", () => {
+		const base = doc([]);
 		const bad = [
-			{ ...content, data: { root: {} } },
+			{ ...base, data: { root: {} } },
 			{
-				...content,
-				data: { ...content.data, content: [{ type: "Heading", props: {} }] },
+				...base,
+				data: { ...base.data, content: [{ type: "Heading", props: {} }] },
 			},
 			{ schemaVersion: 2, widgets: [] },
-			{ ...content, widgets: [] },
+			{ ...base, widgets: [] },
+			{
+				...base,
+				data: {
+					...base.data,
+					zones: { "Section-1:items": [block("Heading")] },
+				},
+			},
 		];
 		for (const candidate of bad)
 			expect(
 				savePageContentSchema.safeParse({ baseVersion: 1, content: candidate })
 					.success,
 			).toBe(false);
+	});
+
+	test("migrates the old Heading level to size on save, nested ones included", () => {
+		const old = block("Heading", { text: "Hi", level: "1" });
+		const parsed = parseDoc([
+			block("Section", { items: [old] }),
+			block("Heading", { size: "3", level: "1" }),
+		]);
+		expect(parsed.success).toBe(true);
+		const content = (
+			parsed.data as { data: { content: { props: Record<string, unknown> }[] } }
+		).data.content;
+		expect(
+			(content[0]?.props["items"] as { props: unknown }[])[0]?.props,
+		).toEqual({
+			id: old.props.id,
+			text: "Hi",
+			size: "1",
+		});
+		expect(content[1]?.props).toMatchObject({ size: "3" });
+		expect(content[1]?.props).not.toHaveProperty("level");
+	});
+
+	test("finds gated blocks in slots, and gated widgets in version 1", () => {
+		const parsed = parseDoc(everyBlock);
+		expect(gatedTypesIn(parsed.data as PageContent)).toEqual(
+			new Map([["BookingWidget", "advanced-widgets"]]),
+		);
+		expect(gatedTypesIn(doc([block("Heading")]) as PageContent).size).toBe(0);
+		expect(
+			gatedTypesIn({
+				schemaVersion: 1,
+				widgets: [{ id: "g", type: "gallery", props: {} }],
+			}),
+		).toEqual(new Map([["gallery", "advanced-widgets"]]));
 	});
 });
 

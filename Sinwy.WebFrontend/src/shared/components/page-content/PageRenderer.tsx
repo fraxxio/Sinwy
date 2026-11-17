@@ -1,9 +1,14 @@
-import type { PageContent, PageWidget, PublicServiceDto } from "@sinwy/shared";
+import {
+	imageSrc,
+	type PageContent,
+	type PageWidget,
+	type PublicServiceDto,
+	resolveHref,
+} from "@sinwy/shared";
 import type { ReactNode } from "react";
 import { Img } from "#/shared/components/Img";
 import { PuckPage } from "#/shared/components/page-builder/PuckPage";
 import { Button } from "#/shared/components/ui/button";
-import { imageSrc, resolveHref } from "#/shared/lib/page-urls";
 
 type Props = Record<string, unknown>;
 

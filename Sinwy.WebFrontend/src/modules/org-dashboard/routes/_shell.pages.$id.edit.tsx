@@ -8,6 +8,7 @@ import {
 	storePage,
 } from "#/modules/org-dashboard/lib/page-queries";
 import { activeServicesQuery } from "#/modules/org-dashboard/lib/service-queries";
+import { editorConfigFor } from "#/shared/components/page-builder/editor-config";
 import { PageEditor } from "#/shared/components/page-builder/PageEditor";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
@@ -23,7 +24,7 @@ export const Route = createFileRoute(
 
 function PageEditPage() {
 	const { id } = Route.useParams();
-	const { organization, member } = Route.useRouteContext();
+	const { organization, member, entitlements } = Route.useRouteContext();
 	const queryClient = useQueryClient();
 	const page = useQuery(pageQuery(organization.id, id));
 	const services = useQuery(activeServicesQuery(organization.id));
@@ -83,6 +84,7 @@ function PageEditPage() {
 		<div className="fixed inset-0 z-50 bg-background">
 			<PageEditor
 				key={page.data.id}
+				config={editorConfigFor(entitlements.features)}
 				initialData={
 					latestVersion.content.schemaVersion === 2
 						? latestVersion.content.data

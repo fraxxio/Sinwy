@@ -12,7 +12,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 2 | FreeGrid: grid-snapped mode in a slot | 1 | done | `feat(web): puck spike phase 2, freegrid` |
 | 3 | Component set, rich text, theme tokens, Tailwind | 1 | done | `feat(web): puck spike phase 3, component set, rich text and tokens` |
 | 4 | Per-breakpoint styles | 2, 3 | done | `feat(web): puck spike phase 4, per-breakpoint styles` |
-| 5 | Server validation, plan gating, migrations | 3 | todo | |
+| 5 | Server validation, plan gating, migrations | 3 | done | `feat(backend, web, shared): puck spike phase 5, validation, plan gating and migrations` |
 | 6 | Editor chrome with shadcn, and guardrails | 3 | todo | |
 | 7 | Stress tests and performance | 2–6 | todo | |
 | 8 | Editor usability review (agent + user) | 7 | todo | |
@@ -42,8 +42,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 - **Record findings as you go.** Every phase's log entry gets a **Findings** list (what worked, friction, bugs, workarounds, Puck issues hit, rough hours spent) and a **Scores** line rating requirements touched as ✅ native, 🟡 custom work (S/M/L) or ❌. Phase 9 builds the evaluation from these, so be honest and specific.
 - **Puck API, checked against the v0.24.0 docs:**
-  - `walkTree(data, config, cb)` needs the Puck config to find slots. The Bun backend can't import the React config, so server validation walks the tree itself (phase 5).
-  - `transformProps(data, transforms, config?)` handles prop migrations, and needs `config` to reach into slots. The docs apply it before both `<Puck>` and `<Render>`.
   - `resolvePermissions(data, params)` receives `params.parent`.
   - `<Puck onAction={(action, appState, prevAppState) => …}>` reports every dispatched action.
   - `iframe: { enabled, waitForStyles, syncHostStyles }`. Disabling the iframe also disables viewports.
@@ -82,13 +80,18 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Puck's drag starts on `pointerdown` on the component wrapper.
   - React listens at the iframe portal root: a native `stopPropagation` on `click` also blocks React `onClick` below it.
   - Every prop needs a field; hidden data uses a `custom` field.
-- **Existing content contract:**
-  - `pageContentSchema` in `Sinwy.Shared/types/page/PageContent.ts` is a strict object with `schemaVersion: z.literal(1)`.
-  - `savePageContentSchema` (`PageSchema.ts:53`) wraps it.
-  - The backend caps a content body at 256 KB (`MAX_PAGE_CONTENT_BYTES`, `Sinwy.Backend/modules/pages/controller.ts:25`).
-  - Plan gating lives in `contentSaveCheck` (`Sinwy.Backend/modules/pages/service.ts`, around line 200). It rejects a newly added widget whose `WIDGET_TYPES[type].requires` feature the plan lacks; widgets already on the page stay allowed.
-  - `advanced-widgets` is in professional and enterprise, not starter (`Sinwy.Shared/types/plan/PlanFeatures.ts`).
+- **Content contract (phase 5, verified; details in the phase 5 log):**
+  - `Sinwy.Shared/types/page/PuckContent.ts`: `BLOCKS` (a strict Zod schema per block's props, its slots, `requires`), `BLOCK_VALUES`, `ROOT_PROPS`, `PUCK_LIMITS` (depth 6, 400 blocks), `BLOCK_MIGRATIONS`.
+  - Adding a block or prop: update `BLOCKS` and the Puck fields together. `page-builder-contract.test.ts` fails when they drift, and the server refuses unknown props with 400.
+  - A prop rename is an idempotent entry in `BLOCK_MIGRATIONS`. The server applies it on save; `migrateDocument()` (`PuckPage.tsx`) applies it on read for both `<Puck>` and `<Render>`.
+  - Heading's prop is `size` (was `level`).
+  - The backend caps a content body at 256 KB (`MAX_PAGE_CONTENT_BYTES`, `Sinwy.Backend/modules/pages/controller.ts`).
+  - Gating: `contentSaveCheck` refuses a gated type (`gatedTypesIn`) that the latest version doesn't have, with 402 `PLAN_UPGRADE_REQUIRED` (code 4021). BookingWidget requires `advanced-widgets` (professional and enterprise).
+  - `editorConfigFor(entitlements.features)` hides locked blocks from the drawer and from Services' default children.
+  - URL rules (`resolveHref`, `imageSrc`) live in `Sinwy.Shared/types/page/PageUrls.ts`.
+  - The backend dev server runs without `--watch`: restart it after changing Shared or backend code.
 - **Seeds:**
+  - Phase 5: pro org `seed-ec82fe5b` (page `pro-booking`, has a BookingWidget) and starter org `seed-c2b0a828` (page `starter-page`, page limit used).
   - Phase 3's pro org `seed-8cb1127f` (id `049b0269-7a40-4af6-9b5c-b0c548212db6`, owner `webdevrokas+seed-8cb1127f-owner@gmail.com`) has 3 services and two published v2 pages: `home` (plain-value props from before phase 4) and `salon` (responsive props and a FreeGrid with `layout.mobile`).
   - Phase 4's starter org `seed-8a603a43` has published page `p4-e2e` with responsive values.
   - `bun run dev:seed-scenario subscribed-org` gives a starter org. Its page limit is reached after one page, so each e2e run seeds a fresh org.
@@ -103,65 +106,24 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Field inputs: `input[name="<prop>"]:visible`.
   - `window.__puckActions` lists every dispatched action type.
   - Puck drag and drop needs stepped `page.mouse` moves through `run-code`. The recipe is in the phase 1 log.
-  - The editor's Save button gives no success feedback yet (phase 6 header).
+  - The editor's Save button gives no success feedback yet, and a refused save shows only the API message (phase 6 header).
 - React Compiler is on through `reactCompilerPreset()` in `Sinwy.WebFrontend/vite.config.ts`. Tailwind 4 is loaded from `Sinwy.WebFrontend/src/styles.css`, and the brand variables are applied at `[data-brand-color]` / `[data-brand-font]` (around line 791).
 
 ---
-
-## Phase 5: Server validation, plan gating, migrations
-
-**Goal:** the backend refuses invalid or plan-locked v2 documents, and a stored document survives a component prop change.
-
-**Files:**
-- `Sinwy.Shared/types/page/PageContent.ts`: `pageContentV2Schema` (around line 136) only checks `type` and `props.id` today; `countPuckComponents` already walks slots.
-- `Sinwy.Shared/types/plan/PlanFeatures.ts`.
-- `Sinwy.Backend/modules/pages/service.ts`: `contentSaveCheck` (around line 196).
-- `Sinwy.Backend/modules/pages/tests/`: `pages.test.ts`, `pageContracts.test.ts`.
-- `Sinwy.WebFrontend/src/shared/components/page-builder/`:
-  - `render-config.tsx`: `BuilderComponents` (prop types), the field definitions per block, and `blocks` / `withVisibilityAll`.
-  - `responsive.ts`: `Responsive<T>`, `asResponsive` (accepts plain values), `responsiveField` options and `VISIBILITY`. Responsive props need a schema that accepts both shapes.
-  - `free-grid-layout.ts`: `FreeGridLayout`.
-  - `editor-config.tsx`: where a starter-plan config would filter components and categories.
-  - `PuckPage.tsx` (`<Render>`) and `PageEditor.tsx` (`<Puck data>`): where `transformProps` goes.
-- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.pages.$id.edit.tsx`: the editor route (it would pass the org's plan to the config).
-
-**Steps:**
-- In `Sinwy.Shared`, add one Zod schema per component's props, keyed by component type, along with which props are slots. Walk the tree ourselves; Puck's `walkTree` needs the React config.
-- Reject:
-  - unknown types
-  - bad props
-  - duplicate ids
-  - over-deep or oversized trees (reuse the `PAGE_CONTENT_LIMITS` idea)
-  - unsafe URLs
-- Record how much of this duplicates the Puck config, and whether one source can drive both.
-- Gating:
-  - Mark BookingWidget (or a gallery) as `requires: "advanced-widgets"`.
-  - The editor config built for a starter plan doesn't offer it.
-  - `contentSaveCheck` applies the existing rule to v2: a newly added gated component is refused, one already on the page stays.
-- Migration: rename one prop on a component that pages already use. Apply `transformProps` before `<Puck>` and `<Render>`, and decide whether stored documents are also migrated on save. Record the friction.
-
-**Tests that matter:**
-- A starter plan can't save a newly added gated component; a page that already had it stays saveable.
-- Unknown type, bad prop, `javascript:` URL and an over-deep tree are each refused.
-- An old-shape document renders correctly after the migration.
-
-**Done when:**
-- A forged save with a gated component on a starter org returns 402 with `PLAN_UPGRADE_REQUIRED`.
-- Pages saved before the prop rename still render.
-
-**Verify:**
-- Seed: `subscribed-org` and `pro-org`.
-- As the pro owner, add a BookingWidget and save: it saves.
-- As the starter owner, the widget isn't in the drawer. A save replayed with it (copied request body) gets 402, and no new `page_content` row appears.
-- Open a page saved before the rename: it renders unchanged.
 
 ## Phase 6: Editor chrome with shadcn, and guardrails
 
 **Goal:** we know how far Puck's UI can be replaced with our own shadcn components, and which guardrails for non-technical users come built in versus need building.
 
 **Files:**
-- Editor route and `page-builder/` config.
+- `Sinwy.WebFrontend/src/shared/components/page-builder/`:
+  - `PageEditor.tsx`: `<Puck>` with `overrides.headerActions` and `SaveAction` (save through `getPuck()`), `VIEWPORTS`, the `onAction` hook.
+  - `editor-config.tsx`: `categories`, `defaultProps` (the Hero and Services presets), `editorConfigFor(features)`. Templates, locked props and required children go here (Puck `permissions`, `resolvePermissions`).
+  - `ResponsiveField.tsx`: already reuses Puck's `AutoField` / `FieldLabel`; a shadcn fields panel replaces these.
+  - `render-config.tsx`: field definitions (plain data shared with the storefront).
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.pages.$id.edit.tsx`: the editor route (the Back button, save and `baseVersion`, the publish link target).
 - `Sinwy.WebFrontend/src/shared/components/ui/`: the shadcn components.
+- `docs/design-rules.md`, and `Sinwy.WebFrontend/src/styles.css` for theming Puck's CSS variables.
 
 **Steps:**
 - Recompose the editor with `<Puck>` children and overrides:

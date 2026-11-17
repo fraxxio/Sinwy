@@ -1,4 +1,8 @@
-import type { OrganizationBrandingDto, PublicServiceDto } from "@sinwy/shared";
+import type {
+	BlockValue,
+	OrganizationBrandingDto,
+	PublicServiceDto,
+} from "@sinwy/shared";
 import type { CSSProperties } from "react";
 
 export const RADIUS = {
@@ -6,13 +10,13 @@ export const RADIUS = {
 	small: "0.375rem",
 	medium: "0.75rem",
 	large: "1.5rem",
-} as const;
+} as const satisfies Record<BlockValue<"radius">, string>;
 
 export const SPACING = {
 	compact: "0.75rem",
 	comfortable: "1.5rem",
 	spacious: "2.5rem",
-} as const;
+} as const satisfies Record<BlockValue<"spacing">, string>;
 
 export type Radius = keyof typeof RADIUS;
 export type Spacing = keyof typeof SPACING;

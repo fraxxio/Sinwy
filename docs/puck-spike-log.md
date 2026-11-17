@@ -367,3 +367,122 @@ Finished phases of the [Puck spike plan](puck-spike-plan.md), each with its spec
 - Per-breakpoint FreeGrid layout: 🟡 S (built on phase 2's structure).
 - Visibility per breakpoint: 🟡 S (wrapper plus a static stylesheet).
 - Editor preview matches the storefront per breakpoint: ✅ native (the iframe has the viewport width; media queries apply).
+
+## Phase 5: Server validation, plan gating, migrations
+
+**Goal:** the backend refuses invalid or plan-locked v2 documents, and a stored document survives a component prop change.
+
+**Files:**
+- `Sinwy.Shared/types/page/PageContent.ts`: `pageContentV2Schema` (around line 136) only checks `type` and `props.id` today; `countPuckComponents` already walks slots.
+- `Sinwy.Shared/types/plan/PlanFeatures.ts`.
+- `Sinwy.Backend/modules/pages/service.ts`: `contentSaveCheck` (around line 196).
+- `Sinwy.Backend/modules/pages/tests/`: `pages.test.ts`, `pageContracts.test.ts`.
+- `Sinwy.WebFrontend/src/shared/components/page-builder/`:
+  - `render-config.tsx`: `BuilderComponents` (prop types), the field definitions per block, and `blocks` / `withVisibilityAll`.
+  - `responsive.ts`: `Responsive<T>`, `asResponsive` (accepts plain values), `responsiveField` options and `VISIBILITY`. Responsive props need a schema that accepts both shapes.
+  - `free-grid-layout.ts`: `FreeGridLayout`.
+  - `editor-config.tsx`: where a starter-plan config would filter components and categories.
+  - `PuckPage.tsx` (`<Render>`) and `PageEditor.tsx` (`<Puck data>`): where `transformProps` goes.
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.pages.$id.edit.tsx`: the editor route (it would pass the org's plan to the config).
+
+**Steps:**
+- In `Sinwy.Shared`, add one Zod schema per component's props, keyed by component type, along with which props are slots. Walk the tree ourselves; Puck's `walkTree` needs the React config.
+- Reject:
+  - unknown types
+  - bad props
+  - duplicate ids
+  - over-deep or oversized trees (reuse the `PAGE_CONTENT_LIMITS` idea)
+  - unsafe URLs
+- Record how much of this duplicates the Puck config, and whether one source can drive both.
+- Gating:
+  - Mark BookingWidget (or a gallery) as `requires: "advanced-widgets"`.
+  - The editor config built for a starter plan doesn't offer it.
+  - `contentSaveCheck` applies the existing rule to v2: a newly added gated component is refused, one already on the page stays.
+- Migration: rename one prop on a component that pages already use. Apply `transformProps` before `<Puck>` and `<Render>`, and decide whether stored documents are also migrated on save. Record the friction.
+
+**Tests that matter:**
+- A starter plan can't save a newly added gated component; a page that already had it stays saveable.
+- Unknown type, bad prop, `javascript:` URL and an over-deep tree are each refused.
+- An old-shape document renders correctly after the migration.
+
+**Done when:**
+- A forged save with a gated component on a starter org returns 402 with `PLAN_UPGRADE_REQUIRED`.
+- Pages saved before the prop rename still render.
+
+**Verify:**
+- Seed: `subscribed-org` and `pro-org`.
+- As the pro owner, add a BookingWidget and save: it saves.
+- As the starter owner, the widget isn't in the drawer. A save replayed with it (copied request body) gets 402, and no new `page_content` row appears.
+- Open a page saved before the rename: it renders unchanged.
+
+### Log (2026-11-17, `feat(backend, web, shared): puck spike phase 5, validation, plan gating and migrations`)
+- Shipped:
+  - `Sinwy.Shared/types/page/PuckContent.ts` holds the whole contract:
+    - `BLOCK_VALUES`: every enum a field offers.
+    - `BLOCKS`: per block type, a strict Zod object for its props (without `id`, slots and `visibility`), its slot names, and `requires`.
+    - `ROOT_PROPS`, `PUCK_LIMITS` (depth 6, 400 blocks, ids ≤ 64, text and URL lengths, ≤ 50 service ids).
+    - `BLOCK_MIGRATIONS`, and `checkBlocks` (our own tree walker).
+  - `pageContentV2Schema` runs `migrateBlocks` first (`z.preprocess`), then checks a strict `{ root: { props }, content, zones? }`. Non-empty drop zones are refused. `content` goes through `checkBlocks`, which reports with paths:
+    - unknown types
+    - bad or unknown props, and bad `visibility`
+    - slots that aren't lists
+    - duplicate ids across slots
+    - more than 6 levels or 400 blocks
+    - unsafe URLs: Button `href` must be what `resolveHref` keeps; Image `src` and Hero `image` must be http(s) or root; every `href` in rich text must be absolute or root.
+  - `PageUrls.ts` (`resolveHref`, `imageSrc`, the `isSafe*` checks) moved from the web app to Shared, so the server check and the storefront use the same regexes.
+  - Gating:
+    - BookingWidget is `requires: "advanced-widgets"`.
+    - `gatedTypesIn(content)` (v1 widgets and v2 blocks) replaces `widgetTypesIn`. `contentSaveCheck` refuses a gated type the latest version doesn't have; types already on the page stay.
+    - `editorConfigFor(features)` drops locked blocks from the drawer categories, hides Puck's "Other" category (`other: { visible: false }`), and strips them from ready-made sections' `defaultProps`, so starter's "Services" inserts without its booking widget. The blocks stay in the config, so an existing one still renders and edits. The edit route passes `entitlements.features` from route context.
+  - Migration: Heading `level` → `size`.
+    - Read: `migrateDocument()` in `PuckPage.tsx` runs Puck's `transformProps(data, BLOCK_MIGRATIONS, renderConfig)` before both `<Render>` and `<Puck data>`.
+    - Save: the server applies the same functions, so every new version row has the current shape.
+    - Old rows are never rewritten (versions are immutable).
+  - The frontend reads `BLOCK_VALUES` for its types (`BlockValue<"tone">` …), the `PADDINGS`/`WIDTHS`/`ASPECTS`/`RADIUS`/`SPACING` maps (bound with `Record<…>` / `satisfies`) and the responsive option lists.
+  - Tests:
+    - `pageContracts.test.ts`: every block accepted, round-trip, unknown type (nested), bad and unknown props, 7 unsafe-URL cases, duplicate ids, depth and count limits, drop zones, migration on parse, `gatedTypesIn`.
+    - `pages.test.ts`: starter 402 `PLAN_UPGRADE_REQUIRED` with no new version, pro saves, the downgraded page stays saveable, then a re-add is 402; 400 for unknown type, bad prop, `javascript:` and depth 20; an old-shape save stored with `size`.
+    - `page-builder-contract.test.ts`: the drift test (below) and the starter config.
+    - `page-renderer.test.ts`: old `level` renders the same as `size`.
+- Differs from plan:
+  - **Server migrates on save** (the plan left it open). It costs nothing, because the transforms are plain functions in Shared and the server already walks the tree, and a tab opened before a deploy can still save. Read-side `transformProps` is still needed, because stored versions are immutable.
+  - **Separate v2 limits** (`PUCK_LIMITS`: depth 6, 400 blocks) instead of reusing v1's 5 / 200. Section > Columns > Container > FreeGrid > block is already 5, and phase 7 targets about 200 blocks across 50+ sections.
+  - **Strict root and drop zones.** Only `radius`/`spacing` are accepted on root, and `zones` must be empty. The 12 v2 documents in the dev DB all passed.
+- Checked in the running app:
+  - E2E subagent:
+    - Seeded pro org `seed-ec82fe5b` (page `pro-booking`) and starter org `seed-c2b0a828` (page `starter-page`, which uses its one-page limit).
+    - Pro: dragged a Booking widget in and saved; the 200 stored a v2 with it.
+    - Starter: the drawer has no Booking widget. "Services" inserts only its heading and text, and saves with `size: "2"`.
+    - Starter replay: a save with the pro page's document returned 402 with code 4021 (`PLAN_UPGRADE_REQUIRED`), and the `page_content` count stayed at 2.
+    - Pages from before the rename (`seed-8cb1127f/home` and `salon`, `seed-8a603a43/p4-e2e`): the raw SSR HTML has each Heading at the tag of its stored `level`. The editor's Size select shows Large or Medium to match, and opening the editor writes no row.
+    - Consoles and server logs were clean.
+  - Not checked:
+    - A downgrade through a real Polar checkout (covered by `pages.test.ts`).
+    - Paste or duplicate of a gated block in the editor (phase 6/7).
+
+**Findings**
+- **Verdict for the go/no-go:** server validation and gating need no Puck support, and none exists. Puck has no data validation, no server-side tree walker without the React config, and no plan or permission concept for inserting. Building them ourselves was quick (about 2 h), because Puck's data format is simple JSON (`{ type, props: { id, …, <slot>: [...] } }`).
+- Duplication between the Puck config and the server schema:
+  - Duplicated: field names per block, slot names, and prop TypeScript types (`BuilderComponents` is still hand-written next to the Zod shapes).
+  - Single-sourced: enum values (`BLOCK_VALUES`), URL rules, migrations and `requires`.
+  - Labels, field kinds and editor-only behaviour live only in the Puck config.
+  - A drift test (`page-builder-contract.test.ts`) checks that both sides have the same block types, the same slots and props per block, and that every option value a field can write (including the responsive object form) is accepted by the server. Removing one shared enum value turns it red.
+- Could one source drive both? Yes, with a plain-data block manifest in Shared (name, label, kind, values, slot, `requires`) that generates both the Zod schema and the Puck `fields`, with the editor attaching custom renders by name. That's M effort for production. The drift test was enough for the spike.
+- What worked natively:
+  - `transformProps` with the config walks slots and composes cleanly before `<Puck>` and `<Render>`.
+  - `categories.other.visible: false` hides uncategorised blocks.
+  - The `@puckeditor/core/rsc` entry also exports `transformProps`, so the storefront stays editor-free.
+- Friction and workarounds:
+  - **Puck's typing.** `transformProps`'s `PropTransform` is typed per component but can't take a `Record<string, fn>`, so it needed `as never`. `editorConfigFor` needed an `as unknown as ComponentConfig` cast again (same generic-map issue as phase 4).
+  - **Migrations are props-only and on every read.** Each must be idempotent. Puck's `migrate()` is for its own data-format upgrades, not ours.
+  - **A gated block is hidden, not explained.** A starter user doesn't see Booking widget at all; there's no "upgrade to use this" tile. Showing a locked tile needs a custom drawer item (phase 6 override).
+  - **Paste and duplicate aren't gated in the editor.** Pasting a gated block into a page without one shows the generic save error (402 message) only on save.
+  - Gating BookingWidget is a product question for a booking SaaS. It was picked as the demo block only.
+- Bugs hit: none in Puck.
+- Rough time: about 2.5 h (schemas and walker 1 h, gating and editor config 0.5 h, migration 0.5 h, tests 0.5 h).
+
+**Scores**
+- Server-side validation of stored documents: 🟡 M (all ours; Puck offers nothing server-side without React).
+- Plan gating of blocks (save refusal and the editor drawer): 🟡 S (category filtering is native, the rule is ours).
+- Prop migrations of stored documents: ✅ native for read (`transformProps`), 🟡 S for one shared source with the server.
+- One source of truth for config and schema: 🟡 M (enum values shared now, fields still duplicated and guarded by a drift test).

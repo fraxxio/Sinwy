@@ -1,5 +1,11 @@
 import type { ComponentConfig, Config, RichText, Slot } from "@puckeditor/core";
-import type { PublicServiceDto } from "@sinwy/shared";
+import {
+	BLOCK_VALUES,
+	type BlockValue,
+	imageSrc,
+	type PublicServiceDto,
+	resolveHref,
+} from "@sinwy/shared";
 import {
 	Children,
 	type CSSProperties,
@@ -9,7 +15,6 @@ import {
 import { buttonVariants } from "#/shared/components/ui/button";
 import { brandAttributes } from "#/shared/lib/branding";
 import { formatMinorUnits } from "#/shared/lib/money";
-import { imageSrc, resolveHref } from "#/shared/lib/page-urls";
 import { cn } from "#/shared/lib/utils";
 import {
 	type FreeGridLayout,
@@ -27,12 +32,12 @@ import {
 } from "./responsive";
 import { builderMetadata, type ThemeTokens, tokenStyle } from "./theme-tokens";
 
-export type HeadingLevel = "1" | "2" | "3";
-type Tone = "plain" | "muted" | "brand";
-type ColumnCount = "1" | "2" | "3" | "4";
-type Align = "start" | "center";
-type Padding = "none" | "small" | "medium" | "large";
-type Width = "narrow" | "medium" | "full";
+type HeadingSize = BlockValue<"headingSize">;
+type Tone = BlockValue<"tone">;
+type ColumnCount = BlockValue<"columns">;
+type Align = BlockValue<"align">;
+type Padding = BlockValue<"padding">;
+type Width = BlockValue<"width">;
 
 export type BuilderComponents = {
 	Section: { items: Slot; tone: Tone; padding: Responsive<Padding> };
@@ -50,13 +55,13 @@ export type BuilderComponents = {
 		width: Responsive<Width>;
 		align: Responsive<Align>;
 	};
-	Heading: { text: string; level: HeadingLevel; align: Responsive<Align> };
+	Heading: { text: string; size: HeadingSize; align: Responsive<Align> };
 	RichText: { content: RichText };
-	Image: { src: string; alt: string; aspect: "auto" | "square" | "wide" };
+	Image: { src: string; alt: string; aspect: BlockValue<"aspect"> };
 	Button: {
 		label: string;
 		href: string;
-		variant: "primary" | "outline";
+		variant: BlockValue<"buttonVariant">;
 		align: Responsive<Align>;
 	};
 	BookingWidget: { title: string; serviceIds: string[] };
@@ -78,7 +83,7 @@ const known = <T extends Record<string, string>>(
 		? map[key]
 		: map[fallback]) as string;
 
-const HEADINGS: Record<HeadingLevel, string> = {
+const HEADINGS: Record<HeadingSize, string> = {
 	"1": "text-3xl font-heading font-semibold tracking-tight text-balance sm:text-5xl",
 	"2": "text-2xl font-heading font-semibold tracking-tight text-balance sm:text-3xl",
 	"3": "text-xl font-heading font-medium",
@@ -101,7 +106,7 @@ const RESPONSIVE = {
 	cell: "col-(--pb-col) row-(--pb-row) max-lg:col-(--pb-col-t) max-lg:row-(--pb-row-t) max-sm:col-(--pb-col-m) max-sm:row-(--pb-row-m)",
 };
 
-const ALIGNS: readonly Align[] = ["start", "center"];
+const ALIGNS = BLOCK_VALUES.align;
 
 /** Text alignment inherits, so it lines up the same with or without the editor's wrapper around each slot child. Left-only blocks set nothing and follow their parent. */
 const alignment = (value: unknown, fallback: Align) => {
@@ -119,7 +124,7 @@ const alignment = (value: unknown, fallback: Align) => {
 	};
 };
 
-const COLUMN_COUNTS: readonly ColumnCount[] = ["1", "2", "3", "4"];
+const COLUMN_COUNTS = BLOCK_VALUES.columns;
 
 /** Pages saved before columns were responsive stacked on phones and showed at most two on tablets. */
 export const columnCount = (count: unknown) =>
@@ -144,7 +149,7 @@ const PADDINGS: Record<Padding, string> = {
 	large: "calc(var(--pb-space) * 2)",
 };
 
-const ASPECTS = {
+const ASPECTS: Record<BlockValue<"aspect">, string> = {
 	auto: "",
 	square: "aspect-square",
 	wide: "aspect-video",
@@ -322,11 +327,7 @@ const section: ComponentConfig<BuilderComponents["Section"]> = {
 			style={responsiveVars(
 				"pad",
 				mapResolved(
-					resolveResponsive(
-						padding,
-						Object.keys(PADDINGS) as Padding[],
-						"medium",
-					),
+					resolveResponsive(padding, BLOCK_VALUES.padding, "medium"),
 					(size) => PADDINGS[size],
 				),
 			)}
@@ -446,11 +447,7 @@ export const blocks: BuilderConfig["components"] = {
 						...responsiveVars(
 							"width",
 							mapResolved(
-								resolveResponsive(
-									width,
-									Object.keys(WIDTHS) as Width[],
-									"medium",
-								),
+								resolveResponsive(width, BLOCK_VALUES.width, "medium"),
 								(size) => WIDTHS[size],
 							),
 						),
@@ -463,7 +460,7 @@ export const blocks: BuilderConfig["components"] = {
 	Heading: {
 		fields: {
 			text: { type: "text", label: "Text", contentEditable: true },
-			level: {
+			size: {
 				type: "select",
 				label: "Size",
 				options: [
@@ -474,8 +471,8 @@ export const blocks: BuilderConfig["components"] = {
 			},
 			align: alignField("start"),
 		},
-		render: ({ text, level, align }) => {
-			const safe = level in HEADINGS ? level : "2";
+		render: ({ text, size, align }) => {
+			const safe = Object.hasOwn(HEADINGS, size) ? size : "2";
 			const Tag = `h${safe}` as const;
 			const aligned = alignment(align, "start");
 			return (

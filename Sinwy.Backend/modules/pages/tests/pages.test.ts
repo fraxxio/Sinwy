@@ -403,6 +403,102 @@ test("content v2: a Puck document saves as the next version and over 256 KB → 
 	expect(tooLarge.status).toBe(413);
 });
 
+const withBooking = (heading = "Hello") => {
+	const document = puckDocument(heading);
+	document.data.content.push({
+		type: "Section",
+		props: {
+			id: "Section-2",
+			items: [
+				{
+					type: "BookingWidget",
+					props: { id: "BookingWidget-1", title: "Book", serviceIds: [] },
+				},
+			],
+		},
+	} as never);
+	return document;
+};
+
+const versionCount = async (pageId: string) =>
+	(
+		await db
+			.select({ version: pageContent.version })
+			.from(pageContent)
+			.where(eq(pageContent.pageId, pageId))
+	).length;
+
+test("content v2: a new BookingWidget → 402 on Starter with no new version; one the page already has stays saveable", async () => {
+	const created = await create();
+	const refused = await save(created.id, 1, withBooking());
+	expect(refused.status).toBe(402);
+	expect(await codeOf(refused)).toBe(API_ERROR_CODES.PLAN_UPGRADE_REQUIRED);
+	expect(await versionCount(created.id)).toBe(1);
+
+	await setPlan("professional");
+	expect((await save(created.id, 1, withBooking())).status).toBe(200);
+
+	await setPlan("starter");
+	expect((await save(created.id, 2, withBooking("Edited"))).status).toBe(200);
+	expect((await save(created.id, 3, puckDocument())).status).toBe(200);
+	expect((await save(created.id, 4, withBooking())).status).toBe(402);
+	expect(await versionCount(created.id)).toBe(4);
+});
+
+test("content v2: an unknown block, a bad prop, a javascript: link and an over-deep tree → 400", async () => {
+	const created = await create();
+	const section = (items: unknown[]) => ({
+		type: "Section",
+		props: { id: `Section-${crypto.randomUUID()}`, items },
+	});
+	const deep = (depth: number): unknown =>
+		depth === 1
+			? { type: "Heading", props: { id: "Heading-deep" } }
+			: section([deep(depth - 1)]);
+	const bodies = [
+		[{ type: "Marquee", props: { id: "Marquee-1" } }],
+		[{ type: "Heading", props: { id: "Heading-1", size: "9" } }],
+		[
+			{
+				type: "Button",
+				props: { id: "Button-1", href: "javascript:alert(document.cookie)" },
+			},
+		],
+		[deep(20)],
+	];
+	for (const content of bodies) {
+		const res = await save(created.id, 1, {
+			schemaVersion: 2,
+			data: { root: { props: {} }, content },
+		} as PageContent);
+		expect(res.status).toBe(400);
+	}
+	expect(await versionCount(created.id)).toBe(1);
+});
+
+test("content v2: a save in the old Heading shape is stored with size", async () => {
+	const created = await create();
+	const res = await save(created.id, 1, {
+		schemaVersion: 2,
+		data: {
+			root: { props: {} },
+			content: [{ type: "Heading", props: { id: "Heading-1", level: "1" } }],
+		},
+	} as PageContent);
+	expect(res.status).toBe(200);
+	const [stored] = await db
+		.select({ content: pageContent.content })
+		.from(pageContent)
+		.where(and(eq(pageContent.pageId, created.id), eq(pageContent.version, 2)));
+	expect(stored?.content).toEqual({
+		schemaVersion: 2,
+		data: {
+			root: { props: {} },
+			content: [{ type: "Heading", props: { id: "Heading-1", size: "1" } }],
+		},
+	});
+});
+
 test("the widgets migration renames a stored blocks version; the page still renders and keeps its premium widgets", async () => {
 	const created = await create({ title: "Welcome", slug: "welcome" });
 	const widgets = [

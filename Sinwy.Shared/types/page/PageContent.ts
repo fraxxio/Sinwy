@@ -1,5 +1,12 @@
 import { z } from "zod";
 import type { Feature } from "../plan";
+import {
+	checkBlocks,
+	countBlocks,
+	gatedBlocksIn,
+	migrateBlocks,
+	ROOT_PROPS,
+} from "./PuckContent";
 
 export type WidgetDefinition = {
 	label: string;
@@ -99,12 +106,15 @@ const eachWidget = (
 	}
 };
 
-/** Every widget type a content tree uses, nested ones included. */
-export const widgetTypesIn = (content: PageContent): Set<WidgetType> => {
-	const types = new Set<WidgetType>();
-	if (content.schemaVersion !== 1) return types;
-	eachWidget(content.widgets, (widget) => types.add(widget.type));
-	return types;
+/** Gated widget or block types a content tree uses, nested ones included, with the feature each needs. */
+export const gatedTypesIn = (content: PageContent): Map<string, Feature> => {
+	if (content.schemaVersion === 2) return gatedBlocksIn(content.data.content);
+	const gated = new Map<string, Feature>();
+	eachWidget(content.widgets, ({ type }) => {
+		const requires = WIDGET_TYPES[type].requires;
+		if (requires) gated.set(type, requires);
+	});
+	return gated;
 };
 
 const pageContentV1Schema = z
@@ -133,45 +143,32 @@ const pageContentV1Schema = z
 			});
 	}) satisfies z.ZodType<PageContentV1>;
 
-const puckComponentSchema = z.looseObject({
-	type: z.string().min(1),
-	props: z.looseObject({ id: z.string().min(1) }),
-});
+const migrateDocument = (data: unknown) =>
+	typeof data === "object" && data !== null && "content" in data
+		? { ...data, content: migrateBlocks(data.content) }
+		: data;
 
+/** Stored in the current prop shape: an older client's save is migrated first, then checked. */
 const pageContentV2Schema = z.strictObject({
 	schemaVersion: z.literal(2),
-	data: z.looseObject({
-		root: z.looseObject({}),
-		content: z.array(puckComponentSchema),
-	}),
-}) as z.ZodType<PageContentV2>;
+	data: z.preprocess(
+		migrateDocument,
+		z.strictObject({
+			root: z.strictObject({ props: ROOT_PROPS.optional() }),
+			content: z.array(z.unknown()).superRefine(checkBlocks),
+			zones: z
+				.record(
+					z.string(),
+					z.array(z.unknown()).max(0, "Drop zones are not used"),
+				)
+				.optional(),
+		}),
+	),
+}) as unknown as z.ZodType<PageContentV2>;
 
-const isComponent = (value: unknown): value is PuckComponentData =>
-	typeof value === "object" &&
-	value !== null &&
-	"type" in value &&
-	"props" in value;
-
-/** Components in a Puck document, counting those nested in slots; slots are prop arrays of components. */
-export const countPuckComponents = (components: PuckComponentData[]): number =>
-	components.reduce(
-		(sum, component) =>
-			sum +
-			1 +
-			Object.values(component.props).reduce<number>(
-				(nested, value) =>
-					Array.isArray(value) && value.every(isComponent)
-						? nested + countPuckComponents(value)
-						: nested,
-				0,
-			),
-		0,
-	);
-
-/** Widgets in version 1, components in version 2. */
+/** Widgets in version 1, blocks in version 2. */
 export const pageContentSize = (content: PageContent): number => {
-	if (content.schemaVersion === 2)
-		return countPuckComponents(content.data.content);
+	if (content.schemaVersion === 2) return countBlocks(content.data.content);
 	let count = 0;
 	eachWidget(content.widgets, () => count++);
 	return count;

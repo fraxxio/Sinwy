@@ -1,7 +1,11 @@
 import type { Data } from "@puckeditor/core";
-import { Render } from "@puckeditor/core/rsc";
-import type { PuckDocument } from "@sinwy/shared";
-import { type BuilderComponents, renderConfig } from "./render-config";
+import { Render, transformProps } from "@puckeditor/core/rsc";
+import { BLOCK_MIGRATIONS, type PuckDocument } from "@sinwy/shared";
+import {
+	type BuilderComponents,
+	type BuilderConfig,
+	renderConfig,
+} from "./render-config";
 import { renderRichText } from "./rich-text";
 import type { BuilderMetadata, ThemeTokens } from "./theme-tokens";
 
@@ -9,6 +13,14 @@ import type { BuilderMetadata, ThemeTokens } from "./theme-tokens";
 const RICH_TEXT_TRANSFORM = {
 	richtext: ({ value }: { value: unknown }) => renderRichText(value),
 };
+
+/** A stored document in the current prop shape; the same migrations run on the server when it saves. */
+export const migrateDocument = (data: PuckDocument) =>
+	transformProps(
+		data as Data,
+		BLOCK_MIGRATIONS as never,
+		renderConfig as BuilderConfig as never,
+	) as Data<BuilderComponents, Partial<ThemeTokens>>;
 
 /** The storefront side of the page builder: `Render` from the editor-free entry. */
 export function PuckPage({
@@ -21,7 +33,7 @@ export function PuckPage({
 	return (
 		<Render
 			config={renderConfig}
-			data={data as Data<BuilderComponents, Partial<ThemeTokens>>}
+			data={migrateDocument(data)}
 			metadata={metadata}
 			fieldTransforms={RICH_TEXT_TRANSFORM}
 		/>

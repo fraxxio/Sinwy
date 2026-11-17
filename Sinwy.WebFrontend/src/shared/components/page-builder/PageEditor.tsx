@@ -2,7 +2,8 @@ import { type Data, Puck, useGetPuck, type Viewports } from "@puckeditor/core";
 import type { PuckDocument } from "@sinwy/shared";
 import { type ReactNode, useState } from "react";
 import { Button } from "#/shared/components/ui/button";
-import { editorConfig } from "./editor-config";
+import { migrateDocument } from "./PuckPage";
+import type { BuilderConfig } from "./render-config";
 import { BuilderServicesContext } from "./ServicePicker";
 import type { BuilderMetadata } from "./theme-tokens";
 
@@ -49,6 +50,7 @@ function SaveAction({
 }
 
 export function PageEditor({
+	config,
 	initialData,
 	title,
 	path,
@@ -56,6 +58,7 @@ export function PageEditor({
 	metadata,
 	onSave,
 }: {
+	config: BuilderConfig;
 	initialData: PuckDocument | null;
 	title: string;
 	path: string;
@@ -66,9 +69,9 @@ export function PageEditor({
 	return (
 		<BuilderServicesContext value={metadata.services}>
 			<Puck
-				config={editorConfig}
+				config={config}
 				metadata={metadata}
-				data={(initialData ?? EMPTY) as Data}
+				data={migrateDocument(initialData ?? EMPTY) as Data}
 				headerTitle={title}
 				headerPath={path}
 				height="100%"

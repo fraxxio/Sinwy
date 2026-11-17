@@ -7,6 +7,7 @@ import {
 } from "@organizationsModule";
 import {
 	type CreatePageInput,
+	gatedTypesIn,
 	hasFeature,
 	limitsFor,
 	PAGE_TEMPLATES,
@@ -18,8 +19,6 @@ import {
 	type PublicPageDto,
 	type SavePageContentInput,
 	type UpdatePageInput,
-	WIDGET_TYPES,
-	widgetTypesIn,
 } from "@sinwy/shared";
 import {
 	type ContentSaveCheck,
@@ -192,21 +191,15 @@ export const updatePage = async (
 	return { ok: true, data: await toDetailDto(membership, updated.value) };
 };
 
-/** A premium widget the plan lacks may stay if the latest version already has it, so downgraded pages remain editable. */
+/** A premium widget or block the plan lacks may stay if the latest version already has it, so downgraded pages remain editable. */
 const contentSaveCheck =
 	(membership: Membership, input: SavePageContentInput): ContentSaveCheck =>
 	(latest) => {
 		if (latest.version !== input.baseVersion) return "version-conflict";
-		const existing = widgetTypesIn(latest.content);
-		for (const type of widgetTypesIn(input.content)) {
-			const requires = WIDGET_TYPES[type].requires;
-			if (
-				requires &&
-				!existing.has(type) &&
-				!hasFeature(membership.plan, requires)
-			)
+		const existing = gatedTypesIn(latest.content);
+		for (const [type, requires] of gatedTypesIn(input.content))
+			if (!existing.has(type) && !hasFeature(membership.plan, requires))
 				return "upgrade-required";
-		}
 		return null;
 	};
 

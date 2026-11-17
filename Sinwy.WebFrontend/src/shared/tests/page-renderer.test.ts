@@ -117,6 +117,37 @@ it("renders a Puck document server-side, slots included", () => {
 	expect(html).toMatch(/<h1[^>]*>Welcome in<\/h1>/);
 });
 
+it("renders a Heading saved with the old level prop like one saved with size", () => {
+	const page = (props: Record<string, unknown>) =>
+		renderToStaticMarkup(
+			createElement(PageRenderer, {
+				content: {
+					schemaVersion: 2,
+					data: {
+						root: { props: {} },
+						content: [
+							{
+								type: "Section",
+								props: {
+									id: "Section-1",
+									items: [
+										{
+											type: "Heading",
+											props: { id: "Heading-1", text: "Hi", ...props },
+										},
+									],
+								},
+							},
+						],
+					},
+				},
+				organizationSlug: "acme",
+			}),
+		);
+	expect(page({ level: "3" })).toMatch(/<h3[^>]*>Hi<\/h3>/);
+	expect(page({ level: "3" })).toBe(page({ size: "3" }));
+});
+
 it("renders a FreeGrid as CSS Grid cells keyed by child id", () => {
 	const html = renderToStaticMarkup(
 		createElement(PageRenderer, {

@@ -1,4 +1,5 @@
 import type { ComponentConfig, CustomField, Field } from "@puckeditor/core";
+import { BLOCKS, type BlockSpec, type Feature } from "@sinwy/shared";
 import { FreeGridEditor, FreeGridLayoutField } from "./FreeGridEditor";
 import { ResponsiveField } from "./ResponsiveField";
 import {
@@ -43,7 +44,7 @@ const withResponsiveFields = (
 	) as unknown as BuilderConfig["components"];
 
 const heroItems = [
-	{ type: "Heading", props: { text: "Look good, feel great", level: "1" } },
+	{ type: "Heading", props: { text: "Look good, feel great", size: "1" } },
 	{
 		type: "RichText",
 		props: {
@@ -60,7 +61,7 @@ const heroItems = [
 const servicesItems = [
 	{
 		type: "Heading",
-		props: { text: "Our services", level: "2", align: { base: "center" } },
+		props: { text: "Our services", size: "2", align: { base: "center" } },
 	},
 	{
 		type: "RichText",
@@ -151,7 +152,7 @@ export const editorConfig: BuilderConfig = {
 				label: "Heading",
 				defaultProps: {
 					text: "Heading",
-					level: "2",
+					size: "2",
 					align: { base: "start" },
 				},
 			},
@@ -216,3 +217,73 @@ export const editorConfig: BuilderConfig = {
 		}),
 	),
 };
+
+const specs: Record<string, BlockSpec | undefined> = BLOCKS;
+
+/** Drops locked blocks from a ready-made section's default children, nested ones included. */
+const withoutLocked = (
+	value: unknown,
+	locked: (type: string) => boolean,
+): unknown =>
+	Array.isArray(value)
+		? value
+				.filter((item) => !locked(item?.type))
+				.map((item) =>
+					item?.props
+						? {
+								...item,
+								props: Object.fromEntries(
+									Object.entries(item.props).map(([name, prop]) => [
+										name,
+										withoutLocked(prop, locked),
+									]),
+								),
+							}
+						: item,
+				)
+		: value;
+
+/**
+ * Blocks the plan lacks leave the drawer and the ready-made sections. They stay in the config, so a page that
+ * already has one still renders and edits; the server refuses a newly added one.
+ */
+export function editorConfigFor(features: readonly Feature[]): BuilderConfig {
+	const locked = (type: string) => {
+		const requires = specs[type]?.requires;
+		return !!requires && !features.includes(requires);
+	};
+	if (!Object.keys(BLOCKS).some(locked)) return editorConfig;
+	const components = Object.fromEntries(
+		Object.entries(editorConfig.components).map(([type, component]) => {
+			const { defaultProps } = component as unknown as ComponentConfig;
+			return [
+				type,
+				defaultProps
+					? {
+							...component,
+							defaultProps: Object.fromEntries(
+								Object.entries(defaultProps).map(([name, value]) => [
+									name,
+									withoutLocked(value, locked),
+								]),
+							),
+						}
+					: component,
+			];
+		}),
+	) as unknown as BuilderConfig["components"];
+	const categories = Object.fromEntries(
+		Object.entries(editorConfig.categories ?? {}).map(([name, category]) => [
+			name,
+			{
+				...category,
+				components: category.components?.filter((type) => !locked(type)),
+			},
+		]),
+	);
+	return {
+		...editorConfig,
+		components,
+		categories: { ...categories, other: { visible: false } },
+	};
+}
