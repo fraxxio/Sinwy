@@ -11,7 +11,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 1 | Puck editor and SSR render on the real pages flow | – | done | `feat(backend, web, shared): puck spike phase 1, editor and ssr render` |
 | 2 | FreeGrid: grid-snapped mode in a slot | 1 | done | `feat(web): puck spike phase 2, freegrid` |
 | 3 | Component set, rich text, theme tokens, Tailwind | 1 | done | `feat(web): puck spike phase 3, component set, rich text and tokens` |
-| 4 | Per-breakpoint styles | 2, 3 | todo | |
+| 4 | Per-breakpoint styles | 2, 3 | done | `feat(web): puck spike phase 4, per-breakpoint styles` |
 | 5 | Server validation, plan gating, migrations | 3 | todo | |
 | 6 | Editor chrome with shadcn, and guardrails | 3 | todo | |
 | 7 | Stress tests and performance | 2–6 | todo | |
@@ -63,14 +63,20 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - The editor wraps each slot child in Puck's `[data-puck-component]` div and `<Render>` doesn't, so `justify-items` and `w-full` behave differently in the two. Alignment uses inherited `text-align` instead; keep that rule for responsive layout.
   - The storefront renders rich text through `fieldTransforms.richtext` → `renderRichText` (`rich-text.tsx`), an allowlist HTML-to-React converter. Puck's own renderer lazy-loads about 117 KB gzip of Tiptap and sends each block twice in the SSR stream. The editor still uses Puck's.
   - FreeGrid's gap stays a fixed 16 px: RGL needs pixel margins, so it doesn't follow `--pb-space`.
-  - Puck `select` options are JSON in the DOM (`{"value":"large"}`): use `selectOption({ label })`. The root fields open from the "Page" breadcrumb (`button[class*=breadcrumbLabel]`, click it via `evaluate`).
+  - Puck `select` options are JSON in the DOM (`{"value":"large"}`): use `selectOption({ label })`, finding the select by `option[value*=large]`. Radio options are `<label>`s. The root fields open from the "Page" breadcrumb (`button[class*=breadcrumbLabel]`, click it via `evaluate`).
   - Editing `render-config.tsx` makes Vite do a full reload ("Could not Fast Refresh"), not HMR.
 - **FreeGrid (phase 2, verified; details in the phase 2 log):**
   - `react-grid-layout` is pinned to exactly 2.2.4, because #2303 reproduces on 2.3.0. Don't upgrade it until a fixed release is out.
-  - Layout is `{ desktop, tablet?, mobile? }`, each a map of child id to `{ x, y, w, h }` on 12 columns × 40 px rows with a 16 px gap (`free-grid-layout.ts`). The editor and the storefront read only `desktop` so far. Children without a cell stack at the bottom.
-  - Placement has two paths. The editor uses a generated `<style>` targeting Puck's `[data-puck-component="<id>"]` wrapper inside the slot element. The storefront uses `<Items as={FreeGridCells}>`, which wraps children by their React key (the id). Per-breakpoint work must change both.
+  - Layout is `{ desktop, tablet?, mobile? }`, each a map of child id to `{ x, y, w, h }` on 12 columns × 40 px rows with a 16 px gap (`free-grid-layout.ts`). Children without a cell stack at the bottom. Tablet without its own layout uses desktop's; phone stacks (`cellsByBreakpoint`, phase 4).
+  - Placement has two paths. The editor uses a generated `<style>` with `@media` rules targeting Puck's `[data-puck-component="<id>"]` wrapper. The storefront uses `<Items as={FreeGridCells}>`, which wraps children by their React key (the id) in `[data-pb-cell]` divs with per-breakpoint variables.
   - Gestures write back through one `replace` dispatch (one history entry); `setUi` adds none. The compactor prevents collisions.
   - Grid children keep Puck drag. `drag: false` makes them `aria-disabled` and drags the parent instead.
+- **Responsive props (phase 4, verified; details in the phase 4 log):**
+  - Values are `{ base, tablet?, mobile? }`, or a plain value saved before a prop became responsive (read as `base`). Responsive props: Section/Services `padding`, `align` (Hero, Container, Heading, Button), Container `width`, Columns `count`, and `visibility` on every block (added by `withVisibility`, not in `BuilderComponents`).
+  - Fields carry their options in Puck field `metadata.responsive` (`responsiveField()`), so phase 5's per-prop Zod schemas can be derived from the same data.
+  - Breakpoints: phone < 640, tablet 640–1023, desktop ≥ 1024 (Tailwind `max-sm` / `max-lg`). Editor viewports: Desktop 1280, Tablet 768, Phone 375. The canvas iframe has the viewport's width, so media queries apply in the editor.
+  - Clicking a viewport button deselects the block (Puck's canvas `onClick`). Phase 6's own switcher should keep the selection.
+  - The editor has no Publish button; publish is "Publish changes" on `/dashboard/<org>/pages/<id>`. The pages API takes the org UUID, not the slug: `PUT /api/organizations/<orgId>/pages/<pageId>/content`, `POST …/publish`.
 - **Puck editor DOM and events (phase 2):**
   - `[data-puck-component] *` gets `pointer-events: none` in the editor, so interactive UI inside a block needs `pointer-events: auto !important`.
   - Puck's drag starts on `pointerdown` on the component wrapper.
@@ -83,10 +89,11 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Plan gating lives in `contentSaveCheck` (`Sinwy.Backend/modules/pages/service.ts`, around line 200). It rejects a newly added widget whose `WIDGET_TYPES[type].requires` feature the plan lacks; widgets already on the page stay allowed.
   - `advanced-widgets` is in professional and enterprise, not starter (`Sinwy.Shared/types/plan/PlanFeatures.ts`).
 - **Seeds:**
-  - Phase 3's pro org `seed-8cb1127f` (owner `webdevrokas+seed-8cb1127f-owner@gmail.com`) has 3 services and two published v2 pages, `home` and `salon`.
+  - Phase 3's pro org `seed-8cb1127f` (id `049b0269-7a40-4af6-9b5c-b0c548212db6`, owner `webdevrokas+seed-8cb1127f-owner@gmail.com`) has 3 services and two published v2 pages: `home` (plain-value props from before phase 4) and `salon` (responsive props and a FreeGrid with `layout.mobile`).
+  - Phase 4's starter org `seed-8a603a43` has published page `p4-e2e` with responsive values.
   - `bun run dev:seed-scenario subscribed-org` gives a starter org. Its page limit is reached after one page, so each e2e run seeds a fresh org.
   - `pro-org` gives a professional org.
-  - Log in with `bun run dev:login-as`. Polar is seeded and simulated; none of these phases touch it.
+  - Log in with `bun run dev:login-as --email <email> --state`, then `playwright-cli state-load` the printed file. Polar is seeded and simulated; none of these phases touch it.
 - **Dev and browser:**
   - Dev servers run in the background with logs in `/tmp/sinwy-backend.log` and `/tmp/sinwy-web.log`.
   - The first visit after importing a new Puck entry makes Vite re-optimize deps and reload, with a one-off "Invalid hook call". Reload and the console is clean.
@@ -101,46 +108,22 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 ---
 
-## Phase 4: Per-breakpoint styles
-
-**Goal:** spacing, visibility, layout and FreeGrid positions can be set separately for desktop, tablet and mobile, and the storefront honours them.
-
-**Files:**
-- `page-builder/render-config.tsx`: block renders and fields. Alignment, columns (`COLUMNS`), widths and the Section/Hero padding (`p-(--pb-space)`) are the props to make responsive. Fields are plain data here; `editor-config.tsx` adds labels, `defaultProps` and the editor-only FreeGrid render.
-- `page-builder/theme-tokens.ts`: `tokenStyle()` writes the root CSS variables; per-breakpoint values follow the same pattern.
-- `page-builder/free-grid-layout.ts` (`resolveCells`, `gridStyle`, `cellPlacement`), `FreeGridEditor.tsx` (generated `<style>` per child id, RGL `layout.desktop` write-back) and `FreeGridCells` in `render-config.tsx`: both placement paths read only `desktop` today.
-- `page-builder/PageEditor.tsx`: `<Puck>` props, where `viewports` and a viewport-aware field would hook in.
-- `Sinwy.WebFrontend/src/styles.css`: the static stylesheet for the responsive variables (the `.ProseMirror` rule from phase 3 is at the end).
-- `Sinwy.WebFrontend/src/shared/tests/page-renderer.test.ts` (`renderPuck` helper streams with `renderToReadableStream`) and `src/shared/tests/free-grid-layout.test.ts`.
-
-**Steps:**
-- Add a `responsive<T>` custom field storing `{ base, tablet?, mobile? }`. Components turn it into CSS variables, which a small static stylesheet reads inside media or container queries.
-- Tie the field to Puck's viewport switcher if possible: editing in the mobile viewport writes the mobile value. Record how much glue this needed.
-- FreeGrid reads its per-breakpoint layout. A breakpoint without its own layout falls back to stacking its children in order.
-- Try visibility per breakpoint (hide on mobile).
-
-**Tests that matter:**
-- The responsive-value-to-CSS-variable mapping, including the fallback when a breakpoint isn't set.
-
-**Done when:**
-- Rearranging a FreeGrid and changing padding in the mobile viewport leaves desktop unchanged, and a narrow browser window on the storefront shows the mobile layout.
-
-**Verify:**
-- Seed: `subscribed-org` with the phase 2 page.
-- Switch to the mobile viewport, move a FreeGrid child, hide one block and change a Section's padding.
-- Back on desktop, nothing has changed.
-- Publish, then load the public page at 375 px and at 1280 px widths: each matches its own editor view.
-
 ## Phase 5: Server validation, plan gating, migrations
 
 **Goal:** the backend refuses invalid or plan-locked v2 documents, and a stored document survives a component prop change.
 
 **Files:**
-- `Sinwy.Shared/types/page/PageContent.ts`.
+- `Sinwy.Shared/types/page/PageContent.ts`: `pageContentV2Schema` (around line 136) only checks `type` and `props.id` today; `countPuckComponents` already walks slots.
 - `Sinwy.Shared/types/plan/PlanFeatures.ts`.
-- `Sinwy.Backend/modules/pages/service.ts`: `contentSaveCheck`.
-- `Sinwy.Backend/modules/pages/tests/`.
-- `page-builder/` config, where gating is filtered per plan.
+- `Sinwy.Backend/modules/pages/service.ts`: `contentSaveCheck` (around line 196).
+- `Sinwy.Backend/modules/pages/tests/`: `pages.test.ts`, `pageContracts.test.ts`.
+- `Sinwy.WebFrontend/src/shared/components/page-builder/`:
+  - `render-config.tsx`: `BuilderComponents` (prop types), the field definitions per block, and `blocks` / `withVisibilityAll`.
+  - `responsive.ts`: `Responsive<T>`, `asResponsive` (accepts plain values), `responsiveField` options and `VISIBILITY`. Responsive props need a schema that accepts both shapes.
+  - `free-grid-layout.ts`: `FreeGridLayout`.
+  - `editor-config.tsx`: where a starter-plan config would filter components and categories.
+  - `PuckPage.tsx` (`<Render>`) and `PageEditor.tsx` (`<Puck data>`): where `transformProps` goes.
+- `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.pages.$id.edit.tsx`: the editor route (it would pass the org's plan to the config).
 
 **Steps:**
 - In `Sinwy.Shared`, add one Zod schema per component's props, keyed by component type, along with which props are slots. Walk the tree ourselves; Puck's `walkTree` needs the React config.

@@ -816,3 +816,38 @@ body:has([data-slot="sidebar-wrapper"]) {
 	white-space: pre-wrap;
 	word-wrap: break-word;
 }
+
+/* Page builder: blocks hidden per breakpoint (`data-pb-hide`, same edges as `max-lg` / `max-sm`). The editor fades them so they stay selectable. */
+[data-pb-hide] {
+	display: contents;
+}
+
+@media (width >= 64rem) {
+	[data-pb-hide~="base"]:not([data-pb-editing]),
+	[data-pb-cell]:has(> [data-pb-hide~="base"]) {
+		display: none;
+	}
+	[data-pb-hide~="base"][data-pb-editing] > * {
+		opacity: 0.35;
+	}
+}
+
+@media (40rem <= width < 64rem) {
+	[data-pb-hide~="tablet"]:not([data-pb-editing]),
+	[data-pb-cell]:has(> [data-pb-hide~="tablet"]) {
+		display: none;
+	}
+	[data-pb-hide~="tablet"][data-pb-editing] > * {
+		opacity: 0.35;
+	}
+}
+
+@media (width < 40rem) {
+	[data-pb-hide~="mobile"]:not([data-pb-editing]),
+	[data-pb-cell]:has(> [data-pb-hide~="mobile"]) {
+		display: none;
+	}
+	[data-pb-hide~="mobile"][data-pb-editing] > * {
+		opacity: 0.35;
+	}
+}

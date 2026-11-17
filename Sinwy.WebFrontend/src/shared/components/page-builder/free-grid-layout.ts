@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import type { Breakpoint } from "./responsive";
 
 export type GridCell = { x: number; y: number; w: number; h: number };
 export type PlacedCell = GridCell & { i: string };
@@ -63,3 +64,66 @@ export const cellPlacement = ({ x, y, w, h }: GridCell) => ({
 	gridColumn: `${x + 1} / span ${w}`,
 	gridRow: `${y + 1} / span ${h}`,
 });
+
+export const LAYOUT_KEYS = {
+	base: "desktop",
+	tablet: "tablet",
+	mobile: "mobile",
+} as const satisfies Record<Breakpoint, keyof FreeGridLayout>;
+
+/** Full width, one under another, in the order they read on the wider layout. */
+export function stackCells(cells: readonly PlacedCell[]): PlacedCell[] {
+	let y = 0;
+	return [...cells]
+		.sort((a, b) => a.y - b.y || a.x - b.x)
+		.map(({ i, h }) => {
+			const cell = { i, x: 0, y, w: FREE_GRID.cols, h };
+			y += h;
+			return cell;
+		});
+}
+
+/** Tablet without its own layout uses desktop's; phone without its own stacks the tablet layout. */
+export function cellsByBreakpoint(
+	childIds: readonly string[],
+	layout: Partial<FreeGridLayout> | undefined,
+): Record<Breakpoint, PlacedCell[]> {
+	const base = resolveCells(childIds, layout?.desktop);
+	const tablet = layout?.tablet ? resolveCells(childIds, layout.tablet) : base;
+	const mobile = layout?.mobile
+		? resolveCells(childIds, layout.mobile)
+		: stackCells(tablet);
+	return { base, tablet, mobile };
+}
+
+/** Per child, its grid column and row on each breakpoint, in `childIds` order. */
+export const placementsByChild = (
+	childIds: readonly string[],
+	layout: Partial<FreeGridLayout> | undefined,
+) => {
+	const byBreakpoint = cellsByBreakpoint(childIds, layout);
+	return childIds.map((i) => {
+		const at = (breakpoint: Breakpoint) => {
+			const cell = byBreakpoint[breakpoint].find((c) => c.i === i);
+			return cell
+				? cellPlacement(cell)
+				: { gridColumn: "auto", gridRow: "auto" };
+		};
+		const base = at("base");
+		const tablet = at("tablet");
+		const mobile = at("mobile");
+		return {
+			i,
+			column: {
+				base: base.gridColumn,
+				tablet: tablet.gridColumn,
+				mobile: mobile.gridColumn,
+			},
+			row: {
+				base: base.gridRow,
+				tablet: tablet.gridRow,
+				mobile: mobile.gridRow,
+			},
+		};
+	});
+};

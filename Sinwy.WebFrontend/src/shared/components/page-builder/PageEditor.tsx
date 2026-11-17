@@ -1,4 +1,4 @@
-import { type Data, Puck, useGetPuck } from "@puckeditor/core";
+import { type Data, Puck, useGetPuck, type Viewports } from "@puckeditor/core";
 import type { PuckDocument } from "@sinwy/shared";
 import { type ReactNode, useState } from "react";
 import { Button } from "#/shared/components/ui/button";
@@ -7,6 +7,13 @@ import { BuilderServicesContext } from "./ServicePicker";
 import type { BuilderMetadata } from "./theme-tokens";
 
 const EMPTY: PuckDocument = { root: { props: {} }, content: [] };
+
+/** One per breakpoint in `responsive.ts`; responsive fields edit the value of the selected one. */
+const VIEWPORTS: Viewports = [
+	{ width: 1280, height: "auto", icon: "Monitor", label: "Desktop" },
+	{ width: 768, height: "auto", icon: "Tablet", label: "Tablet" },
+	{ width: 375, height: "auto", icon: "Smartphone", label: "Phone" },
+];
 
 type SaveResult = { ok: true } | { ok: false; message: string };
 
@@ -65,6 +72,7 @@ export function PageEditor({
 				headerTitle={title}
 				headerPath={path}
 				height="100%"
+				viewports={VIEWPORTS}
 				onAction={(action) => {
 					const w = window as { __puckActions?: string[] };
 					w.__puckActions = [...(w.__puckActions ?? []), action.type];

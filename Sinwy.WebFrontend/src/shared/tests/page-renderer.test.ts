@@ -152,10 +152,10 @@ it("renders a FreeGrid as CSS Grid cells keyed by child id", () => {
 	);
 	expect(html).toContain("grid-template-columns:repeat(12, minmax(0, 1fr))");
 	expect(html).toMatch(
-		/grid-column:1 \/ span 6;grid-row:3 \/ span 2"><h2[^>]*>A</,
+		/--pb-col:1 \/ span 6;--pb-col-t:1 \/ span 6;--pb-col-m:1 \/ span 12;--pb-row:3 \/ span 2;--pb-row-t:3 \/ span 2;--pb-row-m:3 \/ span 2"><h2[^>]*>A</,
 	);
 	expect(html).toMatch(
-		/grid-column:7 \/ span 6;grid-row:1 \/ span 2"><h2[^>]*>B</,
+		/--pb-col:7 \/ span 6;--pb-col-t:7 \/ span 6;--pb-col-m:1 \/ span 12;--pb-row:1 \/ span 2;--pb-row-t:1 \/ span 2;--pb-row-m:1 \/ span 2"><h2[^>]*>B</,
 	);
 });
 
@@ -255,4 +255,36 @@ it("writes root tokens as CSS variables and ignores unknown token values", async
 	const html = await renderPuck([], { radius: "large", spacing: "nope" });
 	expect(html).toContain("--pb-radius:1.5rem");
 	expect(html).toContain("--pb-space:1.5rem");
+});
+
+it("writes per-breakpoint props as CSS variables and hides blocks per breakpoint", async () => {
+	const html = await renderPuck([
+		{
+			type: "Section",
+			props: {
+				id: "Section-1",
+				tone: "plain",
+				padding: { base: "large", mobile: "none" },
+				visibility: { base: "show", mobile: "hide" },
+				items: [],
+			},
+		},
+		{
+			type: "Columns",
+			props: {
+				id: "Columns-1",
+				count: "3",
+				column1: [],
+				column2: [],
+				column3: [],
+				column4: [],
+			},
+		},
+	]);
+	expect(html).toContain(
+		'<div data-pb-hide="mobile"><section style="--pb-pad:calc(var(--pb-space) * 2);--pb-pad-t:calc(var(--pb-space) * 2);--pb-pad-m:0px"',
+	);
+	expect(html).toContain(
+		"--pb-cols:repeat(3, minmax(0, 1fr));--pb-cols-t:repeat(2, minmax(0, 1fr));--pb-cols-m:repeat(1, minmax(0, 1fr))",
+	);
 });

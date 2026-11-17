@@ -12,15 +12,20 @@ import ReactGridLayout, {
 	useContainerWidth,
 } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
+import { Button } from "#/shared/components/ui/button";
 import {
 	cellPlacement,
+	cellsByBreakpoint,
 	FREE_GRID,
+	type FreeGridLayout,
 	gridStyle,
+	LAYOUT_KEYS,
 	type PlacedCell,
-	resolveCells,
 	toCellMap,
 } from "./free-grid-layout";
+import { useEditedBreakpoint } from "./ResponsiveField";
 import type { BuilderComponents } from "./render-config";
+import { BREAKPOINT_LABELS, type Breakpoint } from "./responsive";
 
 const usePuck = createUsePuck();
 /** No compaction and no overlap: a move or resize into an occupied cell snaps back. */
@@ -53,7 +58,13 @@ const OVERLAY_CSS = `
 [data-freegrid-overlay] .react-resizable-handle, [data-freegrid-overlay] [data-freegrid-handle] { pointer-events: auto !important; }
 `;
 
-/** Editor-only FreeGrid: the slot renders on a CSS grid, and a transparent RGL layer on top moves and resizes the cells. */
+const MEDIA: Record<Breakpoint, string | null> = {
+	base: null,
+	tablet: "(width < 64rem)",
+	mobile: "(width < 40rem)",
+};
+
+/** Editor-only FreeGrid: the slot renders on a CSS grid, and a transparent RGL layer on top moves and resizes the cells of the breakpoint being edited. */
 export const FreeGridEditor: PuckComponent<BuilderComponents["FreeGrid"]> = ({
 	id,
 	items: Items,
@@ -67,7 +78,9 @@ export const FreeGridEditor: PuckComponent<BuilderComponents["FreeGrid"]> = ({
 				.join("\n") ?? "",
 	);
 	const childIds = idList ? idList.split("\n") : [];
-	const stored = resolveCells(childIds, layout?.desktop);
+	const breakpoint = useEditedBreakpoint();
+	const byBreakpoint = cellsByBreakpoint(childIds, layout);
+	const stored = byBreakpoint[breakpoint];
 	const [live, setLive] = useState<PlacedCell[] | null>(null);
 	const cells = live ?? stored;
 	const { width, containerRef, mounted } = useContainerWidth();
@@ -132,16 +145,26 @@ export const FreeGridEditor: PuckComponent<BuilderComponents["FreeGrid"]> = ({
 				...item,
 				props: {
 					...item.props,
-					layout: { ...item.props.layout, desktop: toCellMap(nextCells) },
+					layout: {
+						...item.props.layout,
+						[LAYOUT_KEYS[breakpoint]]: toCellMap(nextCells),
+					},
 				},
 			},
 		});
 	};
 
-	const placement = cells
-		.map((cell) => {
-			const { gridColumn, gridRow } = cellPlacement(cell);
-			return `[data-freegrid="${CSS.escape(id)}"] > * > [data-puck-component="${CSS.escape(cell.i)}"] { grid-column: ${gridColumn}; grid-row: ${gridRow}; }`;
+	/** Same breakpoints as the storefront's `max-lg` and `max-sm`, so the canvas iframe width picks the layout. */
+	const placement = (["base", "tablet", "mobile"] as const)
+		.map((at) => {
+			const rules = (at === breakpoint ? cells : byBreakpoint[at])
+				.map((cell) => {
+					const { gridColumn, gridRow } = cellPlacement(cell);
+					return `[data-freegrid="${CSS.escape(id)}"] > * > [data-puck-component="${CSS.escape(cell.i)}"] { grid-column: ${gridColumn}; grid-row: ${gridRow}; }`;
+				})
+				.join("\n");
+			const media = MEDIA[at];
+			return media ? `@media ${media} {\n${rules}\n}` : rules;
 		})
 		.join("\n");
 
@@ -190,3 +213,46 @@ export const FreeGridEditor: PuckComponent<BuilderComponents["FreeGrid"]> = ({
 		</div>
 	);
 };
+
+/** Resets only the breakpoint being edited; tablet and phone then follow their fallback again. */
+export function FreeGridLayoutField({
+	value,
+	onChange,
+}: {
+	value: FreeGridLayout | undefined;
+	onChange: (value: FreeGridLayout) => void;
+}) {
+	const breakpoint = useEditedBreakpoint();
+	const reset = () => {
+		const { desktop = {}, tablet, mobile } = value ?? { desktop: {} };
+		onChange({
+			desktop: breakpoint === "base" ? {} : desktop,
+			...(tablet && breakpoint !== "tablet" && { tablet }),
+			...(mobile && breakpoint !== "mobile" && { mobile }),
+		});
+	};
+	const own =
+		breakpoint === "base" || Boolean(value?.[LAYOUT_KEYS[breakpoint]]);
+	return (
+		<div className="grid gap-2 text-muted-foreground text-sm">
+			<p>Drag a block's ⠿ handle to move it, and its edges to resize it.</p>
+			<p>
+				{BREAKPOINT_LABELS[breakpoint]} layout
+				{own
+					? ""
+					: breakpoint === "tablet"
+						? ": same as desktop until you move something."
+						: ": blocks stack until you move something."}
+			</p>
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				disabled={!own}
+				onClick={reset}
+			>
+				Reset {BREAKPOINT_LABELS[breakpoint].toLowerCase()} layout
+			</Button>
+		</div>
+	);
+}

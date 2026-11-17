@@ -293,3 +293,77 @@ Finished phases of the [Puck spike plan](puck-spike-plan.md), each with its spec
 - Inline rich text editing: 🟡 S (works; we added the ProseMirror CSS, and there's no link UI).
 - Rich text on the storefront (SSR, light JS, safe): 🟡 M (Puck's path is safe but ships about 117 KB gzip and duplicate SSR; replaced by our own renderer).
 - Editor and storefront look the same: 🟡 S (true once layout rules avoid the editor's extra wrapper).
+
+## Phase 4: Per-breakpoint styles
+
+**Goal:** spacing, visibility, layout and FreeGrid positions can be set separately for desktop, tablet and mobile, and the storefront honours them.
+
+**Files:**
+- `page-builder/render-config.tsx`: block renders and fields. Alignment, columns (`COLUMNS`), widths and the Section/Hero padding (`p-(--pb-space)`) are the props to make responsive. Fields are plain data here; `editor-config.tsx` adds labels, `defaultProps` and the editor-only FreeGrid render.
+- `page-builder/theme-tokens.ts`: `tokenStyle()` writes the root CSS variables; per-breakpoint values follow the same pattern.
+- `page-builder/free-grid-layout.ts` (`resolveCells`, `gridStyle`, `cellPlacement`), `FreeGridEditor.tsx` (generated `<style>` per child id, RGL `layout.desktop` write-back) and `FreeGridCells` in `render-config.tsx`: both placement paths read only `desktop` today.
+- `page-builder/PageEditor.tsx`: `<Puck>` props, where `viewports` and a viewport-aware field would hook in.
+- `Sinwy.WebFrontend/src/styles.css`: the static stylesheet for the responsive variables (the `.ProseMirror` rule from phase 3 is at the end).
+- `Sinwy.WebFrontend/src/shared/tests/page-renderer.test.ts` (`renderPuck` helper streams with `renderToReadableStream`) and `src/shared/tests/free-grid-layout.test.ts`.
+
+**Steps:**
+- Add a `responsive<T>` custom field storing `{ base, tablet?, mobile? }`. Components turn it into CSS variables, which a small static stylesheet reads inside media or container queries.
+- Tie the field to Puck's viewport switcher if possible: editing in the mobile viewport writes the mobile value. Record how much glue this needed.
+- FreeGrid reads its per-breakpoint layout. A breakpoint without its own layout falls back to stacking its children in order.
+- Try visibility per breakpoint (hide on mobile).
+
+**Tests that matter:**
+- The responsive-value-to-CSS-variable mapping, including the fallback when a breakpoint isn't set.
+
+**Done when:**
+- Rearranging a FreeGrid and changing padding in the mobile viewport leaves desktop unchanged, and a narrow browser window on the storefront shows the mobile layout.
+
+**Verify:**
+- Seed: `subscribed-org` with the phase 2 page.
+- Switch to the mobile viewport, move a FreeGrid child, hide one block and change a Section's padding.
+- Back on desktop, nothing has changed.
+- Publish, then load the public page at 375 px and at 1280 px widths: each matches its own editor view.
+
+### Log (2026-11-17, `feat(web): puck spike phase 4, per-breakpoint styles`)
+- Shipped:
+  - `responsive.ts` (storefront-safe): values are `{ base, tablet?, mobile? }`, resolved desktop-first (unset tablet follows base, unset phone follows tablet). A plain value from before a prop became responsive reads as `base`. Unknown values count as unset. `responsiveVars(name, resolved)` always writes all three of `--pb-<name>`, `-t` and `-m`, so a nested block never inherits a parent's override. Block classes read them inside Tailwind's `max-lg` / `max-sm` (for example `p-(--pb-pad) max-lg:p-(--pb-pad-t) max-sm:p-(--pb-pad-m)`). Breakpoints: phone < 640 px, tablet 640–1023 px, desktop ≥ 1024 px.
+  - Responsive props: Section/Services `padding` (None/Small/Medium/Large, multiples of `--pb-space`), alignment on Hero, Container, Heading and Button, Container `width`, and Columns `count` (1–4; the number of slots follows `base`, and narrower breakpoints only change columns per row).
+  - Fields stay plain data in `render-config.tsx`: `responsiveField()` is a `custom` field carrying its options in Puck's field `metadata`. `editor-config.tsx` swaps every field with `metadata.responsive` for `ResponsiveField.tsx`. That control reads Puck's viewport (`appState.ui.viewports.current.width` through `createUsePuck`), shows the breakpoint next to the label, edits only that breakpoint's value, and on tablet/phone shows "Same as …" or "Only on phone · Reset". It reuses Puck's own radio/select through the exported `AutoField` and `FieldLabel`.
+  - `<Puck viewports>`: Desktop 1280, Tablet 768, Phone 375 (the full-width option is gone).
+  - Visibility: `withVisibility` adds a responsive Show/Hide field to every block. When a block is hidden somewhere, its render is wrapped in `<div data-pb-hide="mobile …">` (`display: contents`). A static rule in `styles.css` hides it per media query on the storefront (FreeGrid cells through `:has()`). In the editor (`data-pb-editing`) it fades to 35% opacity, so it stays selectable.
+  - FreeGrid: `cellsByBreakpoint` gives tablet desktop's layout until it has its own, and phone a full-width stack (in the wider layout's visual order, keeping heights) until it has its own. The storefront cells get `--pb-col` / `--pb-row` variables per breakpoint. The editor's generated `<style>` writes the same placements inside `@media` rules, and the RGL overlay edits and writes back `layout[desktop|tablet|mobile]` for the viewport being edited. "Reset layout" resets only the current breakpoint.
+  - Tests: `responsive.test.ts` covers the value-to-variable mapping with fallbacks, plain and unknown values, `hiddenOn`, and FreeGrid fallbacks (tablet inherits, phone stacks, partial own layouts). `page-renderer.test.ts` covers SSR output for padding, visibility and legacy Columns variables, plus the FreeGrid test updated for the per-breakpoint variables.
+- Differs from plan:
+  - **Tablet FreeGrid inherits desktop instead of stacking.** A 12-column layout reads fine at 768 px, and this matches how every other responsive value cascades. Only phone falls back to stacking.
+  - **CSS variables read by Tailwind arbitrary-value classes, not a hand-written stylesheet.** Only visibility needed static CSS (`styles.css`).
+  - **Hero padding isn't responsive.** Its `py-16 sm:py-24` is already responsive, and a single responsive value would have changed the look of existing heroes. Section/Services padding is.
+  - **Alignment semantics.** Blocks set text alignment only when some breakpoint is centred; "Left" otherwise follows the parent, so headings in a centred Hero still centre. Before this, Container "Left" forced `text-left`.
+  - **Legacy Columns.** A plain `count` keeps its old look (phone 1, tablet at most 2) through `columnCount()`. The first edit in the responsive control turns it into `{ base }` and drops that implied phone/tablet value. Phase 5's migration decides how to handle this.
+- Checked in the running app:
+  - Inline (org `seed-8cb1127f`, pages `home` and `salon`): the viewport switcher drives the fields. Padding set on phone shows 48 px on phone and 24 px on desktop. A block hidden on phone fades on phone and stays opaque on desktop. A FreeGrid move on phone dispatched one `replace`, and the save stored a new `layout.mobile` with `desktop` unchanged. The storefront at 375 / 800 / 1280 px matched: stacked grid, left title, one column on phone; desktop grid and centred title above.
+  - E2E subagent (starter org `seed-8a603a43`, page `p4-e2e`): every Verify step passed. Phone FreeGrid move, hide and padding through the real UI. Desktop and tablet measurements matched the baseline exactly. Version 3 stored only phone-level changes. Published, then the storefront at 375 px (title hidden, grid order Beta/Gamma/Alpha at the editor's offsets, 48 px padding) and 1280 px matched the editor. Consoles and server logs were clean.
+  - Not checked: real touch devices, landscape phones, and window widths at exactly 640 / 1024 px.
+
+**Findings**
+- **Verdict for the go/no-go:** responsive editing works and the storefront matches. But Puck has no concept of per-viewport props, so every responsive prop is a custom field of ours. The glue is small (the viewport is readable state, `AutoField`/`FieldLabel` are exported, field `metadata` carries options), and media queries just work in the canvas because the iframe is the viewport width. About 2 h.
+- What worked natively:
+  - `viewports` on `<Puck>`, and the current width readable from `usePuck` in any custom field or block: tying a field to the viewport took about 5 lines (`useEditedBreakpoint`).
+  - The canvas iframe has the viewport's real width, so the same media-query CSS drives the editor and the storefront. No container queries and no editor-only layout code were needed (except FreeGrid's generated rules, which already existed).
+  - `AutoField` and `FieldLabel` let a custom field reuse Puck's native radio and select UI.
+  - Field `metadata` lets the storefront config stay plain data while the editor swaps in the real control.
+- Friction and workarounds:
+  - **Switching viewport deselects the block.** Puck's canvas wrapper dispatches `itemSelector: null` on any click whose target isn't a component, and the viewport buttons sit inside it. So "select block → switch to phone → edit" needs a reselect every time. Our own viewport switcher in the phase 6 header can avoid this.
+  - No responsive-field concept: each responsive prop is a custom field, and Puck's undo history, field types and validation don't know about breakpoints.
+  - Typing: generic config wrappers (`withVisibility`, `withResponsiveFields`) need `as unknown as` casts, because `ComponentConfig<P>` doesn't compose across a component map.
+  - A block hidden inside a FreeGrid leaves its rows empty, because explicit grid placement keeps the tracks. Rows also don't close up after a phone move (the e2e saw a 112 px band). Both are consistent with free placement, but a novice may read them as bugs.
+  - The editor canvas has no storefront side padding (`main.page-wrap` adds 16 px), so at 375 px a FreeGrid cell is 360 px in the editor and 328 px on the storefront. This is our layout, not Puck.
+  - Responsive values change prop shapes, so stored documents now mix plain and `{ base }` values. The backend accepted both unvalidated (phase 5).
+- Bugs hit: none in Puck. The deselect-on-viewport-switch behaviour is arguably a Puck UX bug.
+- Rough time: about 2 h (model and fields 1 h, FreeGrid 0.5 h, browser checks 0.5 h).
+
+**Scores**
+- Responsive values per breakpoint (spacing, layout, alignment): 🟡 M (custom field and CSS-variable mapping; Puck supplies viewports and state).
+- Editing tied to the viewport switcher: 🟡 S (about 5 lines of glue; reselect friction).
+- Per-breakpoint FreeGrid layout: 🟡 S (built on phase 2's structure).
+- Visibility per breakpoint: 🟡 S (wrapper plus a static stylesheet).
+- Editor preview matches the storefront per breakpoint: ✅ native (the iframe has the viewport width; media queries apply).
