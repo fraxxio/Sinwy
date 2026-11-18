@@ -11,7 +11,7 @@ Branch: `pagebuilder/75-document-model`. The spike branch `pagebuilder-tryout` i
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Rich text allowlist in Shared | – | done | `feat(shared): add rich text allowlist for page documents` |
-| 2 | Block manifest and document schema | 1 | todo | |
+| 2 | Block manifest and document schema | 1 | done | `feat(shared): add page block manifest and document schema` |
 | 3 | Puck config adapter and storefront renderer | 2 | todo | |
 | 4 | Switch pages to the new document and remove v1 | 3 | todo | |
 | 5 | Plan gating of blocks | 4 | todo | |
@@ -54,11 +54,13 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - Under StrictMode, `<Puck>` children remount once (#1884).
   - Align content with inherited `text-align`, not `justify-items`. The editor wraps each slot child in a `[data-puck-component]` div that `<Render>` doesn't have.
   - Returning `readOnly` from `resolveData` records a spurious history entry on load.
-- **Rich text (phase 1, log for detail):**
-  - `parseRichText`, `serializeRichText`, `normalizeRichText`, `RichTextNode` (`text`, `br`, `a { href, blank }`, containers with `children`) and `isSafeHref`/`isSafeImageSrc` are exported from `@sinwy/shared`. `""` normalises to `""`; an empty editor's `<p></p>` stays. Stored links carry no `rel`, so the renderer adds it.
-  - `isSafeHref` is the strict Decision rule and refuses bare paths like `book`, which v1 Button links resolved to `/<org>/book`. For `field.link` add a bare-path check in `PageUrls.ts` (the spike's `BARE_PATH` `^[a-z0-9-]+(\/[\w-]*)*$`) so phase 3's `resolveHref` keeps v1 behaviour.
-  - Zod 4 skips a `.transform` when an earlier check such as `.max()` fails, so `z.string().max(20000).transform(normalizeRichText)` never normalises oversized input.
-  - Postgres `jsonb` rejects `\u0000`. Rich text replaces NUL with U+FFFD, but plain text and other string fields must refuse or strip it too, or a save fails with 500.
+- **Rich text (phase 1, log for detail):** `parseRichText`, `serializeRichText`, `normalizeRichText`, `RichTextNode` (`text`, `br`, `a { href, blank }`, containers with `children`) and `isSafeHref`/`isSafeImageSrc` are exported from `@sinwy/shared`. `""` normalises to `""`; an empty editor's `<p></p>` stays. Stored links carry no `rel`, so the renderer adds it.
+- **Manifest (phase 2, log for detail):**
+  - Each field has `kind`, `label` and optionally `locked`. Value fields also have `default` and `schema`. Kinds: `text`, `select` (`options` with labels, `display: "select" | "radio"`), `richText`, `link`, `image`, `slot` (`allow`, `default: BlockTemplate[]`), and custom fields (`custom: true`, so far only `kind: "serviceIds"`). Use `isSlotField(f)`, not `f.kind === "slot"`. A block has `label`, `fields`, `slots`, `defaults` (slots included), `schema` and optionally `requires`.
+  - Hero's default `items` are `BlockTemplate`s without ids. Phase 3 must check that Puck 0.24 gives slot `defaultProps` children ids on insert; if it doesn't, the adapter adds them.
+  - `field.link` takes `isSafeLink` (a safe href or a bare path like `book`) or `""`, and `field.image` takes `isSafeImageSrc` or `""`. The renderer resolves bare paths under `/<org>/`, as v1's `resolveHref` did.
+  - `createPageDocumentSchema({ blocks, rootAllow, migrations })` and `blocksIn(document, blocks)` accept a test registry. `defineBlock({ label, fields, requires })` makes a test-only block.
+  - `pageDocumentSchema` output is what gets stored: migrated, rich text normalised, NUL stripped, `zones` and node `readOnly` dropped. Each issue message stands on its own. `emptyPageDocument()` is Default 1's empty document.
 - **Dev database (2026-11-18):** 35 pages (17 published), 38 v1 `page_content` rows and 57 rows in the spike's v2 shape (largest 72.7 KB). The data migration must handle both shapes.
 - **Migration 0027 stays.** `Sinwy.Backend/drizzle/0027_page_content_widgets.sql` is applied history in the Drizzle journal, so keep the file and delete only its test (`pages.test.ts` around line 363). Generate data migrations with `bun run db:generate -- --custom` and write the SQL by hand.
 - **Saving and errors:**
@@ -72,62 +74,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 ---
 
-## Phase 2: Block manifest and document schema
-
-**Goal:** the eight first-set blocks are each defined once in Shared, and that definition yields their Zod schemas, prop types, slot `allow` lists, defaults and gating. A document validator walks the tree with limits and errors a user can read. A migration runner applies props-only migrations.
-
-**Files:**
-- New: `Sinwy.Shared/types/page/blocks/` with:
-  - the field kit (`field.text`, `field.select`, `field.richText`, `field.link`, `field.image`, `field.slot({ allow })`, plus custom kinds such as `field.serviceIds`)
-  - `defineBlock`
-  - one file per block, or one file for the whole set (split only if it gets long)
-  - `BLOCKS` and `ROOT_ALLOW`
-- New: `Sinwy.Shared/types/page/PageDocument.ts` with:
-  - `PAGE_DOCUMENT_LIMITS`
-  - `pageDocumentSchema` (envelope, Default 1)
-  - the walker
-  - `migrateDocument`
-  - `blocksIn` (type set and count)
-- Export both from `Sinwy.Shared/types/page/index.ts` (which already exports `PageUrls` and `RichText`).
-- Use from phase 1: `normalizeRichText` (`RichText.ts`), `isSafeHref` and `isSafeImageSrc` (`PageUrls.ts`). Add the bare-path link check to `PageUrls.ts` (Standing notes).
-- Leave the v1 `PageContent.ts` alone: both models live side by side until phase 4.
-- Reference: the spike's `Sinwy.Shared/types/page/PuckContent.ts` (`BLOCKS`, `checkBlocks`, `migrateBlocks`, `eachBlock`, `nodeSchema`).
-- New test: `Sinwy.Backend/modules/pages/tests/pageDocument.test.ts`. `richText.test.ts` next to it shows the import style.
-
-**Steps:**
-- Each field kind carries:
-  - its Zod schema, with limits from `PAGE_DOCUMENT_LIMITS` (text ≤ 200, rich text ≤ 20 000 and normalised through phase 1 with a Zod `transform`, URL ≤ 2048 and checked with `isSafeHref`/`isSafeImageSrc`, ids ≤ 64, service ids ≤ 50)
-  - plain editor metadata: label, kind, options with labels, `locked`
-  
-  Slots carry `allow`, a list of block type names.
-- `defineBlock` infers the props type from the fields: slot props are child lists, and every other prop is optional with the definition's default. Derive the per-block strict Zod object without `id` and the slots. Export `BlockType` and `BlockProps<T>`.
-- First set (Decisions), nesting (Default 2), Columns (Default 3), and Services props: `title`, `intro` and `serviceIds` (empty means all, in the chosen order).
-- Validator (a `superRefine` on `content`, so no schema recurses), which refuses:
-  - an unknown type
-  - bad or unknown props
-  - a slot that isn't a list
-  - a type that its slot's `allow` doesn't include, or that `ROOT_ALLOW` doesn't include at the top level
-  - a duplicate id anywhere in the tree
-  - depth over 6
-  - more than 400 blocks
-  
-  Stop walking once a limit is hit. Each message names the block type, its position and the field, for example `Heading at Section 2 › items › 1: "text" is longer than 200 characters` or `Hero can't go inside Section`.
-- Migrations: `BLOCK_MIGRATIONS` is a per-type ordered list of `(props) => props`. `migrateDocument` applies them through all slots before validation (`z.preprocess`), and leaves non-blocks and over-deep subtrees alone. Take the registry as a parameter with `BLOCK_MIGRATIONS` as its default, so tests can pass their own. It ships empty (Default 5).
-- No Puck import anywhere in Shared.
-
-**Tests that matter:**
-- Every block's defaults validate. A full salon document (every block, nested to the allowed depth) round-trips through `pageDocumentSchema` unchanged except for rich-text normalisation.
-- Each of these is refused with a message naming the block: unknown type (nested), bad prop, unknown prop, a disallowed child (Hero in Section, Section in Columns, Button at the top level), a duplicate id across slots, depth 7, 401 blocks, `javascript:` in a Button and in rich text, and an unsafe image src.
-- 400 blocks are accepted and 401 are refused.
-- Migrations: a test-only rename migration upgrades an old-shape block nested in a slot. Applying it twice equals applying it once. An already-current document is unchanged.
-
-**Done when:**
-- `pageDocumentSchema` and `BLOCKS` are exported from `@sinwy/shared`, and the tests pass.
-
-**Verify:** None.
-
----
-
 ## Phase 3: Puck config adapter and storefront renderer
 
 **Goal:** the web app turns the manifest into a Puck config and renders a document on the server through `@puckeditor/core/rsc` with our rich-text renderer. Nothing routes to it yet.
@@ -135,14 +81,15 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Files:**
 - `Sinwy.WebFrontend/package.json`: add `"@puckeditor/core": "0.24.0"` (exact).
 - New: `Sinwy.WebFrontend/src/shared/components/page-builder/` with:
-  - `puck-config.ts`: the adapter `puckConfigFrom(BLOCKS, customFields?)`
-  - `blocks.tsx`: the render components for the eight blocks
-  - `rich-text.tsx`: `RichText` renders a `RichTextNode[]` to React elements
-  - `PageDocumentView.tsx`: `<Render>` with `transformProps(migrations)`, `fieldTransforms.richtext` and `metadata`
+  - `puck-config.ts`: the adapter `puckConfigFrom(BLOCKS, customFields?)`, reading each block's `fields`, `defaults`, `label` and `ROOT_ALLOW` (Standing notes, Manifest)
+  - `blocks.tsx`: the render components for the eight blocks, typed with `BlockProps<T>`
+  - `rich-text.tsx`: `RichText` renders `parseRichText(html)` to React elements
+  - `PageDocumentView.tsx`: `<Render>` with `transformProps` built from `BLOCK_MIGRATIONS` through `migrateProps`, `fieldTransforms.richtext` and `metadata`
 - `Sinwy.WebFrontend/src/shared/lib/branding.ts`: `brandAttributes`, `BRAND_FONT_FAMILIES`.
-- URL helpers to move or point at Shared `PageUrls.ts`: `resolveHref` and `imageSrc` in `page-content/PageRenderer.tsx:25-35` (that file is deleted in phase 4).
+- URL helpers: `resolveHref` and `imageSrc` in `page-content/PageRenderer.tsx:25-35` (deleted in phase 4) move next to the renderer and build on `isSafeLink`/`isSafeImageSrc` from Shared.
 - Reference on the spike: `render-config.tsx` (block renders, class maps, `known()` fallbacks, Services list markup, Button `resolveHref` with org slug), `PuckPage.tsx`, `theme-tokens.ts` (`builderMetadata`) and `editor-config.tsx` (`editorConfigFor`, `withLockedFields` for #76).
-- New test: `Sinwy.WebFrontend/src/shared/tests/page-document-view.test.ts` (rewrites the v1 `page-renderer.test.ts` in phase 4).
+- Test fixtures: the salon document in `Sinwy.Backend/modules/pages/tests/pageDocument.test.ts` (`salonDocument`) can be copied for the SSR test.
+- New tests: `Sinwy.WebFrontend/src/shared/tests/page-document-view.test.ts` (rewrites the v1 `page-renderer.test.ts` in phase 4) and an adapter test.
 
 **Steps:**
 - The adapter maps each field kind to a Puck field:
