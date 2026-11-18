@@ -11,7 +11,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 1 | Custom drawer with `Drawer` / `Drawer.Item` and a locked tile | – | done | `feat(web): puck hooks check phase 1, custom drawer and locked tile` |
 | 2 | Undo and redo keep the viewport; selecting records no history | – | done | `feat(web): puck hooks check phase 2, undo keeps viewport and no spurious history` |
 | 3 | Action-bar drag handle and `componentOverlay` | – | done | `feat(web): puck hooks check phase 3, action-bar drag handle and own overlay` |
-| 4 | Auto-scroll and outline drag in the scaled canvas | – | todo | |
+| 4 | Auto-scroll and outline drag in the scaled canvas | – | done | `feat(web): puck hooks check phase 4, auto-scroll and outline drag` |
 | 5 | Result on #74, evaluation update, cleanup | 1–4 | todo | |
 
 ## Decisions
@@ -35,73 +35,30 @@ Settled with the product owner. Ask before changing any of them.
 
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
-- **Puck is 0.24.0**, installed at `Sinwy.WebFrontend/node_modules/@puckeditor/core/dist/`. `package.json` says `^0.24.0`, so don't run `bun update`. `DndConfig` is in `actions-Dgllwd-W.d.ts` (L812–825: `disableAutoScroll`, `disableOutlineDrag`, `enableDragHandle`, `behavior`), and `<Puck dnd>` in `index.d.ts` L214.
-- **Results so far (all works, no patch):** drawer (phase 1), undo and history (phase 2), drag handle and `componentOverlay` (phase 3). Detail and caveats are in the log, one entry per phase. Phase 5 quotes them.
+- **Puck is 0.24.0** (`package.json` says `^0.24.0`, so don't run `bun update`). No `bun patch` was needed in phases 1–4, so there is no `patches/` directory and no `patchedDependencies`.
+- **Results (all work, no Puck patch):**
+  - drawer (phase 1)
+  - undo and history (phase 2)
+  - drag handle and `componentOverlay` (phase 3)
+  - auto-scroll and outline drag (phase 4)
+
+  Phase 5 quotes each phase's log entry, results and caveats.
+- **Auto-scroll needed a fix in our own CSS (phase 4).** The global `body { overflow-x: hidden }` broke dnd-kit's auto-scroll and drop targets in Puck's iframe. It's now `html { overflow-x: clip }` in `styles.css`. Production (#76) has to carry this; name it on #74. The spike verdict's "Drag on long pages 🟡 M" effort is now smaller (see the log, phase 4).
+- **Drag caveats to quote (phase 4):**
+  - a release with no pointer move after reaching the target cancels
+  - "after the last root section" is an 8 px target at 0.335
+  - Layers can't drop after the last root section
 - **Open undo gap for phase 5 (found in phase 3):** with a RichText block selected, Redo is followed by a non-recording `replace` that only sets `ui.field` focus/selection metadata. Puck records it as a data-identical entry, so getting back after a Redo takes two Undo clicks. It's not fixed or diagnosed yet (see the log, phase 3), and the user decides whether it is in scope.
-- **History recording.** `storeInterceptor` (`chunk-Z2MS6UIF.mjs` ~L529) records every dispatched action except `registerZone`, `unregisterZone`, `setData`, `setUi` and `set`, unless the action sets `recordHistory` itself. `back`/`forward` show up in `onAction` as `set`. `history.back()` and `forward()` don't update `history.index` synchronously: never loop on the index in one eval, because it hangs the tab.
-- **Debug hooks** (throwaway, phase 5 removes them): `window.__getPuck()` is Puck's API (history, `appState`, `dispatch`, `getSelectorForId`, `selectedItem`), set by `useHistoryProbe` (`EditorChrome.tsx`). `window.__puckLog` holds `{ type, recordHistory, action }` per dispatch and `{ history }` per history change (`onAction` in `PageEditor.tsx`). Select programmatically with `dispatch({ type: "setUi", ui: { itemSelector: getSelectorForId(id) } })`; clicking a Section selects its first child.
-- **Drag in our editor (phase 3).**
-  - `dnd={{ enableDragHandle: true }}` is on (`PageEditor.tsx` L62). Body drags still work.
-  - A handle drag is a "static" drag: a 2 px line placeholder, and siblings stay put.
-  - Every move is `setUi, move, setUi!`, then one history entry; RichText adds a `replace`.
-  - Escape does not cancel a drag; mouse up drops.
-- **Auto-scroll and outline drag are on by default.** `disableAutoScroll` removes dnd-kit's `AutoScroller` plugin (`chunk-DQXMVPVM.mjs` ~L5053), and `disableOutlineDrag` swaps in no sensors (~L8552, L8675). Even so, spike phase 7 saw no auto-scroll and "Layers can't drag". Puck's line placeholder also tracks scroll (`startLinePlaceholderScrollTracking`, ~L5109).
-- **Our canvas.** `EditorCanvas` (`EditorChrome.tsx` ~L276) wraps `<Puck.Preview />` in a `transform: scale(zoom)` box with `overflow-hidden`. The outer wrapper is `pointer-events-none` and the inner one is `pointer-events-auto`. At a 1100 px window the desktop viewport scales to 0.335 (canvas about 430 px wide). At 1440×900 it is 0.601. Zoom is 1 only when the viewport fits (Phone at 1100 px). `CanvasZoom` passes the zoom to the action bar and overlay.
-- **Fixtures:** pro org `seed-861ca6a6` (owner `webdevrokas+seed-861ca6a6-owner@gmail.com`).
-  - Page `large` has 252 blocks in 52 sections.
-  - Page `small` is id `d2c8cab4-a90e-42e2-8bd5-8736cc65a764`, last saved as version 16 in its original order.
-  - Editor URL: `http://localhost:3000/dashboard/<org slug>/pages/<page id>/edit`.
-- **Browser checks.**
-  - Use the dev server (web :3000, backend :3001, logs in `/tmp/hooks-check/{web,server}.log`), not the production preview, which Better Auth refuses.
-  - Log in with `dev:login-as --state`, then `playwright-cli open`, `resize`, `state-load` and `goto`.
-  - Switch the viewport by clicking its `label` (`hasText: "Phone"`); the radio inputs are sr-only.
-  - Playwright's locator drag doesn't map through the scale. Use `page.mouse` with screen = iframe box + rect × (box width / iframe `clientWidth`).
-  - Probes target the selected bar with `[data-puck-overlay][class*=isSelected]`. Puck also renders an invisible bar in the hover overlay.
-- **Scratch scripts** (phase 5 deletes `/tmp/hooks-check/`):
-  - `p2/eval.sh` and `p2/click.sh`
-  - `tree.sh` (zones and their blocks)
-  - `drag.sh` (drawer card to a selector)
-  - `p3/hdrag.sh` (handle drag of the selected block to a selector)
-  - `p3/slow.sh` (stepwise held drag that logs the placeholder zone and index each step, a start for the auto-scroll hold)
-
----
-
-## Phase 4: Auto-scroll and outline drag in the scaled canvas
-
-**Goal:** we know whether a drag near the canvas edge scrolls a long page, and whether Layers rows can be dragged, in our composed and scaled canvas.
-
-**Files:**
-- `EditorChrome.tsx`:
-  - `EditorCanvas` L276, with the `overflow-hidden` box and the `pointer-events-none` / `-auto` wrappers
-  - `LeftPanel` L637, whose Layers tab renders `<Puck.Outline />` at L680
-- `PageEditor.tsx`: `<Puck dnd={{ enableDragHandle: true }}>` at L62
-- Puck's `chunk-DQXMVPVM.mjs`: `AutoScroller` ~L5053 and the outline sensors ~L8552 and L8675
-- Scratch: `/tmp/hooks-check/p3/slow.sh`, a held drag in steps that can hold at the canvas edge
-
-**Steps:**
-- Reproduce on `seed-861ca6a6/large`: hold a section drag at the bottom edge of the canvas. Then isolate the cause:
-  - at zoom 1 versus scaled
-  - without `overflow-hidden`
-  - without the `pointer-events-none` wrapper
-  - by checking which element dnd-kit's `AutoScroller` treats as scrollable (the iframe's document or our box)
-- Fix it in `EditorCanvas` if the cause is ours. If dnd-kit can't scroll the iframe in our layout, try our own fallback: while `ui.isDragging` is set, scroll the iframe's document when the pointer is near its top or bottom edge. Record which one worked.
-- In the Layers tab:
-  - drag rows within a slot, into another slot, and across a long list
-  - check whether the outline list auto-scrolls
-  - find why phase 7 saw "Layers can't drag", whether that's the Tabs container, the outline's scroll box, or real
-
-**Tests that matter:**
-- None (throwaway). The browser checks below are the evidence.
-
-**Done when:**
-- The log records the result and the cause for both auto-scroll and outline drag.
-
-**Verify:**
-- **Pro org `seed-861ca6a6`, page `large`, in the editor at the desktop viewport (scaled).**
-  - Drag Section 1 and hold it near the canvas's bottom edge. The canvas scrolls to the end without the wheel. Drop it after the last section: it is last at the root, not nested.
-  - In Layers, drag Section 2 below Section 3. The order changes in the canvas, and it's one Undo step.
-  - Leave without saving.
-- Nothing is simulated.
+- **History recording.** `storeInterceptor` (`chunk-Z2MS6UIF.mjs` ~L529) records every dispatched action except `registerZone`, `unregisterZone`, `setData`, `setUi` and `set`, unless the action sets `recordHistory` itself.
+- **Debug hooks to remove in phase 5:**
+  - `useHistoryProbe` in `EditorChrome.tsx` (~L899, called ~L947), which sets `window.__getPuck` and history entries in `window.__puckLog`
+  - the `onAction` logger in `PageEditor.tsx` (~L62–75)
+- **Running things to stop in phase 5:**
+  - the web dev server on :3000 (`bun start` in `Sinwy.WebFrontend`, restarted in phase 4, log `/tmp/hooks-check/web.log`)
+  - the backend on :3001 (log `/tmp/hooks-check/server.log`)
+  - the `playwright-cli` "default" session
+- **Scratch to delete in phase 5:** `/tmp/hooks-check/` (scripts p1–p4, screenshots, logs, and the restored `puckeditor_core.js.orig` backup). The log doesn't reference any of it.
+- **Fixture state:** `seed-861ca6a6` pages `small` (version 16) and `large` (version 10) are in their saved state. Nothing from phase 4 was saved.
 
 ---
 
@@ -109,7 +66,15 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 **Goal:** #74 has the answer and the evaluation reflects it.
 
-**Files:** [puck-evaluation.md](puck-evaluation.md) (Verdict condition 1, the Customisability table's "not tried" notes, and the "What we'd build ourselves" efforts if any changed), this plan, [puck-hooks-check-log.md](puck-hooks-check-log.md), and any `patches/` from phases 1–4.
+**Files:**
+- [puck-evaluation.md](puck-evaluation.md):
+  - `## Verdict` (L7), condition 1
+  - `## Customisability` (L72), the "not tried" notes, for example the Action bar row at L85
+  - `## What we'd build ourselves` (L201), including "Drag on long pages" (now a CSS fix)
+  - the phase 7 friction lines (~L729, L752, L768)
+- this plan and [puck-hooks-check-log.md](puck-hooks-check-log.md), whose phase 1–4 entries hold the results and caveats
+- `Sinwy.WebFrontend/src/shared/components/page-builder/`: remove the debug hooks (`EditorChrome.tsx` `useHistoryProbe`, `PageEditor.tsx` `onAction` logger). Keep the phase 1–4 code and the `styles.css` fix; the branch is never merged.
+- No `patches/` to remove (none were made).
 
 **Steps:**
 - Post one comment on #74 with `gh issue comment 74`. It has one line per checklist item: the result (works / works with a small `bun patch` / doesn't work), the how, and any caveat. Link the log on `pagebuilder-tryout`.

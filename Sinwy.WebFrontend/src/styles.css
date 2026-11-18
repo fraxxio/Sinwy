@@ -646,6 +646,11 @@ body,
 	min-height: 100%;
 }
 
+/* On html, not body: the editor's drag-and-drop treats an overflowing body as the scroller and as a clip. */
+html {
+	overflow-x: clip;
+}
+
 body {
 	margin: 0;
 	color: var(--sea-ink);
@@ -664,7 +669,6 @@ body {
 			var(--foam) 44%,
 			var(--bg-base) 100%
 		);
-	overflow-x: hidden;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 }

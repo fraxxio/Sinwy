@@ -170,3 +170,68 @@ Finished phases of [puck-hooks-check-plan.md](puck-hooks-check-plan.md), each wi
   - e2e: the same drag at both zooms, Undo, Redo, Save and reload all keep the new order (versions 13 and 15). The fixture was restored to its original order and saved as version 16, byte-identical in data to version 12. Console and server logs were clean.
   - **Side finding, not phase 3 (affects phase 2's undo result):** with a RichText block selected, Redo (`set`) is followed by a `replace` carrying only `ui.field = { focus: null, metadata: { from, to } }`. It has no `recordHistory`, so Puck records it as an entry whose data is identical to the previous one, and going back after a Redo takes two Undo clicks. I reproduced it inline. Likely source: a rich-text field resyncing its selection after the value is restored. Not fixed here.
   - Not checked: a drag with a real mouse or trackpad (Playwright's Chromium only), and touch.
+
+## Phase 4: Auto-scroll and outline drag in the scaled canvas
+
+**Goal:** we know whether a drag near the canvas edge scrolls a long page, and whether Layers rows can be dragged, in our composed and scaled canvas.
+
+**Files:**
+- `EditorChrome.tsx`:
+  - `EditorCanvas` L276, with the `overflow-hidden` box and the `pointer-events-none` / `-auto` wrappers
+  - `LeftPanel` L637, whose Layers tab renders `<Puck.Outline />` at L680
+- `PageEditor.tsx`: `<Puck dnd={{ enableDragHandle: true }}>` at L62
+- Puck's `chunk-DQXMVPVM.mjs`: `AutoScroller` ~L5053 and the outline sensors ~L8552 and L8675
+- Scratch: `/tmp/hooks-check/p3/slow.sh`, a held drag in steps that can hold at the canvas edge
+
+**Steps:**
+- Reproduce on `seed-861ca6a6/large`: hold a section drag at the bottom edge of the canvas. Then isolate the cause:
+  - at zoom 1 versus scaled
+  - without `overflow-hidden`
+  - without the `pointer-events-none` wrapper
+  - by checking which element dnd-kit's `AutoScroller` treats as scrollable (the iframe's document or our box)
+- Fix it in `EditorCanvas` if the cause is ours. If dnd-kit can't scroll the iframe in our layout, try our own fallback: while `ui.isDragging` is set, scroll the iframe's document when the pointer is near its top or bottom edge. Record which one worked.
+- In the Layers tab:
+  - drag rows within a slot, into another slot, and across a long list
+  - check whether the outline list auto-scrolls
+  - find why phase 7 saw "Layers can't drag", whether that's the Tabs container, the outline's scroll box, or real
+
+**Tests that matter:**
+- None (throwaway). The browser checks below are the evidence.
+
+**Done when:**
+- The log records the result and the cause for both auto-scroll and outline drag.
+
+**Verify:**
+- **Pro org `seed-861ca6a6`, page `large`, in the editor at the desktop viewport (scaled).**
+  - Drag Section 1 and hold it near the canvas's bottom edge. The canvas scrolls to the end without the wheel. Drop it after the last section: it is last at the root, not nested.
+  - In Layers, drag Section 2 below Section 3. The order changes in the canvas, and it's one Undo step.
+  - Leave without saving.
+- Nothing is simulated.
+
+### Log (2026-11-18, `feat(web): puck hooks check phase 4, auto-scroll and outline drag`)
+- Shipped:
+  - **Auto-scroll: works, no patch, and the cause was ours.** The app's global `body { overflow-x: hidden }` in `styles.css` also loads in Puck's iframe. `overflow-x: hidden` makes `overflow-y` compute to `auto`, so dnd-kit's `Scroller` (`@dnd-kit/dom` 0.4.0) took the iframe's `<body>` as the scroller. The body is viewport-high and the page overflows it, and its overflow propagates to the viewport, so `body.scrollTop += n` does nothing. dnd-kit counted that as a scroll and never tried `<html>`.
+    - The fix moves the rule to `html { overflow-x: clip }`. With nothing on body, dnd-kit picks `<html>` with the right frame transform (scale 0.335, offset 312/80).
+    - Held 10 px above the canvas bottom edge at the desktop viewport, `large` scrolls about 1300 iframe px/s and reaches the end (15273) in about 12 s. It behaves the same at zoom 1.
+    - A second effect of the same rule: dnd-kit's `getVisibleBoundingRectangle` clips every droppable by ancestors whose overflow isn't `visible`. With `hidden` or `clip` on the 2375 px body, blocks below the body's box counted as invisible, got no shape, and the drop target became `void`. `clip` on body still had that problem; on `html` it doesn't, because dnd-kit skips `<html>` in that walk.
+    - Production needs this CSS fix (or no overflow on the iframe body) in #76.
+  - **Outline drag: works, no patch.** Layers rows are dnd-kit draggables.
+    - Within the root (Section 2 below Section 3) and into another slot (Section 1's Heading into Section 2's `items@1`), each move is `setUi, move, setUi!` and one Undo step.
+    - The Layers panel (our `TabsContent`, `overflow-y-auto`) auto-scrolls on its own: held at its bottom it went 30 → 970 of 970.
+    - Phase 7's "Layers can't drag" doesn't reproduce, and the spike log doesn't say how it was tried. The most likely cause is the scripted drag: a release without a further pointer move counts as a cancel (see the caveats).
+  - Caveats:
+    - **Release without a move cancels.** Puck enables only the droppables of the zone under the pointer, and dnd-kit measures their shapes asynchronously. Collisions are only recomputed on the next pointer move, so a release right after reaching the target, with no further move, drops on Puck's `Drawer` `void` droppable, which Puck treats as a cancel. This happens with or without scrolling. Real hands keep moving, and every probe since phase 3 adds a 2 px settle move before release.
+    - **After the last root section in the canvas** means the last section's own 24 px bottom padding, which is 8 screen px at 0.335. Lower in the block is its nested `items` zone. That target is also inside dnd-kit's bottom auto-scroll band (20 % of the canvas), so mid-page targets near the bottom keep scrolling while you aim.
+    - **After the last root section in Layers isn't reachable.** Hovering a container row expands it. Its row's lower part gives "before it", and below it nests into its children. You can move the last section up instead.
+    - After a drop at the end, the view scrolls back by the source's height (250 iframe px), so the dropped block is only partly visible (e2e).
+- **Result: both items work without a patch.** Auto-scroll needed a one-rule CSS fix in our own stylesheet.
+- Differs from plan:
+  - The cause was in `styles.css`, not in `EditorCanvas`. The `overflow-hidden` box and the `pointer-events` wrappers aren't involved: dnd-kit's scrollable list was the iframe's `BODY`, then `HTML`, at both zooms, and never our box. The own-fallback scroller wasn't needed.
+  - I found it by temporarily instrumenting the prebundled `node_modules/.vite/deps/@puckeditor_core.js`. Vite keeps prebundled deps in memory, so changes there need a dev-server restart. The original was restored afterwards and the results were rechecked on clean code.
+- Checked in the running app (my own check, then an e2e subagent on the Verify brief; nothing simulated except `dev:login-as` and a `setUi` selection before canvas drags):
+  - Before the fix, on `seed-861ca6a6/large`: no scroll in 3 s at zoom 0.335 or zoom 1, and drops near or below the fold cancelled.
+  - After the fix: Section 1 (`Section-c0107cbf`) held at the bottom edge scrolls to the end with no wheel input. Dropped on the last section's bottom padding, it becomes root@52 (last, not nested), one history entry. The e2e ran this 3 times with the same result, sampling scrollTop at about 1300 px/s up to 15273.
+  - Layers: Section 2's row below Section 3's changes the canvas DOM order the same way, and one Undo restores both. The long-list drag and the cross-slot drag are described above.
+  - Left without saving: `page_content` is still at version 10 and `page.updated_at` is unchanged. Console and server logs were clean.
+  - e2e side note: on `large`, block titles are off by one from their position (`Section-c0107cbf` reads "TabA heading edit", the last block reads "Section 1") because of earlier saved edits. The ids are what the checks used.
+  - Not checked: a real mouse or trackpad, touch, and auto-scroll toward the top edge (dnd-kit handles it the same way as the bottom edge).
