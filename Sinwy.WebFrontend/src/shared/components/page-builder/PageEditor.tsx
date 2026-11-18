@@ -61,20 +61,8 @@ export function PageEditor({
 				viewports={VIEWPORTS as unknown as Viewports}
 				dnd={{ enableDragHandle: true }}
 				onAction={(action) => {
-					const w = window as {
-						__puckActions?: string[];
-						__puckLog?: unknown[];
-					};
+					const w = window as { __puckActions?: string[] };
 					w.__puckActions = [...(w.__puckActions ?? []), action.type];
-					w.__puckLog = [
-						...(w.__puckLog ?? []),
-						{
-							type: action.type,
-							recordHistory: (action as { recordHistory?: boolean })
-								.recordHistory,
-							action,
-						},
-					];
 				}}
 				overrides={overrides}
 			>

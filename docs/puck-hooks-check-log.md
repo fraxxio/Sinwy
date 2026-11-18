@@ -235,3 +235,57 @@ Finished phases of [puck-hooks-check-plan.md](puck-hooks-check-plan.md), each wi
   - Left without saving: `page_content` is still at version 10 and `page.updated_at` is unchanged. Console and server logs were clean.
   - e2e side note: on `large`, block titles are off by one from their position (`Section-c0107cbf` reads "TabA heading edit", the last block reads "Section 1") because of earlier saved edits. The ids are what the checks used.
   - Not checked: a real mouse or trackpad, touch, and auto-scroll toward the top edge (dnd-kit handles it the same way as the bottom edge).
+
+---
+
+## Phase 5: Result on #74, evaluation update, cleanup
+
+**Goal:** #74 has the answer and the evaluation reflects it.
+
+**Files:**
+- [puck-evaluation.md](puck-evaluation.md):
+  - `## Verdict` (L7), condition 1
+  - `## Customisability` (L72), the "not tried" notes, for example the Action bar row at L85
+  - `## What we'd build ourselves` (L201), including "Drag on long pages" (now a CSS fix)
+  - the phase 7 friction lines (~L729, L752, L768)
+- this plan and [puck-hooks-check-log.md](puck-hooks-check-log.md), whose phase 1–4 entries hold the results and caveats
+- `Sinwy.WebFrontend/src/shared/components/page-builder/`: remove the debug hooks (`EditorChrome.tsx` `useHistoryProbe`, `PageEditor.tsx` `onAction` logger). Keep the phase 1–4 code and the `styles.css` fix; the branch is never merged.
+- No `patches/` to remove (none were made).
+
+**Steps:**
+- Post one comment on #74 with `gh issue comment 74`. It has one line per checklist item: the result (works / works with a small `bun patch` / doesn't work), the how, and any caveat. Link the log on `pagebuilder-tryout`.
+- If the drawer or undo needed a patch or failed, the comment says the verdict is reopened under the failure rule. It also lists what the runner-up comparison has to answer.
+- Update condition 1 and the "not tried" notes in the evaluation. Revise effort figures that changed.
+- Remove any Puck patch from `package.json` / `patches/`. Production decides patches from #76 onward, and the patch diffs stay quoted in the log.
+- Stop every dev server this plan started, unless the user asked to keep it. Delete probe scripts, screenshots, console logs and scratch data that the log doesn't reference.
+
+**Tests that matter:**
+- None.
+
+**Done when:**
+- The comment is on #74, the evaluation's condition 1 states the result, and the working tree holds no leftovers.
+
+**Verify:** None.
+
+### Log (2026-11-18, `docs: puck hooks check phase 5, result on #74, evaluation update and cleanup`)
+- Shipped:
+  - **Comment on #74.** All five items work without a Puck patch, so the failure rule doesn't apply and the verdict stands. Each item lists its how and caveats. It links this log and the evaluation on `pagebuilder-tryout`.
+  - **Evaluation updated:**
+    - condition 1 is marked met, with the two causes that were ours and the main caveats
+    - the Customisability rows for drawer, action bar, undo, outline and canvas give the check's results
+    - the quirks list and ease-of-use table mark what was fixed
+    - "What we'd build" has the proven items and a long-page drag row (the CSS rule plus an end-of-page drop area)
+    - Risks names the `Drawer-draggableBg` class name
+  - The spike log's phase 7 friction lines and scores (auto-scroll, Layers drag, Text drag) point to this check.
+  - Cleanup:
+    - `useHistoryProbe` removed from `EditorChrome.tsx`
+    - `onAction` in `PageEditor.tsx` back to the spike's `__puckActions` logger
+    - the web (:3000) and backend (:3001) dev servers and the `playwright-cli` session stopped
+    - `/tmp/hooks-check/` deleted
+    - the phase 1–4 code and the `styles.css` fix kept
+- Differs from plan:
+  - The Redo duplicate entry (phase 3) is recorded as an open caveat for #76, not investigated. The user chose that.
+  - The plan's "phase 7 friction lines (~L729, L752, L768)" are in `puck-spike-log.md`, not the evaluation, and they were annotated there.
+  - The evaluation had no "Drag on long pages" row. That score is in the spike log, and the evaluation got a new row in "What we'd build".
+  - Phases 1–4 weren't pushed, so the branch had to be pushed before posting for the log link to resolve.
+- Checked in the running app: nothing (Verify was None). `bun run verify` exited 0.

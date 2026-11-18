@@ -32,6 +32,15 @@ Conditions:
    - outline drag and auto-scroll inside our scaled canvas
 
    If the drawer or the undo fix can't be done without patching Puck, reopen this verdict.
+
+   **Met (hooks check, #74):** all five work with Puck's exported API and our own code, with no patch and no fork, so the verdict stands. Two problems turned out to be ours:
+   - the spurious history entries came from a `resolveData` in `ServicesSection`
+   - the missing auto-scroll came from the global `body { overflow-x: hidden }` in `styles.css`, which is now `html { overflow-x: clip }`
+
+   Caveats for production are in [puck-hooks-check-log.md](puck-hooks-check-log.md). The main ones:
+   - Redo with a RichText block selected adds a data-identical history entry (open, for #76)
+   - the drawer relies on one Puck class name
+   - a drag release with no final pointer move cancels
 2. **Pin Puck to an exact version.** Make an e2e test of the FreeGrid editor the gate for every Puck upgrade, because the editor relies on Puck's wrapper DOM (see Risks).
 3. **Keep `PUCK_LIMITS` (400 blocks, depth 6).** Measure typing on a real mid-range tablet before raising it.
 4. **Plan media upload and version history in the product scope.** They are needed whatever the editor library is.
@@ -80,19 +89,19 @@ The items the user asked about:
 
 | Item | Reachable without a fork? | How | Effort |
 | --- | --- | --- | --- |
-| Drawer cards with previews, bigger cards, ready-made blocks first | Yes | The `drawerItem` override already renders our card. `Drawer` and `Drawer.Item` are exported, so the whole drawer can be our own grid of preview cards with our own grouping and order. A locked "upgrade to use" tile is our own card, not a `Drawer.Item`. *Not tried in the spike.* | S–M |
+| Drawer cards with previews, bigger cards, ready-made blocks first | Yes | The `drawerItem` override already renders our card. `Drawer` and `Drawer.Item` are exported, so the whole drawer can be our own grid of preview cards with our own grouping and order. A locked "upgrade to use" tile is our own card, not a `Drawer.Item`. *Hooks check: works, no patch.* Our groups render as one `Drawer` each around a grid of `Drawer.Item` cards, and the `drawerItem` override is no longer needed. Puck renders each item twice; the hidden copy is made `inert` through Puck's `Drawer-draggableBg` class name. | S–M |
 | Insert position and scroll | Yes, for click-to-add. Partly, for drag | Click-to-add is already ours (`placementFor` plus `insert`/`replace`). Scrolling to the new block means finding `[data-puck-component=<id>]` in the iframe and scrolling to it. An end-of-page drop area is padding in our root render. The drop position during a drag is Puck's collision logic (1D). `dnd.behavior` only changes the placeholder style. | S, and drag precision isn't ours to change |
-| Action bar | Yes | The `actionBar` override is fully ours already. `dnd.enableDragHandle` makes Puck pass a drag handle to the override, which fixes "Text blocks can't be dragged" from phase 7 (*found in Puck's source, not tried*). `componentOverlay` can replace the hover and selection overlay (*not tried*). Where the bar is placed (it's clipped at the top of the iframe) is Puck's. | S |
-| Undo without the viewport jumping | Yes | Puck's history stores the whole app state, `ui` included. `setUi` isn't recorded by default, so the spurious entries come from something Puck dispatches internally on select (not pinned down). The history API is public (`back`, `forward`, `setHistories`, `setHistoryIndex`), and we already listen for hotkeys on the host and in the iframe. So our Undo, Redo and Ctrl+Z can undo and then restore the current viewport with `setUi(…, false)`, or strip `ui` from the stored entries. *Not tried.* | S–M |
-| Dirty state | Yes | Ours: compare `appState.data` with the last saved document instead of the history index. That also hides the spurious entries. | S |
-| Outline | Theme only, or replace whole | The `outline` override replaces the whole panel, and then the tree, selection and drag are ours to write. `Puck.Outline` rows can't be changed one by one. | M to replace |
-| Canvas | Rebuilt by us | `Canvas` isn't exported, so composing means writing our own (`EditorCanvas`, about 60 lines: sizing, zoom, deselect). Puck's AutoScroller is on by default (`dnd.disableAutoScroll`), but phase 7 saw no auto-scroll in our scaled canvas. The cause wasn't found. | Done; auto-scroll S–M |
+| Action bar | Yes | The `actionBar` override is fully ours already. `dnd.enableDragHandle` makes Puck pass a drag handle to the override, which fixes "Text blocks can't be dragged" from phase 7. `componentOverlay` replaces the hover and selection overlay. *Hooks check: both work, no patch.* The handle drag shows Puck's line placeholder, and the preview follows the pointer at any zoom. Our overlay is a Tailwind ring with a hover label. Puck clips the bar at the top of the iframe; our action bar shifts itself down to fix that. | S |
+| Undo without the viewport jumping | Yes | Puck's history stores the whole app state, `ui` included. *Hooks check: works, no patch.* The spurious entries were ours: `ServicesSection.resolveData` returned a `readOnly` map, and Puck recorded that as a change after load. Locked fields are now a custom field that renders `AutoField` read-only. A layout effect on `history.index` dispatches `setUi` with the user's viewport after any undo or redo, and dispatched `setUi` is never recorded. That covers the buttons and Puck's hotkeys. Open: with a RichText block selected, Redo adds a data-identical entry, so getting back takes two Undo clicks (#76). | S |
+| Dirty state | Yes | Ours: compare `appState.data` with the last saved document instead of the history index. | S |
+| Outline | Theme only, or replace whole | The `outline` override replaces the whole panel, and then the tree, selection and drag are ours to write. `Puck.Outline` rows can't be changed one by one. Dragging in `Puck.Outline` works, also across slots, and the panel auto-scrolls (hooks check). It can't drop after the last root section. | M to replace |
+| Canvas | Rebuilt by us | `Canvas` isn't exported, so composing means writing our own (`EditorCanvas`, about 60 lines: sizing, zoom, deselect). Puck's AutoScroller is on by default (`dnd.disableAutoScroll`). *Hooks check: auto-scroll works in our scaled canvas, no patch.* The cause was the global `body { overflow-x: hidden }`, which also loads in the iframe. It is now `html { overflow-x: clip }`. | Done |
 
 Only a fork can change these:
 - **The canvas DOM.** Each slot child is wrapped in `[data-puck-component]`, and every element inside gets `pointer-events: none`. FreeGrid placement and the alignment rules are built around this. It's workable, but it's an internal Puck can change.
 - **The drag-and-drop engine.** 1D collision, drop indicators, the drag preview and press-and-hold on touch.
 - **Per-change state work.** Puck rebuilds its whole-tree index on every change, which makes typing O(blocks) (see Performance).
-- Small things that `bun patch` can fix if they bother us: the `@import` of Inter from `rsms.me`, the deselect when a viewport button inside Puck's canvas is clicked (our own switcher avoids it already), and drawer items rendering twice for screen readers.
+- Small things that `bun patch` can fix if they bother us: the `@import` of Inter from `rsms.me`, the deselect when a viewport button inside Puck's canvas is clicked (our own switcher avoids it already). Drawer items rendering twice for screen readers is fixed without a patch (hooks check).
 
 ## Pros and cons
 
@@ -163,11 +172,11 @@ Production build, AMD Ryzen 5 7600X, headless Chromium. "4× CPU" stands in for 
   - the deselect on viewport switch
   - missing ProseMirror CSS in inline mode
   - the `componentItem` deprecation warning while the types still offer it
-  - drawer items rendered twice
-  - the action bar clipped at the top
+  - drawer items rendered twice (fixed in the hooks check)
+  - the action bar clipped at the top (fixed in the hooks check)
   - the external Inter font request
-  - spurious history entries on select
-  - Undo restoring the viewport
+  - spurious history entries on select (the hooks check found the cause was ours)
+  - Undo restoring the viewport (fixed in the hooks check)
 
   Outside Puck: RGL 2.3.0's drag bug (#2303), pinned to 2.2.4.
 
@@ -182,9 +191,9 @@ Ease scores (1–5) from the scripted agent run and the product owner's hand run
 | Two photos side by side | 2 | 2 | Ours: URL-only images, low-level blocks first. Puck: drag precision into slots. |
 | Looks right on a phone | 4 | 4 | Ours: no Columns gap, overlapping placeholders |
 | Fix a typo | 4 | 4 | Ours: Save vs Publish unclear, no autosave |
-| Undo a mistake | 4 (1 after leaving) | 4 | Ours: no version history, no leave guard. Puck: Undo restores the viewport. |
+| Undo a mistake | 4 (1 after leaving) | 4 | Ours: no version history, no leave guard. Puck: Undo restores the viewport (fixed in the hooks check). |
 | Booking form on starter | 3 | 1 | Ours: gated blocks vanish with no upgrade tile |
-| Move a section | 4 | 4 | Works. Puck: no auto-scroll in our canvas on long pages. |
+| Move a section | 4 | 4 | Works. No auto-scroll in our canvas on long pages; the hooks check found our CSS caused it and fixed it. |
 
 What worked:
 - the Salon homepage template
@@ -208,7 +217,7 @@ For production, on top of what the spike already built:
 | Custom drawer: big preview cards, ready-made blocks first and low-level blocks lower down, plain-language names and descriptions, locked upgrade tiles | S–M |
 | Template picker with previews. The new-page wizard opens the v2 editor with the chosen template (retire the v1 wizard templates). | S |
 | Insert-and-scroll, an end-of-page drop area, text labels on panel actions | S |
-| Dirty state by data, undo that keeps the viewport, a leave guard, Ctrl/⌘+S | S–M |
+| Dirty state by data, undo that keeps the viewport (proved in the hooks check), the Redo duplicate entry, a leave guard, Ctrl/⌘+S | S–M |
 | Autosave of drafts (product decision: draft versus version rows) | M |
 | Branding panel in the editor, shared with Settings → Branding | S–M |
 | Media upload and library for Image and Hero | M–L |
@@ -216,7 +225,8 @@ For production, on top of what the spike already built:
 | Nesting rules (slot `allow` lists) and the depth limit enforced in the editor | S |
 | Pre-publish checks (placeholders, empty images, template instruction text) | S |
 | Link picker for Button (pages, booking) and a link button in rich text | S–M |
-| Action-bar drag handle (`dnd.enableDragHandle`) | S |
+| Action-bar drag handle (`dnd.enableDragHandle`), own `componentOverlay`, and the action bar kept inside the iframe (all proved in the hooks check) | S |
+| Long-page drag: keep `html { overflow-x: clip }` and nothing on the iframe body; an end-of-page drop area (Layers can't drop after the last section either) | S |
 | FreeGrid production pass: auto-height rows, drop at the pointer, 2D drop feedback, touch-sized handles | M |
 | Columns gap and image fit settings | S |
 | Keyboard-only editing beyond what exists (moving between slots) | M |
@@ -226,7 +236,7 @@ For production, on top of what the spike already built:
 ## Risks and lock-in
 
 - **Pre-1.0 churn.** 0.19 changed the data model and 0.21 renamed the package. Pin exactly and upgrade on purpose.
-- **Reliance on internals.** The FreeGrid editor and two layout rules depend on Puck's canvas wrapper DOM and event handling. A change there breaks the editor, not the storefront. The upgrade-gate e2e test covers this.
+- **Reliance on internals.** The FreeGrid editor and two layout rules depend on Puck's canvas wrapper DOM and event handling. The custom drawer's screen-reader fix depends on the `Drawer-draggableBg` class name. A change there breaks the editor, not the storefront. The upgrade-gate e2e test covers this.
 - **Performance ceiling.** O(blocks) work per change. Mitigated by the 400-block cap. `_experimentalVirtualization` exists but wasn't tried.
 - **Dependencies.** RGL is pinned to 2.2.4 until #2303 is released. dnd-kit, which Puck uses, is pre-1.0.
 - **Vendor direction.** The commercial focus is Puck AI and Cloud. The editor core is MIT and makes no service calls (except the Inter font import).

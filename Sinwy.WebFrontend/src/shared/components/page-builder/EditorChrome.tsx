@@ -896,17 +896,6 @@ export const chromeOverrides: Partial<Overrides> = {
 	componentOverlay: (props) => <CanvasOverlay {...props} />,
 };
 
-function useHistoryProbe() {
-	const getPuck = useGetPuck();
-	const length = usePuck((s) => s.history.histories.length);
-	const index = usePuck((s) => s.history.index);
-	useEffect(() => {
-		const w = window as { __getPuck?: unknown; __puckLog?: unknown[] };
-		w.__getPuck = getPuck;
-		w.__puckLog = [...(w.__puckLog ?? []), { history: { length, index } }];
-	}, [getPuck, length, index]);
-}
-
 /** Undo and redo restore a whole app state, `ui` included; put back the viewport the user is on. */
 function useKeepViewportOnHistory() {
 	const getPuck = useGetPuck();
@@ -944,7 +933,6 @@ export function EditorLayout(props: {
 	onPublish?: (() => Promise<SaveResult>) | undefined;
 }) {
 	useEditorHotkeys();
-	useHistoryProbe();
 	useKeepViewportOnHistory();
 	return (
 		<TooltipProvider delay={400}>
