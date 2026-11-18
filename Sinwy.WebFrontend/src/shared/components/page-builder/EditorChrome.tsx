@@ -844,6 +844,46 @@ export const chromeOverrides: Partial<Overrides> = {
 	actionBar: (props) => <CanvasActionBar {...props} />,
 };
 
+function useHistoryProbe() {
+	const getPuck = useGetPuck();
+	const length = usePuck((s) => s.history.histories.length);
+	const index = usePuck((s) => s.history.index);
+	useEffect(() => {
+		const w = window as { __getPuck?: unknown; __puckLog?: unknown[] };
+		w.__getPuck = getPuck;
+		w.__puckLog = [...(w.__puckLog ?? []), { history: { length, index } }];
+	}, [getPuck, length, index]);
+}
+
+/** Undo and redo restore a whole app state, `ui` included; put back the viewport the user is on. */
+function useKeepViewportOnHistory() {
+	const getPuck = useGetPuck();
+	const index = usePuck((s) => s.history.index);
+	const viewports = usePuck((s) => s.appState.ui.viewports);
+	const kept = useRef(viewports);
+	const lastIndex = useRef(index);
+	useLayoutEffect(() => {
+		if (index === lastIndex.current) {
+			kept.current = viewports;
+			return;
+		}
+		lastIndex.current = index;
+		const { appState, dispatch, getItemBySelector } = getPuck();
+		const { itemSelector } = appState.ui;
+		const lostSelection = !!itemSelector && !getItemBySelector(itemSelector);
+		const viewportMoved =
+			viewports.current.width !== kept.current.current.width;
+		if (lostSelection || viewportMoved)
+			dispatch({
+				type: "setUi",
+				ui: {
+					...(viewportMoved && { viewports: kept.current }),
+					...(lostSelection && { itemSelector: null }),
+				},
+			});
+	}, [getPuck, index, viewports]);
+}
+
 export function EditorLayout(props: {
 	title: string;
 	path: string;
@@ -852,6 +892,8 @@ export function EditorLayout(props: {
 	onPublish?: (() => Promise<SaveResult>) | undefined;
 }) {
 	useEditorHotkeys();
+	useHistoryProbe();
+	useKeepViewportOnHistory();
 	return (
 		<TooltipProvider delay={400}>
 			<div className="pb-editor flex h-full flex-col bg-background">

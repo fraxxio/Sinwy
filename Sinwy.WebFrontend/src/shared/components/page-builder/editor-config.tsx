@@ -1,9 +1,10 @@
-import type {
-	ComponentConfig,
-	ComponentData,
-	CustomField,
-	Field,
-	Permissions,
+import {
+	AutoField,
+	type ComponentConfig,
+	type ComponentData,
+	type CustomField,
+	type Field,
+	type Permissions,
 } from "@puckeditor/core";
 import { BLOCKS, type BlockSpec, type Feature } from "@sinwy/shared";
 import { FreeGridEditor, FreeGridLayoutField } from "./FreeGridEditor";
@@ -39,6 +40,47 @@ const withResponsiveFields = (
 										...field,
 										render: (props) => (
 											<ResponsiveField {...props} field={field} />
+										),
+									} satisfies CustomField<unknown>)
+								: field,
+						]),
+					),
+				},
+			];
+		}),
+	) as unknown as BuilderConfig["components"];
+
+/** Fields shown but never editable. Static, so no `resolveData` pass has to add a `readOnly` map (and a history entry). */
+const LOCKED_FIELDS: Record<string, readonly string[]> = {
+	ServicesSection: ["tone", "padding"],
+};
+
+const withLockedFields = (
+	components: BuilderConfig["components"],
+): BuilderConfig["components"] =>
+	Object.fromEntries(
+		Object.entries(components).map(([type, component]) => {
+			const locked = LOCKED_FIELDS[type];
+			const { fields = {} } = component as unknown as ComponentConfig;
+			if (!locked) return [type, component];
+			return [
+				type,
+				{
+					...component,
+					fields: Object.fromEntries(
+						Object.entries(fields).map(([name, field]: [string, Field]) => [
+							name,
+							locked.includes(name)
+								? ({
+										type: "custom",
+										render: ({ id, value, onChange }) => (
+											<AutoField
+												field={field}
+												id={id}
+												value={value}
+												onChange={onChange}
+												readOnly
+											/>
 										),
 									} satisfies CustomField<unknown>)
 								: field,
@@ -142,142 +184,141 @@ export const editorConfig: BuilderConfig = {
 		defaultProps: { radius: "medium", spacing: "comfortable" },
 	},
 	components: withGuardrails(
-		withResponsiveFields(
-			withVisibilityAll({
-				Section: {
-					...c.Section,
-					label: "Section",
-					defaultProps: {
-						items: [],
-						tone: "plain",
-						padding: { base: "medium" },
-					},
-				},
-				Hero: {
-					...c.Hero,
-					label: "Hero",
-					defaultProps: {
-						items: heroItems as never,
-						image: "",
-						align: { base: "center" },
-					},
-				},
-				ServicesSection: {
-					...c.ServicesSection,
-					label: "Services",
-					fields: {
-						...(c.ServicesSection.fields as NonNullable<
-							typeof c.ServicesSection.fields
-						>),
-						items: { type: "slot", allow: [] },
-					},
-					defaultProps: {
-						items: servicesItems as never,
-						tone: "muted",
-						padding: { base: "medium" },
-					},
-					resolveData: (data) => ({
-						...data,
-						readOnly: { tone: true, padding: true },
-					}),
-				},
-				Columns: {
-					...c.Columns,
-					label: "Columns",
-					defaultProps: {
-						count: { base: "2", mobile: "1" },
-						column1: [],
-						column2: [],
-						column3: [],
-						column4: [],
-					},
-					resolveFields: (data, { fields }) => {
-						const count = Number(columnCount(data.props.count).base);
-						return Object.fromEntries(
-							Object.entries(fields).filter(
-								([name]) =>
-									!name.startsWith("column") || Number(name.slice(6)) <= count,
-							),
-						) as typeof fields;
-					},
-				},
-				Container: {
-					...c.Container,
-					label: "Container",
-					defaultProps: {
-						items: [],
-						width: { base: "medium" },
-						align: { base: "start" },
-					},
-				},
-				Heading: {
-					...c.Heading,
-					label: "Heading",
-					defaultProps: {
-						text: "Heading",
-						size: "2",
-						align: { base: "start" },
-					},
-				},
-				RichText: {
-					...c.RichText,
-					label: "Text",
-					defaultProps: {
-						content: "<p>Write something your customers should know.</p>",
-					},
-				},
-				Image: {
-					...c.Image,
-					label: "Image",
-					defaultProps: { src: "", alt: "", aspect: "wide" },
-				},
-				Button: {
-					...c.Button,
-					label: "Button",
-					defaultProps: {
-						label: "Book now",
-						href: "book",
-						variant: "primary",
-						align: { base: "start" },
-					},
-				},
-				BookingWidget: {
-					...c.BookingWidget,
-					label: "Booking widget",
-					fields: {
-						title: { type: "text", label: "Title", contentEditable: true },
-						serviceIds: {
-							type: "custom",
-							label: "Services",
-							render: ({ value, onChange }) => (
-								<ServicePicker value={value} onChange={onChange} />
-							),
+		withLockedFields(
+			withResponsiveFields(
+				withVisibilityAll({
+					Section: {
+						...c.Section,
+						label: "Section",
+						defaultProps: {
+							items: [],
+							tone: "plain",
+							padding: { base: "medium" },
 						},
 					},
-					defaultProps: { title: "Book an appointment", serviceIds: [] },
-				},
-				FreeGrid: {
-					...c.FreeGrid,
-					label: "Free grid",
-					fields: {
-						items: { type: "slot" },
-						layout: {
-							type: "custom",
-							label: "Arrangement",
-							render: ({ value, onChange }) => (
-								<FreeGridLayoutField value={value} onChange={onChange} />
-							),
+					Hero: {
+						...c.Hero,
+						label: "Hero",
+						defaultProps: {
+							items: heroItems as never,
+							image: "",
+							align: { base: "center" },
 						},
 					},
-					defaultProps: { items: [], layout: { desktop: {} } },
-					render: (props) =>
-						props.puck.isEditing ? (
-							<FreeGridEditor {...props} />
-						) : (
-							<c.FreeGrid.render {...props} />
-						),
-				},
-			}),
+					ServicesSection: {
+						...c.ServicesSection,
+						label: "Services",
+						fields: {
+							...(c.ServicesSection.fields as NonNullable<
+								typeof c.ServicesSection.fields
+							>),
+							items: { type: "slot", allow: [] },
+						},
+						defaultProps: {
+							items: servicesItems as never,
+							tone: "muted",
+							padding: { base: "medium" },
+						},
+					},
+					Columns: {
+						...c.Columns,
+						label: "Columns",
+						defaultProps: {
+							count: { base: "2", mobile: "1" },
+							column1: [],
+							column2: [],
+							column3: [],
+							column4: [],
+						},
+						resolveFields: (data, { fields }) => {
+							const count = Number(columnCount(data.props.count).base);
+							return Object.fromEntries(
+								Object.entries(fields).filter(
+									([name]) =>
+										!name.startsWith("column") ||
+										Number(name.slice(6)) <= count,
+								),
+							) as typeof fields;
+						},
+					},
+					Container: {
+						...c.Container,
+						label: "Container",
+						defaultProps: {
+							items: [],
+							width: { base: "medium" },
+							align: { base: "start" },
+						},
+					},
+					Heading: {
+						...c.Heading,
+						label: "Heading",
+						defaultProps: {
+							text: "Heading",
+							size: "2",
+							align: { base: "start" },
+						},
+					},
+					RichText: {
+						...c.RichText,
+						label: "Text",
+						defaultProps: {
+							content: "<p>Write something your customers should know.</p>",
+						},
+					},
+					Image: {
+						...c.Image,
+						label: "Image",
+						defaultProps: { src: "", alt: "", aspect: "wide" },
+					},
+					Button: {
+						...c.Button,
+						label: "Button",
+						defaultProps: {
+							label: "Book now",
+							href: "book",
+							variant: "primary",
+							align: { base: "start" },
+						},
+					},
+					BookingWidget: {
+						...c.BookingWidget,
+						label: "Booking widget",
+						fields: {
+							title: { type: "text", label: "Title", contentEditable: true },
+							serviceIds: {
+								type: "custom",
+								label: "Services",
+								render: ({ value, onChange }) => (
+									<ServicePicker value={value} onChange={onChange} />
+								),
+							},
+						},
+						defaultProps: { title: "Book an appointment", serviceIds: [] },
+					},
+					FreeGrid: {
+						...c.FreeGrid,
+						label: "Free grid",
+						fields: {
+							items: { type: "slot" },
+							layout: {
+								type: "custom",
+								label: "Arrangement",
+								render: ({ value, onChange }) => (
+									<FreeGridLayoutField value={value} onChange={onChange} />
+								),
+							},
+						},
+						defaultProps: { items: [], layout: { desktop: {} } },
+						render: (props) =>
+							props.puck.isEditing ? (
+								<FreeGridEditor {...props} />
+							) : (
+								<c.FreeGrid.render {...props} />
+							),
+					},
+				}),
+			),
 		),
 	),
 };

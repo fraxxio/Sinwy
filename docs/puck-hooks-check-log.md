@@ -62,3 +62,52 @@ Finished phases of [puck-hooks-check-plan.md](puck-hooks-check-plan.md), each wi
   - **Starter `seed-8a603a43/p4-e2e`.** Booking widget is a locked tile, not a `drawer-item`. Dragging it gives no preview, no action and no new version. A click opens "Upgrade to use this block".
   - Console and web/server logs were clean.
   - Not checked: where "See plans" leads (it opens `/account/billing` in a new tab), and a real screen reader (only Chrome's accessibility tree).
+
+## Phase 2: Undo and redo keep the viewport; selecting records no history
+
+**Goal:** we know whether undo and redo, from both the header and the hotkeys, keep the current viewport, and whether selecting a block can be kept from ever creating a history entry. Neither may patch Puck.
+
+**Files:** `EditorChrome.tsx` (`ViewportSwitch` L133, `EditorHeader` L170 with the Undo/Redo buttons), `use-block-actions.ts` (`useEditorHotkeys` L195), `PageEditor.tsx` (`onAction` L62, which logs only `action.type`, so add `recordHistory` and the history length there), `ResponsiveField.tsx`, `editor-fields.tsx`, `ServicePicker.tsx`, `render-config.tsx` (any `resolveData` / `resolveFields`).
+
+**Steps:**
+- Pin down the spurious entries first. On `seed-8cb1127f/home`, log every action with its `recordHistory` and `history.histories.length` before and after each step: select the Hero, and select an Image right after load. Name the action and where it comes from.
+- Stop the entries at the source if it's our code. Otherwise drop them with `history.setHistories` / `setHistoryIndex` when an entry's `data` equals the previous entry's. Record which way worked.
+- Keep the viewport: when the history index changes through undo or redo, put back the viewport the user had before it with the store's `setUi({ viewports }, false)`. This must cover the header buttons and Puck's Ctrl/⌘+Z, Shift+Z and Y, both on the host and inside the iframe. Use whichever is simpler and record it: a subscription to the history index, or a capture-phase hotkey wrapper.
+- Selection after undo stays Puck's, unless it points at a block that no longer exists.
+- Check undo on top of per-breakpoint edits:
+  - Move a FreeGrid cell on phone, switch to desktop, then undo. Phone's layout reverts and the viewport stays desktop.
+  - Set phone padding, switch to desktop, then undo.
+- Check that redo still works after the viewport restore, and that the restore itself adds no entry.
+
+**Tests that matter:**
+- None (throwaway). The browser checks below are the evidence.
+
+**Done when:**
+- The log names the cause of the spurious entries and gives the result for both parts of the item.
+
+**Verify:**
+- **Org `seed-8cb1127f`, page `home`, in the editor.**
+  - Right after load, select the Hero, then an Image: Undo stays disabled and no "Unsaved changes" appears.
+  - Edit the heading text, switch to phone, then press Undo (button) and Ctrl+Z (once with focus in the canvas, once outside it). The text reverts, the view stays on phone, and Redo brings the text back, still on phone.
+  - Leave without saving. No DB rows change.
+- Nothing is simulated.
+
+
+### Log (2026-11-18, `feat(web): puck hooks check phase 2, undo keeps viewport and no spurious history`)
+- Shipped:
+  - **Spurious entries: the cause was ours.** `ServicesSection.resolveData` in `editor-config.tsx` returned `readOnly: { tone, padding }`. Puck's load-time resolve sees the data change and dispatches a recording `replace` about 0.75 s after load. History goes to 2 entries, Undo turns on and "Unsaved changes" shows before any click, so the spike blamed the first selection. Selecting itself only dispatches `setUi`, which never records. The same resolve also made every Services insert two Undo steps.
+  - **Fix at the source:** the `resolveData` is gone. `withLockedFields` (outermost but one, after `withResponsiveFields`) wraps each field named in `LOCKED_FIELDS` in a custom field that renders the original field through Puck's exported `AutoField` with `readOnly`. Puck has no static per-field `readOnly`; the map from `resolveData` is the only built-in way. The panel looks the same: lock icon, disabled fieldset or select. The `setHistories` fallback wasn't needed.
+  - **Viewport kept on undo and redo:** `useKeepViewportOnHistory` in `EditorChrome.tsx` (in `EditorLayout`). A layout effect on `history.index` compares the viewport with the last one seen while the index was unchanged. If undo or redo moved it, it dispatches `setUi({ viewports })` with the user's viewport, and a dispatched `setUi` never records. One subscription covers the header buttons and Puck's hotkeys on the host and in the iframe. No hotkey wrapper is needed. Puck's `back`/`forward` show up in `onAction` as a `set` action. The same effect clears `itemSelector` if it no longer resolves (not hit in testing; Puck's restored selection always existed).
+  - Debug hooks kept for the next phases: `onAction` in `PageEditor.tsx` also pushes `{ type, recordHistory, action }` to `window.__puckLog`, and `useHistoryProbe` (`EditorChrome.tsx`) sets `window.__getPuck` and logs history length and index changes.
+- **Result: works, no patch.** Both parts use only Puck's exported API (`AutoField`, `useGetPuck`, `usePuck`, dispatched `setUi`). No reliance on Puck's DOM.
+- Differs from plan:
+  - The store helper `setUi(ui, false)` isn't exported. A dispatched `setUi` action does the same thing, because `storeInterceptor` never records it.
+  - The verify page `seed-8cb1127f/home` has no Image block. The Image case was checked on `seed-5b981653/home` and `seed-861ca6a6/small`.
+- Checked in the running app (my own check on `seed-861ca6a6/small` and three other pages, then an e2e subagent on the Verify brief; nothing simulated except `dev:login-as`):
+  - After load, history is 1 entry and Undo is disabled. Selecting every block on `seed-8cb1127f/home`, `salon`, `seed-5b981653/home` (two Images) and `seed-861ca6a6/small` adds no entry and shows no "Unsaved changes".
+  - Heading text edited on desktop, then a switch to phone: undo and redo by the header buttons, Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, with focus in the iframe and on the host, all revert and restore the text with the view staying on phone. History stays at 2 entries throughout. Every history entry's own `ui` still holds 1280, so the hook is what keeps the phone view.
+  - FreeGrid cell moved on phone, then a switch to desktop and Undo: `layout.mobile` is removed, the view stays on desktop, and Redo restores it (phone rows 1, 7). Section padding set to Large on phone, then the same undo from desktop: it reverts to `mobile: "small"` on desktop, and Ctrl+Shift+Z redoes it.
+  - Inserting a Services section with "+" dispatches `insert, replace, setUi, setUi`, which is one history entry, and one Undo removes it.
+  - Leaving with Back without saving changed no rows (`home` still at version 2, `updated_at` unchanged). Console and server logs were clean.
+  - e2e side notes: Back with unsaved changes leaves with no prompt (leave guard, #76). Undo of an edit deselects, because the entry before it has no selection (Puck's behaviour, kept). One canvas click on phone changed the selection without a `setUi` in `__puckLog` (debug log only, not pursued).
+  - Not checked: an undo whose restored selection no longer exists. Inline text editing undo (only the panel input).
