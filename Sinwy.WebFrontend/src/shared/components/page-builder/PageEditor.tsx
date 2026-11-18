@@ -59,6 +59,7 @@ export function PageEditor({
 				height="100%"
 				ui={ui}
 				viewports={VIEWPORTS as unknown as Viewports}
+				dnd={{ enableDragHandle: true }}
 				onAction={(action) => {
 					const w = window as {
 						__puckActions?: string[];

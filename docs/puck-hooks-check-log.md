@@ -111,3 +111,62 @@ Finished phases of [puck-hooks-check-plan.md](puck-hooks-check-plan.md), each wi
   - Leaving with Back without saving changed no rows (`home` still at version 2, `updated_at` unchanged). Console and server logs were clean.
   - e2e side notes: Back with unsaved changes leaves with no prompt (leave guard, #76). Undo of an edit deselects, because the entry before it has no selection (Puck's behaviour, kept). One canvas click on phone changed the selection without a `setUi` in `__puckLog` (debug log only, not pursued).
   - Not checked: an undo whose restored selection no longer exists. Inline text editing undo (only the panel input).
+
+## Phase 3: Action-bar drag handle and `componentOverlay`
+
+**Goal:** we know whether Text blocks (and any block) can be dragged from a handle in our action bar, and whether the hover and selection overlay can be our own.
+
+**Files:** `PageEditor.tsx` (`<Puck dnd>` L55), `EditorChrome.tsx` (`CanvasZoom` L273, `CanvasActionBar` L796, `chromeOverrides` L843), `FreeGridEditor.tsx` (the RGL handles must still work under the overlay: `bindOverlay` ~L95 stops `pointerdown`, `OVERLAY_CSS` ~L54 sets pointer events), `render-config.tsx` (the RichText block, L488).
+
+**Steps:**
+- Turn on `dnd={{ enableDragHandle: true }}`, and keep `CanvasActionBar` rendering `dragHandle`. Check the handle at zoom 1 and at the scaled zoom (desktop viewport in a narrow window), because it sits inside the `scale(1 / zoom)` wrapper.
+- Drag RichText, Heading and a whole Section from the handle:
+  - within the root
+  - into another Section's slot
+  - into and out of a FreeGrid
+- Note the placeholder style `behavior: "auto"` gives from a handle, and whether the drag preview follows the pointer under zoom.
+- Add a `componentOverlay` override: our own ring and colour, plus the block's name on hover, using `hover`, `isSelected` and `componentType`. Check:
+  - that it renders inside the iframe with Tailwind classes
+  - that it doesn't block inline text editing, FreeGrid move and resize, or clicks on the action bar
+  - what `children` holds (Puck's default overlay or nothing)
+- Record whether the overlay can also move the action bar off the top edge of the iframe, where the spike saw it clipped. If it can't, say so; the bar's placement is Puck's.
+
+**Tests that matter:**
+- None (throwaway). The browser checks below are the evidence.
+
+**Done when:**
+- The log has a result for each of the two items, with any caveat.
+
+**Verify:**
+- **Pro org `seed-861ca6a6`, page `small`, in the editor.**
+  - Select a Text block, then drag it by the action-bar handle below the next section. It moves, no text gets selected, it's one Undo step, and it is still in its new place after a save.
+  - Do the same at the desktop viewport in a 1100 px wide window, so the canvas is scaled.
+  - Hover a block, then select one. Our overlay style shows, and typing in a selected Text block still works.
+- Nothing is simulated.
+
+### Log (2026-11-18, `feat(web): puck hooks check phase 3, action-bar drag handle and own overlay`)
+- Shipped:
+  - **Drag handle: works, no patch.** `dnd={{ enableDragHandle: true }}` on `<Puck>` in `PageEditor.tsx`. Puck passes `ActionBar.DragHandle` as `dragHandle`, and `CanvasActionBar` renders it in its own group inside the `scale(1 / zoom)` wrapper. Body drags still work for blocks that aren't being edited. A selected Text block's body press goes to its inline editor (text selection), so the handle is how you move Text. That is the fix for spike phase 7's "Text can't be dragged".
+  - **Placeholder:** with `behavior: "auto"`, a handle drag is "static" (`resolveDndMode`, `chunk-DQXMVPVM.mjs` ~L4501). Puck draws a 2 px `DropZone-linePlaceholder` line in `--puck-color-line-placeholder`, siblings don't move until the drop, and the dragged block stays faded in place.
+  - **Drag preview under zoom:** the preview's top-left stays at pointer minus grab offset at both zoom 0.335 and zoom 1, for example offset [323,−21] with the preview at 203/580 and the pointer at 526/559. Because the handle is at the block's right end, a wide block's preview hangs off the canvas's left edge.
+  - **`componentOverlay`: works, no patch.** `CanvasOverlay` in `EditorChrome.tsx` renders a Tailwind ring: `ring-fuchsia-600` when selected, `ring-fuchsia-400` with a faint background on hover. On hover it adds a label with the block's `label` from the config, counter-scaled by `1 / zoom`. It renders inside Puck's `overlayWrapper` in the iframe, and Tailwind classes apply there. `children` is Puck's default overlay div (`DraggableComponent-overlay`); we drop it, and none of Puck's own ring remains. Puck renders the overlay only on hover or selection, and not during a handle drag.
+  - **Action bar off the top edge: works, no patch, our code.** Puck's `actionsOverlay` is `position: sticky`, but the bar still sat above the iframe for the first block on the page or a tall block scrolled past its top. `CanvasActionBar` measures its own top on mount and on iframe scroll and adds `translateY(shift)`, so the bar sticks to the iframe top (top 0 for the first block; 0 at scrollY 700, 1400 and 1471 for a 1212 px Section). The bar's placement otherwise stays Puck's.
+  - Caveats (Puck DOM): the action-bar shift reads its own element's rect, not Puck's DOM. Scripts and tests depend on Puck class names (`ActionBarAction--grab`, `DraggableComponent--isSelected`), but the app code doesn't.
+- **Result: both items work without a patch.**
+- Differs from plan:
+  - The bar placement was fixed in the action-bar override, not in `componentOverlay`. The overlay sits inside the block's box and can't move the bar.
+  - Hovering over inline-editable text (Puck's `[data-puck-overlay-portal]`, for example a Text block's paragraphs or a Button's label) gives `hover: false`, so our hover ring doesn't show there. Puck draws its own dashed portal outline instead. Hovering a block's padding or a non-text area shows our hover ring.
+  - Puck also renders an action bar inside the hover overlay, kept invisible by `opacity: 0; pointer-events: none`. A probe that picked the first `ActionBarAction--grab` in the DOM grabbed that bar and started a body drag of the block under it. Probes must target `[data-puck-overlay][class*=isSelected]`.
+- Checked in the running app (my own check, then an e2e subagent on the Verify brief; nothing simulated except `dev:login-as`):
+  - Handle drags on `seed-861ca6a6/small`, each one Undo step (`setUi, move, setUi!` plus a `replace` for RichText, then one history entry). At zoom 0.335 (desktop viewport, 1100 px window) and at zoom 1 (Phone viewport, iframe 375 px):
+    - RichText in the root, below the next Section
+    - RichText into a Section's slot
+    - Heading out of a Section to the root
+    - a whole Section into another Section's slot
+    - Heading into the FreeGrid, and a Button out of it
+
+    No text was selected mid-drag or after.
+  - Overlay: the hover ring and label show on Sections at both zooms. Typing in a selected Text block reaches the canvas, Puck data and the side-panel field, as one Undo step. The action bar's Duplicate and Delete take clicks (Duplicate gives one entry). FreeGrid move (y changed) and resize (w 6→8) by RGL handles work with the overlay present, one entry each.
+  - e2e: the same drag at both zooms, Undo, Redo, Save and reload all keep the new order (versions 13 and 15). The fixture was restored to its original order and saved as version 16, byte-identical in data to version 12. Console and server logs were clean.
+  - **Side finding, not phase 3 (affects phase 2's undo result):** with a RichText block selected, Redo (`set`) is followed by a `replace` carrying only `ui.field = { focus: null, metadata: { from, to } }`. It has no `recordHistory`, so Puck records it as an entry whose data is identical to the previous one, and going back after a Redo takes two Undo clicks. I reproduced it inline. Likely source: a rich-text field resyncing its selection after the value is restored. Not fixed here.
+  - Not checked: a drag with a real mouse or trackpad (Playwright's Chromium only), and touch.

@@ -10,7 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Custom drawer with `Drawer` / `Drawer.Item` and a locked tile | – | done | `feat(web): puck hooks check phase 1, custom drawer and locked tile` |
 | 2 | Undo and redo keep the viewport; selecting records no history | – | done | `feat(web): puck hooks check phase 2, undo keeps viewport and no spurious history` |
-| 3 | Action-bar drag handle and `componentOverlay` | – | todo | |
+| 3 | Action-bar drag handle and `componentOverlay` | – | done | `feat(web): puck hooks check phase 3, action-bar drag handle and own overlay` |
 | 4 | Auto-scroll and outline drag in the scaled canvas | – | todo | |
 | 5 | Result on #74, evaluation update, cleanup | 1–4 | todo | |
 
@@ -35,63 +35,34 @@ Settled with the product owner. Ask before changing any of them.
 
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
-- **Puck is 0.24.0**, installed at `Sinwy.WebFrontend/node_modules/@puckeditor/core/dist/`. `package.json` says `^0.24.0`, so don't run `bun update`. Type locations:
-  - `actions-Dgllwd-W.d.ts`: `Overrides` (about L718–780, including `actionBar` with `dragHandle` and `dragHandleRef`, and `componentOverlay` with `children`, `hover`, `isSelected`, `componentId` and `componentType`), and `DndConfig` (L812–825: `disableAutoScroll`, `disableOutlineDrag`, `enableDragHandle`, `behavior`).
-  - `index.d.ts`: `Drawer` (L141). `Drawer` takes `droppableId` and `direction`. `Drawer.Item` takes `name`, `id`, `label`, `index`, `isDragDisabled` and a `children` render function. `<Puck dnd>` is at L214, and the `PuckApi.history` API at L341–350.
-  - `index-dKPCNzR1.d.ts`: `HistorySlice` (L4–19).
-- **History recording.** `storeInterceptor` (`chunk-Z2MS6UIF.mjs` ~L529) records every dispatched action except `registerZone`, `unregisterZone`, `setData`, `setUi` and `set`, unless the action sets `recordHistory` itself. A history entry holds the whole app state, `ui` included, so `back`/`forward` also restore the viewport and the selection. A dispatched `setUi` never records (the store's `setUi` helper isn't exported). `back`/`forward` show up in `onAction` as `set`. Puck's own insert dispatches `insert` with `recordHistory: true`, then a `setUi` select. A component with `resolveData` adds a second entry (`chunk-DQXMVPVM.mjs` ~L4580–4610). A `replaceRoot` from root `resolveData` records with `recordHistory: true` (~L8946).
-- **Undo (phase 2, works without a patch).** The spurious entries were our `ServicesSection.resolveData` (load-time `replace`); `withLockedFields` in `editor-config.tsx` replaced it, so never use `resolveData` just to set `readOnly`. `useKeepViewportOnHistory` (`EditorChrome.tsx` ~L859) restores the viewport after any history index change. A fresh page load is 1 history entry with Undo disabled. Detail in the log, phase 2.
-- **Debug hooks** (throwaway, phase 5 removes them): `window.__getPuck()` is Puck's API (history index and length, `appState`, `dispatch`), set by `useHistoryProbe` (`EditorChrome.tsx` ~L847). `window.__puckLog` holds `{ type, recordHistory, action }` per dispatch and `{ history }` per history change; `window.__puckActions` holds only the types. Selecting programmatically: `dispatch({ type: "setUi", ui: { itemSelector: getSelectorForId(id) } })`.
-- **Drag handle.** Only when `dnd.enableDragHandle` and the item's `permissions.drag` are both true does Puck render `ActionBar.DragHandle` and pass it as `dragHandle` / `dragHandleRef` to the `actionBar` override (`chunk-DQXMVPVM.mjs` ~L3527, L3989). `CanvasActionBar` (`EditorChrome.tsx` ~L796) already renders `dragHandle` in its own group, inside a `scale(1 / zoom)` wrapper.
-- **Auto-scroll and outline drag are on by default.** `disableAutoScroll` removes dnd-kit's `AutoScroller` plugin (`chunk-DQXMVPVM.mjs` ~L5053), and `disableOutlineDrag` swaps in no sensors (~L8552, L8675). Even so, phase 7 saw no auto-scroll and "Layers can't drag" in our composed editor.
-- **Our canvas.** `EditorCanvas` (`EditorChrome.tsx` ~L276) wraps `<Puck.Preview />` in a `transform: scale(zoom)` box with `overflow-hidden`. The outer wrapper is `pointer-events-none` and the inner one is `pointer-events-auto`. `CanvasZoom` passes the zoom to the action bar. Zoom is 1 when the canvas is wider than the viewport width.
-- **Drawer (phase 1, works without a patch).** `BlockDrawer` in `EditorChrome.tsx` (~L505) replaced `<Puck.Components />` and the `drawerItem` override. Each `Drawer.Item` renders its card twice (a `draggableBg` copy behind a `draggableFg` copy); we set `inert` on the background copy, which relies on Puck's `Drawer-draggableBg` class. Detail in the log, phase 1.
-- **Puck actions per insert.** A drawer drag dispatches `setUi, insert, setUi, setUi`; "+" dispatches `insert, replace` (Services too, now that its `resolveData` is gone). Each is one Undo step.
-- **Plan-locked block:** only `BookingWidget`, which requires `advanced-widgets` (`Sinwy.Shared/types/page/PuckContent.ts` ~L139). Starter lacks that feature and Professional has it. Editor route: `Sinwy.WebFrontend/src/modules/org-dashboard/routes/_shell.pages.$id.edit.tsx`.
-- **Fixtures in the local DB** (checked while planning):
-  - pro org `seed-861ca6a6`, with pages `large` (252 blocks, 52 sections), `small` (18), `nesting` and `shallow-grid`
-  - org `seed-8cb1127f`, with pages `home` (id `e99f58f4-ef52-4cd9-bda7-7955fd64e7b9`, no Image block) and `salon`
-  - org `seed-5b981653`, page `home` (id `10e361e6-d39c-4c4e-8e2b-0e91d4134920`) has two Image blocks
-  - Starter org `seed-8a603a43` (owner `webdevrokas+seed-8a603a43-owner@gmail.com`, page `p4-e2e`, id `5e86e0af-…`); `seed-c2b0a828` is Starter too
-  - owners are `webdevrokas+<org slug>-owner@gmail.com`; page `small` is id `d2c8cab4-a90e-42e2-8bd5-8736cc65a764`, and phase 1 saved it as versions 9 and 10
-  - editor URL: `http://localhost:3000/dashboard/<org slug>/pages/<page id>/edit`
-- **Use the dev server for browser checks, not the production preview.** Better Auth refuses the preview origin (phase 7).
-- **Browser drags.** The canvas is scaled to 0.601 at a 1440×900 window, and Playwright's locator drag doesn't map through the scale. Use `page.mouse` with screen = iframe box + rect × (box width / iframe `clientWidth`). `/tmp/hooks-check/drag.sh` (drawer card to an iframe selector) and `tree.sh` (zones and their blocks) do this; they are scratch files for phase 5 to delete, with `/tmp/hooks-check/p2/` (select-all, undo and breakpoint scenarios) and `p2-verify/`.
-- **FreeGrid handle drags.** RGL uses no compaction and prevents collisions, so dropping a cell onto an occupied one is rejected and commits nothing; drag into empty space. At phone width the `[data-freegrid-handle]` sits at x −12 (half outside the iframe), so grab it about 6 px inside the iframe edge. Handles show when the FreeGrid or one of its children is selected. The servers this plan started log to `/tmp/hooks-check/{server,web}.log`.
-
----
-
-## Phase 3: Action-bar drag handle and `componentOverlay`
-
-**Goal:** we know whether Text blocks (and any block) can be dragged from a handle in our action bar, and whether the hover and selection overlay can be our own.
-
-**Files:** `PageEditor.tsx` (`<Puck dnd>` L55), `EditorChrome.tsx` (`CanvasZoom` L273, `CanvasActionBar` L796, `chromeOverrides` L843), `FreeGridEditor.tsx` (the RGL handles must still work under the overlay: `bindOverlay` ~L95 stops `pointerdown`, `OVERLAY_CSS` ~L54 sets pointer events), `render-config.tsx` (the RichText block, L488).
-
-**Steps:**
-- Turn on `dnd={{ enableDragHandle: true }}`, and keep `CanvasActionBar` rendering `dragHandle`. Check the handle at zoom 1 and at the scaled zoom (desktop viewport in a narrow window), because it sits inside the `scale(1 / zoom)` wrapper.
-- Drag RichText, Heading and a whole Section from the handle:
-  - within the root
-  - into another Section's slot
-  - into and out of a FreeGrid
-- Note the placeholder style `behavior: "auto"` gives from a handle, and whether the drag preview follows the pointer under zoom.
-- Add a `componentOverlay` override: our own ring and colour, plus the block's name on hover, using `hover`, `isSelected` and `componentType`. Check:
-  - that it renders inside the iframe with Tailwind classes
-  - that it doesn't block inline text editing, FreeGrid move and resize, or clicks on the action bar
-  - what `children` holds (Puck's default overlay or nothing)
-- Record whether the overlay can also move the action bar off the top edge of the iframe, where the spike saw it clipped. If it can't, say so; the bar's placement is Puck's.
-
-**Tests that matter:**
-- None (throwaway). The browser checks below are the evidence.
-
-**Done when:**
-- The log has a result for each of the two items, with any caveat.
-
-**Verify:**
-- **Pro org `seed-861ca6a6`, page `small`, in the editor.**
-  - Select a Text block, then drag it by the action-bar handle below the next section. It moves, no text gets selected, it's one Undo step, and it is still in its new place after a save.
-  - Do the same at the desktop viewport in a 1100 px wide window, so the canvas is scaled.
-  - Hover a block, then select one. Our overlay style shows, and typing in a selected Text block still works.
-- Nothing is simulated.
+- **Puck is 0.24.0**, installed at `Sinwy.WebFrontend/node_modules/@puckeditor/core/dist/`. `package.json` says `^0.24.0`, so don't run `bun update`. `DndConfig` is in `actions-Dgllwd-W.d.ts` (L812–825: `disableAutoScroll`, `disableOutlineDrag`, `enableDragHandle`, `behavior`), and `<Puck dnd>` in `index.d.ts` L214.
+- **Results so far (all works, no patch):** drawer (phase 1), undo and history (phase 2), drag handle and `componentOverlay` (phase 3). Detail and caveats are in the log, one entry per phase. Phase 5 quotes them.
+- **Open undo gap for phase 5 (found in phase 3):** with a RichText block selected, Redo is followed by a non-recording `replace` that only sets `ui.field` focus/selection metadata. Puck records it as a data-identical entry, so getting back after a Redo takes two Undo clicks. It's not fixed or diagnosed yet (see the log, phase 3), and the user decides whether it is in scope.
+- **History recording.** `storeInterceptor` (`chunk-Z2MS6UIF.mjs` ~L529) records every dispatched action except `registerZone`, `unregisterZone`, `setData`, `setUi` and `set`, unless the action sets `recordHistory` itself. `back`/`forward` show up in `onAction` as `set`. `history.back()` and `forward()` don't update `history.index` synchronously: never loop on the index in one eval, because it hangs the tab.
+- **Debug hooks** (throwaway, phase 5 removes them): `window.__getPuck()` is Puck's API (history, `appState`, `dispatch`, `getSelectorForId`, `selectedItem`), set by `useHistoryProbe` (`EditorChrome.tsx`). `window.__puckLog` holds `{ type, recordHistory, action }` per dispatch and `{ history }` per history change (`onAction` in `PageEditor.tsx`). Select programmatically with `dispatch({ type: "setUi", ui: { itemSelector: getSelectorForId(id) } })`; clicking a Section selects its first child.
+- **Drag in our editor (phase 3).**
+  - `dnd={{ enableDragHandle: true }}` is on (`PageEditor.tsx` L62). Body drags still work.
+  - A handle drag is a "static" drag: a 2 px line placeholder, and siblings stay put.
+  - Every move is `setUi, move, setUi!`, then one history entry; RichText adds a `replace`.
+  - Escape does not cancel a drag; mouse up drops.
+- **Auto-scroll and outline drag are on by default.** `disableAutoScroll` removes dnd-kit's `AutoScroller` plugin (`chunk-DQXMVPVM.mjs` ~L5053), and `disableOutlineDrag` swaps in no sensors (~L8552, L8675). Even so, spike phase 7 saw no auto-scroll and "Layers can't drag". Puck's line placeholder also tracks scroll (`startLinePlaceholderScrollTracking`, ~L5109).
+- **Our canvas.** `EditorCanvas` (`EditorChrome.tsx` ~L276) wraps `<Puck.Preview />` in a `transform: scale(zoom)` box with `overflow-hidden`. The outer wrapper is `pointer-events-none` and the inner one is `pointer-events-auto`. At a 1100 px window the desktop viewport scales to 0.335 (canvas about 430 px wide). At 1440×900 it is 0.601. Zoom is 1 only when the viewport fits (Phone at 1100 px). `CanvasZoom` passes the zoom to the action bar and overlay.
+- **Fixtures:** pro org `seed-861ca6a6` (owner `webdevrokas+seed-861ca6a6-owner@gmail.com`).
+  - Page `large` has 252 blocks in 52 sections.
+  - Page `small` is id `d2c8cab4-a90e-42e2-8bd5-8736cc65a764`, last saved as version 16 in its original order.
+  - Editor URL: `http://localhost:3000/dashboard/<org slug>/pages/<page id>/edit`.
+- **Browser checks.**
+  - Use the dev server (web :3000, backend :3001, logs in `/tmp/hooks-check/{web,server}.log`), not the production preview, which Better Auth refuses.
+  - Log in with `dev:login-as --state`, then `playwright-cli open`, `resize`, `state-load` and `goto`.
+  - Switch the viewport by clicking its `label` (`hasText: "Phone"`); the radio inputs are sr-only.
+  - Playwright's locator drag doesn't map through the scale. Use `page.mouse` with screen = iframe box + rect × (box width / iframe `clientWidth`).
+  - Probes target the selected bar with `[data-puck-overlay][class*=isSelected]`. Puck also renders an invisible bar in the hover overlay.
+- **Scratch scripts** (phase 5 deletes `/tmp/hooks-check/`):
+  - `p2/eval.sh` and `p2/click.sh`
+  - `tree.sh` (zones and their blocks)
+  - `drag.sh` (drawer card to a selector)
+  - `p3/hdrag.sh` (handle drag of the selected block to a selector)
+  - `p3/slow.sh` (stepwise held drag that logs the placeholder zone and index each step, a start for the auto-scroll hold)
 
 ---
 
@@ -99,7 +70,13 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 **Goal:** we know whether a drag near the canvas edge scrolls a long page, and whether Layers rows can be dragged, in our composed and scaled canvas.
 
-**Files:** `EditorChrome.tsx` (`EditorCanvas`, `LeftPanel` Layers tab with `<Puck.Outline />`), `PageEditor.tsx` (`<Puck dnd>`).
+**Files:**
+- `EditorChrome.tsx`:
+  - `EditorCanvas` L276, with the `overflow-hidden` box and the `pointer-events-none` / `-auto` wrappers
+  - `LeftPanel` L637, whose Layers tab renders `<Puck.Outline />` at L680
+- `PageEditor.tsx`: `<Puck dnd={{ enableDragHandle: true }}>` at L62
+- Puck's `chunk-DQXMVPVM.mjs`: `AutoScroller` ~L5053 and the outline sensors ~L8552 and L8675
+- Scratch: `/tmp/hooks-check/p3/slow.sh`, a held drag in steps that can hold at the canvas edge
 
 **Steps:**
 - Reproduce on `seed-861ca6a6/large`: hold a section drag at the bottom edge of the canvas. Then isolate the cause:

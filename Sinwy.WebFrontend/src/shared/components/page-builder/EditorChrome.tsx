@@ -807,11 +807,28 @@ function CanvasActionBar({
 	const item = usePuck((s) => s.selectedItem);
 	const permissions = item ? getPuck().getPermissions({ item }) : null;
 	const zoom = use(CanvasZoom);
+	const ref = useRef<HTMLDivElement>(null);
+	const [shift, setShift] = useState(0);
+	useLayoutEffect(() => {
+		const element = ref.current;
+		if (!element) return;
+		const win = element.ownerDocument.defaultView;
+		let current = 0;
+		const update = () => {
+			const top = element.getBoundingClientRect().top - current;
+			current = Math.max(0, -top);
+			setShift(current);
+		};
+		update();
+		win?.addEventListener("scroll", update);
+		return () => win?.removeEventListener("scroll", update);
+	}, []);
 	return (
 		<div
+			ref={ref}
 			className="flex"
 			style={{
-				transform: `scale(${1 / zoom})`,
+				transform: `translateY(${shift}px) scale(${1 / zoom})`,
 				transformOrigin: "right bottom",
 			}}
 		>
@@ -840,8 +857,43 @@ function CanvasActionBar({
 	);
 }
 
+function CanvasOverlay({
+	hover,
+	isSelected,
+	componentType,
+}: {
+	hover: boolean;
+	isSelected: boolean;
+	componentType: string;
+}) {
+	const getPuck = useGetPuck();
+	const zoom = use(CanvasZoom);
+	const label =
+		getPuck().config.components[componentType]?.label ?? componentType;
+	if (!hover && !isSelected) return null;
+	return (
+		<div
+			data-sinwy-overlay
+			className={cn(
+				"pointer-events-none absolute inset-0 rounded-sm ring-2 ring-inset",
+				isSelected ? "ring-fuchsia-600" : "bg-fuchsia-500/5 ring-fuchsia-400",
+			)}
+		>
+			{hover && !isSelected && (
+				<span
+					className="absolute top-0 left-0 origin-top-left rounded-br bg-fuchsia-600 px-1.5 py-0.5 font-medium text-[11px] text-white"
+					style={{ transform: `scale(${1 / zoom})` }}
+				>
+					{label}
+				</span>
+			)}
+		</div>
+	);
+}
+
 export const chromeOverrides: Partial<Overrides> = {
 	actionBar: (props) => <CanvasActionBar {...props} />,
+	componentOverlay: (props) => <CanvasOverlay {...props} />,
 };
 
 function useHistoryProbe() {
