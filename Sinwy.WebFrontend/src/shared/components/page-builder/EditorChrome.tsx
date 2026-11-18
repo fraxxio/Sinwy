@@ -1,6 +1,7 @@
 import {
 	ActionBar,
 	type Data,
+	Drawer,
 	type Overrides,
 	Puck,
 	useGetPuck,
@@ -13,9 +14,9 @@ import {
 	CopyIcon,
 	CopyPlusIcon,
 	CornerLeftUpIcon,
-	GripVerticalIcon,
 	LayersIcon,
 	LayoutTemplateIcon,
+	LockIcon,
 	type LucideIcon,
 	MonitorIcon,
 	PlusIcon,
@@ -330,23 +331,244 @@ function EditorCanvas() {
 	);
 }
 
-function DrawerItem({ name }: { name: string }) {
+const DRAWER_GROUPS: { title: string; types: string[] }[] = [
+	{ title: "Ready-made sections", types: ["Hero", "ServicesSection"] },
+	{
+		title: "Content",
+		types: ["Heading", "RichText", "Image", "Button", "BookingWidget"],
+	},
+	{ title: "Layout", types: ["Section", "Columns", "Container", "FreeGrid"] },
+];
+
+const BLOCK_INFO: Record<string, { description: string; sketch: ReactNode }> = {
+	Hero: {
+		description: "Big headline with a photo",
+		sketch: (
+			<div className="grid h-full place-content-center gap-1 bg-muted-foreground/15 p-1">
+				<div className="mx-auto h-1.5 w-10 rounded-full bg-foreground/50" />
+				<div className="mx-auto h-1 w-7 rounded-full bg-foreground/25" />
+				<div className="mx-auto mt-0.5 h-2 w-5 rounded-sm bg-primary/60" />
+			</div>
+		),
+	},
+	ServicesSection: {
+		description: "Your services, ready to book",
+		sketch: (
+			<div className="grid h-full grid-cols-3 gap-1 p-1.5">
+				{[0, 1, 2].map((i) => (
+					<div key={i} className="rounded-sm bg-foreground/15" />
+				))}
+			</div>
+		),
+	},
+	Heading: {
+		description: "A title for a part of the page",
+		sketch: (
+			<div className="grid h-full content-center p-2">
+				<div className="h-2 w-3/4 rounded-full bg-foreground/50" />
+			</div>
+		),
+	},
+	RichText: {
+		description: "Paragraphs, lists and links",
+		sketch: (
+			<div className="grid h-full content-center gap-1 p-2">
+				<div className="h-1 w-full rounded-full bg-foreground/25" />
+				<div className="h-1 w-full rounded-full bg-foreground/25" />
+				<div className="h-1 w-2/3 rounded-full bg-foreground/25" />
+			</div>
+		),
+	},
+	Image: {
+		description: "A photo or picture",
+		sketch: (
+			<div className="h-full p-1.5">
+				<div className="h-full rounded-sm bg-gradient-to-br from-foreground/10 to-foreground/30" />
+			</div>
+		),
+	},
+	Button: {
+		description: "A link that stands out",
+		sketch: (
+			<div className="grid h-full place-content-center">
+				<div className="h-3 w-10 rounded-sm bg-primary/60" />
+			</div>
+		),
+	},
+	BookingWidget: {
+		description: "Let visitors book a time",
+		sketch: (
+			<div className="grid h-full grid-cols-4 content-center gap-0.5 p-2">
+				{Array.from({ length: 8 }, (_, i) => (
+					<div
+						// biome-ignore lint/suspicious/noArrayIndexKey: static sketch
+						key={i}
+						className={cn(
+							"h-1.5 rounded-xs",
+							i === 5 ? "bg-primary/60" : "bg-foreground/20",
+						)}
+					/>
+				))}
+			</div>
+		),
+	},
+	Section: {
+		description: "A full-width band to fill",
+		sketch: (
+			<div className="h-full p-1.5">
+				<div className="h-full rounded-sm border border-foreground/30 border-dashed" />
+			</div>
+		),
+	},
+	Columns: {
+		description: "Side-by-side columns",
+		sketch: (
+			<div className="grid h-full grid-cols-2 gap-1 p-1.5">
+				<div className="rounded-sm border border-foreground/30 border-dashed" />
+				<div className="rounded-sm border border-foreground/30 border-dashed" />
+			</div>
+		),
+	},
+	Container: {
+		description: "A centred box for blocks",
+		sketch: (
+			<div className="h-full px-4 py-1.5">
+				<div className="h-full rounded-sm border border-foreground/30 border-dashed" />
+			</div>
+		),
+	},
+	FreeGrid: {
+		description: "Place blocks freely",
+		sketch: (
+			<div className="grid h-full grid-cols-4 grid-rows-2 gap-0.5 p-1.5">
+				<div className="col-span-2 rounded-xs bg-foreground/20" />
+				<div className="col-span-2 row-span-2 rounded-xs bg-foreground/30" />
+				<div className="col-span-2 rounded-xs bg-foreground/15" />
+			</div>
+		),
+	},
+};
+
+function BlockCard({ name, locked }: { name: string; locked?: boolean }) {
 	const label = usePuck((s) => s.config.components[name]?.label ?? name);
 	const { add } = useBlockActions();
+	const info = BLOCK_INFO[name];
+	const hideBackgroundCopy = (el: HTMLDivElement | null) => {
+		const copy = el?.closest<HTMLElement>('[class*="Drawer-draggableBg"]');
+		if (copy) copy.inert = true;
+	};
 	return (
-		<div className="group flex items-center gap-2 rounded-lg border border-(--line-soft) bg-card py-1.5 pr-1.5 pl-2 text-sm shadow-xs transition-colors hover:border-ring/40">
-			<GripVerticalIcon className="size-4 shrink-0 text-muted-foreground" />
-			<span className="flex-1 truncate">{label}</span>
-			<button
-				type="button"
-				aria-label={`Add ${label}`}
-				title={`Add ${label}`}
-				onPointerDown={(event) => event.stopPropagation()}
-				onClick={() => add(name)}
-				className="pointer-events-auto grid size-7 place-content-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+		<div
+			ref={hideBackgroundCopy}
+			className={cn(
+				"group relative grid gap-1.5 rounded-lg border border-(--line-soft) bg-card p-1.5 text-left shadow-xs transition-colors",
+				locked ? "cursor-pointer" : "cursor-grab hover:border-ring/40",
+			)}
+		>
+			<div
+				className={cn(
+					"aspect-[4/3] overflow-hidden rounded-md bg-muted",
+					locked && "opacity-50",
+				)}
 			>
-				<PlusIcon className="size-4" />
-			</button>
+				{info?.sketch}
+			</div>
+			<div className="grid gap-0.5 px-0.5 pb-0.5">
+				<span className="flex items-center gap-1 truncate font-medium text-xs">
+					{locked && <LockIcon className="size-3 shrink-0" />}
+					{label}
+				</span>
+				<span className="line-clamp-2 text-[11px] text-muted-foreground leading-tight">
+					{locked ? "Upgrade to use" : info?.description}
+				</span>
+			</div>
+			{!locked && (
+				<button
+					type="button"
+					aria-label={`Add ${label}`}
+					title={`Add ${label}`}
+					onPointerDown={(event) => event.stopPropagation()}
+					onClick={() => add(name)}
+					className="absolute top-2.5 right-2.5 grid size-6 place-content-center rounded-md bg-card/90 text-muted-foreground opacity-0 shadow-xs outline-none transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover:opacity-100"
+				>
+					<PlusIcon className="size-4" />
+				</button>
+			)}
+		</div>
+	);
+}
+
+const renderBlockCard = ({ name }: { name: string }) => (
+	<BlockCard name={name} />
+);
+
+function BlockDrawer() {
+	const getPuck = useGetPuck();
+	const [upgrading, setUpgrading] = useState<string | null>(null);
+	const { config } = getPuck();
+	const available = new Set(
+		Object.values(config.categories ?? {})
+			.filter((category) => category.visible !== false)
+			.flatMap((category) => category.components ?? []),
+	);
+
+	return (
+		<div className="grid gap-4">
+			{DRAWER_GROUPS.map((group) => (
+				<section key={group.title} className="grid gap-2">
+					<h3 className="font-medium text-muted-foreground text-xs">
+						{group.title}
+					</h3>
+					<Drawer>
+						<div className="isolate grid grid-cols-2 gap-2">
+							{group.types
+								.filter((type) => config.components[type])
+								.map((type) =>
+									available.has(type) ? (
+										<Drawer.Item
+											key={type}
+											name={type}
+											label={config.components[type]?.label ?? type}
+										>
+											{renderBlockCard}
+										</Drawer.Item>
+									) : (
+										<button
+											key={type}
+											type="button"
+											className="rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+											onClick={() => setUpgrading(type)}
+										>
+											<BlockCard name={type} locked />
+										</button>
+									),
+								)}
+						</div>
+					</Drawer>
+				</section>
+			))}
+			<AlertDialog
+				open={!!upgrading}
+				onOpenChange={(open) => !open && setUpgrading(null)}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Upgrade to use this block</AlertDialogTitle>
+						<AlertDialogDescription>
+							{upgrading && config.components[upgrading]?.label} is part of a
+							higher plan. Upgrade your plan to add it to your pages.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Not now</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => window.open("/account/billing", "_blank")}
+						>
+							See plans
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	);
 }
@@ -452,7 +674,7 @@ function LeftPanel() {
 						Drag a block onto the page, or press + to add it after the selected
 						block.
 					</p>
-					<Puck.Components />
+					<BlockDrawer />
 				</TabsContent>
 				<TabsContent value="layers" className="min-h-0 overflow-y-auto p-3">
 					<Puck.Outline />
@@ -619,7 +841,6 @@ function CanvasActionBar({
 }
 
 export const chromeOverrides: Partial<Overrides> = {
-	drawerItem: ({ name }) => <DrawerItem name={name} />,
 	actionBar: (props) => <CanvasActionBar {...props} />,
 };
 
