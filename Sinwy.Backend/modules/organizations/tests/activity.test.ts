@@ -136,7 +136,6 @@ test("team, page, service and transfer actions each record one entry naming the 
 	).toBe(200);
 
 	const page = await call("POST", org("pages"), owner.cookie, {
-		templateId: "blank",
 		title: "About us",
 		slug: "about-us",
 	});

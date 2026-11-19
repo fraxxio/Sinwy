@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { PAGE_LIMITS as LIMITS, RESERVED_PAGE_SLUGS } from "./Page";
-import { pageContentSchema } from "./PageContent";
-import { PAGE_TEMPLATE_IDS } from "./PageTemplates";
+import { pageDocumentSchema } from "./PageDocument";
 
 const reserved: readonly string[] = RESERVED_PAGE_SLUGS;
 
@@ -23,7 +22,6 @@ const pageTitleSchema = z
 	.max(LIMITS.title, `Max ${LIMITS.title} characters`);
 
 export const createPageSchema = z.object({
-	templateId: z.enum(PAGE_TEMPLATE_IDS, "Pick a template"),
 	title: pageTitleSchema,
 	slug: pageSlugSchema,
 });
@@ -53,7 +51,8 @@ export type UpdatePageInput = z.infer<typeof updatePageSchema>;
 export const savePageContentSchema = z.object({
 	/** The version the edit started from; a newer one means another save got there first. */
 	baseVersion: z.number().int().min(1),
-	content: pageContentSchema,
+	/** Parsed to what gets stored: migrated, with rich text normalised. */
+	content: pageDocumentSchema,
 });
 
 export type SavePageContentInput = z.infer<typeof savePageContentSchema>;

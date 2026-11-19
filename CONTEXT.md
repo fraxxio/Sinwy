@@ -40,12 +40,12 @@ The experience inside an active organization context: dashboard, CMS/page builde
 _Avoid_: Business mode, admin mode
 
 **Page Builder**:
-The editor where an organization lays out and fills its hosted pages. Available on every plan; higher tiers unlock extra widgets and extra options on ordinary widgets (Advanced Widgets), never the editor itself.
+The editor where an organization lays out and fills its hosted pages. Available on every plan; higher tiers unlock extra blocks (Advanced Widgets), never the editor itself.
 _Avoid_: CMS (for the editor), premium editor
 
-**Widget**:
-One piece of a hosted page placed in the Page Builder (heading, text, image, gallery, …). Some widgets, and some options on ordinary widgets, are reserved for higher tiers (Advanced Widgets).
-_Avoid_: Block, component, section
+**Block**:
+One piece of a hosted page placed in the Page Builder (section, columns, heading, rich text, image, button, hero, services, …). Some block types may be reserved for higher tiers (Advanced Widgets).
+_Avoid_: Widget, component
 
 **Branding**:
 An organization's accent color and font, applied to all of its hosted pages and its booking flow. The base set is on every plan; finer customization may be tier-gated.

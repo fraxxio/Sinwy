@@ -232,6 +232,13 @@
       "when": 1794671609352,
       "tag": "0032_notification_inbox_index",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795109482962,
+      "tag": "0033_page_document_reset",
+      "breakpoints": true
     }
   ]
 }

@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { pageQuery } from "#/modules/org-dashboard/lib/page-queries";
+import { servicesQuery } from "#/modules/org-dashboard/lib/service-queries";
 import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
-import { PageRenderer } from "#/shared/components/page-content/PageRenderer";
+import { PageDocumentView } from "#/shared/components/page-builder/PageDocumentView";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
-import { brandAttributes } from "#/shared/lib/branding";
 import { organizationsQuery } from "#/shared/lib/organizations";
 
 export const Route = createFileRoute(
@@ -25,6 +25,10 @@ function PagePreviewPage() {
 		...organizationsQuery,
 		select: (organizations) =>
 			organizations.find((org) => org.id === organization.id)?.branding,
+	});
+	const { data: services = [] } = useQuery({
+		...servicesQuery(organization.id),
+		select: (list) => list.filter((service) => service.isActive),
 	});
 
 	const backButton = (
@@ -51,7 +55,7 @@ function PagePreviewPage() {
 					action={backButton}
 				/>
 				<ContentBox>
-					<Skeleton className="mx-auto h-96 w-full max-w-3xl rounded-md" />
+					<Skeleton className="mx-auto h-96 w-full max-w-5xl rounded-md" />
 				</ContentBox>
 			</>
 		);
@@ -81,16 +85,15 @@ function PagePreviewPage() {
 				action={backButton}
 			/>
 			<ContentBox>
-				{latestVersion.content.widgets.length ? (
-					<div
-						{...(branding && brandAttributes(branding))}
-						className="mx-auto max-w-3xl"
-					>
-						<PageRenderer
-							content={latestVersion.content}
-							organizationSlug={organization.slug}
-						/>
-					</div>
+				{latestVersion.content.data.content.length ? (
+					<PageDocumentView
+						document={latestVersion.content}
+						metadata={{
+							organizationSlug: organization.slug,
+							services,
+							branding: branding ?? null,
+						}}
+					/>
 				) : (
 					<p className="text-center text-muted-foreground text-sm">
 						This page has no content yet.

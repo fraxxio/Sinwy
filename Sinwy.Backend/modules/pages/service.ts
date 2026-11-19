@@ -2,14 +2,14 @@ import type { Membership } from "@authModule";
 import {
 	type ActivityActor,
 	findPublicOrganizationPlan,
-	getOrganizationProfile,
 	recordActivity,
 } from "@organizationsModule";
+import { listPublicServices } from "@servicesModule";
 import {
+	blocksIn,
 	type CreatePageInput,
-	hasFeature,
+	emptyPageDocument,
 	limitsFor,
-	PAGE_TEMPLATES,
 	type PageDetailDto,
 	type PageListDto,
 	type PageListItemDto,
@@ -18,8 +18,6 @@ import {
 	type PublicPageDto,
 	type SavePageContentInput,
 	type UpdatePageInput,
-	WIDGET_TYPES,
-	widgetTypesIn,
 } from "@sinwy/shared";
 import {
 	type ContentSaveCheck,
@@ -146,12 +144,7 @@ export const createPage = async (
 	input: CreatePageInput,
 ): Promise<Result<PageDetailDto>> => {
 	if (membership.status !== "active") return fail("inactive");
-	const template = PAGE_TEMPLATES[input.templateId];
-	if (template.requires && !hasFeature(membership.plan, template.requires))
-		return fail("upgrade-required");
-
 	const { organizationId } = membership;
-	const content = template.build(await getOrganizationProfile(organizationId));
 	const inserted = await slugTaken(() =>
 		insertPageWithinLimit(
 			{
@@ -160,7 +153,7 @@ export const createPage = async (
 				title: input.title,
 				slug: input.slug,
 			},
-			content,
+			emptyPageDocument(),
 			userId,
 			limitsFor(membership.plan).pages,
 		),
@@ -192,23 +185,10 @@ export const updatePage = async (
 	return { ok: true, data: await toDetailDto(membership, updated.value) };
 };
 
-/** A premium widget the plan lacks may stay if the latest version already has it, so downgraded pages remain editable. */
 const contentSaveCheck =
-	(membership: Membership, input: SavePageContentInput): ContentSaveCheck =>
-	(latest) => {
-		if (latest.version !== input.baseVersion) return "version-conflict";
-		const existing = widgetTypesIn(latest.content);
-		for (const type of widgetTypesIn(input.content)) {
-			const requires = WIDGET_TYPES[type].requires;
-			if (
-				requires &&
-				!existing.has(type) &&
-				!hasFeature(membership.plan, requires)
-			)
-				return "upgrade-required";
-		}
-		return null;
-	};
+	(input: SavePageContentInput): ContentSaveCheck =>
+	(latest) =>
+		latest.version === input.baseVersion ? null : "version-conflict";
 
 export const savePageContent = async (
 	membership: Membership,
@@ -222,7 +202,7 @@ export const savePageContent = async (
 		pageId,
 		input.content,
 		userId,
-		contentSaveCheck(membership, input),
+		contentSaveCheck(input),
 	);
 	if (!saved.ok) return fail(saved.error);
 	return getPage(membership, pageId);
@@ -307,5 +287,8 @@ export const getPublicPage = async (
 		seoTitle: row.seoTitle ?? row.title,
 		seoDescription: row.seoDescription ?? (organization.tagline || null),
 		content: row.content,
+		services: blocksIn(row.content).types.has("Services")
+			? await listPublicServices(organization.id)
+			: [],
 	};
 };

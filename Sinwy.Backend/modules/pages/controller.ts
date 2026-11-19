@@ -4,6 +4,7 @@ import type { Handler, IReqContext } from "@backend/lib/app/types";
 import {
 	API_ERROR_CODES,
 	createPageSchema,
+	PAGE_DOCUMENT_LIMITS,
 	savePageContentSchema,
 	updatePageSchema,
 } from "@sinwy/shared";
@@ -20,9 +21,6 @@ import {
 	unpublishPage,
 	updatePage,
 } from "./service";
-
-/** Far above what 200 widgets of builder props need, far below the server's own cap. */
-export const MAX_PAGE_CONTENT_BYTES = 256 * 1024;
 
 const respondError = (error: PageError) => {
 	switch (error) {
@@ -79,7 +77,7 @@ const parseBody = async <T extends z.ZodType>(c: IReqContext, schema: T) =>
 
 const parseContentBody = async (c: IReqContext) => {
 	const bytes = await c.req.arrayBuffer();
-	if (bytes.byteLength > MAX_PAGE_CONTENT_BYTES)
+	if (bytes.byteLength > PAGE_DOCUMENT_LIMITS.maxBytes)
 		return {
 			ok: false,
 			response: fail("This page is too large to save", 413),

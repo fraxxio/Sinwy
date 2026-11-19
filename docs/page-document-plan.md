@@ -13,7 +13,7 @@ Branch: `pagebuilder/75-document-model`. The spike branch `pagebuilder-tryout` i
 | 1 | Rich text allowlist in Shared | – | done | `feat(shared): add rich text allowlist for page documents` |
 | 2 | Block manifest and document schema | 1 | done | `feat(shared): add page block manifest and document schema` |
 | 3 | Puck config adapter and storefront renderer | 2 | done | `feat(web): add puck config adapter and storefront page renderer` |
-| 4 | Switch pages to the new document and remove v1 | 3 | todo | |
+| 4 | Switch pages to the new document and remove v1 | 3 | done | `feat(backend, web): switch pages to the page document and remove v1` |
 | 5 | Plan gating of blocks | 4 | todo | |
 | 6 | Storefront bundle and SSR check | 4 | todo | |
 | 7 | Code review, docs and cleanup | 5, 6 | todo | |
@@ -62,78 +62,14 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - `document` is `unknown`. `readPageContent` migrates, fills defaults, falls back to defaults for invalid values and drops anything malformed, so reading a stored row never throws and never needs re-validation.
   - `puckConfigFrom(blocks, renders, { customFields, root })` is the adapter that #76 reuses with `customFields.serviceIds` and its own root.
 - **Adding a web dependency:** `bun add` and `bun install` re-resolve the `latest`-tagged TanStack deps and break `router.tsx` types (two `query-core` copies). Pin them to their locked versions for the install, then restore `latest` in `package.json` and in the lockfile's workspace lines (log, phase 3).
-- **Dev database (2026-11-18):** 35 pages (17 published), 38 v1 `page_content` rows and 57 rows in the spike's v2 shape (largest 72.7 KB). The data migration must handle both shapes.
-- **Migration 0027 stays.** `Sinwy.Backend/drizzle/0027_page_content_widgets.sql` is applied history in the Drizzle journal, so keep the file and delete only its test (`pages.test.ts` around line 363). Generate data migrations with `bun run db:generate -- --custom` and write the SQL by hand.
+- **Dev database (2026-11-19):** migration `0033_page_document_reset` is applied, so all 95 `page_content` rows hold the empty document and 17 pages are still published. Migrations 0027 and 0033 are applied history; keep both files.
 - **Saving and errors:**
-  - `controller.ts` enforces `MAX_PAGE_CONTENT_BYTES` (256 KB) before parsing (413). `parse` returns only `issues[0].message`, so every validation message must say on its own which block and field is wrong.
+  - `controller.ts` enforces `PAGE_DOCUMENT_LIMITS.maxBytes` (256 KB) before parsing (413). `parse` returns only `issues[0].message`, so every validation message must say on its own which block and field is wrong.
   - `insertNextVersion(orgId, pageId, content, userId, check)` runs `ContentSaveCheck(latest)` inside its transaction. Gating and the `baseVersion` conflict both compare against the latest version.
-- **Where `advanced-widgets` appears:** `Sinwy.Shared/types/plan/PlanFeatures.ts` and `FEATURE_NAMES` in `Sinwy.WebFrontend/src/shared/lib/plans.ts`. Also tests: `auth/tests/requireFeature.test.ts` (as a sample feature), `billing/tests/planFeatures.test.ts`, web `account-dashboard/tests/plan-change.test.ts` and `shared/tests/plans.test.ts`. Also docs: `.agents/skills/e2e-test/references/seed-scenario.md` line 14 and `docs/org-rules-map.md` lines 191–208 and 263. Polar knows nothing of features.
+  - `savePageContentSchema.content` is `pageDocumentSchema`, so the service gets and stores the parsed document. `pages.test.ts` has `document(...)`, `section(...)` and `block(type, props)` helpers for API tests.
+- **Pages API (phase 4):** `PublicPageDto.services` is always present: the org's active services when the pinned document has a Services block, `[]` otherwise. `PageVersionDto.content` is `PageDocument`. Save is `PUT /api/organizations/:orgId/pages/:pageId/content` with `{ baseVersion, content }`; publish is `POST .../publish`.
+- **Where `advanced-widgets` appears:** `Sinwy.Shared/types/plan/PlanFeatures.ts`, `FEATURE_NAMES` in `Sinwy.WebFrontend/src/shared/lib/plans.ts`, the plan line in `PlanCards.tsx` and `CONTEXT.md`. Also tests: `auth/tests/requireFeature.test.ts` (as a sample feature), `billing/tests/planFeatures.test.ts`, web `account-dashboard/tests/plan-change.test.ts` and `shared/tests/plans.test.ts`. Also docs: `.agents/skills/e2e-test/references/seed-scenario.md` line 14 and `docs/org-rules-map.md` lines 191–208 and 263. Polar knows nothing of features.
 - **Where tests run:** Shared has no test runner, and its contract tests live in `Sinwy.Backend/modules/pages/tests/` (run by `bun run test:server`). Web tests live in `Sinwy.WebFrontend/src/**/tests/`.
-- **Storefront and booking:**
-  - The storefront book route accepts `?service=<id>` (`storefront/routes/book.tsx`, `searchSchema`).
-  - `listPublicServices(organizationId)` is exported from `@servicesModule` and returns `PublicServiceDto[]` (`Sinwy.Shared/types/service/Service.ts`).
-
----
-
-## Phase 4: Switch pages to the new document and remove v1
-
-**Goal:** the pages API stores, validates, migrates and serves only the new document. The storefront and the dashboard preview render it, and no v1 page code remains.
-
-**Files:**
-- Shared:
-  - `Sinwy.Shared/types/page/PageContent.ts`: delete the v1 model. `PageContent` becomes the phase 2 document type, or the uses get renamed.
-  - `PageTemplates.ts`: delete.
-  - `PageSchema.ts`: `createPageSchema` drops `templateId`, and `savePageContentSchema.content` becomes `pageDocumentSchema`.
-  - `Page.ts`: `PageVersionDto` and `PublicPageDto` (add `services` per Default 7).
-  - `index.ts`.
-- Backend:
-  - `Sinwy.Backend/db/schema/pageSchema.ts:63`: the `jsonb<PageContent>` type.
-  - New data migration in `Sinwy.Backend/drizzle/` (Standing notes).
-  - `modules/pages/service.ts`:
-    - `createPage` (line 145): empty document, no template
-    - `contentSaveCheck` (line 196): `baseVersion` only, until phase 5
-    - `getPublicPage` (line 280): services
-  - `modules/pages/controller.ts`: `parseContentBody`, and use `PAGE_DOCUMENT_LIMITS` for the byte cap.
-  - `modules/pages/tests/pages.test.ts`: create, content and migration tests (lines 144, 205, 318, 336, 363).
-  - `pageContracts.test.ts`: delete or fold into `pageDocument.test.ts`.
-  - `modules/organizations/tests/activity.test.ts:139`.
-- Web:
-  - `src/modules/storefront/routes/$pageSlug.tsx`: render `<PageDocumentView document={page.content} metadata={…} />` from `#/shared/components/page-builder/PageDocumentView`, with `organizationSlug`, `services` and `branding` from the public page. Drop the article's `brandAttributes` and `max-w-3xl`, because the view's root applies both brand and width. Keep the org name link above it.
-  - `src/modules/org-dashboard/routes/_shell.pages.$id.preview.tsx`: the same view. `services` comes from `servicesQuery` (`org-dashboard/lib/service-queries.ts`), mapped to `PublicServiceDto`.
-  - `components/pages/PageContentSummary.tsx`: block count through `blocksIn`, and the "widgets" wording.
-  - `components/pages/NewPageForm.tsx`: no template field.
-  - `components/pages/TemplatePicker.tsx`: delete.
-  - Delete `src/shared/components/page-content/PageRenderer.tsx` and its directory, and `src/shared/tests/page-renderer.test.ts`. Its replacement, `page-document-view.test.ts`, already exists.
-- Docs:
-  - `docs/user-flow-map.md:107`
-  - `docs/user-creation-roadmap.md:299-310`: the template wording, where it describes current behaviour
-
-**Steps:**
-- The data migration sets every `page_content.content` to the empty document from Default 1. It keeps rows, versions and `published_version_id`.
-- On save, the server parses with `pageDocumentSchema`, which migrates and normalises rich text, and stores the parsed result, never the raw body. Every new version is therefore in the current shape. Validation errors return 400 with the walker's message. Read paths don't re-validate stored rows: the renderer tolerates them, and migrations run on read in `PageDocumentView`.
-- `createPage` writes the empty document as version 1. Keep the page-limit and slug behaviour as it is.
-- `getPublicPage` adds `services` only when `blocksIn(document)` contains Services.
-- Before deleting anything, run `git grep -n -E 'widget|PageWidget|WIDGET_|PAGE_TEMPLATE|templateId|PAGE_CONTENT_LIMITS|PageRenderer|TemplatePicker'` and leave no hits outside docs history. "Widget" may remain only in the `advanced-widgets` feature until phase 5.
-
-**Tests that matter:**
-- Save: a valid document becomes the next version, stored with rich text normalised. A body that is invalid, unknown, disallowed in its slot, too deep or too big is refused (400, or 413 for size), the message names the block, and no row is written.
-- `baseVersion` conflicts and concurrent saves still behave as before.
-- Create writes an empty document. The public endpoint serves the pinned version with services when a Services block is present, and without services otherwise.
-- Migration: after migrating, a v1 row and a spike-shaped row both read back as the empty document, and the published pointer still answers.
-
-**Done when:**
-- `git grep` finds no v1 page code.
-- A published document renders on `/$organizationSlug/$pageSlug` in the server HTML.
-- `bun run verify` is clean.
-
-**Verify:**
-- Seed: `pro-org`, logged in as the owner. Run `bun run db:migrate` first.
-- Existing pages: each opens in the preview as an empty page. Each published one answers on its public URL with an empty article, not a 404.
-- Create a page in the dashboard. There's no template step, and its version 1 `content` is the empty document (`psql` on `page_content`).
-- From the logged-in browser, `fetch` a save to `PUT .../pages/:id/content` with a document containing Hero (Heading, RichText with bold, a list and a link, Button), a Section with Columns (Image, RichText), and a Services block. Expect 200, and a version 2 row whose rich text is normalised.
-- Publish. Load the public URL with JavaScript disabled: the heading, the formatted text and the org's services with Book links are in the server HTML. With JavaScript enabled there are no hydration warnings in the console.
-- Replay the save with a Hero inside the Section, then with a `javascript:` Button. Each gets 400 with a message that names the block, and no new row is written.
-- Simulated: nothing. There's no editor yet (#76), so content goes in through the API.
 
 ---
 
@@ -144,11 +80,13 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Files:**
 - `Sinwy.Shared/types/plan/PlanFeatures.ts`: rename the key.
 - `Sinwy.WebFrontend/src/shared/lib/plans.ts`: `FEATURE_NAMES` becomes "Premium blocks".
+- `Sinwy.WebFrontend/src/modules/organizations/components/PlanCards.tsx:53`: the hard-coded "Advanced widgets" plan line.
+- `CONTEXT.md` lines 43 and 47: the "(Advanced Widgets)" mentions in the Page Builder and Block terms.
 - Tests that use the key: listed in Standing notes.
-- `Sinwy.Shared/types/page/PageDocument.ts`: a pure rule `lockedBlocksIn(latest, next, features, blocks = BLOCKS)` that returns the gated types `next` adds which the features don't cover.
-- `Sinwy.Backend/modules/pages/service.ts`: `contentSaveCheck`.
+- `Sinwy.Shared/types/page/PageDocument.ts`: a pure rule `lockedBlocksIn(latest, next, features, blocks = BLOCKS)` next to `blocksIn`, returning the gated types `next` adds which the features don't cover. Its tests go in `Sinwy.Backend/modules/pages/tests/pageDocument.test.ts` (`defineBlock` makes the test-only gated block).
+- `Sinwy.Backend/modules/pages/service.ts`: `contentSaveCheck(input)` (line 188) checks only `baseVersion` now. It takes `membership` again and uses `featuresFor(membership.plan)`.
 - `.agents/skills/e2e-test/references/seed-scenario.md:14`
-- `docs/org-rules-map.md`: lines 191–208 (the gating rule now covers blocks, not templates or widgets) and line 263.
+- `docs/org-rules-map.md`: lines 191–208 (the gating rule now covers blocks, not templates or widgets; template gating is gone since phase 4) and line 263 (`Sinwy.Shared/types/page/blocks/` holds the block registry).
 
 **Steps:**
 - The rule counts types, not instances, through all slots, including Columns' hidden slots. A type is allowed if the plan has its feature, or if the latest version already contains that type.

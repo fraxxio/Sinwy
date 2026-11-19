@@ -176,7 +176,7 @@ describe("pageDocumentSchema", () => {
 
 	test("the envelope version must be 2", () => {
 		expectRefused(
-			{ schemaVersion: 1, widgets: [] },
+			{ ...doc([]), schemaVersion: 1 },
 			"Unsupported page document version",
 		);
 	});

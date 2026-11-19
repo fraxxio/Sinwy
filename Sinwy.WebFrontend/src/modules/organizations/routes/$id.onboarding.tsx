@@ -322,8 +322,8 @@ function OnboardingPage() {
 								<div className="space-y-1.5">
 									<CardTitle>Business profile</CardTitle>
 									<CardDescription>
-										How customers find and contact you. Every page template and
-										your listing fill themselves in from this.
+										How customers find and contact you. Your pages and your
+										listing use this.
 									</CardDescription>
 								</div>
 							</div>

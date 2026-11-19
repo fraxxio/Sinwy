@@ -1,4 +1,4 @@
-import type { PageDetailDto } from "@sinwy/shared";
+import { blocksIn, type PageDetailDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
 import { EyeIcon, LayoutTemplateIcon } from "lucide-react";
@@ -14,7 +14,7 @@ export function PageContentSummary({
 	page: PageDetailDto;
 }) {
 	const { latestVersion } = page;
-	const widgets = latestVersion.content.widgets.length;
+	const { count } = blocksIn(latestVersion.content);
 
 	return (
 		<SettingsSection
@@ -44,8 +44,8 @@ export function PageContentSummary({
 				/>
 				<div className="grid gap-1 text-sm">
 					<p className="font-medium">
-						Version {latestVersion.version} · {widgets}{" "}
-						{widgets === 1 ? "widget" : "widgets"}
+						Version {latestVersion.version} · {count}{" "}
+						{count === 1 ? "block" : "blocks"}
 					</p>
 					<p className="text-muted-foreground">
 						Last saved{" "}

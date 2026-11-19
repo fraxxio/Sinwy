@@ -187,3 +187,86 @@ Finished phases of the [page document plan](page-document-plan.md), each with it
   - Root drops can't be limited through config: no `root.allow`, and `permissions` has no insert-by-type rule. The editor's root render gets `puck.renderDropZone`, which takes `allow` (`isComponentAllowed`). #76 can render `puck.renderDropZone({ zone: "root:default-zone", allow: ROOT_ALLOW })` in place of `children` in its root render. This hasn't been tried in the browser.
   - The SSR output has no Puck wrapper elements and renders each block once. With `fieldTransforms.richtext` set, the Tiptap `Suspense` path isn't used.
 - Checked in the running app: nothing. The phase has no Verify, and no route uses the view yet. The SSR HTML was checked in tests and in a one-off probe.
+
+## Phase 4: Switch pages to the new document and remove v1
+
+**Goal:** the pages API stores, validates, migrates and serves only the new document. The storefront and the dashboard preview render it, and no v1 page code remains.
+
+**Files:**
+- Shared:
+  - `Sinwy.Shared/types/page/PageContent.ts`: delete the v1 model. `PageContent` becomes the phase 2 document type, or the uses get renamed.
+  - `PageTemplates.ts`: delete.
+  - `PageSchema.ts`: `createPageSchema` drops `templateId`, and `savePageContentSchema.content` becomes `pageDocumentSchema`.
+  - `Page.ts`: `PageVersionDto` and `PublicPageDto` (add `services` per Default 7).
+  - `index.ts`.
+- Backend:
+  - `Sinwy.Backend/db/schema/pageSchema.ts:63`: the `jsonb<PageContent>` type.
+  - New data migration in `Sinwy.Backend/drizzle/` (Standing notes).
+  - `modules/pages/service.ts`:
+    - `createPage` (line 145): empty document, no template
+    - `contentSaveCheck` (line 196): `baseVersion` only, until phase 5
+    - `getPublicPage` (line 280): services
+  - `modules/pages/controller.ts`: `parseContentBody`, and use `PAGE_DOCUMENT_LIMITS` for the byte cap.
+  - `modules/pages/tests/pages.test.ts`: create, content and migration tests (lines 144, 205, 318, 336, 363).
+  - `pageContracts.test.ts`: delete or fold into `pageDocument.test.ts`.
+  - `modules/organizations/tests/activity.test.ts:139`.
+- Web:
+  - `src/modules/storefront/routes/$pageSlug.tsx`: render `<PageDocumentView document={page.content} metadata={…} />` from `#/shared/components/page-builder/PageDocumentView`, with `organizationSlug`, `services` and `branding` from the public page. Drop the article's `brandAttributes` and `max-w-3xl`, because the view's root applies both brand and width. Keep the org name link above it.
+  - `src/modules/org-dashboard/routes/_shell.pages.$id.preview.tsx`: the same view. `services` comes from `servicesQuery` (`org-dashboard/lib/service-queries.ts`), mapped to `PublicServiceDto`.
+  - `components/pages/PageContentSummary.tsx`: block count through `blocksIn`, and the "widgets" wording.
+  - `components/pages/NewPageForm.tsx`: no template field.
+  - `components/pages/TemplatePicker.tsx`: delete.
+  - Delete `src/shared/components/page-content/PageRenderer.tsx` and its directory, and `src/shared/tests/page-renderer.test.ts`. Its replacement, `page-document-view.test.ts`, already exists.
+- Docs:
+  - `docs/user-flow-map.md:107`
+  - `docs/user-creation-roadmap.md:299-310`: the template wording, where it describes current behaviour
+
+**Steps:**
+- The data migration sets every `page_content.content` to the empty document from Default 1. It keeps rows, versions and `published_version_id`.
+- On save, the server parses with `pageDocumentSchema`, which migrates and normalises rich text, and stores the parsed result, never the raw body. Every new version is therefore in the current shape. Validation errors return 400 with the walker's message. Read paths don't re-validate stored rows: the renderer tolerates them, and migrations run on read in `PageDocumentView`.
+- `createPage` writes the empty document as version 1. Keep the page-limit and slug behaviour as it is.
+- `getPublicPage` adds `services` only when `blocksIn(document)` contains Services.
+- Before deleting anything, run `git grep -n -E 'widget|PageWidget|WIDGET_|PAGE_TEMPLATE|templateId|PAGE_CONTENT_LIMITS|PageRenderer|TemplatePicker'` and leave no hits outside docs history. "Widget" may remain only in the `advanced-widgets` feature until phase 5.
+
+**Tests that matter:**
+- Save: a valid document becomes the next version, stored with rich text normalised. A body that is invalid, unknown, disallowed in its slot, too deep or too big is refused (400, or 413 for size), the message names the block, and no row is written.
+- `baseVersion` conflicts and concurrent saves still behave as before.
+- Create writes an empty document. The public endpoint serves the pinned version with services when a Services block is present, and without services otherwise.
+- Migration: after migrating, a v1 row and a spike-shaped row both read back as the empty document, and the published pointer still answers.
+
+**Done when:**
+- `git grep` finds no v1 page code.
+- A published document renders on `/$organizationSlug/$pageSlug` in the server HTML.
+- `bun run verify` is clean.
+
+**Verify:**
+- Seed: `pro-org`, logged in as the owner. Run `bun run db:migrate` first.
+- Existing pages: each opens in the preview as an empty page. Each published one answers on its public URL with an empty article, not a 404.
+- Create a page in the dashboard. There's no template step, and its version 1 `content` is the empty document (`psql` on `page_content`).
+- From the logged-in browser, `fetch` a save to `PUT .../pages/:id/content` with a document containing Hero (Heading, RichText with bold, a list and a link, Button), a Section with Columns (Image, RichText), and a Services block. Expect 200, and a version 2 row whose rich text is normalised.
+- Publish. Load the public URL with JavaScript disabled: the heading, the formatted text and the org's services with Book links are in the server HTML. With JavaScript enabled there are no hydration warnings in the console.
+- Replay the save with a Hero inside the Section, then with a `javascript:` Button. Each gets 400 with a message that names the block, and no new row is written.
+- Simulated: nothing. There's no editor yet (#76), so content goes in through the API.
+
+### Log (2026-11-19, `feat(backend, web): switch pages to the page document and remove v1`)
+- Shipped:
+  - Data migration `0033_page_document_reset` sets every `page_content.content` to the empty document. Rows, versions and `published_version_id` stay.
+  - `savePageContentSchema.content` is `pageDocumentSchema`, so saves store the parsed document (migrated, rich text normalised). The byte cap uses `PAGE_DOCUMENT_LIMITS.maxBytes`, and `MAX_PAGE_CONTENT_BYTES` is gone.
+  - `createPage` writes `emptyPageDocument()` as version 1. `templateId`, `PageTemplates.ts`, `PageContent.ts`, `TemplatePicker`, `PageRenderer` and their tests are deleted.
+  - `contentSaveCheck(input)` checks only `baseVersion`, until phase 5.
+  - `PublicPageDto.services` lists the org's active services through `listPublicServices` when the pinned document has a Services block, and is `[]` otherwise.
+  - The storefront `$pageSlug` route and the dashboard preview render through `PageDocumentView`. The preview gets services from `servicesQuery`, filtered to the active ones, and keeps "This page has no content yet." for an empty document. `PageContentSummary` counts blocks with `blocksIn`.
+  - API tests cover: a save stored with rich text normalised; refusals (unknown type, Hero in a Section, a `javascript:` Button, a bad select value, too deep) each giving 400 with the block named and no row written; 413 with no row; the create document; services on the public page with and without a Services block; and the migration of v1 and spike rows with the published pointer intact. `pageContracts.test.ts` is deleted, because `pageDocument.test.ts` covers the new contract.
+- Differs from plan:
+  - `PublicPageDto.services` is always present (`[]` without a Services block) rather than optional, which keeps the type simple for the renderer.
+  - Removed `getOrganizationProfile` from the organizations module. It existed only to prefill templates and had no other caller.
+  - Also changed UI copy that described templates as current behaviour: the pages empty state, the New page header and the onboarding profile step. `CONTEXT.md` renames the glossary term Widget to Block; its "(Advanced Widgets)" mentions are left for phase 5.
+  - `docs/user-flow-map.md:107` was left as it is, because the template step it mentions is still future work.
+  - The plan's `git grep` still hits `widgets:` and `BookingWidget` in the migration test in `pages.test.ts`. They stay on purpose, as the v1 and spike rows the migration must rewrite.
+- Checked in the running app (e2e subagent, seed `pro-org`, all passed):
+  - Existing pages from other seeded orgs preview as empty, and published ones answer 200 with an empty article.
+  - Create has no template step, and its v1 row is the empty document.
+  - An API save of Hero, Section with Columns and Services gave 200, and the v2 rich text was normalised (`<b>` to `<strong>`, `<i>` to `<em>`, script and `onclick` dropped).
+  - After publishing, the server HTML with JavaScript off holds the heading, the formatted text and both services with `book?service=` links. With JavaScript on there were no hydration warnings.
+  - Hero in a Section and a `javascript:` Button gave 400 with messages naming the block, and no row was written.
+  - Backend and web logs were clean.

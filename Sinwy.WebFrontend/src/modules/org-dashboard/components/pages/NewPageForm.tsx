@@ -8,7 +8,6 @@ import { revalidateLogic } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { TemplatePicker } from "#/modules/org-dashboard/components/pages/TemplatePicker";
 import { createPage, pageKeys } from "#/modules/org-dashboard/lib/page-queries";
 import {
 	publicPagePath,
@@ -21,7 +20,6 @@ import { handleOrganizationInactive } from "#/shared/lib/auth/organization-inact
 import { showFieldError, useAppForm } from "#/shared/lib/form";
 
 const DEFAULT_VALUES: CreatePageInput = {
-	templateId: "blank",
 	title: "",
 	slug: "",
 };
@@ -81,21 +79,6 @@ export function NewPageForm({
 			}}
 		>
 			<div className="divide-y">
-				<SettingsSection
-					id="template"
-					title="Template"
-					description="What the page starts with, filled in from your organization's profile. You can change everything afterwards."
-				>
-					<form.Field name="templateId">
-						{(field) => (
-							<TemplatePicker
-								value={field.state.value}
-								onChange={field.handleChange}
-							/>
-						)}
-					</form.Field>
-				</SettingsSection>
-
 				<SettingsSection
 					id="details"
 					title="Details"
