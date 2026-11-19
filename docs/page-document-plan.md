@@ -12,7 +12,7 @@ Branch: `pagebuilder/75-document-model`. The spike branch `pagebuilder-tryout` i
 | --- | --- | --- | --- | --- |
 | 1 | Rich text allowlist in Shared | – | done | `feat(shared): add rich text allowlist for page documents` |
 | 2 | Block manifest and document schema | 1 | done | `feat(shared): add page block manifest and document schema` |
-| 3 | Puck config adapter and storefront renderer | 2 | todo | |
+| 3 | Puck config adapter and storefront renderer | 2 | done | `feat(web): add puck config adapter and storefront page renderer` |
 | 4 | Switch pages to the new document and remove v1 | 3 | todo | |
 | 5 | Plan gating of blocks | 4 | todo | |
 | 6 | Storefront bundle and SSR check | 4 | todo | |
@@ -46,21 +46,22 @@ Settled with the product owner. Ask before changing any of them.
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
 - **Spike lessons:**
-  - Pin `@puckeditor/core` to exactly `0.24.0`, with no caret. Puck 0.22+ injects its own CSS, so don't import `puck.css`.
-  - `@puckeditor/core/rsc` exports `Render` and `transformProps` and is about 6 KB gzip. The storefront must import only from it, never from `@puckeditor/core`.
-  - Puck's own rich-text render path costs about 117 KB gzip of Tiptap and renders each block twice in the SSR stream. Puck skips it for any field type that has a `fieldTransforms` entry on `<Render>`.
-  - `walkTree` needs the React config, so the server walks the tree with our own code.
-  - Puck's `Config` generics don't compose across a component map, and `Fields<Props>` rejects spreads. Generate the fields; cast once at the adapter boundary, not in each block.
-  - Under StrictMode, `<Puck>` children remount once (#1884).
-  - Align content with inherited `text-align`, not `justify-items`. The editor wraps each slot child in a `[data-puck-component]` div that `<Render>` doesn't have.
-  - Returning `readOnly` from `resolveData` records a spurious history entry on load.
+  - `@puckeditor/core` is pinned at exactly `0.24.0`. Puck 0.22+ injects its own CSS, so don't import `puck.css`.
+  - `@puckeditor/core/rsc` exports `Render` and `transformProps` and is about 6 KB gzip. Storefront code may import only types from `@puckeditor/core`, never values.
+  - Puck's own rich-text render path costs about 117 KB gzip of Tiptap and renders each block twice in the SSR stream. Puck skips it for any field type that has a `fieldTransforms` entry on `<Render>`, and `PageDocumentView` sets one for `richtext`.
+  - For #76: under StrictMode, `<Puck>` children remount once (#1884). Returning `readOnly` from `resolveData` records a spurious history entry on load.
 - **Rich text (phase 1, log for detail):** `parseRichText`, `serializeRichText`, `normalizeRichText`, `RichTextNode` (`text`, `br`, `a { href, blank }`, containers with `children`) and `isSafeHref`/`isSafeImageSrc` are exported from `@sinwy/shared`. `""` normalises to `""`; an empty editor's `<p></p>` stays. Stored links carry no `rel`, so the renderer adds it.
 - **Manifest (phase 2, log for detail):**
   - Each field has `kind`, `label` and optionally `locked`. Value fields also have `default` and `schema`. Kinds: `text`, `select` (`options` with labels, `display: "select" | "radio"`), `richText`, `link`, `image`, `slot` (`allow`, `default: BlockTemplate[]`), and custom fields (`custom: true`, so far only `kind: "serviceIds"`). Use `isSlotField(f)`, not `f.kind === "slot"`. A block has `label`, `fields`, `slots`, `defaults` (slots included), `schema` and optionally `requires`.
-  - Hero's default `items` are `BlockTemplate`s without ids. Phase 3 must check that Puck 0.24 gives slot `defaultProps` children ids on insert; if it doesn't, the adapter adds them.
-  - `field.link` takes `isSafeLink` (a safe href or a bare path like `book`) or `""`, and `field.image` takes `isSafeImageSrc` or `""`. The renderer resolves bare paths under `/<org>/`, as v1's `resolveHref` did.
+  - Hero's default `items` are `BlockTemplate`s without ids. Puck 0.24 adds the ids on insert (`populateIds`).
+  - `field.link` takes `isSafeLink` (a safe href or a bare path like `book`) or `""`, and `field.image` takes `isSafeImageSrc` or `""`.
   - `createPageDocumentSchema({ blocks, rootAllow, migrations })` and `blocksIn(document, blocks)` accept a test registry. `defineBlock({ label, fields, requires })` makes a test-only block.
   - `pageDocumentSchema` output is what gets stored: migrated, rich text normalised, NUL stripped, `zones` and node `readOnly` dropped. Each issue message stands on its own. `emptyPageDocument()` is Default 1's empty document.
+- **Renderer (phase 3, log for detail):**
+  - `PageDocumentView({ document, metadata })` lives in `Sinwy.WebFrontend/src/shared/components/page-builder/`. `metadata` is `PageMetadata` (`{ organizationSlug, services, branding }`, from `./blocks`). Its root wrapper applies `brandAttributes` and `mx-auto grid w-full max-w-5xl gap-8`, so callers add neither.
+  - `document` is `unknown`. `readPageContent` migrates, fills defaults, falls back to defaults for invalid values and drops anything malformed, so reading a stored row never throws and never needs re-validation.
+  - `puckConfigFrom(blocks, renders, { customFields, root })` is the adapter that #76 reuses with `customFields.serviceIds` and its own root.
+- **Adding a web dependency:** `bun add` and `bun install` re-resolve the `latest`-tagged TanStack deps and break `router.tsx` types (two `query-core` copies). Pin them to their locked versions for the install, then restore `latest` in `package.json` and in the lockfile's workspace lines (log, phase 3).
 - **Dev database (2026-11-18):** 35 pages (17 published), 38 v1 `page_content` rows and 57 rows in the spike's v2 shape (largest 72.7 KB). The data migration must handle both shapes.
 - **Migration 0027 stays.** `Sinwy.Backend/drizzle/0027_page_content_widgets.sql` is applied history in the Drizzle journal, so keep the file and delete only its test (`pages.test.ts` around line 363). Generate data migrations with `bun run db:generate -- --custom` and write the SQL by hand.
 - **Saving and errors:**
@@ -71,51 +72,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Storefront and booking:**
   - The storefront book route accepts `?service=<id>` (`storefront/routes/book.tsx`, `searchSchema`).
   - `listPublicServices(organizationId)` is exported from `@servicesModule` and returns `PublicServiceDto[]` (`Sinwy.Shared/types/service/Service.ts`).
-
----
-
-## Phase 3: Puck config adapter and storefront renderer
-
-**Goal:** the web app turns the manifest into a Puck config and renders a document on the server through `@puckeditor/core/rsc` with our rich-text renderer. Nothing routes to it yet.
-
-**Files:**
-- `Sinwy.WebFrontend/package.json`: add `"@puckeditor/core": "0.24.0"` (exact).
-- New: `Sinwy.WebFrontend/src/shared/components/page-builder/` with:
-  - `puck-config.ts`: the adapter `puckConfigFrom(BLOCKS, customFields?)`, reading each block's `fields`, `defaults`, `label` and `ROOT_ALLOW` (Standing notes, Manifest)
-  - `blocks.tsx`: the render components for the eight blocks, typed with `BlockProps<T>`
-  - `rich-text.tsx`: `RichText` renders `parseRichText(html)` to React elements
-  - `PageDocumentView.tsx`: `<Render>` with `transformProps` built from `BLOCK_MIGRATIONS` through `migrateProps`, `fieldTransforms.richtext` and `metadata`
-- `Sinwy.WebFrontend/src/shared/lib/branding.ts`: `brandAttributes`, `BRAND_FONT_FAMILIES`.
-- URL helpers: `resolveHref` and `imageSrc` in `page-content/PageRenderer.tsx:25-35` (deleted in phase 4) move next to the renderer and build on `isSafeLink`/`isSafeImageSrc` from Shared.
-- Reference on the spike: `render-config.tsx` (block renders, class maps, `known()` fallbacks, Services list markup, Button `resolveHref` with org slug), `PuckPage.tsx`, `theme-tokens.ts` (`builderMetadata`) and `editor-config.tsx` (`editorConfigFor`, `withLockedFields` for #76).
-- Test fixtures: the salon document in `Sinwy.Backend/modules/pages/tests/pageDocument.test.ts` (`salonDocument`) can be copied for the SSR test.
-- New tests: `Sinwy.WebFrontend/src/shared/tests/page-document-view.test.ts` (rewrites the v1 `page-renderer.test.ts` in phase 4) and an adapter test.
-
-**Steps:**
-- The adapter maps each field kind to a Puck field:
-  - text → `text`
-  - select → `select` or `radio` with labels
-  - rich text → `richtext`
-  - link and image → `text`
-  - slot → `slot` with `allow`
-  - custom kinds → `customFields[kind]` when given, otherwise left out
-  
-  It turns definition defaults into `defaultProps`, and passes `label` and `locked` metadata through. It is the only place with Puck generics: one cast at its boundary. Check whether Puck 0.24 can restrict top-level drops to `ROOT_ALLOW` (`root` config or permissions), and record the answer for #76.
-- The storefront config passes no `customFields`, so no editor UI is imported. `PageDocumentView` imports only from `@puckeditor/core/rsc`.
-- Block renders use static Tailwind classes and enum-to-class maps. Unknown enum values fall back to the default. Align with `text-align` (Standing notes). Services renders the given services in `serviceIds` order (all when empty), with Book links to `/<org>/book?service=<id>`. Button links resolve with the org slug, the way v1's `resolveHref` does.
-- `metadata` is `{ organizationSlug, services, branding }`, typed through one reader. Brand colour and font apply through `brandAttributes` on the wrapper, the same as in v1.
-- `RichText` renders the parsed tree. Links get `rel="noopener noreferrer"`, and links with the `_blank` flag get `target="_blank"`.
-
-**Tests that matter:**
-- SSR render (`renderToString`) of a full salon document: every block's text is in the HTML. Unknown types are skipped, not thrown. A slot child that isn't allowed but is already stored still renders, because read must never crash.
-- Rich text: stored `<script>` and `javascript:` never reach the HTML, and bold, a list and an https link do.
-- A test-only migration through `transformProps` renders an old-shape block the same as the current shape.
-- The adapter: every manifest prop has a Puck field, every slot has its `allow` list, and defaults equal the manifest's. This replaces the spike's drift test.
-
-**Done when:**
-- `PageDocumentView` renders the fixture document in tests, and `bun run verify` is clean.
-
-**Verify:** None (no route uses it yet).
 
 ---
 
@@ -142,14 +98,12 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - `pageContracts.test.ts`: delete or fold into `pageDocument.test.ts`.
   - `modules/organizations/tests/activity.test.ts:139`.
 - Web:
-  - `src/modules/storefront/routes/$pageSlug.tsx`: render through `PageDocumentView`. Drop the article's `max-w-3xl`, because blocks own their width.
-  - `src/modules/org-dashboard/routes/_shell.pages.$id.preview.tsx`.
+  - `src/modules/storefront/routes/$pageSlug.tsx`: render `<PageDocumentView document={page.content} metadata={…} />` from `#/shared/components/page-builder/PageDocumentView`, with `organizationSlug`, `services` and `branding` from the public page. Drop the article's `brandAttributes` and `max-w-3xl`, because the view's root applies both brand and width. Keep the org name link above it.
+  - `src/modules/org-dashboard/routes/_shell.pages.$id.preview.tsx`: the same view. `services` comes from `servicesQuery` (`org-dashboard/lib/service-queries.ts`), mapped to `PublicServiceDto`.
   - `components/pages/PageContentSummary.tsx`: block count through `blocksIn`, and the "widgets" wording.
   - `components/pages/NewPageForm.tsx`: no template field.
   - `components/pages/TemplatePicker.tsx`: delete.
-  - `src/shared/components/page-content/PageRenderer.tsx`: delete.
-  - `src/shared/tests/page-renderer.test.ts`: delete.
-  - `org-dashboard/lib/service-queries.ts` (`servicesQuery`), for the preview.
+  - Delete `src/shared/components/page-content/PageRenderer.tsx` and its directory, and `src/shared/tests/page-renderer.test.ts`. Its replacement, `page-document-view.test.ts`, already exists.
 - Docs:
   - `docs/user-flow-map.md:107`
   - `docs/user-creation-roadmap.md:299-310`: the template wording, where it describes current behaviour

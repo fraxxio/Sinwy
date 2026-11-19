@@ -120,3 +120,70 @@ Finished phases of the [page document plan](page-document-plan.md), each with it
   - Message format: `<where>: <problem>`, where `<where>` is `Section 2` at the top level and `Heading at Section 2 › items › 1` when nested. Deeper levels name each ancestor (`… › items › Columns 1 › column2 › 1`). Other messages: `Unknown block type "X" at …`, `Hero can't go inside Section (…)`, `Button can't go at the top level of a page (Button 2)`, `A page holds at most 400 blocks`, `…: blocks nest at most 6 levels deep`.
   - `isSlotField` exists because a custom field's `kind` is any string, so `kind === "slot"` alone doesn't narrow the type.
 - Checked in the running app: nothing. The phase has no Verify. The dev database confirmed the spike's v2 rows hold `zones: {}`, node `readOnly`, and root props `radius` and `spacing`.
+
+## Phase 3: Puck config adapter and storefront renderer
+
+**Goal:** the web app turns the manifest into a Puck config and renders a document on the server through `@puckeditor/core/rsc` with our rich-text renderer. Nothing routes to it yet.
+
+**Files:**
+- `Sinwy.WebFrontend/package.json`: add `"@puckeditor/core": "0.24.0"` (exact).
+- New: `Sinwy.WebFrontend/src/shared/components/page-builder/` with:
+  - `puck-config.ts`: the adapter `puckConfigFrom(BLOCKS, customFields?)`, reading each block's `fields`, `defaults`, `label` and `ROOT_ALLOW` (Standing notes, Manifest)
+  - `blocks.tsx`: the render components for the eight blocks, typed with `BlockProps<T>`
+  - `rich-text.tsx`: `RichText` renders `parseRichText(html)` to React elements
+  - `PageDocumentView.tsx`: `<Render>` with `transformProps` built from `BLOCK_MIGRATIONS` through `migrateProps`, `fieldTransforms.richtext` and `metadata`
+- `Sinwy.WebFrontend/src/shared/lib/branding.ts`: `brandAttributes`, `BRAND_FONT_FAMILIES`.
+- URL helpers: `resolveHref` and `imageSrc` in `page-content/PageRenderer.tsx:25-35` (deleted in phase 4) move next to the renderer and build on `isSafeLink`/`isSafeImageSrc` from Shared.
+- Reference on the spike: `render-config.tsx` (block renders, class maps, `known()` fallbacks, Services list markup, Button `resolveHref` with org slug), `PuckPage.tsx`, `theme-tokens.ts` (`builderMetadata`) and `editor-config.tsx` (`editorConfigFor`, `withLockedFields` for #76).
+- Test fixtures: the salon document in `Sinwy.Backend/modules/pages/tests/pageDocument.test.ts` (`salonDocument`) can be copied for the SSR test.
+- New tests: `Sinwy.WebFrontend/src/shared/tests/page-document-view.test.ts` (rewrites the v1 `page-renderer.test.ts` in phase 4) and an adapter test.
+
+**Steps:**
+- The adapter maps each field kind to a Puck field:
+  - text → `text`
+  - select → `select` or `radio` with labels
+  - rich text → `richtext`
+  - link and image → `text`
+  - slot → `slot` with `allow`
+  - custom kinds → `customFields[kind]` when given, otherwise left out
+  
+  It turns definition defaults into `defaultProps`, and passes `label` and `locked` metadata through. It is the only place with Puck generics: one cast at its boundary. Check whether Puck 0.24 can restrict top-level drops to `ROOT_ALLOW` (`root` config or permissions), and record the answer for #76.
+- The storefront config passes no `customFields`, so no editor UI is imported. `PageDocumentView` imports only from `@puckeditor/core/rsc`.
+- Block renders use static Tailwind classes and enum-to-class maps. Unknown enum values fall back to the default. Align with `text-align` (Standing notes). Services renders the given services in `serviceIds` order (all when empty), with Book links to `/<org>/book?service=<id>`. Button links resolve with the org slug, the way v1's `resolveHref` does.
+- `metadata` is `{ organizationSlug, services, branding }`, typed through one reader. Brand colour and font apply through `brandAttributes` on the wrapper, the same as in v1.
+- `RichText` renders the parsed tree. Links get `rel="noopener noreferrer"`, and links with the `_blank` flag get `target="_blank"`.
+
+**Tests that matter:**
+- SSR render (`renderToString`) of a full salon document: every block's text is in the HTML. Unknown types are skipped, not thrown. A slot child that isn't allowed but is already stored still renders, because read must never crash.
+- Rich text: stored `<script>` and `javascript:` never reach the HTML, and bold, a list and an https link do.
+- A test-only migration through `transformProps` renders an old-shape block the same as the current shape.
+- The adapter: every manifest prop has a Puck field, every slot has its `allow` list, and defaults equal the manifest's. This replaces the spike's drift test.
+
+**Done when:**
+- `PageDocumentView` renders the fixture document in tests, and `bun run verify` is clean.
+
+**Verify:** None (no route uses it yet).
+
+### Log (2026-11-19, `feat(web): add puck config adapter and storefront page renderer`)
+- Shipped:
+  - `@puckeditor/core` pinned at exactly `0.24.0` in the web app.
+  - `src/shared/components/page-builder/`:
+    - `puck-config.ts`: `puckConfigFrom(blocks, renders, { customFields, root })`. The only Puck generics are behind one `as Config` cast. Rich-text fields get Tiptap options trimmed to the allowlist (h2/h3 only, no code, code block, horizontal rule or text align).
+    - `blocks.tsx`: `BLOCK_RENDERS` for the eight blocks, typed by `RenderProps<T>` (derived from the manifest's fields: slots as `SlotComponent`, rich text as `ReactNode`), plus `PageMetadata` and the `pageMetadata` reader.
+    - `rich-text.tsx`: `RichText` renders `parseRichText`.
+    - `urls.ts`: `resolveHref` and `imageSrc` on top of Shared's `isSafeHref`, `isSafeLink` and `isSafeImageSrc`.
+    - `PageDocumentView.tsx`: `readPageContent` plus `<Render>` from `@puckeditor/core/rsc`, with `fieldTransforms.richtext`.
+  - Tests: `src/shared/tests/page-document-view.test.ts` (9) and `puck-config.test.ts` (6).
+- Differs from plan:
+  - Migrations on read go through our own walk, `readPageContent`, which calls `migrateProps`, not `transformProps`. Two Puck behaviours made the walk necessary anyway. `<Render>` doesn't apply `defaultProps`, so missing props reach the render as `undefined`. `SlotRender` calls `content.map`, so a stored slot that isn't an array would throw. One pass migrates, fills defaults, runs each value field's Zod schema with a fallback to its default (rich text only gets a type check, because the renderer parses it anyway), and drops non-blocks, unknown types, blocks without an id, duplicate ids and anything deeper than `maxDepth`. The renders therefore get complete, valid props, and unknown enum values fall back to defaults with no `known()` helper. An invalid Button `href` falls back to the default `book`.
+  - `puckConfigFrom` also takes the `renders` map and an optional `root`. The storefront config is built in `PageDocumentView.tsx` with a root render that applies `brandAttributes`.
+  - `branding.ts` needed no change: `brandAttributes` and `BRAND_FONT_FAMILIES` already existed.
+  - There are no root theme tokens (Default 4), so spacing is fixed Tailwind classes (`gap-8` for the page, `gap-4` in slots, a padding map for Section).
+  - The Hero background is an absolutely positioned `<img>` under a dark overlay, not the spike's CSS `url()` variable, so no URL goes into CSS.
+  - An Image without a source, and a Services block with no services, show a placeholder only when `puck.isEditing`. The storefront renders nothing for them.
+  - `bun add` re-resolved every `latest`-tagged TanStack dep, which put two `query-core` copies in the tree and broke the type check of `router.tsx`. Pinning those deps to their locked versions for the install, then putting `latest` back in `package.json` and in the lockfile's workspace lines, kept them unchanged. The lockfile still gained a hoist of `@tanstack/router-plugin` 1.169.0 and `router-generator` 1.168.0, versions that were already nested under `start-plugin-core`.
+- Found in Puck 0.24 (for #76):
+  - Slot default children get ids on insert. `insertAction` runs `populateIds`, which walks the slots and adds `id` where it's missing, so the adapter adds none.
+  - Root drops can't be limited through config: no `root.allow`, and `permissions` has no insert-by-type rule. The editor's root render gets `puck.renderDropZone`, which takes `allow` (`isComponentAllowed`). #76 can render `puck.renderDropZone({ zone: "root:default-zone", allow: ROOT_ALLOW })` in place of `children` in its root render. This hasn't been tried in the browser.
+  - The SSR output has no Puck wrapper elements and renders each block once. With `fieldTransforms.richtext` set, the Tiptap `Suspense` path isn't used.
+- Checked in the running app: nothing. The phase has no Verify, and no route uses the view yet. The SSR HTML was checked in tests and in a one-off probe.
