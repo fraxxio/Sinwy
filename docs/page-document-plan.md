@@ -15,7 +15,7 @@ Branch: `pagebuilder/75-document-model`. The spike branch `pagebuilder-tryout` i
 | 3 | Puck config adapter and storefront renderer | 2 | done | `feat(web): add puck config adapter and storefront page renderer` |
 | 4 | Switch pages to the new document and remove v1 | 3 | done | `feat(backend, web): switch pages to the page document and remove v1` |
 | 5 | Plan gating of blocks | 4 | done | `feat(shared, backend, web): gate premium blocks by plan` |
-| 6 | Storefront bundle and SSR check | 4 | todo | |
+| 6 | Storefront bundle and SSR check | 4 | done | `feat(tooling): add storefront bundle check` |
 | 7 | Code review, docs and cleanup | 5, 6 | todo | |
 
 ## Decisions
@@ -61,7 +61,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - `PageDocumentView({ document, metadata })` lives in `Sinwy.WebFrontend/src/shared/components/page-builder/`. `metadata` is `PageMetadata` (`{ organizationSlug, services, branding }`, from `./blocks`). Its root wrapper applies `brandAttributes` and `mx-auto grid w-full max-w-5xl gap-8`, so callers add neither.
   - `document` is `unknown`. `readPageContent` migrates, fills defaults, falls back to defaults for invalid values and drops anything malformed, so reading a stored row never throws and never needs re-validation.
   - `puckConfigFrom(blocks, renders, { customFields, root })` is the adapter that #76 reuses with `customFields.serviceIds` and its own root.
-- **Adding a web dependency:** `bun add` and `bun install` re-resolve the `latest`-tagged TanStack deps and break `router.tsx` types (two `query-core` copies). Pin them to their locked versions for the install, then restore `latest` in `package.json` and in the lockfile's workspace lines (log, phase 3).
 - **Dev database (2026-11-19):** migration `0033_page_document_reset` is applied, so all 95 `page_content` rows hold the empty document and 17 pages are still published. Migrations 0027 and 0033 are applied history; keep both files.
 - **Saving and errors:**
   - `controller.ts` enforces `PAGE_DOCUMENT_LIMITS.maxBytes` (256 KB) before parsing (413). `parse` returns only `issues[0].message`, so every validation message must say on its own which block and field is wrong.
@@ -69,38 +68,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - `savePageContentSchema.content` is `pageDocumentSchema`, so the service gets and stores the parsed document. `pages.test.ts` has `document(...)`, `section(...)` and `block(type, props)` helpers for API tests.
 - **Pages API (phase 4):** `PublicPageDto.services` is always present: the org's active services when the pinned document has a Services block, `[]` otherwise. `PageVersionDto.content` is `PageDocument`. Save is `PUT /api/organizations/:orgId/pages/:pageId/content` with `{ baseVersion, content }`; publish is `POST .../publish`.
 - **Gating (phase 5):** `lockedBlocksIn(latest, next, features, blocks)` in `PageDocument.ts` runs in `contentSaveCheck` inside the save transaction, after the `baseVersion` check. A test pins that no `BLOCKS` entry has `requires`. The feature is `premium-blocks` ("Premium blocks"); `professional` shows as "Business".
-- **Dev servers (2026-11-19):** the user runs web (Vite dev, :3000) and backend (`bun run index.ts`, :3001, no watch, so backend changes need a restart). Don't stop either one. Seeded `subscribed-org` and `pro-org` from the phase 5 check are still in the database.
+- **Dev servers (2026-11-19):** none are running. Phase 6's backend and `vite preview` (:4173) were stopped. Start the stack with `bun run start` (web on :3000 with Vite hot reload, backend on :3001 without watch). Seeded orgs still in the database: `subscribed-org` and `pro-org` from phase 5, and `seed-e602abb2` (phase 6, published 261-block page `large`).
+- **Storefront bundle (phase 6, log for detail):** `bun run check:storefront-bundle` passes: route 285.2 KB gzip static, 7.4 KB of it the Puck render path, SSR 12–19 ms on 261 blocks, 4× CPU TBT 80–104 ms, and no hydration warnings. The check builds into `dist/` and removes its own source maps and `.vite` manifests afterwards. Scratch from phase 6 lives in `/tmp/sinwy-p6/` (seed and probe scripts, logs, the e2e subagent's `e2e/` copies).
+- **Follow-up for #73 (phase 6):** Button blocks and the Services "Book" links render plain `<a href>`, so internal targets reload the whole document instead of navigating through the router.
 - **Where tests run:** Shared has no test runner, and its contract tests live in `Sinwy.Backend/modules/pages/tests/` (run by `bun run test:server`). Web tests live in `Sinwy.WebFrontend/src/**/tests/`.
-
----
-
-## Phase 6: Storefront bundle and SSR check
-
-**Goal:** it's measured and guarded that a published page ships no editor code, renders on the server fast, and hydrates without warnings.
-
-**Files:**
-- New: `scripts/storefrontBundleCheck.ts` (scripts use camelCase names) and `scripts/storefrontBundleCheck.test.ts`. `test:scripts` (`bun test ./scripts`, part of `verify`) picks up the test, so the graph-walk test must not build. Add a root `package.json` script `check:storefront-bundle` (Default 9).
-- `Sinwy.WebFrontend/vite.config.ts`: has no `build` or `manifest` options yet. Enable a build manifest if the check needs one.
-- Storefront route: `Sinwy.WebFrontend/src/modules/storefront/routes/$pageSlug.tsx`, which renders `src/shared/components/page-builder/PageDocumentView.tsx`. The dashboard preview `modules/org-dashboard/routes/_shell.pages.$id.preview.tsx` uses the same view, but it is not part of the storefront graph.
-- Reference: the spike log's phase 7 tables (`git show pagebuilder-tryout:docs/puck-spike-log.md`, lines 672–757).
-
-**Steps:**
-- The script runs `vite build`, then walks the static import graph of the storefront `$pageSlug` route chunk. It fails if any reachable chunk contains Tiptap, ProseMirror, `@dnd-kit`, `react-grid-layout`, happy-dom or Puck's editor entry. It prints the route's gzip total and the Puck render path's share. Puck's lazy rich-text chunk may exist, but it must be unreachable statically.
-- Measure against the spike's numbers: route static size (293.5 KB with 14.5 KB for the render path), SSR time on a 250-block document (15 ms), and TBT at 4× CPU (171–193 ms). Seed the large document through the API, and record the numbers in the log.
-- Check the hydration console on the production build (`vite preview`) with a page that uses every block.
-
-**Tests that matter:**
-- The script's graph walk flags a fixture chunk graph that reaches a forbidden module and passes one that doesn't.
-
-**Done when:**
-- `bun run check:storefront-bundle` passes.
-- The log records the bundle size, the SSR time and that there are no hydration warnings.
-
-**Verify:**
-- Seed: `pro-org`, with a published page holding about 250 blocks of every type, saved through the API.
-- Build and serve the production web app. Open the public page in a fresh browser.
-- The network panel shows no Tiptap, ProseMirror, dnd-kit or RGL file. The console has no hydration warnings. The server HTML holds every block's text.
-- Simulated: none. The 4× CPU figure stands in for a mid-range tablet.
 
 ---
 
@@ -108,7 +79,16 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 **Goal:** the branch is reviewed for data loss, validation gaps and auth, the docs match the new rules, and nothing temporary is left.
 
-**Files:** the whole branch diff (`git diff master...pagebuilder/75-document-model`), `docs/org-rules-map.md`, this plan and its log.
+**Files:**
+- The whole branch diff (`git diff master...pagebuilder/75-document-model`, 57+ files). The review hot spots:
+  - `Sinwy.Backend/drizzle/0033_page_document_reset.sql` (the data migration)
+  - `Sinwy.Backend/modules/pages/{controller,service,repository}.ts` (save path, 413 check, `contentSaveCheck`, public endpoint)
+  - `Sinwy.Shared/types/page/{PageDocument,RichText}.ts` and `blocks/` (schema, normalisation, `lockedBlocksIn`)
+  - `Sinwy.WebFrontend/src/shared/components/page-builder/` (`readPageContent`, block renders, `rich-text.tsx`)
+  - `scripts/storefrontBundleCheck.ts`
+- `docs/org-rules-map.md`: phase 5 already rewrote §5 for block gating, so this only needs a check.
+- #76 and #77 on GitHub (`gh issue comment`). The root drop restriction answer is in the log's phase 3 entry.
+- Temporary: `/tmp/sinwy-p6/` and the seeded org `seed-e602abb2` (Standing notes). No dev server is running.
 
 **Steps:**
 - Review with focus on:
@@ -118,7 +98,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - the public endpoint (only the pinned version, services only for served pages)
   - the storefront rendering untrusted stored content without crashing
 - Fix what the review finds, or record it as follow-up work on #73.
-- Update `docs/org-rules-map.md` if phase 5 didn't, and note on #76 and #77 what this plan leaves them:
+- Check `docs/org-rules-map.md` still matches, and note on #76 and #77 what this plan leaves them:
   - the root drop restriction finding from phase 3
   - `customFields` for the service picker and locked fields
   - the empty-page state

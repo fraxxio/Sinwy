@@ -321,3 +321,60 @@ Finished phases of the [page document plan](page-document-plan.md), each with it
 - Checked in the running app (subagent, `e2e-test`):
   - "Premium blocks" shows on the home page plan cards, on the choose-plan cards and in the change-plan dialog (Starter → Business "Adds…", Business → Starter "Removes…"). No old label or raw key appears anywhere, and the console had no errors.
   - Not checked: a real plan switch, and the save-time 402, since no real block is gated.
+
+## Phase 6: Storefront bundle and SSR check
+
+**Goal:** it's measured and guarded that a published page ships no editor code, renders on the server fast, and hydrates without warnings.
+
+**Files:**
+- New: `scripts/storefrontBundleCheck.ts` (scripts use camelCase names) and `scripts/storefrontBundleCheck.test.ts`. `test:scripts` (`bun test ./scripts`, part of `verify`) picks up the test, so the graph-walk test must not build. Add a root `package.json` script `check:storefront-bundle` (Default 9).
+- `Sinwy.WebFrontend/vite.config.ts`: has no `build` or `manifest` options yet. Enable a build manifest if the check needs one.
+- Storefront route: `Sinwy.WebFrontend/src/modules/storefront/routes/$pageSlug.tsx`, which renders `src/shared/components/page-builder/PageDocumentView.tsx`. The dashboard preview `modules/org-dashboard/routes/_shell.pages.$id.preview.tsx` uses the same view, but it is not part of the storefront graph.
+- Reference: the spike log's phase 7 tables (`git show pagebuilder-tryout:docs/puck-spike-log.md`, lines 672–757).
+
+**Steps:**
+- The script runs `vite build`, then walks the static import graph of the storefront `$pageSlug` route chunk. It fails if any reachable chunk contains Tiptap, ProseMirror, `@dnd-kit`, `react-grid-layout`, happy-dom or Puck's editor entry. It prints the route's gzip total and the Puck render path's share. Puck's lazy rich-text chunk may exist, but it must be unreachable statically.
+- Measure against the spike's numbers: route static size (293.5 KB with 14.5 KB for the render path), SSR time on a 250-block document (15 ms), and TBT at 4× CPU (171–193 ms). Seed the large document through the API, and record the numbers in the log.
+- Check the hydration console on the production build (`vite preview`) with a page that uses every block.
+
+**Tests that matter:**
+- The script's graph walk flags a fixture chunk graph that reaches a forbidden module and passes one that doesn't.
+
+**Done when:**
+- `bun run check:storefront-bundle` passes.
+- The log records the bundle size, the SSR time and that there are no hydration warnings.
+
+**Verify:**
+- Seed: `pro-org`, with a published page holding about 250 blocks of every type, saved through the API.
+- Build and serve the production web app. Open the public page in a fresh browser.
+- The network panel shows no Tiptap, ProseMirror, dnd-kit or RGL file. The console has no hydration warnings. The server HTML holds every block's text.
+- Simulated: none. The 4× CPU figure stands in for a mid-range tablet.
+
+### Log (2026-11-19, `feat(tooling): add storefront bundle check`)
+- Shipped:
+  - `scripts/storefrontBundleCheck.ts`, run by `bun run check:storefront-bundle` (about 8 s). It runs the web `build` with `--manifest --sourcemap hidden`. It takes the client entry, the storefront layout (`routes/route.tsx`) and every `$pageSlug.tsx?tsr-split=…` chunk as roots, and walks their static `imports` in `dist/client/.vite/manifest.json`. Each chunk's modules are its source map's `sources`. It fails on Tiptap, ProseMirror, `@dnd-kit`, `react-grid-layout`, happy-dom, and on any `@puckeditor/core/dist` file outside the static closure of the installed `rsc.mjs` (computed, not hardcoded). It prints the gzip totals, then deletes the maps and both `.vite` dirs so they never ship.
+  - `scripts/storefrontBundleCheck.test.ts`: on a fixture manifest, editor code that is only dynamically imported passes, while a static import of Puck's editor or dnd-kit (or the Tiptap chunk) is flagged. A manifest without the route throws, and the Puck render set follows `rsc.mjs`'s static imports only.
+  - `vite.config.ts` is unchanged: the manifest and source maps are CLI flags of the check's build only.
+- Differs from plan:
+  - The script reads source maps rather than chunk text, because the manifest doesn't list modules. Chunks without a map hold only virtual modules (Vite's preload helper, re-export facades), so a map-less chunk is accepted up to 4 KB and fails above that. `hidden` maps keep the sizes equal to a normal build (plain `--sourcemap` adds about 2.5 KB of `sourceMappingURL` comments).
+  - Proved on a real leak: importing `Puck` from `@puckeditor/core` in `PageDocumentView` made the check exit 1, with 9 Puck editor and 11 dnd-kit findings and the route at 446.6 KB. The import was reverted.
+  - The spike's 4× CPU TBT came from Playwright with CDP `Emulation.setCPUThrottlingRate`, not a DevTools MCP trace. A scratch probe (`/tmp/sinwy-p6/probe.ts`) used `playwright-core` from `node_modules/.bun` with the installed Chromium 1247 (the headless shell isn't installed).
+- Measurements (production build on `vite preview` :4173, backend :3001, the same machine as the spike, 1440×900):
+
+  | What | Now | Spike |
+  | --- | --- | --- |
+  | Storefront route, static JS gzip | 285.2 KB | 293.5 KB |
+  | … app entry baseline | 274.4 KB (55 chunks) | 274.5 KB |
+  | … route only | 10.8 KB (10 chunks) | – |
+  | … of which the Puck render path | 7.4 KB (`PageDocumentView` 6.3, Puck's `chunk-OT7NKYY4` 1.2) | 14.5 KB |
+  | Large page | 261 blocks, 33 KB JSON, API save 12 ms | 252 blocks, 69.8 KB |
+  | SSR TTFB, warm, 6 runs | 12–19 ms | 15 ms |
+  | SSR HTML raw / gzip | 167 / 18 KB | 250 / 25.4 KB |
+  | Hydration unthrottled: DCL / load / long tasks | 138–150 / 209–210 ms / none (743 elements) | 134–214 / 307–420 ms / none |
+  | Hydration 4× CPU: TBT / longest task | 80–104 / 130–154 ms (1 long task) | 171–193 / 152–158 ms |
+
+  - Seed: `pro-org` scenario `seed-e602abb2` (id `23c52329-708c-4c10-8b58-9298ce6e9eae`), 3 services, published page `large` (id `7faa5977-b516-4e45-8d73-736232d280ee`): Hero (Heading, RichText, Button), Services, then 24 Sections, each with a Heading, a ~500-character RichText with a link and a list, an Image, a Button, and Columns (2 columns, 3 in every third section) holding a Heading and a RichText per column. Seeded by `/tmp/sinwy-p6/seed.ts`.
+- Checked in the running app:
+  - Probe, 6 loads unthrottled and 6 at 4×: no console messages or page errors, 65 scripts fetched and none editor-like. Headings, buttons and images carry React fibers after load, so the page hydrated.
+  - Subagent (`e2e-test`), all passed. With scripts stripped, the server HTML holds every block's text: Hero 3/3, Services title, intro and the 3 services, and 24/24 section headings, rich texts (with `strong`, link and list intact), buttons and image alts, plus 56/56 column headings and texts. A fresh browser fetched 65 JS files, with 0 hits for tiptap, prosemirror, dnd-kit, react-grid-layout or `@puckeditor`, and `Render-H3USS5FU-*` was never requested, not even after client-side navigation away and back. The console had 0 messages, and the backend and preview logs were clean.
+  - Finding (not a bug, follow-up for #73): Button blocks and the Services "Book" links render plain `<a href>`, so an internal target like `book` reloads the whole document instead of navigating through the router.
