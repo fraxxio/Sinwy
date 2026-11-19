@@ -4,8 +4,7 @@ import { FileXIcon } from "lucide-react";
 import { publicPageQuery } from "#/modules/storefront/lib/storefront-queries";
 import { useTrackEvent } from "#/modules/storefront/lib/track";
 import { EmptyState } from "#/shared/components/EmptyState";
-import { PageRenderer } from "#/shared/components/page-content/PageRenderer";
-import { brandAttributes } from "#/shared/lib/branding";
+import { PageDocumentView } from "#/shared/components/page-builder/PageDocumentView";
 
 export const Route = createFileRoute("/$organizationSlug/$pageSlug")({
 	loader: async ({ params, context }) => {
@@ -48,10 +47,7 @@ function PublicPage() {
 	if (!page) return <PageUnavailable />;
 
 	return (
-		<article
-			{...brandAttributes(page.organization.branding)}
-			className="mx-auto w-full max-w-3xl space-y-8"
-		>
+		<article className="space-y-8">
 			<Link
 				to="/$organizationSlug/book"
 				params={{ organizationSlug: page.organization.slug }}
@@ -59,9 +55,13 @@ function PublicPage() {
 			>
 				{page.organization.name}
 			</Link>
-			<PageRenderer
-				content={page.content}
-				organizationSlug={page.organization.slug}
+			<PageDocumentView
+				document={page.content}
+				metadata={{
+					organizationSlug: page.organization.slug,
+					services: page.services,
+					branding: page.organization.branding,
+				}}
 			/>
 		</article>
 	);

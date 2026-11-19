@@ -25,7 +25,6 @@ export {
 	getOrganizationAccess,
 	getOrganizationLocale,
 	getOrganizationOnboarding,
-	getOrganizationProfile,
 	getOrganizationState,
 	getSeatLimit,
 	getSeatUsage,

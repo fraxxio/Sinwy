@@ -1,5 +1,6 @@
 import type { OrganizationBrandingDto } from "../organization/OrganizationBranding";
-import type { PageContent } from "./PageContent";
+import type { PublicServiceDto } from "../service/Service";
+import type { PageDocument } from "./PageDocument";
 
 export const PAGE_STATUSES = ["draft", "published"] as const;
 
@@ -35,7 +36,7 @@ export type PageListDto = {
 
 export type PageVersionDto = {
 	version: number;
-	content: PageContent;
+	content: PageDocument;
 	createdAt: string;
 };
 
@@ -59,5 +60,7 @@ export type PublicPageDto = {
 	/** Already resolved: falls back to the page title and the organization tagline. */
 	seoTitle: string;
 	seoDescription: string | null;
-	content: PageContent;
+	content: PageDocument;
+	/** The organization's public services, only when the page has a Services block; otherwise empty. */
+	services: PublicServiceDto[];
 };

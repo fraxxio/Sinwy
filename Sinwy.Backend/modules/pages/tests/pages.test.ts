@@ -14,11 +14,14 @@ import {
 	organizationProfile,
 } from "@db/schema/organizationSchema";
 import { page, pageContent } from "@db/schema/pageSchema";
+import { service } from "@db/schema/serviceSchema";
 import { user } from "@db/schema/userSchema";
 import {
 	API_ERROR_CODES,
 	type ApiResponse,
-	type PageContent,
+	emptyPageDocument,
+	normalizeRichText,
+	PAGE_DOCUMENT_LIMITS,
 	type PageDetailDto,
 	type PageListDto,
 	type PlanSlug,
@@ -26,7 +29,6 @@ import {
 } from "@sinwy/shared";
 import type { Server } from "bun";
 import { and, asc, eq, sql } from "drizzle-orm";
-import { MAX_PAGE_CONTENT_BYTES } from "../controller";
 import { registerPageRoutes, registerPublicPageRoutes } from "../routes";
 
 let server: Server<never>;
@@ -94,10 +96,12 @@ const unwrap = async <T>(res: Response) => {
 const codeOf = async (res: Response) =>
 	((await res.json()) as ApiResponse<never>).code;
 
+const messageOf = async (res: Response) =>
+	((await res.json()) as ApiResponse<never>).message;
+
 let slugSeq = 0;
 const create = async (fields: Record<string, unknown> = {}) => {
 	const res = await call("POST", "pages", org.ownerCookie, {
-		templateId: "blank",
 		title: "About us",
 		slug: `page-${++slugSeq}`,
 		...fields,
@@ -106,21 +110,37 @@ const create = async (fields: Record<string, unknown> = {}) => {
 	return unwrap<PageDetailDto>(res);
 };
 
-const content = (...types: string[]): PageContent =>
-	({
-		schemaVersion: 1,
-		widgets: types.map((type, n) => ({ id: `${type}-${n}`, type, props: {} })),
-	}) as PageContent;
+let blockSeq = 0;
+const block = (type: string, props: Record<string, unknown> = {}) => ({
+	type,
+	props: { id: `${type}-${++blockSeq}`, ...props },
+});
+
+const document = (...content: unknown[]) => ({
+	schemaVersion: 2,
+	data: { root: { props: {} }, content },
+});
+
+const section = (...items: unknown[]) => block("Section", { items });
+
+const headingPage = (text = "Welcome") =>
+	document(section(block("Heading", { text })));
 
 const save = (
 	pageId: string,
 	baseVersion: number,
-	body: PageContent = content("heading"),
+	body: unknown = headingPage(),
 ) =>
 	call("PUT", `pages/${pageId}/content`, org.ownerCookie, {
 		baseVersion,
 		content: body,
 	});
+
+const versionsOf = (pageId: string) =>
+	db
+		.select({ id: pageContent.id })
+		.from(pageContent)
+		.where(eq(pageContent.pageId, pageId));
 
 const setPlan = (plan: PlanSlug | null) => givePlan(org.ownerId, plan);
 
@@ -141,13 +161,8 @@ const readPublic = (pageSlug: string, organizationSlug = org.orgId) =>
 const publicStatus = async (pageSlug: string) =>
 	(await readPublic(pageSlug)).status;
 
-test("create: a page and version 1 built from the template and the profile", async () => {
-	await db.insert(organizationProfile).values({
-		organizationId: org.orgId,
-		tagline: "Cuts since 1999",
-	});
-
-	const created = await create({ templateId: "about", slug: "about-us" });
+test("create: a page and an empty version 1", async () => {
+	const created = await create({ slug: "about-us" });
 
 	expect(created).toMatchObject({
 		title: "About us",
@@ -160,20 +175,16 @@ test("create: a page and version 1 built from the template and the profile", asy
 		hasUnpublishedChanges: false,
 	});
 	expect(created.latestVersion.version).toBe(1);
-	expect(JSON.stringify(created.latestVersion.content)).toContain(
-		"Cuts since 1999",
-	);
 	const versions = await db
-		.select({ version: pageContent.version })
+		.select({ version: pageContent.version, content: pageContent.content })
 		.from(pageContent)
 		.where(eq(pageContent.pageId, created.id));
-	expect(versions).toEqual([{ version: 1 }]);
+	expect(versions).toEqual([{ version: 1, content: emptyPageDocument() }]);
 });
 
 test("create: at the plan's limit → 409 PAGE_LIMIT_REACHED", async () => {
 	await create();
 	const res = await call("POST", "pages", org.ownerCookie, {
-		templateId: "blank",
 		title: "Second",
 		slug: "second",
 	});
@@ -188,7 +199,6 @@ test("create: two concurrent creates for the last place → exactly one succeeds
 	const attempts = await Promise.all(
 		["last-a", "last-b"].map((slug) =>
 			call("POST", "pages", org.ownerCookie, {
-				templateId: "blank",
 				title: slug,
 				slug,
 			}),
@@ -202,23 +212,12 @@ test("create: two concurrent creates for the last place → exactly one succeeds
 	expect(rows).toHaveLength(5);
 });
 
-test("create: a premium template → 402 on Starter, 201 on Professional", async () => {
-	const body = { templateId: "landing", title: "Landing", slug: "landing" };
-	const refused = await call("POST", "pages", org.ownerCookie, body);
-	expect(refused.status).toBe(402);
-	expect(await codeOf(refused)).toBe(API_ERROR_CODES.PLAN_UPGRADE_REQUIRED);
-
-	await setPlan("professional");
-	expect((await call("POST", "pages", org.ownerCookie, body)).status).toBe(201);
-});
-
 test("slug: a clash on create or rename → 409 PAGE_SLUG_TAKEN; a reserved slug → 400", async () => {
 	await setPlan("professional");
 	await create({ slug: "about" });
 	const other = await create({ slug: "team" });
 
 	const clash = await call("POST", "pages", org.ownerCookie, {
-		templateId: "blank",
 		title: "Again",
 		slug: "about",
 	});
@@ -232,7 +231,6 @@ test("slug: a clash on create or rename → 409 PAGE_SLUG_TAKEN; a reserved slug
 	expect(await codeOf(rename)).toBe(API_ERROR_CODES.PAGE_SLUG_TAKEN);
 
 	const reserved = await call("POST", "pages", org.ownerCookie, {
-		templateId: "blank",
 		title: "Book",
 		slug: "book",
 	});
@@ -246,7 +244,7 @@ test("the same slug is free in another organization", async () => {
 		"POST",
 		"pages",
 		other.ownerCookie,
-		{ templateId: "blank", title: "About", slug: "about" },
+		{ title: "About", slug: "about" },
 		other.orgId,
 	);
 	expect(res.status).toBe(201);
@@ -281,26 +279,43 @@ test("update: title, slug and SEO; empty SEO strings store null; updatedAt moves
 	expect(cleared.title).toBe("Our story");
 });
 
-test("content: each save adds the next version and bumps updatedAt", async () => {
+const MESSY_TEXT =
+	'<div><b>Walk-ins</b> welcome<script>x()</script><a href="https://maps.example" onclick="x()">Find us</a></div>';
+
+test("content: each save stores the parsed document as the next version, rich text normalised, and bumps updatedAt", async () => {
 	const created = await create();
 	await Bun.sleep(5);
 
-	const res = await save(created.id, 1, content("heading", "text"));
+	const body = document(
+		section(
+			block("Heading", { text: "Studio Lumi" }),
+			block("RichText", { content: MESSY_TEXT }),
+		),
+	);
+	const res = await save(created.id, 1, body);
 	expect(res.status).toBe(200);
 	const saved = await unwrap<PageDetailDto>(res);
 	expect(saved.latestVersion.version).toBe(2);
-	expect(saved.latestVersion.content.widgets.map((w) => w.type)).toEqual([
-		"heading",
-		"text",
-	]);
 	expect(saved.updatedAt > created.updatedAt).toBe(true);
 
 	const versions = await db
-		.select({ version: pageContent.version })
+		.select({ version: pageContent.version, content: pageContent.content })
 		.from(pageContent)
 		.where(eq(pageContent.pageId, created.id))
 		.orderBy(asc(pageContent.version));
-	expect(versions).toEqual([{ version: 1 }, { version: 2 }]);
+	expect(versions.map((row) => row.version)).toEqual([1, 2]);
+	const stored = versions[1]?.content;
+	expect(stored).toEqual(saved.latestVersion.content);
+	const items = stored?.data.content[0]?.props["items"] as {
+		type: string;
+		props: Record<string, unknown>;
+	}[];
+	expect(items.map((item) => item.type)).toEqual(["Heading", "RichText"]);
+	const richText = items[1]?.props["content"];
+	expect(richText).toBe(normalizeRichText(MESSY_TEXT));
+	expect(richText).not.toContain("script");
+	expect(richText).not.toContain("onclick");
+	expect(richText).toContain("<strong>Walk-ins</strong>");
 });
 
 test("content: a stale baseVersion → 409 PAGE_VERSION_CONFLICT, and concurrent saves can't both win", async () => {
@@ -315,41 +330,44 @@ test("content: a stale baseVersion → 409 PAGE_VERSION_CONFLICT, and concurrent
 	expect(racing.map((res) => res.status).sort()).toEqual([200, 409]);
 });
 
-test("content: a new premium widget → 402 on Starter; one the page already has → 200", async () => {
+const nestedSections = (depth: number): unknown =>
+	depth === 1
+		? section(block("Heading", { text: "Deep" }))
+		: section(nestedSections(depth - 1));
+
+test("content: an invalid document → 400 naming the block, and no version is written", async () => {
 	const created = await create();
-	const refused = await save(created.id, 1, content("heading", "gallery"));
-	expect(refused.status).toBe(402);
-	expect(await codeOf(refused)).toBe(API_ERROR_CODES.PLAN_UPGRADE_REQUIRED);
-
-	await setPlan("professional");
-	expect((await save(created.id, 1, content("gallery"))).status).toBe(200);
-
-	await setPlan("starter");
-	expect((await save(created.id, 2, content("gallery", "text"))).status).toBe(
-		200,
-	);
-	expect(
-		(await save(created.id, 3, content("gallery", "testimonials"))).status,
-	).toBe(402);
+	const refusals: [string, unknown][] = [
+		["Marquee", document(block("Marquee"))],
+		["Hero", document(section(block("Hero")))],
+		[
+			"Button",
+			document(
+				section(block("Button", { label: "Go", href: "javascript:alert(1)" })),
+			),
+		],
+		["Heading", document(section(block("Heading", { size: "9" })))],
+		["Section", document(nestedSections(PAGE_DOCUMENT_LIMITS.maxDepth + 1))],
+	];
+	for (const [name, body] of refusals) {
+		const res = await save(created.id, 1, body);
+		expect(res.status).toBe(400);
+		expect(await messageOf(res)).toContain(name);
+	}
+	expect(await versionsOf(created.id)).toHaveLength(1);
 });
 
-test("content: unknown widget types → 400; an oversized body → 413", async () => {
+test("content: an oversized body → 413, and no version is written", async () => {
 	const created = await create();
-	const unknown = await save(created.id, 1, content("marquee"));
-	expect(unknown.status).toBe(400);
-
 	const huge = JSON.stringify({
 		baseVersion: 1,
-		content: {
-			schemaVersion: 1,
-			widgets: [
-				{
-					id: "text-1",
-					type: "text",
-					props: { text: "x".repeat(MAX_PAGE_CONTENT_BYTES) },
-				},
-			],
-		},
+		content: document(
+			section(
+				block("RichText", {
+					content: `<p>${"x".repeat(PAGE_DOCUMENT_LIMITS.maxBytes)}</p>`,
+				}),
+			),
+		),
 	});
 	const tooLarge = await call(
 		"PUT",
@@ -358,47 +376,62 @@ test("content: unknown widget types → 400; an oversized body → 413", async (
 		huge,
 	);
 	expect(tooLarge.status).toBe(413);
+	expect(await versionsOf(created.id)).toHaveLength(1);
 });
 
-test("the widgets migration renames a stored blocks version; the page still renders and keeps its premium widgets", async () => {
-	const created = await create({ title: "Welcome", slug: "welcome" });
-	const widgets = [
-		{ id: "heading-1", type: "heading", props: { text: "Hi", level: 1 } },
-		{
-			id: "gallery-1",
-			type: "gallery",
-			props: { images: [] },
-			children: [{ id: "text-1", type: "text", props: { text: "Inside" } }],
+test("the page document migration empties v1 and spike rows; versions and the published pointer stay", async () => {
+	await setPlan("professional");
+	const v1Page = await create({ slug: "v1-page" });
+	const spikePage = await create({ slug: "spike-page" });
+	await save(spikePage.id, 1);
+	await publish(v1Page.id);
+	await publish(spikePage.id);
+
+	const setContent = (pageId: string, version: number, content: unknown) =>
+		db
+			.update(pageContent)
+			.set({ content: content as never })
+			.where(
+				and(eq(pageContent.pageId, pageId), eq(pageContent.version, version)),
+			);
+	await setContent(v1Page.id, 1, {
+		schemaVersion: 1,
+		widgets: [{ id: "h", type: "heading", props: { text: "Hi" } }],
+	});
+	await setContent(spikePage.id, 2, {
+		schemaVersion: 2,
+		data: {
+			root: { props: { radius: "medium" } },
+			zones: {},
+			content: [{ type: "BookingWidget", props: { id: "b", serviceIds: [] } }],
 		},
-	];
-	const version1 = and(
-		eq(pageContent.pageId, created.id),
-		eq(pageContent.version, 1),
-	);
-	await db
-		.update(pageContent)
-		.set({ content: { schemaVersion: 1, blocks: widgets } as never })
-		.where(version1);
+	});
 
 	const migration = await Bun.file(
-		new URL("../../../drizzle/0027_page_content_widgets.sql", import.meta.url),
+		new URL("../../../drizzle/0033_page_document_reset.sql", import.meta.url),
 	).text();
 	await db.execute(sql.raw(migration));
 
-	const [stored] = await db
-		.select({ content: pageContent.content })
+	const rows = await db
+		.select({
+			pageId: pageContent.pageId,
+			version: pageContent.version,
+			content: pageContent.content,
+		})
 		.from(pageContent)
-		.where(version1);
-	expect(stored?.content).toEqual({ schemaVersion: 1, widgets } as never);
+		.where(sql`${pageContent.pageId} in (${v1Page.id}, ${spikePage.id})`)
+		.orderBy(asc(pageContent.pageId), asc(pageContent.version));
+	expect(rows).toHaveLength(3);
+	for (const row of rows) expect(row.content).toEqual(emptyPageDocument());
 
-	await publish(created.id);
-	const live = await unwrap<PublicPageDto>(await readPublic("welcome"));
-	expect(live.content).toEqual({ schemaVersion: 1, widgets } as never);
-
-	expect((await save(created.id, 1, content("gallery", "text"))).status).toBe(
-		200,
+	for (const slug of ["v1-page", "spike-page"]) {
+		const live = await unwrap<PublicPageDto>(await readPublic(slug));
+		expect(live.content).toEqual(emptyPageDocument());
+	}
+	const spike = await unwrap<PageDetailDto>(
+		await call("GET", `pages/${spikePage.id}`),
 	);
-	expect((await save(created.id, 2, content("testimonials"))).status).toBe(402);
+	expect(spike).toMatchObject({ publishedVersion: 2, status: "published" });
 });
 
 test("list: usage, newest edit first, and only the oldest published pages within the limit are live", async () => {
@@ -449,12 +482,6 @@ test("delete: the page and its versions go, and the place frees up", async () =>
 	await create();
 });
 
-const versionsOf = (pageId: string) =>
-	db
-		.select({ id: pageContent.id })
-		.from(pageContent)
-		.where(eq(pageContent.pageId, pageId));
-
 test("delete: a published page and its pinned version go, and the public address stops answering", async () => {
 	const created = await create({ slug: "welcome" });
 	await publish(created.id);
@@ -476,7 +503,7 @@ test("deleting the organization removes its pages and every version; another org
 			"POST",
 			"pages",
 			other.ownerCookie,
-			{ templateId: "blank", title: "Kept", slug: "kept" },
+			{ title: "Kept", slug: "kept" },
 			other.orgId,
 		),
 	);
@@ -499,7 +526,7 @@ test("deleting the user who saved a version keeps the version, without an author
 		(
 			await call("PUT", `pages/${created.id}/content`, editor.cookie, {
 				baseVersion: 1,
-				content: content("heading"),
+				content: headingPage(),
 			})
 		).status,
 	).toBe(200);
@@ -524,14 +551,13 @@ test("staff: reads answer, writes → 403", async () => {
 	const created = await create();
 	const writes = [
 		call("POST", "pages", org.staffCookie, {
-			templateId: "blank",
 			title: "Staff",
 			slug: "staff",
 		}),
 		call("PATCH", `pages/${created.id}`, org.staffCookie, { title: "x" }),
 		call("PUT", `pages/${created.id}/content`, org.staffCookie, {
 			baseVersion: 1,
-			content: content("text"),
+			content: headingPage(),
 		}),
 		call("DELETE", `pages/${created.id}`, org.staffCookie),
 		call("POST", `pages/${created.id}/publish`, org.staffCookie),
@@ -558,7 +584,6 @@ test("inactive organization: writes → 409 ORGANIZATION_INACTIVE, reads answer 
 
 	const writes = [
 		call("POST", "pages", org.ownerCookie, {
-			templateId: "blank",
 			title: "New",
 			slug: "new",
 		}),
@@ -586,7 +611,7 @@ test("another organization's page id → 404 on every route", async () => {
 			"POST",
 			"pages",
 			other.ownerCookie,
-			{ templateId: "blank", title: "Theirs", slug: "theirs" },
+			{ title: "Theirs", slug: "theirs" },
 			other.orgId,
 		),
 	);
@@ -640,12 +665,11 @@ test("publish: pins the latest version; later saves stay off the public page unt
 		title: "Welcome",
 		seoTitle: "Welcome",
 		seoDescription: "Cuts since 1999",
-		content: published.latestVersion.content,
+		content: emptyPageDocument(),
+		services: [],
 	});
 
-	const saved = await unwrap<PageDetailDto>(
-		await save(created.id, 1, content("heading", "text")),
-	);
+	const saved = await unwrap<PageDetailDto>(await save(created.id, 1));
 	expect(saved).toMatchObject({
 		publishedVersion: 1,
 		hasUnpublishedChanges: true,
@@ -668,7 +692,45 @@ test("publish: pins the latest version; later saves stay off the public page unt
 	});
 	expect(
 		(await unwrap<PublicPageDto>(await readPublic("welcome"))).content,
-	).toEqual(content("heading", "text"));
+	).toEqual(saved.latestVersion.content);
+});
+
+const insertService = (name: string, isActive = true) =>
+	db.insert(service).values({
+		id: crypto.randomUUID(),
+		organizationId: org.orgId,
+		name,
+		slug: name.toLowerCase(),
+		durationMinutes: 30,
+		priceMinor: 2500,
+		currency: "EUR",
+		isActive,
+	});
+
+test("public: the organization's active services come with a page that has a Services block, and only then", async () => {
+	await setPlan("professional");
+	await insertService("Haircut");
+	await insertService("Retired", false);
+	const withServices = await create({ slug: "services" });
+	await save(
+		withServices.id,
+		1,
+		document(section(block("Heading")), block("Services")),
+	);
+	await publish(withServices.id);
+	const plain = await create({ slug: "plain" });
+	await save(plain.id, 1);
+	await publish(plain.id);
+
+	const served = await unwrap<PublicPageDto>(await readPublic("services"));
+	expect(served.services.map((s) => s.name)).toEqual(["Haircut"]);
+	expect(served.services[0]).toMatchObject({
+		durationMinutes: 30,
+		priceMinor: 2500,
+		currency: "EUR",
+	});
+	const without = await unwrap<PublicPageDto>(await readPublic("plain"));
+	expect(without.services).toEqual([]);
 });
 
 test("unpublish: back to a draft with no pin, gone from the public endpoint, not live in the list", async () => {
@@ -754,7 +816,7 @@ test("public: unknown organization, unknown page, draft, inactive and over-limit
 			"POST",
 			"pages",
 			other.ownerCookie,
-			{ templateId: "blank", title: "Theirs", slug: "theirs" },
+			{ title: "Theirs", slug: "theirs" },
 			other.orgId,
 		),
 	);

@@ -2,7 +2,7 @@ import { jsonb } from "@db/jsonb";
 import { oneOf } from "@db/oneOf";
 import { organization } from "@db/schema/organizationSchema";
 import { user } from "@db/schema/userSchema";
-import { PAGE_STATUSES, type PageContent } from "@sinwy/shared";
+import { PAGE_STATUSES, type PageDocument } from "@sinwy/shared";
 import { sql } from "drizzle-orm";
 import {
 	type AnyPgColumn,
@@ -60,7 +60,7 @@ export const pageContent = pgTable(
 			.notNull()
 			.references(() => page.id, { onDelete: "cascade" }),
 		version: integer("version").notNull(),
-		content: jsonb<PageContent>("content").notNull(),
+		content: jsonb<PageDocument>("content").notNull(),
 		createdByUserId: text("created_by_user_id").references(() => user.id, {
 			onDelete: "set null",
 		}),

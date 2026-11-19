@@ -296,9 +296,9 @@ website, city and country. It lives in `organization_profile` (one row per
 organization) rather than on the organization itself, because it is page and
 discovery content, not billing or identity state.
 
-This step exists before the page builder on purpose: templates prefill from it,
-discovery lists it and public-page SEO reads it, so none of it is rewritten when
-the builder arrives.
+This step exists before the page builder on purpose: a later template picker
+prefills from it, discovery lists it and public-page SEO reads it, so none of it
+is rewritten when the builder arrives.
 
 Finishing the step stamps `organization.onboardingCompletedAt`; skipping leaves
 it null, so login routing and the resume prompt keep offering the wizard. The

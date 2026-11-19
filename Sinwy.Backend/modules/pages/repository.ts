@@ -1,6 +1,6 @@
 import db, { type Tx } from "@db";
 import { page, pageContent } from "@db/schema/pageSchema";
-import type { PageContent } from "@sinwy/shared";
+import type { PageDocument } from "@sinwy/shared";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 
 export type PageRow = typeof page.$inferSelect;
@@ -111,7 +111,7 @@ export const findVersionNumber = async (versionId: string) => {
 /** Counts and inserts under the organization lock, so two creates can't both take the last place. */
 export const insertPageWithinLimit = (
 	values: typeof page.$inferInsert & { organizationId: string },
-	content: PageContent,
+	content: PageDocument,
 	createdByUserId: string,
 	limit: number,
 ) =>
@@ -159,7 +159,7 @@ export type ContentSaveCheck = (
 export const insertNextVersion = (
 	organizationId: string,
 	pageId: string,
-	content: PageContent,
+	content: PageDocument,
 	createdByUserId: string,
 	check: ContentSaveCheck,
 ) =>

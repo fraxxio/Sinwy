@@ -88,7 +88,7 @@ function PagesPage() {
 								title="No pages yet"
 								description={
 									canWrite
-										? "Build a page from a template to give your organization a public presence."
+										? "Create a page to give your organization a public presence."
 										: "Once an owner or admin adds pages, they show up here."
 								}
 								action={canWrite && createButton("Create your first page")}

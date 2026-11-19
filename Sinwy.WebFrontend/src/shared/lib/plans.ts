@@ -22,7 +22,7 @@ export const PLAN_PRICES: Record<PlanSlug, Record<"month" | "year", number>> = {
 };
 
 export const FEATURE_NAMES: Record<Feature, string> = {
-	"advanced-widgets": "Advanced widgets",
+	"premium-blocks": "Premium blocks",
 	"custom-domain": "Custom domain",
 	"analytics-advanced": "Advanced analytics",
 	"multi-location": "Multiple locations",

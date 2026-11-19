@@ -26,7 +26,7 @@ function NewPagePage() {
 		<>
 			<PageHeader
 				title="New page"
-				description="Start from a template, then give the page a title."
+				description="Give the page a title and an address. It starts empty."
 			/>
 			<ContentBox>
 				{pages.isPending ? (
