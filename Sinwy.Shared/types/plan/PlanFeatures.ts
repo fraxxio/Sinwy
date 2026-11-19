@@ -3,7 +3,7 @@ import type { PlanSlug } from "./Plan";
 // Only add a feature once a gate checks it; numeric limits ("up to 3
 // members") are a different shape and don't belong here.
 export const FEATURES = [
-	"advanced-widgets",
+	"premium-blocks",
 	"custom-domain",
 	"analytics-advanced",
 	"multi-location",
@@ -14,9 +14,9 @@ export type Feature = (typeof FEATURES)[number];
 // Written out per plan so the matrix reads at a glance and tests can pin it.
 export const PLAN_FEATURES: Record<PlanSlug, readonly Feature[]> = {
 	starter: [],
-	professional: ["advanced-widgets", "custom-domain", "analytics-advanced"],
+	professional: ["premium-blocks", "custom-domain", "analytics-advanced"],
 	enterprise: [
-		"advanced-widgets",
+		"premium-blocks",
 		"custom-domain",
 		"analytics-advanced",
 		"multi-location",

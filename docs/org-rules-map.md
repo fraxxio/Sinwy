@@ -188,7 +188,7 @@ service currency), `modules/user/service.ts` (prompts),
 ```text
 One plan per user (D1), one invoice per period in one billing name (D2)
 ├─ Starter      cap 1; no extra features
-├─ Professional cap 2; advanced widgets, custom domain, advanced analytics
+├─ Professional cap 2; premium blocks, custom domain, advanced analytics
 └─ Enterprise   cap 5; Professional's features and multiple locations
 
 Features
@@ -200,13 +200,12 @@ Pages (every tier has them, up to a limit per organization)
 ├─ limit: Starter 1, Professional 5, Enterprise 25; an inactive organization 0
 ├─ every page counts, drafts included; creating one at or over the limit →
 │  refused, "page limit reached"; deleting a page frees its place
-├─ the advanced widgets feature gates only premium templates (landing,
-│  services showcase) and premium widgets (gallery, testimonials), not pages
-│  or the Page Builder itself
-│   ├─ a premium template or a new premium widget without it → refused,
-│   │  "upgrade required"
-│   └─ a premium widget the page's latest version already has stays editable,
-│      so a downgraded page can still be saved
+├─ the premium blocks feature gates only block types marked as premium (none
+│  yet), not pages or the Page Builder itself
+│   ├─ saving a premium block type without it → refused, "upgrade required"
+│   └─ a premium block type the page's latest version already has stays
+│      allowed, more of it included, so a downgraded page can still be saved;
+│      once removed, adding it back is refused again
 ├─ content is versioned: every save is a new version; publishing pins the
 │  latest one, so later saves stay private until the next publish
 ├─ publishing is always allowed; unpublishing makes the page a draft again
@@ -260,7 +259,8 @@ One trial per user (D10)
 
 Enforced in: `Sinwy.Shared/types/plan/` (`PLAN_LIMITS` for pages,
 analytics retention and seats),
-`Sinwy.Shared/types/page/` (widget and template registries),
+`Sinwy.Shared/types/page/` (block registry and `requires` in `blocks/`, the
+rule in `lockedBlocksIn`),
 `Sinwy.Backend/modules/billing/` (`checkoutGuard.ts`, `projection.ts`),
 `modules/auth/auth.ts` (checkout hook; seats in `beforeCreateInvitation`,
 `afterCreateInvitation` and `membershipLimit`), `modules/organizations/`

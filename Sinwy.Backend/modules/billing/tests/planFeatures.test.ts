@@ -14,9 +14,9 @@ import {
 test("plan matrix is pinned", () => {
 	expect(PLAN_FEATURES).toEqual({
 		starter: [],
-		professional: ["advanced-widgets", "custom-domain", "analytics-advanced"],
+		professional: ["premium-blocks", "custom-domain", "analytics-advanced"],
 		enterprise: [
-			"advanced-widgets",
+			"premium-blocks",
 			"custom-domain",
 			"analytics-advanced",
 			"multi-location",
@@ -68,8 +68,8 @@ test("no plan entitles nothing", () => {
 });
 
 test("hasFeature follows the matrix", () => {
-	expect(hasFeature("starter", "advanced-widgets")).toBe(false);
-	expect(hasFeature("professional", "advanced-widgets")).toBe(true);
+	expect(hasFeature("starter", "premium-blocks")).toBe(false);
+	expect(hasFeature("professional", "premium-blocks")).toBe(true);
 	expect(hasFeature("professional", "multi-location")).toBe(false);
 	expect(hasFeature("enterprise", "multi-location")).toBe(true);
 });

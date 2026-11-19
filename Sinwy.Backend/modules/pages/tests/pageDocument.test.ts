@@ -9,6 +9,7 @@ import {
 	createPageDocumentSchema,
 	defineBlock,
 	field,
+	lockedBlocksIn,
 	migrateDocument,
 	normalizeRichText,
 	pageDocumentSchema,
@@ -426,5 +427,59 @@ describe("blocksIn", () => {
 			].sort(),
 		);
 		expect(count).toBe(16);
+	});
+});
+
+describe("lockedBlocksIn", () => {
+	const blocks = {
+		...BLOCKS,
+		Gallery: defineBlock({
+			label: "Gallery",
+			fields: {},
+			requires: "premium-blocks",
+		}),
+	};
+	const locked = (
+		latest: ReturnType<typeof doc>,
+		next: ReturnType<typeof doc>,
+		features: readonly "premium-blocks"[] = [],
+	) => lockedBlocksIn(latest, next, features, blocks);
+
+	const empty = doc([]);
+	const withGallery = doc([section(block("Heading")), block("Gallery")]);
+
+	test("no first-set block is gated", () => {
+		const gated = Object.entries(BLOCKS).filter(([, b]) => b.requires);
+		expect(gated.map(([type]) => type)).toEqual([]);
+	});
+
+	test("a plan without the feature can't add a gated type", () => {
+		expect(locked(empty, withGallery)).toEqual(["Gallery"]);
+	});
+
+	test("a gated type nested in a slot, hidden Columns ones included, is found", () => {
+		const nested = doc([
+			section(block("Columns", { count: "2", column4: [block("Gallery")] })),
+		]);
+		expect(locked(empty, nested)).toEqual(["Gallery"]);
+	});
+
+	test("a plan with the feature can add it", () => {
+		expect(locked(empty, withGallery, ["premium-blocks"])).toEqual([]);
+	});
+
+	test("a page that already has the type keeps it after a downgrade, and may add more", () => {
+		expect(locked(withGallery, withGallery)).toEqual([]);
+		const more = doc([block("Gallery"), section(block("Gallery"))]);
+		expect(locked(withGallery, more)).toEqual([]);
+	});
+
+	test("a page that removed the type can't add it back", () => {
+		const removed = doc([section(block("Heading"))]);
+		expect(locked(removed, withGallery)).toEqual(["Gallery"]);
+	});
+
+	test("ungated types are never locked", () => {
+		expect(locked(empty, salonDocument())).toEqual([]);
 	});
 });

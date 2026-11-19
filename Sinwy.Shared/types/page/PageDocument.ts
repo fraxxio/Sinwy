@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Feature } from "../plan";
 import {
 	BLOCK_MIGRATIONS,
 	BLOCKS,
@@ -294,4 +295,22 @@ export const blocksIn = (
 	};
 	walk(document.data.content, 1);
 	return { types, count };
+};
+
+type DocumentLike = { data: { content: readonly unknown[] } };
+
+/** Gated block types `next` adds that `features` don't cover; a type `latest` already has stays allowed, so downgraded pages can still be saved. */
+export const lockedBlocksIn = (
+	latest: DocumentLike,
+	next: DocumentLike,
+	features: readonly Feature[],
+	blocks: Blocks = BLOCKS,
+): string[] => {
+	const kept = blocksIn(latest, blocks).types;
+	return [...blocksIn(next, blocks).types].filter((type) => {
+		const required = blocks[type]?.requires;
+		return (
+			required !== undefined && !features.includes(required) && !kept.has(type)
+		);
+	});
 };

@@ -9,7 +9,9 @@ import {
 	blocksIn,
 	type CreatePageInput,
 	emptyPageDocument,
+	featuresFor,
 	limitsFor,
+	lockedBlocksIn,
 	type PageDetailDto,
 	type PageListDto,
 	type PageListItemDto,
@@ -186,9 +188,16 @@ export const updatePage = async (
 };
 
 const contentSaveCheck =
-	(input: SavePageContentInput): ContentSaveCheck =>
-	(latest) =>
-		latest.version === input.baseVersion ? null : "version-conflict";
+	(membership: Membership, input: SavePageContentInput): ContentSaveCheck =>
+	(latest) => {
+		if (latest.version !== input.baseVersion) return "version-conflict";
+		const locked = lockedBlocksIn(
+			latest.content,
+			input.content,
+			featuresFor(membership.plan),
+		);
+		return locked.length > 0 ? "upgrade-required" : null;
+	};
 
 export const savePageContent = async (
 	membership: Membership,
@@ -202,7 +211,7 @@ export const savePageContent = async (
 		pageId,
 		input.content,
 		userId,
-		contentSaveCheck(input),
+		contentSaveCheck(membership, input),
 	);
 	if (!saved.ok) return fail(saved.error);
 	return getPage(membership, pageId);

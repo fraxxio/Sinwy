@@ -14,7 +14,7 @@ Branch: `pagebuilder/75-document-model`. The spike branch `pagebuilder-tryout` i
 | 2 | Block manifest and document schema | 1 | done | `feat(shared): add page block manifest and document schema` |
 | 3 | Puck config adapter and storefront renderer | 2 | done | `feat(web): add puck config adapter and storefront page renderer` |
 | 4 | Switch pages to the new document and remove v1 | 3 | done | `feat(backend, web): switch pages to the page document and remove v1` |
-| 5 | Plan gating of blocks | 4 | todo | |
+| 5 | Plan gating of blocks | 4 | done | `feat(shared, backend, web): gate premium blocks by plan` |
 | 6 | Storefront bundle and SSR check | 4 | todo | |
 | 7 | Code review, docs and cleanup | 5, 6 | todo | |
 
@@ -68,46 +68,9 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
   - `insertNextVersion(orgId, pageId, content, userId, check)` runs `ContentSaveCheck(latest)` inside its transaction. Gating and the `baseVersion` conflict both compare against the latest version.
   - `savePageContentSchema.content` is `pageDocumentSchema`, so the service gets and stores the parsed document. `pages.test.ts` has `document(...)`, `section(...)` and `block(type, props)` helpers for API tests.
 - **Pages API (phase 4):** `PublicPageDto.services` is always present: the org's active services when the pinned document has a Services block, `[]` otherwise. `PageVersionDto.content` is `PageDocument`. Save is `PUT /api/organizations/:orgId/pages/:pageId/content` with `{ baseVersion, content }`; publish is `POST .../publish`.
-- **Where `advanced-widgets` appears:** `Sinwy.Shared/types/plan/PlanFeatures.ts`, `FEATURE_NAMES` in `Sinwy.WebFrontend/src/shared/lib/plans.ts`, the plan line in `PlanCards.tsx` and `CONTEXT.md`. Also tests: `auth/tests/requireFeature.test.ts` (as a sample feature), `billing/tests/planFeatures.test.ts`, web `account-dashboard/tests/plan-change.test.ts` and `shared/tests/plans.test.ts`. Also docs: `.agents/skills/e2e-test/references/seed-scenario.md` line 14 and `docs/org-rules-map.md` lines 191–208 and 263. Polar knows nothing of features.
+- **Gating (phase 5):** `lockedBlocksIn(latest, next, features, blocks)` in `PageDocument.ts` runs in `contentSaveCheck` inside the save transaction, after the `baseVersion` check. A test pins that no `BLOCKS` entry has `requires`. The feature is `premium-blocks` ("Premium blocks"); `professional` shows as "Business".
+- **Dev servers (2026-11-19):** the user runs web (Vite dev, :3000) and backend (`bun run index.ts`, :3001, no watch, so backend changes need a restart). Don't stop either one. Seeded `subscribed-org` and `pro-org` from the phase 5 check are still in the database.
 - **Where tests run:** Shared has no test runner, and its contract tests live in `Sinwy.Backend/modules/pages/tests/` (run by `bun run test:server`). Web tests live in `Sinwy.WebFrontend/src/**/tests/`.
-
----
-
-## Phase 5: Plan gating of blocks
-
-**Goal:** the server refuses a newly added gated block type on a plan without its feature, keeps saves working for pages that already have it, and the feature is named `premium-blocks`.
-
-**Files:**
-- `Sinwy.Shared/types/plan/PlanFeatures.ts`: rename the key.
-- `Sinwy.WebFrontend/src/shared/lib/plans.ts`: `FEATURE_NAMES` becomes "Premium blocks".
-- `Sinwy.WebFrontend/src/modules/organizations/components/PlanCards.tsx:53`: the hard-coded "Advanced widgets" plan line.
-- `CONTEXT.md` lines 43 and 47: the "(Advanced Widgets)" mentions in the Page Builder and Block terms.
-- Tests that use the key: listed in Standing notes.
-- `Sinwy.Shared/types/page/PageDocument.ts`: a pure rule `lockedBlocksIn(latest, next, features, blocks = BLOCKS)` next to `blocksIn`, returning the gated types `next` adds which the features don't cover. Its tests go in `Sinwy.Backend/modules/pages/tests/pageDocument.test.ts` (`defineBlock` makes the test-only gated block).
-- `Sinwy.Backend/modules/pages/service.ts`: `contentSaveCheck(input)` (line 188) checks only `baseVersion` now. It takes `membership` again and uses `featuresFor(membership.plan)`.
-- `.agents/skills/e2e-test/references/seed-scenario.md:14`
-- `docs/org-rules-map.md`: lines 191–208 (the gating rule now covers blocks, not templates or widgets; template gating is gone since phase 4) and line 263 (`Sinwy.Shared/types/page/blocks/` holds the block registry).
-
-**Steps:**
-- The rule counts types, not instances, through all slots, including Columns' hidden slots. A type is allowed if the plan has its feature, or if the latest version already contains that type.
-- `contentSaveCheck` keeps the `baseVersion` check first, then applies the rule against `featuresFor(membership.plan)`, and returns `"upgrade-required"` (402 `PLAN_UPGRADE_REQUIRED`).
-- No first-set block gets `requires`. Pin that with a test, so gating a block is a deliberate change.
-
-**Tests that matter:**
-- With a test registry that has one gated block:
-  - Refused: a plan without the feature adding it, including when it's nested in a slot.
-  - Allowed: a plan with the feature; a page whose latest version already has the type, after a downgrade; a page that keeps the type and adds more of it.
-  - Refused again: a page that removed the type and adds it back.
-- No real block has `requires`. The plan matrix still gives `premium-blocks` to Professional and Enterprise only.
-
-**Done when:**
-- `git grep advanced-widgets` finds nothing outside docs history.
-- `bun run verify` is clean.
-
-**Verify:**
-- Seed: `subscribed-org` (Starter) and `pro-org`.
-- The billing and plan screens show "Premium blocks" where they listed "Advanced widgets", on the Business plan.
-- Gating on a save can't be checked in the browser, because no real block is gated. The tests cover it.
 
 ---
 
@@ -116,8 +79,9 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** it's measured and guarded that a published page ships no editor code, renders on the server fast, and hydrates without warnings.
 
 **Files:**
-- New: `scripts/storefront-bundle-check.ts` and a test next to it in `scripts/`. Add a root `package.json` script `check:storefront-bundle` (Default 9).
-- `Sinwy.WebFrontend/vite.config.ts`: enable a build manifest if the check needs one.
+- New: `scripts/storefrontBundleCheck.ts` (scripts use camelCase names) and `scripts/storefrontBundleCheck.test.ts`. `test:scripts` (`bun test ./scripts`, part of `verify`) picks up the test, so the graph-walk test must not build. Add a root `package.json` script `check:storefront-bundle` (Default 9).
+- `Sinwy.WebFrontend/vite.config.ts`: has no `build` or `manifest` options yet. Enable a build manifest if the check needs one.
+- Storefront route: `Sinwy.WebFrontend/src/modules/storefront/routes/$pageSlug.tsx`, which renders `src/shared/components/page-builder/PageDocumentView.tsx`. The dashboard preview `modules/org-dashboard/routes/_shell.pages.$id.preview.tsx` uses the same view, but it is not part of the storefront graph.
 - Reference: the spike log's phase 7 tables (`git show pagebuilder-tryout:docs/puck-spike-log.md`, lines 672–757).
 
 **Steps:**

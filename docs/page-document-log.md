@@ -270,3 +270,54 @@ Finished phases of the [page document plan](page-document-plan.md), each with it
   - After publishing, the server HTML with JavaScript off holds the heading, the formatted text and both services with `book?service=` links. With JavaScript on there were no hydration warnings.
   - Hero in a Section and a `javascript:` Button gave 400 with messages naming the block, and no row was written.
   - Backend and web logs were clean.
+
+
+---
+
+## Phase 5: Plan gating of blocks
+
+**Goal:** the server refuses a newly added gated block type on a plan without its feature, keeps saves working for pages that already have it, and the feature is named `premium-blocks`.
+
+**Files:**
+- `Sinwy.Shared/types/plan/PlanFeatures.ts`: rename the key.
+- `Sinwy.WebFrontend/src/shared/lib/plans.ts`: `FEATURE_NAMES` becomes "Premium blocks".
+- `Sinwy.WebFrontend/src/modules/organizations/components/PlanCards.tsx:53`: the hard-coded "Advanced widgets" plan line.
+- `CONTEXT.md` lines 43 and 47: the "(Advanced Widgets)" mentions in the Page Builder and Block terms.
+- Tests that use the key: listed in Standing notes.
+- `Sinwy.Shared/types/page/PageDocument.ts`: a pure rule `lockedBlocksIn(latest, next, features, blocks = BLOCKS)` next to `blocksIn`, returning the gated types `next` adds which the features don't cover. Its tests go in `Sinwy.Backend/modules/pages/tests/pageDocument.test.ts` (`defineBlock` makes the test-only gated block).
+- `Sinwy.Backend/modules/pages/service.ts`: `contentSaveCheck(input)` (line 188) checks only `baseVersion` now. It takes `membership` again and uses `featuresFor(membership.plan)`.
+- `.agents/skills/e2e-test/references/seed-scenario.md:14`
+- `docs/org-rules-map.md`: lines 191–208 (the gating rule now covers blocks, not templates or widgets; template gating is gone since phase 4) and line 263 (`Sinwy.Shared/types/page/blocks/` holds the block registry).
+
+**Steps:**
+- The rule counts types, not instances, through all slots, including Columns' hidden slots. A type is allowed if the plan has its feature, or if the latest version already contains that type.
+- `contentSaveCheck` keeps the `baseVersion` check first, then applies the rule against `featuresFor(membership.plan)`, and returns `"upgrade-required"` (402 `PLAN_UPGRADE_REQUIRED`).
+- No first-set block gets `requires`. Pin that with a test, so gating a block is a deliberate change.
+
+**Tests that matter:**
+- With a test registry that has one gated block:
+  - Refused: a plan without the feature adding it, including when it's nested in a slot.
+  - Allowed: a plan with the feature; a page whose latest version already has the type, after a downgrade; a page that keeps the type and adds more of it.
+  - Refused again: a page that removed the type and adds it back.
+- No real block has `requires`. The plan matrix still gives `premium-blocks` to Professional and Enterprise only.
+
+**Done when:**
+- `git grep advanced-widgets` finds nothing outside docs history.
+- `bun run verify` is clean.
+
+**Verify:**
+- Seed: `subscribed-org` (Starter) and `pro-org`.
+- The billing and plan screens show "Premium blocks" where they listed "Advanced widgets", on the Business plan.
+- Gating on a save can't be checked in the browser, because no real block is gated. The tests cover it.
+
+### Log (2026-11-19, `feat(shared, backend, web): gate premium blocks by plan`)
+- Shipped:
+  - The feature key `advanced-widgets` became `premium-blocks` ("Premium blocks") in `PlanFeatures.ts`, `FEATURE_NAMES`, the `PlanCards` line, `CONTEXT.md`, the seed-scenario reference and the tests.
+  - `lockedBlocksIn` in `Sinwy.Shared/types/page/PageDocument.ts` returns the gated types `next` adds that the features don't cover and `latest` doesn't already have, counted through every slot.
+  - `contentSaveCheck(membership, input)` applies it with `featuresFor(membership.plan)` after the `baseVersion` check, and returns `"upgrade-required"` (402).
+  - Tests in `pageDocument.test.ts` use a test-only `Gallery` block with `requires: "premium-blocks"`. They cover refused adds (top level, and in a hidden Columns slot), allowed with the feature, kept after a downgrade (with more added), refused after removal and re-adding, and that no real block has `requires`.
+  - `docs/org-rules-map.md` §5 now describes block gating instead of template and widget gating, and its enforcement list points to the block registry and `lockedBlocksIn`.
+- Differs from plan: nothing. No API test drives the 402, because no real block is gated. The rule is tested as a pure function, and the service wiring is one call.
+- Checked in the running app (subagent, `e2e-test`):
+  - "Premium blocks" shows on the home page plan cards, on the choose-plan cards and in the change-plan dialog (Starter → Business "Adds…", Business → Starter "Removes…"). No old label or raw key appears anywhere, and the console had no errors.
+  - Not checked: a real plan switch, and the save-time 402, since no real block is gated.
