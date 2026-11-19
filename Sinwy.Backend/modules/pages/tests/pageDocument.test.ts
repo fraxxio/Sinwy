@@ -228,6 +228,27 @@ describe("pageDocumentSchema", () => {
 				'Unknown block type "Carousel" at Section 2 › items › 1',
 			));
 
+		test.each([
+			"constructor",
+			"__proto__",
+			"toString",
+		])("a type named like an object key: %s", (type) =>
+			expectRefused(
+				doc([block("Hero"), section(block(type))]),
+				`Unknown block type "${type}" at Section 2 › items › 1`,
+			));
+
+		test("a __proto__ prop, as an unknown field", () =>
+			expectRefused(
+				JSON.parse(
+					JSON.stringify(doc([section(block("Heading"))])).replace(
+						'"id":"Heading-',
+						'"__proto__":{"text":"x"},"id":"Heading-',
+					),
+				),
+				'Heading at Section 1 › items › 1: unknown field "__proto__"',
+			));
+
 		test("a text that is too long", () =>
 			expectRefused(
 				doc([

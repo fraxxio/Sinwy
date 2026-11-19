@@ -171,6 +171,8 @@ describe("PageDocumentView", () => {
 		const html = render(
 			doc([
 				block("Carousel", { text: "Unknown at the top" }),
+				block("constructor", { text: "Inherited key" }),
+				block("__proto__", { text: "Prototype key" }),
 				"not a block",
 				{ type: "Section" },
 				block("Section", {
@@ -185,7 +187,13 @@ describe("PageDocumentView", () => {
 		);
 
 		expect(html).toContain("Still here");
-		for (const text of ["Unknown at the top", "Unknown in a slot", "No id"])
+		for (const text of [
+			"Unknown at the top",
+			"Inherited key",
+			"Prototype key",
+			"Unknown in a slot",
+			"No id",
+		])
 			expect(html).not.toContain(text);
 	});
 

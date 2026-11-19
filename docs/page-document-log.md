@@ -378,3 +378,63 @@ Finished phases of the [page document plan](page-document-plan.md), each with it
   - Probe, 6 loads unthrottled and 6 at 4×: no console messages or page errors, 65 scripts fetched and none editor-like. Headings, buttons and images carry React fibers after load, so the page hydrated.
   - Subagent (`e2e-test`), all passed. With scripts stripped, the server HTML holds every block's text: Hero 3/3, Services title, intro and the 3 services, and 24/24 section headings, rich texts (with `strong`, link and list intact), buttons and image alts, plus 56/56 column headings and texts. A fresh browser fetched 65 JS files, with 0 hits for tiptap, prosemirror, dnd-kit, react-grid-layout or `@puckeditor`, and `Render-H3USS5FU-*` was never requested, not even after client-side navigation away and back. The console had 0 messages, and the backend and preview logs were clean.
   - Finding (not a bug, follow-up for #73): Button blocks and the Services "Book" links render plain `<a href>`, so an internal target like `book` reloads the whole document instead of navigating through the router.
+
+## Phase 7: Code review, docs and cleanup
+
+**Goal:** the branch is reviewed for data loss, validation gaps and auth, the docs match the new rules, and nothing temporary is left.
+
+**Files:**
+- The whole branch diff (`git diff master...pagebuilder/75-document-model`, 57+ files). The review hot spots:
+  - `Sinwy.Backend/drizzle/0033_page_document_reset.sql` (the data migration)
+  - `Sinwy.Backend/modules/pages/{controller,service,repository}.ts` (save path, 413 check, `contentSaveCheck`, public endpoint)
+  - `Sinwy.Shared/types/page/{PageDocument,RichText}.ts` and `blocks/` (schema, normalisation, `lockedBlocksIn`)
+  - `Sinwy.WebFrontend/src/shared/components/page-builder/` (`readPageContent`, block renders, `rich-text.tsx`)
+  - `scripts/storefrontBundleCheck.ts`
+- `docs/org-rules-map.md`: phase 5 already rewrote §5 for block gating, so this only needs a check.
+- #76 and #77 on GitHub (`gh issue comment`). The root drop restriction answer is in the log's phase 3 entry.
+- Temporary: `/tmp/sinwy-p6/` and the seeded org `seed-e602abb2` (Standing notes). No dev server is running.
+
+**Steps:**
+- Review with focus on:
+  - the data migration (it rewrites every row, and is right only because there is no customer content)
+  - the save path (nothing unparsed is stored; rich text always normalised; limits enforced before any work that grows with size)
+  - gating (types compared with the latest version inside the transaction)
+  - the public endpoint (only the pinned version, services only for served pages)
+  - the storefront rendering untrusted stored content without crashing
+- Fix what the review finds, or record it as follow-up work on #73.
+- Check `docs/org-rules-map.md` still matches, and note on #76 and #77 what this plan leaves them:
+  - the root drop restriction finding from phase 3
+  - `customFields` for the service picker and locked fields
+  - the empty-page state
+- Last step: stop every dev server the plan's work started (unless the user asked to keep it running). Delete temporary files the work created: probe scripts, screenshots, console logs, the large seed document if it was scratch, and build output outside `dist/`.
+
+**Tests that matter:**
+- Whatever the review adds for a gap it finds.
+
+**Done when:**
+- The review findings are fixed or filed.
+- #75's "Done when" holds:
+  - validation, gating and migrations are covered by tests
+  - a published page renders through SSR with no editor code in its bundle
+  - no v1 page code remains
+
+**Verify:** None.
+
+### Log (2026-11-19, `fix(shared, web): refuse block types named like object keys`)
+- Shipped:
+  - Review fix: a block type that names an `Object.prototype` member (`constructor`, `__proto__`, `toString`…) made `pageDocumentSchema` throw inside `migrateProps`, so a save got a 500 instead of a 400. `readPageContent` would also have thrown on one. A new Shared `ownEntry(record, type)` (in `blocks/blocks.ts`) does an `Object.hasOwn` lookup. It replaces every lookup by stored type in `PageDocument.ts` (migrations, `checkContent`, `migrateDocument`, `blocksIn`, `lockedBlocksIn`) and in `readPageContent`.
+  - Review fix: `checkContent` built a block's values with `values[name] = value`, so a JSON own `__proto__` prop set the object's prototype, and Zod read its keys as props. It now builds them with `Object.fromEntries`, so `__proto__` is refused as an unknown field.
+  - Tests: three object-key types are refused with "Unknown block type", nested in a slot. A `__proto__` prop is refused as an unknown field. The storefront skips `constructor` and `__proto__` blocks and renders the rest.
+  - Cleanup: deleted the phase 6 page `large` (its 2 versions cascaded), `/tmp/sinwy-p6/` and the `.playwright-cli/page-*.yml` snapshots. The org `seed-e602abb2` stays, like the other seeded orgs, because there is no supported org cleanup and a hand delete risks billing rows.
+- Review, no change needed:
+  - Data migration: one `UPDATE` to the empty document, which keeps `version` and `published_version_id`. Correct for a database with no customer content, and it is applied history.
+  - Save path: the body is capped at 4 MB by the server and at 256 KB by the controller before `JSON.parse`. Only the parsed `pageDocumentSchema` output is stored. Migration walks stop at `maxDepth`, block checks stop at 400 blocks, and rich text caps nesting at 16. The check runs in `insertNextVersion` under `FOR UPDATE`, against the latest version.
+  - Gating: `lockedBlocksIn(latest, next, …)` runs inside the transaction, after the `baseVersion` check.
+  - Public endpoint: it joins on `published_version_id` only, checks `isServed` before anything else, and fetches services only for a served page that has a Services block. They are active services only.
+  - Storefront: `readPageContent` validates every value, renders sanitise `src` with `imageSrc` and `href` with `resolveHref`, and rich text renders through the allowlist with no `dangerouslySetInnerHTML`. The bundle check deletes only inside `dist/`.
+  - No v1 code remains: `git grep` finds no `PageRenderer`, `PAGE_TEMPLATES`, `TemplatePicker`, `templateId`, widgets, `pageContentSchema` or `advanced-widgets` outside docs and Drizzle snapshots.
+  - `docs/org-rules-map.md` §5 matches the gating rule.
+- Differs from plan:
+  - The notes on #76 and #77 are drafted but not posted: the auto-mode permission classifier refused `gh issue comment`. Drafts are in `/tmp/sinwy-p7/`.
+  - The phase 6 Button and Services link follow-up for #73 is recorded in the standing notes, not filed, for the same reason.
+- Checked in the running app: nothing. The phase has no Verify. `bun run verify` exited 0.

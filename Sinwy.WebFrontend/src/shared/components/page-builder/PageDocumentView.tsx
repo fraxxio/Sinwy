@@ -6,6 +6,7 @@ import {
 	type BlockNode,
 	isSlotField,
 	migrateProps,
+	ownEntry,
 	PAGE_DOCUMENT_LIMITS,
 	type PageManifest,
 } from "@sinwy/shared";
@@ -47,7 +48,7 @@ export const readPageContent = (
 			return [];
 		return list.flatMap((node) => {
 			if (!isObject(node) || typeof node["type"] !== "string") return [];
-			const definition = blocks[node["type"]];
+			const definition = ownEntry(blocks, node["type"]);
 			const stored = node["props"];
 			if (!definition || !isObject(stored)) return [];
 			const { id } = stored;

@@ -180,6 +180,12 @@ export type BlockType = keyof typeof BLOCKS;
 
 export type Blocks = Record<string, BlockDefinition>;
 
+/** Looks up a stored block type without reaching inherited keys like `constructor`. */
+export const ownEntry = <T>(
+	record: Partial<Record<string, T>>,
+	type: string,
+): T | undefined => (Object.hasOwn(record, type) ? record[type] : undefined);
+
 /** Block types a page accepts at the top level. */
 export const ROOT_ALLOW: readonly BlockType[] = ["Section", "Hero", "Services"];
 

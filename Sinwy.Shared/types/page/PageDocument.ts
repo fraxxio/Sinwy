@@ -7,6 +7,7 @@ import {
 	type BlockNode,
 	type Blocks,
 	isSlotField,
+	ownEntry,
 	PAGE_DOCUMENT_LIMITS,
 	ROOT_ALLOW,
 } from "./blocks";
@@ -41,7 +42,7 @@ export const migrateProps = (
 	props: Props,
 	migrations: PageManifest["migrations"] = BLOCK_MIGRATIONS,
 ) =>
-	(migrations[type] ?? []).reduce(
+	(ownEntry(migrations, type) ?? []).reduce(
 		(current, migrate) => migrate(current),
 		props,
 	);
@@ -57,7 +58,7 @@ const migrateContent = (
 				const props = {
 					...migrateProps(node.type, node.props, manifest.migrations),
 				};
-				for (const slot of manifest.blocks[node.type]?.slots ?? [])
+				for (const slot of ownEntry(manifest.blocks, node.type)?.slots ?? [])
 					if (slot in props)
 						props[slot] = migrateContent(props[slot], manifest, depth + 1);
 				return { ...node, props };
@@ -130,7 +131,7 @@ function checkContent(
 				continue;
 			}
 			const { type, props } = raw;
-			const definition = blocks[type];
+			const definition = ownEntry(blocks, type);
 			if (!definition) {
 				report(
 					`Unknown block type "${type.slice(0, LIMITS.id)}" at ${position}`,
@@ -157,11 +158,11 @@ function checkContent(
 			else if (ids.has(id)) report(`${where}: id "${id}" is used twice`);
 			else ids.add(id);
 
-			const values: Props = {};
+			const values: [string, unknown][] = [];
 			const slots: Record<string, BlockNode[]> = {};
 			for (const [name, value] of Object.entries(rest)) {
 				if (!definition.slots.includes(name)) {
-					values[name] = value;
+					values.push([name, value]);
 					continue;
 				}
 				if (!Array.isArray(value)) {
@@ -185,7 +186,7 @@ function checkContent(
 				);
 			}
 
-			const parsed = definition.schema.safeParse(values);
+			const parsed = definition.schema.safeParse(Object.fromEntries(values));
 			if (parsed.success) {
 				out.push({
 					type,
@@ -289,7 +290,7 @@ export const blocksIn = (
 			if (!isBlockLike(node)) continue;
 			types.add(node.type);
 			count++;
-			for (const slot of blocks[node.type]?.slots ?? [])
+			for (const slot of ownEntry(blocks, node.type)?.slots ?? [])
 				walk(node.props[slot], depth + 1);
 		}
 	};
@@ -308,7 +309,7 @@ export const lockedBlocksIn = (
 ): string[] => {
 	const kept = blocksIn(latest, blocks).types;
 	return [...blocksIn(next, blocks).types].filter((type) => {
-		const required = blocks[type]?.requires;
+		const required = ownEntry(blocks, type)?.requires;
 		return (
 			required !== undefined && !features.includes(required) && !kept.has(type)
 		);
