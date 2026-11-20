@@ -5,6 +5,7 @@ import {
 	linkOptions,
 	Outlet,
 	redirect,
+	useMatches,
 } from "@tanstack/react-router";
 import { OrganizationSidebar } from "#/modules/org-dashboard/components/OrganizationSidebar";
 import { PaymentFailedBanner } from "#/modules/org-dashboard/components/PaymentFailedBanner";
@@ -90,6 +91,11 @@ function OrganizationShell() {
 	const paymentFailed = organizations?.some(
 		(org) => org.id === organization.id && org.paymentFailed,
 	);
+	const fullWindow = useMatches({
+		select: (matches) => matches.some((match) => match.staticData.fullWindow),
+	});
+
+	if (fullWindow) return <Outlet />;
 
 	return (
 		<AppShell

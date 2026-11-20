@@ -9,6 +9,7 @@ import type {
 } from "@sinwy/shared";
 import type { ReactNode } from "react";
 import { buttonVariants } from "#/shared/components/ui/button";
+import { brandAttributes } from "#/shared/lib/branding";
 import { formatMinorUnits } from "#/shared/lib/money";
 import { cn } from "#/shared/lib/utils";
 import { imageSrc, resolveHref } from "./urls";
@@ -30,6 +31,27 @@ export const pageMetadata = ({
 	services: Array.isArray(services) ? services : [],
 	branding: branding ?? null,
 });
+
+/** The page around its blocks, in the organization's branding; the editor's canvas uses it too. */
+export function PageFrame({
+	metadata,
+	className,
+	children,
+}: {
+	metadata: Metadata;
+	className?: string;
+	children: ReactNode;
+}) {
+	const { branding } = pageMetadata(metadata);
+	return (
+		<div
+			{...(branding && brandAttributes(branding))}
+			className={cn("mx-auto grid w-full max-w-5xl gap-8", className)}
+		>
+			{children}
+		</div>
+	);
+}
 
 type RenderValue<F> = F extends SlotField
 	? SlotComponent

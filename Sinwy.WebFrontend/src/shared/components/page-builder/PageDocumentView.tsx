@@ -11,8 +11,7 @@ import {
 	type PageManifest,
 } from "@sinwy/shared";
 import type { ReactNode } from "react";
-import { brandAttributes } from "#/shared/lib/branding";
-import { BLOCK_RENDERS, type PageMetadata, pageMetadata } from "./blocks";
+import { BLOCK_RENDERS, PageFrame, type PageMetadata } from "./blocks";
 import { puckConfigFrom } from "./puck-config";
 import { RichText } from "./rich-text";
 
@@ -81,17 +80,7 @@ const config = puckConfigFrom(BLOCKS, BLOCK_RENDERS, {
 		}: {
 			children: ReactNode;
 			puck: { metadata: Props };
-		}) => {
-			const { branding } = pageMetadata(puck.metadata);
-			return (
-				<div
-					{...(branding && brandAttributes(branding))}
-					className="mx-auto grid w-full max-w-5xl gap-8"
-				>
-					{children}
-				</div>
-			);
-		},
+		}) => <PageFrame metadata={puck.metadata}>{children}</PageFrame>,
 	},
 });
 

@@ -646,6 +646,11 @@ body,
 	min-height: 100%;
 }
 
+/* On html, not body: the page editor's drag and drop treats an overflowing body as the scroller and as a clip. */
+html {
+	overflow-x: clip;
+}
+
 body {
 	margin: 0;
 	color: var(--sea-ink);
@@ -664,7 +669,6 @@ body {
 			var(--foam) 44%,
 			var(--bg-base) 100%
 		);
-	overflow-x: hidden;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 }
@@ -809,4 +813,36 @@ body:has([data-slot="sidebar-wrapper"]) {
 [data-brand-font],
 [data-brand-font] :is(h1, h2, h3, h4, h5, h6, .font-heading, .font-sans) {
 	font-family: var(--brand-font);
+}
+
+/* Page editor: the canvas's inline rich text editors don't get Puck's ProseMirror styles. */
+.ProseMirror {
+	white-space: pre-wrap;
+	word-wrap: break-word;
+}
+
+/* Page editor: Puck's own chrome (outline, rich text toolbar, canvas overlays) in our palette. Its tokens sit in `@layer puck-tokens`, so these win; the canvas iframe gets them too. */
+:root {
+	--puck-font-family: var(--font-sans);
+	--puck-color-azure-01: color-mix(in oklab, var(--primary), black 45%);
+	--puck-color-azure-02: color-mix(in oklab, var(--primary), black 30%);
+	--puck-color-azure-03: color-mix(in oklab, var(--primary), black 15%);
+	--puck-color-azure-04: var(--primary);
+	--puck-color-azure-05: var(--ring);
+	--puck-color-azure-06: color-mix(in oklab, var(--primary), white 30%);
+	--puck-color-azure-07: color-mix(in oklab, var(--primary), white 45%);
+	--puck-color-azure-08: color-mix(in oklab, var(--primary), white 60%);
+	--puck-color-azure-09: color-mix(in oklab, var(--primary), white 72%);
+	--puck-color-azure-10: color-mix(in oklab, var(--primary), white 84%);
+	--puck-color-azure-11: color-mix(in oklab, var(--primary), white 92%);
+	--puck-color-azure-12: color-mix(in oklab, var(--primary), white 96%);
+	--puck-color-surface: var(--card);
+	--puck-color-surface-muted: var(--muted);
+	--puck-color-border: var(--border);
+	--puck-color-text: var(--foreground);
+	--puck-color-text-secondary: var(--muted-foreground);
+	--puck-color-text-muted: var(--muted-foreground);
+	--puck-color-focus-ring: var(--ring);
+	--puck-radius-m: 0.5rem;
+	--puck-radius-l: 0.75rem;
 }

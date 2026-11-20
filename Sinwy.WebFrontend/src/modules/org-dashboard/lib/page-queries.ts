@@ -3,6 +3,7 @@ import type {
 	OrganizationOnboardingDto,
 	PageDetailDto,
 	PageListDto,
+	SavePageContentInput,
 	UpdatePageInput,
 } from "@sinwy/shared";
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
@@ -74,6 +75,16 @@ export const updatePage = (
 ) =>
 	pageWrite(organizationId, pageId, "", {
 		method: "PATCH",
+		body: JSON.stringify(body),
+	});
+
+export const savePageContent = (
+	organizationId: string,
+	pageId: string,
+	body: SavePageContentInput,
+) =>
+	pageWrite(organizationId, pageId, "/content", {
+		method: "PUT",
 		body: JSON.stringify(body),
 	});
 
