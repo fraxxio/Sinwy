@@ -229,7 +229,10 @@ function SaveControls({
 
 function LeftPanel() {
 	return (
-		<aside className="flex w-72 shrink-0 flex-col border-r bg-card">
+		<aside
+			aria-label="Blocks"
+			className="flex w-72 shrink-0 flex-col border-r bg-card"
+		>
 			<Tabs defaultValue="add" className="flex min-h-0 flex-1 flex-col gap-0">
 				<div className="border-b p-2">
 					<TabsList className="w-full">
@@ -259,7 +262,10 @@ function LeftPanel() {
 function RightPanel() {
 	const hasSelection = usePuck((s) => !!s.selectedItem);
 	return (
-		<aside className="flex w-80 shrink-0 flex-col border-l bg-card">
+		<aside
+			aria-label="Block settings"
+			className="flex w-80 shrink-0 flex-col border-l bg-card"
+		>
 			{hasSelection ? (
 				<>
 					<BlockToolbar />

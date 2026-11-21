@@ -13,7 +13,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 3 | Photos and Booking blocks, drawer metadata | 1 | done | `feat(backend, web, shared): add Photos and Booking blocks with drawer metadata` |
 | 4 | Block drawer, locked tiles and insert-and-scroll | 2, 3 | done | `feat(web): add block drawer, locked tiles and click-to-add` |
 | 5 | History, viewport and keyboard | 2 | done | `feat(web): add undo and redo, keyboard shortcuts and keep the view on history` |
-| 6 | Editor e2e spec for Puck upgrades | 4, 5 | todo | |
+| 6 | Editor e2e spec for Puck upgrades | 4, 5 | done | `test(web): add the page editor Playwright spec for Puck upgrades` |
 | 7 | Typing performance on large pages | 5 | todo | |
 | 8 | Usability rerun (tasks 3, 7, 8) | 6, 7 | todo | |
 | 9 | Code review, docs and cleanup | 8 | todo | |
@@ -63,7 +63,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Scripted drags:** a release with no pointer move after reaching the target cancels the drop. Probes and the e2e spec add a 2 px settle move before releasing. A drop on the dashed "Drop blocks here" area at the end of a non-empty root zone lands last (checked at 5–70 px above the zone's bottom). Puck disables a non-empty zone's own droppable and resolves drops against blocks, with a closest-corners fallback; the area below the zone, outside the frame, takes nothing. Inside a slot, aim at the lower half of the last child; 8 px below it hits the Section's padding and is ignored. See log phase 4.
 - **Manifest:** every block has `description` and `group` (`BlockGroup`); `BLOCKS` is in drawer order within each group. Booking is the only gated block (`requires: "premium-blocks"`). The public page loads services when it has a Services or a Booking block (`listsServices` in the pages service).
 - **Photos layout** is CSS only (`auto-fit` grid of up to 4 columns, `--gap` var, `max-sm:grid-cols-1` when stacked), so it never counts its children. Page detail's block count includes the Images inside Photos, like Hero's children.
-- **Hero's default `items` have no ids;** Puck 0.24 adds them on insert. `BlockTemplate` in `blocks/fields.ts` documents this.
 - **Save API:** `PUT /organizations/:orgId/pages/:pageId/content` (`savePageContent` in `page-queries.ts`). Errors: 409 `PAGE_VERSION_CONFLICT`; 402 `PLAN_UPGRADE_REQUIRED`, whose message doesn't name the block, so `saveErrorMessage` names it with `lockedBlocksIn` (shared, the same check the server runs); 400 with the server's message. Versions are stored in the `page_content` table (`page_id`, `version`, `content`), not `page_content`.
 - **Empty documents:** new pages start with `emptyPageDocument()`, and every existing page was reset to an empty document. There are no templates for now.
 - **shadcn CLI:** `shadcn add` installed a stray `cn` package and imported `cn` from `"cn"`; revert `package.json`/`bun.lock` and import from `@/shared/lib/utils`.
@@ -76,34 +75,11 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Clicks inside the canvas iframe** bubble to Puck's root handler, which deselects. A button there that selects something must `stopPropagation` (see `FirstRunBlocks`).
 - **Scrolling the canvas:** `scrollToBlock(id)` in `use-block-actions.ts` waits for `[data-puck-component=<id>]` in `iframe#preview-frame` and scrolls the iframe window (not `scrollIntoView`, which can scroll the host's overflow-hidden ancestors). ↑/↓ use it too.
 - **Spike performance baseline** (production build, Ryzen 5 7600X, headless Chromium, 1440×900): typing on a 252-block page took 24–32 ms per key unthrottled and 96–104 ms per key at 4× CPU, with a long task on every key. The cost is Puck rebuilding its whole-tree index on every change (O(blocks)); only about 8 components re-render per key. Better Auth refuses the `vite preview` origin (:4173, `set-active` → 403 `INVALID_ORIGIN`). The spike's probes proxied `/api` through Playwright's `route.fetch` with `Origin: http://localhost:3000`.
-
----
-
-## Phase 6: Editor e2e spec for Puck upgrades
-
-**Goal:** `bun run test:editor` runs a committed Playwright spec against the running stack that covers the editor's core flows, and the README says to run it before any Puck upgrade.
-
-**Files:**
-- New: `Sinwy.WebFrontend/e2e/` (or the place Playwright's config points), `playwright.config.ts`, a `test:editor` script in the root `package.json`.
-- `.playwright/cli.config.json` (system Chromium path), `Sinwy.Backend/scripts/dev/seedScenario.ts`, `loginAs.ts` (`--state` writes a storage-state file).
-- What the spec drives, in `src/modules/org-dashboard/components/page-editor/`: `EditorLayout.tsx` (buttons "Undo", "Redo", "Save"; status "All changes saved" / "Unsaved changes" / "Saving…"; viewport buttons named from "Desktop", "Tablet", "Phone"), `BlockDrawer.tsx` (`drawer-item:<Type>` test ids, "Add <Block>" buttons, locked tiles), `BlockChrome.tsx` (toolbar "Move up", "Move down", "Duplicate", "Delete", "Select parent block"), `use-block-actions.ts` (the shortcuts).
-- API for setup and assertions: `POST /api/organizations/:orgId/pages` (`{ title, slug }`), `GET /api/organizations/:orgId/pages/:pageId` (`latestVersion.content`), both in `Sinwy.Backend/modules/pages/routes.ts`; send the session cookie and `origin: http://localhost:3000`.
-- `README.md` (AI Agents and dev sections).
-
-**Steps:**
-- Add `@playwright/test` to the web workspace as a dev dependency, using the system Chromium the CLI config already uses.
-- A global setup seeds a fresh `pro-org` and a `subscribed-org` through the dev scripts and logs in with stored state. The spec needs the backend and web dev servers running and fails early with a clear message if they aren't.
-- Cover: open the editor; add by click (placement and scroll); drag a card onto the end drop area and a block by its handle (with the 2 px settle move); edit a field; undo and redo keep the viewport; the keyboard shortcuts; Save and reload; the locked Booking tile on Starter. Assert on the saved document through the API, not on Puck's internal class names, where possible.
-- Keep it out of `bun run verify` and make sure Biome and `tsc` still cover the spec files.
-- README: what the spec covers, how to run it, and the rule that it must pass before any `@puckeditor/core` upgrade.
-
-**Tests that matter:**
-- The spec itself, run three times in a row without flakes.
-
-**Done when:**
-- `bun run test:editor` passes three times in a row on a fresh seed.
-
-**Verify:** None (the spec is the user flow).
+- **Editor e2e spec:** `bun run test:editor` (`Sinwy.WebFrontend/e2e/`, files `*.e2e.ts`, since `bun test` runs `*.spec.ts`). It needs both dev servers and takes about 21 s; every run seeds a fresh `pro-org` and `subscribed-org`. `.playwright-cli/editor-e2e/stack.json` then holds their org ids, slugs and storage-state files, which are reusable for probes. Pro allows 5 pages and the suite uses 4; Starter allows 1, which its single test uses. A new test needs another org or must reuse a page. `editor-fixtures.ts` has `pages.create(blocks)` (POST plus PUT content, with `heading`/`section` builders), `drag` and `outline`. See log phase 6.
+- **Undo right after an edit:** Ctrl+Z within 250 ms of an edit does nothing, because the entry isn't recorded yet. Scripts wait for Undo to be enabled first. Unjudged for real users (phase 8).
+- **Canvas coordinates:** Playwright's `locator.boundingBox()` on elements inside the scaled iframe returns page coordinates, so drags need no zoom maths.
+- **Side panels** are the landmarks `complementary` "Blocks" (drawer, layers) and "Block settings" (toolbar heading = selected block's label, fields).
+- **Lockfile:** `bun install` re-resolves every `latest` dependency (TanStack), and a mixed `query-core` breaks `tsc` in `router.tsx`. When adding a package, keep `bun.lock`'s change to that package (log phase 6).
 
 ---
 
@@ -112,9 +88,14 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** typing on a 250-block page at 4× CPU throttling is no slower than the spike (about 100 ms per key), measured on a production build.
 
 **Files:**
-- `src/modules/org-dashboard/components/page-editor/` (field overrides, renders that run per key).
-- `src/shared/components/page-builder/blocks.tsx` (`BLOCK_RENDERS`).
+- A 250-block page: `Sinwy.WebFrontend/e2e/editor-fixtures.ts` (`pages.create(blocks)`, the `heading`/`section` builders) and the org and storage state in `.playwright-cli/editor-e2e/stack.json` after a `bun run test:editor`. A measuring script can reuse them, or a scratch one in `/tmp` can call the same API.
+- Per-key paths in `src/modules/org-dashboard/components/page-editor/`:
+  - `EditorLayout.tsx`: `SaveControls` runs `hasUnsavedChanges` (`save.ts`), a whole-document `sameJson`, on every data change, which is O(blocks) per key and the first suspect. Also `KeepUiOnHistory` and `HistoryButtons`.
+  - `editor-fields.tsx`: the text and rich-text field overrides. The settings-panel text field is a Heading's "Text"; a Text block is typed into through `aside [contenteditable="true"]`.
+  - `BlockChrome.tsx` (`BlockToolbar` selectors, `BlockOverlay`), `editor-config.tsx` (the root render, `FirstRunBlocks`), `BlockDrawer.tsx` (`BlockAccessProvider`).
+- Renders: `src/shared/components/page-builder/blocks.tsx` (`BLOCK_RENDERS`), `puck-config.ts`.
 - Spike method: `docs/puck-spike-log.md` phase 7 on `pagebuilder-tryout`.
+- Any fix must keep `bun run test:editor` green.
 
 **Steps:**
 - Generate a 250-block page through the save API (a scratch script in `/tmp`, or a Playwright helper next to the e2e spec if it's worth keeping).

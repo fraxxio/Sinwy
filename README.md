@@ -130,6 +130,19 @@ bun run start:web      # frontend on http://localhost:3000
 
 Run the two servers as separate long-running processes, each with its output in a log file the agent can read, rather than `bun start`, which mixes both logs. Add `bun run start:localproxy` only for real Polar webhook deliveries (see above). The `e2e-test` skill (`.agents/skills/e2e-test/`) covers checking what is already running, seeding and logging in.
 
+### Page editor spec
+
+`bun run test:editor` runs the page editor's Playwright spec (`Sinwy.WebFrontend/e2e/`) in the system Chromium against the running stack. Its global setup seeds a fresh `pro-org` and `subscribed-org` and logs their owners in. It stops with a message if either server is down. The spec covers:
+
+- adding blocks by click, where they land and the scroll to them;
+- dragging a drawer card to the end of the page, and moving a block by its handle;
+- editing a field, and undo and redo that keep the phone view;
+- the keyboard shortcuts;
+- saving and reloading;
+- the locked Booking tile on Starter.
+
+It checks the saved document through the API. It isn't part of `bun run verify`. **Run it before any `@puckeditor/core` upgrade, and upgrade only if it passes.** Failure traces are written to `.playwright-cli/editor-e2e/results/`.
+
 ## Common Scripts
 
 All run from the repo root.
@@ -140,6 +153,7 @@ All run from the repo root.
 | `bun start:localproxy` | ngrok tunnel for Polar webhooks (needs setup above) |
 | `bun run build` | Build all workspaces |
 | `bun run test` / `test:web` / `test:server` | Run tests |
+| `bun run test:editor` | Page editor Playwright spec, against the running stack (see [Page editor spec](#page-editor-spec)) |
 | `bun typecheck` | TypeScript type check (`--watch` via `typecheck:watch`) |
 | `bun check` / `bun check:fix` | Biome lint + format check / auto-fix |
 | `bun db:up` / `bun db:down` | Start / stop local PostgreSQL |

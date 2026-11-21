@@ -209,3 +209,47 @@ Finished phases of [page-editor-plan.md](page-editor-plan.md), each with its spe
     - Ctrl+S from the canvas saved version 3.
   - The full Verify brief then passed in a subagent on a fresh `pro-org` (`seed-a06af397`): the view stayed on Phone through every undo/redo, Undo stayed disabled while selecting, and the Text was back after one Undo. ↓, Esc, Alt+↓, Delete and Ctrl+Z worked as briefed, and `page_content` version 3 matched the canvas. No console errors. Server logs weren't checked (servers started by the user).
 - Noted, not changed: after undoing a delete nothing is selected, because the deleted block was deselected first. After undo the rich-text editor loses DOM focus (Puck remounts it), so the user clicks back in to keep typing.
+
+## Phase 6: Editor e2e spec for Puck upgrades
+
+**Goal:** `bun run test:editor` runs a committed Playwright spec against the running stack that covers the editor's core flows, and the README says to run it before any Puck upgrade.
+
+**Files:**
+- New: `Sinwy.WebFrontend/e2e/` (or the place Playwright's config points), `playwright.config.ts`, a `test:editor` script in the root `package.json`.
+- `.playwright/cli.config.json` (system Chromium path), `Sinwy.Backend/scripts/dev/seedScenario.ts`, `loginAs.ts` (`--state` writes a storage-state file).
+- What the spec drives, in `src/modules/org-dashboard/components/page-editor/`: `EditorLayout.tsx` (buttons "Undo", "Redo", "Save"; status "All changes saved" / "Unsaved changes" / "Saving…"; viewport buttons named from "Desktop", "Tablet", "Phone"), `BlockDrawer.tsx` (`drawer-item:<Type>` test ids, "Add <Block>" buttons, locked tiles), `BlockChrome.tsx` (toolbar "Move up", "Move down", "Duplicate", "Delete", "Select parent block"), `use-block-actions.ts` (the shortcuts).
+- API for setup and assertions: `POST /api/organizations/:orgId/pages` (`{ title, slug }`), `GET /api/organizations/:orgId/pages/:pageId` (`latestVersion.content`), both in `Sinwy.Backend/modules/pages/routes.ts`; send the session cookie and `origin: http://localhost:3000`.
+- `README.md` (AI Agents and dev sections).
+
+**Steps:**
+- Add `@playwright/test` to the web workspace as a dev dependency, using the system Chromium the CLI config already uses.
+- A global setup seeds a fresh `pro-org` and a `subscribed-org` through the dev scripts and logs in with stored state. The spec needs the backend and web dev servers running and fails early with a clear message if they aren't.
+- Cover: open the editor; add by click (placement and scroll); drag a card onto the end drop area and a block by its handle (with the 2 px settle move); edit a field; undo and redo keep the viewport; the keyboard shortcuts; Save and reload; the locked Booking tile on Starter. Assert on the saved document through the API, not on Puck's internal class names, where possible.
+- Keep it out of `bun run verify` and make sure Biome and `tsc` still cover the spec files.
+- README: what the spec covers, how to run it, and the rule that it must pass before any `@puckeditor/core` upgrade.
+
+**Tests that matter:**
+- The spec itself, run three times in a row without flakes.
+
+**Done when:**
+- `bun run test:editor` passes three times in a row on a fresh seed.
+
+**Verify:** None (the spec is the user flow).
+
+### Log (2026-11-21, `test(web): add the page editor Playwright spec for Puck upgrades`)
+- Shipped: `bun run test:editor` (`cd Sinwy.WebFrontend && bunx playwright test`) with `@playwright/test` 1.64.1 and `playwright.config.ts`, which uses the system Chromium from `.playwright/cli.config.json`, 1 worker, no retries, 1440×900, and traces on failure under `.playwright-cli/editor-e2e/results/`. In `Sinwy.WebFrontend/e2e/`:
+  - `global-setup.ts` checks that both servers answer, then runs `dev:seed-scenario pro-org` and `subscribed-org` and `dev:login-as --state`, and writes `.playwright-cli/editor-e2e/stack.json`.
+  - `editor-fixtures.ts`: `test` with `plan` ("pro"/"starter"), `org`, `pages` (`create(blocks)` via POST and PUT content, `saved(id)`) and `editor` (canvas, panels, `select`, `save`); also `drag`, `outline`, `heading` and `section`.
+  - `editor.e2e.ts`, five tests: click-to-add (after the selected Heading, then Booking at the end of a long page, in view); a Services card dropped 20 px above the root zone's bottom lands last, and a Section moves by its handle; a field edit with Undo/Redo buttons and Ctrl+Z/Ctrl+Shift+Z on Phone, then Save and reload; selecting records no history; Esc, ↓, Delete, Ctrl+Z, Alt+↓ and Ctrl+S; on Starter, the locked Booking tile can't be dragged in, its dialog shows the Business plan and the billing link, and a first-run Hero saves.
+  - It asserts on the saved document through the API.
+  - `EditorLayout`'s side panels are now named landmarks ("Blocks", "Block settings").
+  - README: an AI Agents subsection and a Common Scripts row.
+- Differs from plan:
+  - Spec files are `*.e2e.ts`, because `bun test` would run `*.spec.ts`.
+  - The seed and login scripts are spawned (`bun run --silent …`), not imported, because Playwright runs under Node and they need Bun. `seedScenario.ts` and `loginAs.ts` didn't change.
+  - Plan limits shape the suite: 4 Pro tests use 4 of the 5 pages, and Starter allows 1 page, so it gets 1 test.
+  - `bun install` re-resolved every `latest` TanStack dependency, which left two `query-core` copies and a `tsc` error in `router.tsx`. So the lockfile change was trimmed by hand to the `@playwright/test` entries and installed with `--frozen-lockfile`.
+- Found:
+  - An undo within 250 ms of an edit does nothing, because Puck hasn't recorded the entry yet. The first run pressed Ctrl+Z right after Delete and the Section stayed deleted. The spec now waits for Undo to be enabled. Not changed in the editor; phase 8 should judge whether a person can hit it.
+  - `locator.boundingBox()` on canvas elements already returns page coordinates through the iframe's scale, so the drags need no zoom maths.
+- Checked in the running app: `bun run test:editor` passed 3 runs in a row on fresh seeds (5/5, about 21 s each), against the dev servers on :3000 and :3001. With `BACKEND_URL` pointed at a dead port, it stops in the global setup with "The editor spec needs the backend at … Start it with `bun run start:server`". Not checked: a real mouse, and a run on macOS (⌘ through `ControlOrMeta`).
