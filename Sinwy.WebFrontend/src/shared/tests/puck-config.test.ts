@@ -71,15 +71,19 @@ describe("puckConfigFrom", () => {
 
 	test("the storefront config leaves out custom fields without UI", () => {
 		const storefront = puckConfigFrom(BLOCKS, BLOCK_RENDERS);
-		const { fields } = storefront.components["Services"] ?? {};
-
-		expect(Object.keys(fields ?? {})).toEqual(["title", "intro"]);
+		for (const type of ["Services", "Booking"])
+			expect(Object.keys(storefront.components[type]?.fields ?? {})).toEqual([
+				"title",
+				"intro",
+			]);
 	});
 
 	test("locked fields carry their flag as metadata", () => {
 		const blocks = {
 			Banner: defineBlock({
 				label: "Banner",
+				description: "A banner.",
+				group: "content",
 				fields: {
 					text: field.text({ label: "Text", locked: true }),
 					note: field.text({ label: "Note" }),

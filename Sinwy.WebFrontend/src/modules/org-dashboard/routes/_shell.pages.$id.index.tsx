@@ -61,6 +61,7 @@ function PageDetailPage() {
 				<PageContentSummary
 					organizationSlug={organization.slug}
 					page={page.data}
+					canWrite={canWrite}
 				/>
 				<PageDetailsForm
 					key={page.data.id}

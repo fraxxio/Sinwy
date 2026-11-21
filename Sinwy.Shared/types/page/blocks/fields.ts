@@ -204,8 +204,14 @@ export type PropsOf<F extends Fields> = {
 	[K in Exclude<keyof F, SlotNames<F>>]?: FieldValue<F[K]>;
 };
 
+/** Where the editor's block drawer lists a block: ready-made blocks first, then content, then layout. */
+export type BlockGroup = "ready" | "content" | "layout";
+
 export type BlockDefinition<F extends Fields = Fields> = {
 	label: string;
+	/** One plain sentence for the block drawer, in a salon owner's words. */
+	description: string;
+	group: BlockGroup;
 	fields: F;
 	/** Adding a block of this type needs the feature; ones already on the page stay. */
 	requires?: Feature;
@@ -219,6 +225,8 @@ export type BlockDefinition<F extends Fields = Fields> = {
 
 export const defineBlock = <const F extends Fields>(definition: {
 	label: string;
+	description: string;
+	group: BlockGroup;
 	fields: F;
 	requires?: Feature;
 }): BlockDefinition<F> => {

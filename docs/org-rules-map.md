@@ -200,8 +200,8 @@ Pages (every tier has them, up to a limit per organization)
 ├─ limit: Starter 1, Professional 5, Enterprise 25; an inactive organization 0
 ├─ every page counts, drafts included; creating one at or over the limit →
 │  refused, "page limit reached"; deleting a page frees its place
-├─ the premium blocks feature gates only block types marked as premium (none
-│  yet), not pages or the Page Builder itself
+├─ the premium blocks feature gates only block types marked as premium (the
+│  Booking block), not pages or the Page Builder itself; Starter lacks it
 │   ├─ saving a premium block type without it → refused, "upgrade required"
 │   └─ a premium block type the page's latest version already has stays
 │      allowed, more of it included, so a downgraded page can still be saved;

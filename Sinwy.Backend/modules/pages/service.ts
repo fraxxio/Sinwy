@@ -13,6 +13,7 @@ import {
 	limitsFor,
 	lockedBlocksIn,
 	type PageDetailDto,
+	type PageDocument,
 	type PageListDto,
 	type PageListItemDto,
 	type PageStatus,
@@ -276,6 +277,11 @@ export const findServedPageId = async (
 };
 
 /** Null for an unknown or inactive organization, a draft and a page over the plan's limit alike. */
+const listsServices = (content: PageDocument) => {
+	const { types } = blocksIn(content);
+	return types.has("Services") || types.has("Booking");
+};
+
 export const getPublicPage = async (
 	organizationSlug: string,
 	pageSlug: string,
@@ -296,7 +302,7 @@ export const getPublicPage = async (
 		seoTitle: row.seoTitle ?? row.title,
 		seoDescription: row.seoDescription ?? (organization.tagline || null),
 		content: row.content,
-		services: blocksIn(row.content).types.has("Services")
+		services: listsServices(row.content)
 			? await listPublicServices(organization.id)
 			: [],
 	};

@@ -42,6 +42,7 @@ export function useEntitlements() {
 		status: entitlements.status,
 		plan: entitlements.plan,
 		isActive: entitlements.status === "active",
+		features: entitlements.features,
 		has: (feature: Feature) => entitlements.features.includes(feature),
 	};
 }

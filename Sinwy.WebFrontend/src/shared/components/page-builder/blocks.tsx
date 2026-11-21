@@ -9,6 +9,7 @@ import type {
 } from "@sinwy/shared";
 import type { ReactNode } from "react";
 import { buttonVariants } from "#/shared/components/ui/button";
+import { brandAttributes } from "#/shared/lib/branding";
 import { formatMinorUnits } from "#/shared/lib/money";
 import { cn } from "#/shared/lib/utils";
 import { imageSrc, resolveHref } from "./urls";
@@ -30,6 +31,27 @@ export const pageMetadata = ({
 	services: Array.isArray(services) ? services : [],
 	branding: branding ?? null,
 });
+
+/** The page around its blocks, in the organization's branding; the editor's canvas uses it too. */
+export function PageFrame({
+	metadata,
+	className,
+	children,
+}: {
+	metadata: Metadata;
+	className?: string;
+	children: ReactNode;
+}) {
+	const { branding } = pageMetadata(metadata);
+	return (
+		<div
+			{...(branding && brandAttributes(branding))}
+			className={cn("mx-auto grid w-full max-w-5xl gap-8", className)}
+		>
+			{children}
+		</div>
+	);
+}
 
 type RenderValue<F> = F extends SlotField
 	? SlotComponent
@@ -66,6 +88,19 @@ const COLUMNS = {
 	"3": "sm:grid-cols-2 lg:grid-cols-3",
 	"4": "sm:grid-cols-2 lg:grid-cols-4",
 };
+
+/** Up to four photos share a row, then the row wraps; `--gap` is the space between them. */
+const PHOTO_ROW =
+	"grid gap-(--gap) [grid-template-columns:repeat(auto-fit,minmax(calc((100%_-_3*var(--gap))/4),1fr))]";
+
+const PHOTO_GAPS = {
+	none: "[--gap:0px]",
+	small: "[--gap:--spacing(2)]",
+	medium: "[--gap:--spacing(4)]",
+	large: "[--gap:--spacing(8)]",
+};
+
+const PHOTO_PHONE_LAYOUTS = { row: "", stack: "max-sm:grid-cols-1" };
 
 const HEADINGS = {
 	"1": "text-3xl font-heading font-semibold tracking-tight text-balance sm:text-5xl",
@@ -208,6 +243,16 @@ export const BLOCK_RENDERS: {
 		</div>
 	),
 
+	Photos: ({ items: Items, gap, phoneLayout }) => (
+		<Items
+			className={cn(
+				PHOTO_ROW,
+				PHOTO_GAPS[gap],
+				PHOTO_PHONE_LAYOUTS[phoneLayout],
+			)}
+		/>
+	),
+
 	Hero: ({ items: Items, image, align }) => {
 		const src = imageSrc(image);
 		return (
@@ -244,6 +289,30 @@ export const BLOCK_RENDERS: {
 				) : (
 					puck.isEditing && <Placeholder>No services to show yet.</Placeholder>
 				)}
+			</section>
+		);
+	},
+
+	Booking: ({ title, intro, serviceIds, puck }) => {
+		const { services, organizationSlug } = pageMetadata(puck.metadata);
+		const shown = shownServices(services, serviceIds);
+		return (
+			<section className="grid gap-4 rounded-xl bg-muted p-6 sm:p-8">
+				{title && <h2 className={HEADINGS["2"]}>{title}</h2>}
+				{intro && <div className={RICH_TEXT}>{intro}</div>}
+				{shown.length > 0 ? (
+					<ServiceList services={shown} organizationSlug={organizationSlug} />
+				) : (
+					puck.isEditing && <Placeholder>No services to show yet.</Placeholder>
+				)}
+				<div>
+					<a
+						href={`/${organizationSlug}/book`}
+						className={buttonVariants({ size: "lg" })}
+					>
+						Book now
+					</a>
+				</div>
 			</section>
 		);
 	},

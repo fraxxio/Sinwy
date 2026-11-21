@@ -32,6 +32,8 @@ const CONTENT = ["Heading", "RichText", "Image", "Button"] as const;
 
 const Section = defineBlock({
 	label: "Section",
+	description: "A band across the page that holds text, photos and buttons.",
+	group: "layout",
 	fields: {
 		tone: tone("plain"),
 		padding: field.select({
@@ -44,7 +46,7 @@ const Section = defineBlock({
 			],
 			default: "medium",
 		}),
-		items: field.slot({ allow: [...CONTENT, "Columns"] }),
+		items: field.slot({ allow: [...CONTENT, "Columns", "Photos"] }),
 	},
 });
 
@@ -52,6 +54,8 @@ const column = () => field.slot({ allow: CONTENT });
 
 const Columns = defineBlock({
 	label: "Columns",
+	description: "Splits a band into two, three or four columns side by side.",
+	group: "layout",
 	fields: {
 		count: field.select({
 			label: "Columns",
@@ -72,6 +76,8 @@ const Columns = defineBlock({
 
 const Heading = defineBlock({
 	label: "Heading",
+	description: "A title that introduces a part of your page.",
+	group: "content",
 	fields: {
 		text: field.text({ label: "Text", default: "Heading" }),
 		size: field.select({
@@ -89,6 +95,8 @@ const Heading = defineBlock({
 
 const RichText = defineBlock({
 	label: "Text",
+	description: "A paragraph of text, with bold words, links and lists.",
+	group: "content",
 	fields: {
 		content: field.richText({
 			label: "Text",
@@ -99,6 +107,8 @@ const RichText = defineBlock({
 
 const Image = defineBlock({
 	label: "Image",
+	description: "A single photo.",
+	group: "content",
 	fields: {
 		src: field.image({ label: "Image URL" }),
 		alt: field.text({ label: "Description (for screen readers)" }),
@@ -116,6 +126,8 @@ const Image = defineBlock({
 
 const Button = defineBlock({
 	label: "Button",
+	description: "A button that takes customers to booking or another page.",
+	group: "content",
 	fields: {
 		label: field.text({ label: "Label", default: "Book now" }),
 		href: field.link({ label: "Link", default: "book" }),
@@ -134,6 +146,9 @@ const Button = defineBlock({
 
 const Hero = defineBlock({
 	label: "Hero",
+	description:
+		"A big welcome banner for the top of your page, with a booking button.",
+	group: "ready",
 	fields: {
 		image: field.image({ label: "Background image URL" }),
 		align: align("center"),
@@ -158,6 +173,9 @@ const Hero = defineBlock({
 
 const Services = defineBlock({
 	label: "Services",
+	description:
+		"Your services with their prices, each with its own Book button.",
+	group: "ready",
 	fields: {
 		title: field.text({ label: "Title", default: "Our services" }),
 		intro: field.richText({ label: "Introduction" }),
@@ -165,15 +183,68 @@ const Services = defineBlock({
 	},
 });
 
+const Photos = defineBlock({
+	label: "Photos",
+	description: "Two or more photos side by side.",
+	group: "ready",
+	fields: {
+		gap: field.select({
+			label: "Space between photos",
+			options: [
+				{ value: "none", label: "None" },
+				{ value: "small", label: "Small" },
+				{ value: "medium", label: "Medium" },
+				{ value: "large", label: "Large" },
+			],
+			default: "medium",
+		}),
+		phoneLayout: field.select({
+			label: "On a phone",
+			options: [
+				{ value: "row", label: "Side by side" },
+				{ value: "stack", label: "Stacked" },
+			],
+			default: "stack",
+			display: "radio",
+		}),
+		items: field.slot({
+			allow: ["Image"],
+			default: [
+				{ type: "Image", props: { aspect: "square" } },
+				{ type: "Image", props: { aspect: "square" } },
+			],
+		}),
+	},
+});
+
+const Booking = defineBlock({
+	label: "Booking",
+	description:
+		'A "Book online" panel that takes customers straight to booking.',
+	group: "ready",
+	requires: "premium-blocks",
+	fields: {
+		title: field.text({ label: "Title", default: "Book online" }),
+		intro: field.richText({
+			label: "Introduction",
+			default: "<p>Pick a service and a time that suits you.</p>",
+		}),
+		serviceIds: field.serviceIds({ label: "Services" }),
+	},
+});
+
+/** In the order the editor's block drawer lists them within each group. */
 export const BLOCKS = {
-	Section,
-	Columns,
+	Hero,
+	Services,
+	Photos,
+	Booking,
 	Heading,
 	RichText,
 	Image,
 	Button,
-	Hero,
-	Services,
+	Section,
+	Columns,
 } satisfies Record<string, BlockDefinition>;
 
 export type BlockType = keyof typeof BLOCKS;
@@ -187,7 +258,13 @@ export const ownEntry = <T>(
 ): T | undefined => (Object.hasOwn(record, type) ? record[type] : undefined);
 
 /** Block types a page accepts at the top level. */
-export const ROOT_ALLOW: readonly BlockType[] = ["Section", "Hero", "Services"];
+export const ROOT_ALLOW: readonly BlockType[] = [
+	"Section",
+	"Hero",
+	"Services",
+	"Photos",
+	"Booking",
+];
 
 /** Stored props of a block type besides `id`. */
 export type BlockProps<T extends BlockType> =

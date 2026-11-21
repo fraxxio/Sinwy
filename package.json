@@ -20,6 +20,7 @@
 		"test:web": "cd Sinwy.WebFrontend && bun test",
 		"test:server": "cd Sinwy.Backend && bun test",
 		"test:scripts": "bun test ./scripts",
+		"test:editor": "cd Sinwy.WebFrontend && bunx playwright test",
 		"typecheck": "tsc --noEmit -p Sinwy.Shared && tsc --noEmit -p Sinwy.Backend && tsc --noEmit -p Sinwy.WebFrontend && tsc --noEmit -p scripts",
 		"typecheck:watch": "tsc --noEmit --watch --preserveWatchOutput -p Sinwy.Backend & tsc --noEmit --watch --preserveWatchOutput -p Sinwy.WebFrontend",
 		"lint": "biome lint .",

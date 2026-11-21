@@ -1,17 +1,19 @@
 import { blocksIn, type PageDetailDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
-import { EyeIcon, LayoutTemplateIcon } from "lucide-react";
+import { EyeIcon, LayoutTemplateIcon, PencilIcon } from "lucide-react";
 import { SettingsSection } from "#/shared/components/SettingsSection";
 import { Button } from "#/shared/components/ui/button";
 
-/** Where the page builder goes; until then it shows what the latest version holds. */
+/** What the latest version holds, with the way into the editor and the preview. */
 export function PageContentSummary({
 	organizationSlug,
 	page,
+	canWrite,
 }: {
 	organizationSlug: string;
 	page: PageDetailDto;
+	canWrite: boolean;
 }) {
 	const { latestVersion } = page;
 	const { count } = blocksIn(latestVersion.content);
@@ -20,21 +22,37 @@ export function PageContentSummary({
 		<SettingsSection
 			id="content"
 			title="Content"
-			description="What's on the page. Editing it comes with the page builder."
+			description="What's on the page. Change it in the editor; visitors see it once you publish."
 			action={
-				<Button
-					variant="outline"
-					nativeButton={false}
-					render={
-						<Link
-							to="/dashboard/$organizationSlug/pages/$id/preview"
-							params={{ organizationSlug, id: page.id }}
-						/>
-					}
-				>
-					<EyeIcon />
-					Preview
-				</Button>
+				<div className="flex flex-wrap gap-2">
+					{canWrite && (
+						<Button
+							nativeButton={false}
+							render={
+								<Link
+									to="/dashboard/$organizationSlug/pages/$id/edit"
+									params={{ organizationSlug, id: page.id }}
+								/>
+							}
+						>
+							<PencilIcon />
+							Edit content
+						</Button>
+					)}
+					<Button
+						variant="outline"
+						nativeButton={false}
+						render={
+							<Link
+								to="/dashboard/$organizationSlug/pages/$id/preview"
+								params={{ organizationSlug, id: page.id }}
+							/>
+						}
+					>
+						<EyeIcon />
+						Preview
+					</Button>
+				</div>
 			}
 		>
 			<div className="flex items-center gap-4 rounded-md border border-dashed p-6">

@@ -1,0 +1,154 @@
+import {
+	hasPermission,
+	type PageDetailDto,
+	type ServiceDto,
+} from "@sinwy/shared";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ArrowLeftIcon } from "lucide-react";
+import { lazy, type ReactNode, Suspense, useRef, useState } from "react";
+import {
+	type PageData,
+	saveErrorMessage,
+	toPageDocument,
+} from "#/modules/org-dashboard/components/page-editor/save";
+import {
+	pageQuery,
+	savePageContent,
+	storePage,
+} from "#/modules/org-dashboard/lib/page-queries";
+import { publicPagePath } from "#/modules/org-dashboard/lib/pages";
+import { servicesQuery } from "#/modules/org-dashboard/lib/service-queries";
+import { Button } from "#/shared/components/ui/button";
+import { FieldError } from "#/shared/components/ui/field";
+import { Skeleton } from "#/shared/components/ui/skeleton";
+import { organizationsQuery } from "#/shared/lib/organizations";
+
+const PageEditor = lazy(() =>
+	import("#/modules/org-dashboard/components/page-editor/PageEditor").then(
+		(module) => ({ default: module.PageEditor }),
+	),
+);
+
+export const Route = createFileRoute(
+	"/dashboard/$organizationSlug/_shell/pages/$id/edit",
+)({
+	staticData: { crumb: "Edit", fullWindow: true },
+	component: PageEditPage,
+});
+
+const loading = (
+	<div className="h-svh bg-background p-6">
+		<Skeleton className="size-full rounded-md" />
+	</div>
+);
+
+function PageEditPage() {
+	const { id } = Route.useParams();
+	const { organization, member } = Route.useRouteContext();
+	const canWrite = hasPermission(member.roles, "pages:write");
+	const page = useQuery({
+		...pageQuery(organization.id, id),
+		enabled: canWrite,
+	});
+	const services = useQuery({
+		...servicesQuery(organization.id),
+		enabled: canWrite,
+	});
+
+	const back = (
+		<Button
+			variant="ghost"
+			nativeButton={false}
+			render={
+				<Link
+					to="/dashboard/$organizationSlug/pages/$id"
+					params={{ organizationSlug: organization.slug, id }}
+				/>
+			}
+		>
+			<ArrowLeftIcon />
+			Back
+		</Button>
+	);
+
+	if (!canWrite || page.isError)
+		return (
+			<div className="grid h-svh place-content-center justify-items-center gap-4 bg-background">
+				<FieldError>
+					{page.isError
+						? page.error.message
+						: "You don't have permission to edit pages."}
+				</FieldError>
+				{back}
+			</div>
+		);
+	if (page.isPending || services.isPending) return loading;
+
+	return (
+		<Suspense fallback={loading}>
+			<EditorScreen
+				key={page.data.id}
+				page={page.data}
+				services={services.data ?? []}
+				back={back}
+			/>
+		</Suspense>
+	);
+}
+
+function EditorScreen({
+	page,
+	services,
+	back,
+}: {
+	page: PageDetailDto;
+	services: ServiceDto[];
+	back: ReactNode;
+}) {
+	const { organization, entitlements } = Route.useRouteContext();
+	const queryClient = useQueryClient();
+	const { data: branding } = useQuery({
+		...organizationsQuery,
+		select: (organizations) =>
+			organizations.find((org) => org.id === organization.id)?.branding,
+	});
+	// Puck owns the document from here on; the query's later answers don't reset it
+	const [initialData] = useState(() => page.latestVersion.content.data);
+	const latest = useRef(page.latestVersion);
+
+	const save = async (data: PageData) => {
+		const attempted = toPageDocument(data);
+		const res = await savePageContent(organization.id, page.id, {
+			baseVersion: latest.current.version,
+			content: attempted,
+		});
+		if (!res.isSuccess)
+			return {
+				ok: false,
+				message: saveErrorMessage(res, {
+					saved: latest.current.content,
+					attempted,
+					features: entitlements.features,
+				}),
+			} as const;
+		latest.current = res.data.latestVersion;
+		await storePage(queryClient, organization.id, res.data);
+		return { ok: true } as const;
+	};
+
+	return (
+		<PageEditor
+			data={initialData}
+			metadata={{
+				organizationSlug: organization.slug,
+				services: services.filter((service) => service.isActive),
+				branding: branding ?? null,
+			}}
+			title={page.title}
+			path={publicPagePath(organization.slug, page.slug)}
+			back={back}
+			onSave={save}
+		/>
+	);
+}

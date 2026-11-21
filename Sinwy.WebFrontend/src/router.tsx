@@ -27,6 +27,8 @@ declare module "@tanstack/react-router" {
 	interface StaticDataRouteOption {
 		/** Renders the dashboard app shell instead of the marketing header/footer. */
 		appShell?: boolean;
+		/** Fills the window without the dashboard's sidebar and header (the page editor). */
+		fullWindow?: boolean;
 		/** Label for this route in the dashboard breadcrumb trail. */
 		crumb?: string;
 	}

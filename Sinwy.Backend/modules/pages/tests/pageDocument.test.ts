@@ -152,6 +152,23 @@ describe("pageDocumentSchema", () => {
 		expect(parsed).toEqual(expected as never);
 	});
 
+	test("Photos of Images, at the top level and in a Section, and Booking at the top level are valid", () => {
+		const photos = () =>
+			block("Photos", {
+				gap: "small",
+				phoneLayout: "row",
+				items: withIds(BLOCKS.Photos.fields.items.default),
+			});
+		const result = pageDocumentSchema.safeParse(
+			doc([
+				photos(),
+				section(block("Heading"), photos()),
+				block("Booking", { serviceIds: ["service-1"] }),
+			]),
+		);
+		expect(result.error).toBeUndefined();
+	});
+
 	test("an empty page is valid", () => {
 		expect(pageDocumentSchema.parse(doc([]))).toEqual(doc([]) as never);
 	});
@@ -294,6 +311,31 @@ describe("pageDocumentSchema", () => {
 				"Section can't go inside Columns (Section at Section 1 › items › Columns 1 › column2 › 1)",
 			));
 
+		test("a non-Image block inside Photos", () =>
+			expectRefused(
+				doc([block("Photos", { items: [block("Image"), block("Heading")] })]),
+				"Heading can't go inside Photos (Heading at Photos 1 › items › 2)",
+			));
+
+		test("Photos inside Columns, inside Photos, and Booking inside Section", () => {
+			expectRefused(
+				doc([
+					section(
+						block("Columns", { column1: [block("Photos", { items: [] })] }),
+					),
+				]),
+				"Photos can't go inside Columns",
+			);
+			expectRefused(
+				doc([block("Photos", { items: [block("Photos", { items: [] })] })]),
+				"Photos can't go inside Photos",
+			);
+			expectRefused(
+				doc([section(block("Booking"))]),
+				"Booking can't go inside Section",
+			);
+		});
+
 		test("Button at the top level", () =>
 			expectRefused(
 				doc([block("Hero"), block("Button")]),
@@ -361,6 +403,8 @@ describe("pageDocumentSchema", () => {
 	test("blocks nest 6 levels deep and no deeper", () => {
 		const Box = defineBlock({
 			label: "Box",
+			description: "A box.",
+			group: "layout",
 			fields: { items: field.slot({ allow: ["Box"] }) },
 		});
 		const schema = createPageDocumentSchema({
@@ -452,52 +496,46 @@ describe("blocksIn", () => {
 });
 
 describe("lockedBlocksIn", () => {
-	const blocks = {
-		...BLOCKS,
-		Gallery: defineBlock({
-			label: "Gallery",
-			fields: {},
-			requires: "premium-blocks",
-		}),
-	};
 	const locked = (
 		latest: ReturnType<typeof doc>,
 		next: ReturnType<typeof doc>,
 		features: readonly "premium-blocks"[] = [],
-	) => lockedBlocksIn(latest, next, features, blocks);
+	) => lockedBlocksIn(latest, next, features);
 
 	const empty = doc([]);
-	const withGallery = doc([section(block("Heading")), block("Gallery")]);
+	const withBooking = doc([section(block("Heading")), block("Booking")]);
 
-	test("no first-set block is gated", () => {
+	test("only Booking is gated, by premium blocks", () => {
 		const gated = Object.entries(BLOCKS).filter(([, b]) => b.requires);
-		expect(gated.map(([type]) => type)).toEqual([]);
+		expect(gated.map(([type, b]) => [type, b.requires])).toEqual([
+			["Booking", "premium-blocks"],
+		]);
 	});
 
 	test("a plan without the feature can't add a gated type", () => {
-		expect(locked(empty, withGallery)).toEqual(["Gallery"]);
+		expect(locked(empty, withBooking)).toEqual(["Booking"]);
 	});
 
 	test("a gated type nested in a slot, hidden Columns ones included, is found", () => {
 		const nested = doc([
-			section(block("Columns", { count: "2", column4: [block("Gallery")] })),
+			section(block("Columns", { count: "2", column4: [block("Booking")] })),
 		]);
-		expect(locked(empty, nested)).toEqual(["Gallery"]);
+		expect(locked(empty, nested)).toEqual(["Booking"]);
 	});
 
 	test("a plan with the feature can add it", () => {
-		expect(locked(empty, withGallery, ["premium-blocks"])).toEqual([]);
+		expect(locked(empty, withBooking, ["premium-blocks"])).toEqual([]);
 	});
 
 	test("a page that already has the type keeps it after a downgrade, and may add more", () => {
-		expect(locked(withGallery, withGallery)).toEqual([]);
-		const more = doc([block("Gallery"), section(block("Gallery"))]);
-		expect(locked(withGallery, more)).toEqual([]);
+		expect(locked(withBooking, withBooking)).toEqual([]);
+		const more = doc([block("Booking"), section(block("Booking"))]);
+		expect(locked(withBooking, more)).toEqual([]);
 	});
 
 	test("a page that removed the type can't add it back", () => {
 		const removed = doc([section(block("Heading"))]);
-		expect(locked(removed, withGallery)).toEqual(["Gallery"]);
+		expect(locked(removed, withBooking)).toEqual(["Booking"]);
 	});
 
 	test("ungated types are never locked", () => {
