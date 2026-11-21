@@ -253,3 +253,50 @@ Finished phases of [page-editor-plan.md](page-editor-plan.md), each with its spe
   - An undo within 250 ms of an edit does nothing, because Puck hasn't recorded the entry yet. The first run pressed Ctrl+Z right after Delete and the Section stayed deleted. The spec now waits for Undo to be enabled. Not changed in the editor; phase 8 should judge whether a person can hit it.
   - `locator.boundingBox()` on canvas elements already returns page coordinates through the iframe's scale, so the drags need no zoom maths.
 - Checked in the running app: `bun run test:editor` passed 3 runs in a row on fresh seeds (5/5, about 21 s each), against the dev servers on :3000 and :3001. With `BACKEND_URL` pointed at a dead port, it stops in the global setup with "The editor spec needs the backend at … Start it with `bun run start:server`". Not checked: a real mouse, and a run on macOS (⌘ through `ControlOrMeta`).
+
+## Phase 7: Typing performance on large pages
+
+**Goal:** typing on a 250-block page at 4× CPU throttling is no slower than the spike (about 100 ms per key), measured on a production build.
+
+**Files:**
+- A 250-block page: `Sinwy.WebFrontend/e2e/editor-fixtures.ts` (`pages.create(blocks)`, the `heading`/`section` builders) and the org and storage state in `.playwright-cli/editor-e2e/stack.json` after a `bun run test:editor`. A measuring script can reuse them, or a scratch one in `/tmp` can call the same API.
+- Per-key paths in `src/modules/org-dashboard/components/page-editor/`:
+  - `EditorLayout.tsx`: `SaveControls` runs `hasUnsavedChanges` (`save.ts`), a whole-document `sameJson`, on every data change, which is O(blocks) per key and the first suspect. Also `KeepUiOnHistory` and `HistoryButtons`.
+  - `editor-fields.tsx`: the text and rich-text field overrides. The settings-panel text field is a Heading's "Text"; a Text block is typed into through `aside [contenteditable="true"]`.
+  - `BlockChrome.tsx` (`BlockToolbar` selectors, `BlockOverlay`), `editor-config.tsx` (the root render, `FirstRunBlocks`), `BlockDrawer.tsx` (`BlockAccessProvider`).
+- Renders: `src/shared/components/page-builder/blocks.tsx` (`BLOCK_RENDERS`), `puck-config.ts`.
+- Spike method: `docs/puck-spike-log.md` phase 7 on `pagebuilder-tryout`.
+- Any fix must keep `bun run test:editor` green.
+
+**Steps:**
+- Generate a 250-block page through the save API (a scratch script in `/tmp`, or a Playwright helper next to the e2e spec if it's worth keeping).
+- Measure per-key Event Timing in a Text block and in a settings-panel text field, unthrottled and at 4× CPU, on `vite build` + `vite preview`. Use the spike's `/api` proxy workaround for the origin.
+- If it's worse than the baseline, profile (DevTools MCP trace) and fix what's ours: memoise renders, keep heavy computations out of per-change paths. Puck's O(blocks) index rebuild isn't ours; record it if it's the whole cost.
+- Record the numbers and the machine in the log.
+
+**Tests that matter:**
+- None beyond the measurement, unless a fix changes behaviour.
+
+**Done when:**
+- The log shows typing at 4× CPU at or under about 100 ms per key on the 250-block page, or explains with a trace why Puck's own cost exceeds it and what was ruled out.
+
+**Verify:** None.
+
+### Log (2026-11-21, `fix(web): preload the rich-text editor and measure typing on large pages`)
+- Shipped: `PreloadRichText` (`editor-fields.tsx`), a hidden read-only richtext `AutoField` that `EditorLayout` mounts, so Puck's lazy Tiptap chunks load with the editor. Measurements only otherwise.
+- Found: until Puck's lazy rich-text `Editor` arrives, its Suspense fallback is a plain `contentEditable` div showing the HTML. Keys typed into it are dropped, and the swap to the real editor takes focus to `<body>`. On a fresh load this hit every first Text block selected and clicked straight away: the keys never reached the document, and "Unsaved changes" didn't show (about 300 ms window locally, the chunks being about 120 KB gzip, so longer on a real network). With the preload, the first keys land and focus stays.
+- Measured (production build `vite build` + `vite preview` on :4173; AMD Ryzen 5 7600X, 30 GB, Linux 6.18, system Chromium headless through Playwright 1.64, 1440×900; 4× is Chrome CPU throttling). Page: Hero + 52 Sections = 255 blocks (71 Text with about 500-character paragraphs, 18 Columns), 60 KB JSON. Event Timing per key (the longest event of the interaction), 30 keys at 200 ms intervals into the Text and Heading of Section 40, 3 runs each:
+
+  | Field | 1× p50 / max | 4× p50 / p90 / max | 4× long tasks per 30 keys |
+  | --- | --- | --- | --- |
+  | Text block (settings panel Tiptap) | 24 / 24–32 ms | 72–80 / 88 / 88–104 ms | 3–6, 50–81 ms |
+  | Heading "Text" field | 16 / 16–24 ms | 40–48 / 48 / 72–80 ms | 0 |
+  | Spike, panel rich text / inline | 32 / 56, 24 / 32 ms | 104 / 144, 96 / 120 ms | 40 / every key |
+
+  Editor ready (navigation → the root zone, "All changes saved" and Section 40 in the canvas): 1.15–1.32 s. Every run checked that the typed text reached the canvas and "Unsaved changes" showed, and that Undo stayed disabled and the status "All changes saved" 1.5 s after load (the preload records nothing).
+- Ruled out: `hasUnsavedChanges` on this document takes 0.13 ms worst case (no shared references, edit in the last block; under 1 ms at 4×). No trace was needed since every number is under the spike baseline; the remaining per-key time is Puck's (spike phase 7 trace). Rich text costs about twice the Heading field because Tiptap runs on top.
+- Differs from plan:
+  - The probes ran under Node (`node probe.mts`), not Bun: under Bun, Playwright's `route.fetch` throws `"/api/…" cannot be parsed as a URL` on any response with `Set-Cookie`, because Bun's HTTP client reports a relative `response.url`. They proxied `/api` from :4173 straight to the backend on :3001 with `Origin: http://localhost:3000` and `maxRedirects: 0`.
+  - The first 1× Text run in the probe was invalid until the fix (the dropped keys above). The numbers in the table are from after the fix; 4× numbers before it were the same within noise.
+  - No Playwright helper was committed: the probe is scratch in `/tmp/sinwy-p7`.
+- Checked in the running app: the above on the production build, against the `pro-org` seed `seed-ef4a0c14` (page `92af5647-…`); `bun run test:editor` 5/5 afterwards on the dev servers. Not checked: a real network or a mid-range device (CPU throttling only), and the dev build.

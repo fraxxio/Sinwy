@@ -283,3 +283,21 @@ export const lockedField = (field: Field): Field => ({
 		</div>
 	),
 });
+
+const noop = () => {};
+
+/**
+ * Puck loads its rich-text editor lazily and, until it arrives, shows a stand-in that drops typed keys and loses
+ * focus when replaced. Mounting one hidden copy with the editor starts that load before a Text block is selected.
+ */
+export const PreloadRichText = () => (
+	<div hidden inert>
+		<AutoField
+			field={{ type: "richtext" }}
+			id="preload-rich-text"
+			value=""
+			onChange={noop}
+			readOnly
+		/>
+	</div>
+);

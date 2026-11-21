@@ -14,7 +14,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 4 | Block drawer, locked tiles and insert-and-scroll | 2, 3 | done | `feat(web): add block drawer, locked tiles and click-to-add` |
 | 5 | History, viewport and keyboard | 2 | done | `feat(web): add undo and redo, keyboard shortcuts and keep the view on history` |
 | 6 | Editor e2e spec for Puck upgrades | 4, 5 | done | `test(web): add the page editor Playwright spec for Puck upgrades` |
-| 7 | Typing performance on large pages | 5 | todo | |
+| 7 | Typing performance on large pages | 5 | done | `fix(web): preload the rich-text editor and measure typing on large pages` |
 | 8 | Usability rerun (tasks 3, 7, 8) | 6, 7 | todo | |
 | 9 | Code review, docs and cleanup | 8 | todo | |
 
@@ -45,7 +45,7 @@ Settled with the product owner. Ask before changing any of them.
 
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
-- **Spike branch** `pagebuilder-tryout` is reference only (read with `git show pagebuilder-tryout:<path>`); everything from its editor is ported. Phases 7 and 8 still read its docs.
+- **Spike branch** `pagebuilder-tryout` is reference only (read with `git show pagebuilder-tryout:<path>`); everything from its editor is ported. Phase 8 still reads its `docs/puck-usability-tasks.md`.
 - **Puck** is `@puckeditor/core` 0.24.0, pinned exactly in `Sinwy.WebFrontend/package.json`. Don't import `puck.css`; 0.22+ injects its own, unlayered, so overriding it from Tailwind needs the `!` modifier. Under StrictMode, the children of `<Puck>` remount once (#1884).
 - **Editor code:** `org-dashboard/components/page-editor/`: `PageEditor.tsx` (mounts `<Puck>` with `overrides` and `dnd`, inside `EditorServicesContext` and `BlockAccessProvider`), `EditorLayout.tsx` (header, `ViewportSwitch`, `KeepUiOnHistory`, `HistoryButtons`, `SaveControls` with Ctrl/⌘+S, `LeftPanel`, `RightPanel`), `EditorCanvas.tsx` (also the `iframe` override and `useCanvasDocument`), `editor-config.tsx` (`usePuck`, `VIEWPORTS`, `editorConfig`, the root render with `FirstRunBlocks`, `withLockedFields`), `editor-fields.tsx`, `BlockChrome.tsx` (`BlockToolbar`, action bar, overlay, `setCanvasZoom`), `BlockDrawer.tsx` (drawer, locked tiles, upgrade dialog, first-run cards), `use-block-actions.ts` (`blockActions(getPuck)` behind `useBlockActions`: add, duplicate, move, remove, selectParent, step, escape; `scrollToBlock`; `useEditorKeys`, `useEditorHotkeys`), `block-actions.ts` (pure: `ROOT_ZONE`, `cloneBlock`, `zoneContent`, `selectorFor`, `slotAccepts`, `placementFor`, `moveTarget`, `readingOrder`, `stepInReadingOrder`, `parentSelector`, `drawerGroups`), `save.ts`. The route `_shell.pages.$id.edit.tsx` loads `PageEditor` with `lazy()`, holds the base version in a ref and saves through `savePageContent`. It drops the shell with `staticData.fullWindow`, which `_shell.tsx` reads.
 - **Dirty state** compares Puck's `appState.data` with the data last sent in a successful save (`hasUnsavedChanges`, memoised on the data reference), not with the server's answer, whose normalised rich text could differ.
@@ -55,7 +55,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **History recording:** Puck records 250 ms after the last recorded dispatch (debounced), so consecutive recorded dispatches fold into one entry; `setUi` and `setData` aren't recorded unless `recordHistory: true`. Insert-with-data is `insert` (with our `id`) then `replace` (`replace` can't change an id). Dispatch `setUi` before `reorder`/`remove` so the recorded state's selection is right. `remove` doesn't clear the selection. See log phase 2.
 - **History travel:** every entry stores the whole app state, `ui` included. `KeepUiOnHistory` puts the user's `ui` back after undo/redo (viewport, selection by id while the block exists) and clears `field.focus`. Puck remounts the fields on travel, so the rich-text editor loses DOM focus either way. A kept rich-text focus makes the new editor dispatch a data-identical `replace` that truncates the redo stack. See log phase 5.
 - **Hotkeys:** Puck 0.24 owns Ctrl/⌘+Z, Ctrl/⌘+Shift+Z and Ctrl/⌘+Y (host and iframe, also inside inputs) and Ctrl/⌘+I (interactive preview). We own Delete/Backspace, ↑/↓, Alt+↑/↓, Esc and Ctrl/⌘+S through capture-phase listeners on both documents (`useEditorKeys`). Puck's own Delete skips any event that's `defaultPrevented`, which is how ours replaces it. Ctrl/⌘+S works while typing; the rest don't (see `TEXT_ENTRY`, `ARROW_WIDGETS`).
-- **Text blocks** have no inline editor in the canvas (the richtext field has no `contentEditable`). Their words are edited in the settings panel's Tiptap editor, `aside [contenteditable="true"]`.
+- **Text blocks** have no inline editor in the canvas (the richtext field has no `contentEditable`). Their words are edited in the settings panel's Tiptap editor, `aside [contenteditable="true"]` (still unique: the preload copy is outside `aside` and read-only).
 - **Unit tests** have no DOM: web tests can't mount Puck. Editor behaviour is tested through pure functions and `blockActions` with a fake `PuckApi` that records dispatches (see `page-editor-actions.test.ts`). To trace Puck's actions in the browser, temporarily pass `onAction` to `<Puck>`.
 - **Drawer:** `Drawer.Item` renders its card twice (an inert copy behind), so role locators inside it match two elements; use `getByRole('button', { name: 'Add Image', exact: true }).last()` or `getByTestId('drawer-item:<Type>')`. The drawer panel scrolls: scroll a card into view before a scripted drag, or the drag never starts. Locked tiles are buttons named "<Block>: upgrade to use". Never pass `droppableId` or `direction` to `Drawer` (deprecated, logs `console.error`).
 - **Action bar:** `dnd={{ enableDragHandle: true }}` makes Puck pass `dragHandle` to the `actionBar` override. `actionBar` and `componentOverlay` render inside the iframe (Tailwind applies) but outside `Puck.Preview`'s React tree: a context from `EditorCanvas` doesn't reach them, so the zoom goes through `setCanvasZoom`'s module store. During a handle drag the drag ghost sits near the iframe's left edge, not under the pointer (drops still land); unchecked whether our scaled bar causes it (phase 8).
@@ -74,42 +74,14 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Click-to-add placement** (`placementFor`): end of the selected block's own slot if it takes the type; else after the selected block in the closest ancestor zone that takes it; nothing selected → page end; a type the root refuses is wrapped in a new Section (`WRAPPER`). Default 5 as extended in log phase 4.
 - **Clicks inside the canvas iframe** bubble to Puck's root handler, which deselects. A button there that selects something must `stopPropagation` (see `FirstRunBlocks`).
 - **Scrolling the canvas:** `scrollToBlock(id)` in `use-block-actions.ts` waits for `[data-puck-component=<id>]` in `iframe#preview-frame` and scrolls the iframe window (not `scrollIntoView`, which can scroll the host's overflow-hidden ancestors). ↑/↓ use it too.
-- **Spike performance baseline** (production build, Ryzen 5 7600X, headless Chromium, 1440×900): typing on a 252-block page took 24–32 ms per key unthrottled and 96–104 ms per key at 4× CPU, with a long task on every key. The cost is Puck rebuilding its whole-tree index on every change (O(blocks)); only about 8 components re-render per key. Better Auth refuses the `vite preview` origin (:4173, `set-active` → 403 `INVALID_ORIGIN`). The spike's probes proxied `/api` through Playwright's `route.fetch` with `Origin: http://localhost:3000`.
+- **Typing performance** on a 255-block page at 4× CPU, production build: 72–80 ms per key in a Text block, 40–48 ms in a Heading field, under the spike's ~100 ms; the rest is Puck's O(blocks) per-change work. Probes that proxy `/api` must run under Node, not Bun (`route.fetch` breaks on `Set-Cookie`). See log phase 7.
+- **Rich-text preload:** until Puck's lazy Tiptap editor loads, its richtext field is a fake `contentEditable` that drops keys and loses focus on swap. `PreloadRichText` (hidden, read-only, outside the panels) mounted by `EditorLayout` loads it up front; keep it, or the first Text block typed into after load loses its keys.
 - **Editor e2e spec:** `bun run test:editor` (`Sinwy.WebFrontend/e2e/`, files `*.e2e.ts`, since `bun test` runs `*.spec.ts`). It needs both dev servers and takes about 21 s; every run seeds a fresh `pro-org` and `subscribed-org`. `.playwright-cli/editor-e2e/stack.json` then holds their org ids, slugs and storage-state files, which are reusable for probes. Pro allows 5 pages and the suite uses 4; Starter allows 1, which its single test uses. A new test needs another org or must reuse a page. `editor-fixtures.ts` has `pages.create(blocks)` (POST plus PUT content, with `heading`/`section` builders), `drag` and `outline`. See log phase 6.
 - **Undo right after an edit:** Ctrl+Z within 250 ms of an edit does nothing, because the entry isn't recorded yet. Scripts wait for Undo to be enabled first. Unjudged for real users (phase 8).
 - **Canvas coordinates:** Playwright's `locator.boundingBox()` on elements inside the scaled iframe returns page coordinates, so drags need no zoom maths.
 - **Side panels** are the landmarks `complementary` "Blocks" (drawer, layers) and "Block settings" (toolbar heading = selected block's label, fields).
+- **Scratch to delete in phase 9:** `/tmp/sinwy-p7` (probe scripts, a document dump), `/tmp/sinwy-p7-build.log`, `/tmp/sinwy-p7-preview.log`, and `Sinwy.WebFrontend/dist/` (git-ignored, from `vite build`).
 - **Lockfile:** `bun install` re-resolves every `latest` dependency (TanStack), and a mixed `query-core` breaks `tsc` in `router.tsx`. When adding a package, keep `bun.lock`'s change to that package (log phase 6).
-
----
-
-## Phase 7: Typing performance on large pages
-
-**Goal:** typing on a 250-block page at 4× CPU throttling is no slower than the spike (about 100 ms per key), measured on a production build.
-
-**Files:**
-- A 250-block page: `Sinwy.WebFrontend/e2e/editor-fixtures.ts` (`pages.create(blocks)`, the `heading`/`section` builders) and the org and storage state in `.playwright-cli/editor-e2e/stack.json` after a `bun run test:editor`. A measuring script can reuse them, or a scratch one in `/tmp` can call the same API.
-- Per-key paths in `src/modules/org-dashboard/components/page-editor/`:
-  - `EditorLayout.tsx`: `SaveControls` runs `hasUnsavedChanges` (`save.ts`), a whole-document `sameJson`, on every data change, which is O(blocks) per key and the first suspect. Also `KeepUiOnHistory` and `HistoryButtons`.
-  - `editor-fields.tsx`: the text and rich-text field overrides. The settings-panel text field is a Heading's "Text"; a Text block is typed into through `aside [contenteditable="true"]`.
-  - `BlockChrome.tsx` (`BlockToolbar` selectors, `BlockOverlay`), `editor-config.tsx` (the root render, `FirstRunBlocks`), `BlockDrawer.tsx` (`BlockAccessProvider`).
-- Renders: `src/shared/components/page-builder/blocks.tsx` (`BLOCK_RENDERS`), `puck-config.ts`.
-- Spike method: `docs/puck-spike-log.md` phase 7 on `pagebuilder-tryout`.
-- Any fix must keep `bun run test:editor` green.
-
-**Steps:**
-- Generate a 250-block page through the save API (a scratch script in `/tmp`, or a Playwright helper next to the e2e spec if it's worth keeping).
-- Measure per-key Event Timing in a Text block and in a settings-panel text field, unthrottled and at 4× CPU, on `vite build` + `vite preview`. Use the spike's `/api` proxy workaround for the origin.
-- If it's worse than the baseline, profile (DevTools MCP trace) and fix what's ours: memoise renders, keep heavy computations out of per-change paths. Puck's O(blocks) index rebuild isn't ours; record it if it's the whole cost.
-- Record the numbers and the machine in the log.
-
-**Tests that matter:**
-- None beyond the measurement, unless a fix changes behaviour.
-
-**Done when:**
-- The log shows typing at 4× CPU at or under about 100 ms per key on the 250-block page, or explains with a trace why Puck's own cost exceeds it and what was ruled out.
-
-**Verify:** None.
 
 ---
 
@@ -118,8 +90,13 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** an agent driving the browser cold reruns usability tasks 3 (drawer part), 7 and 8 from the spike and hits no dead end, and what it finds is fixed or filed.
 
 **Files:**
-- Task wording: `docs/puck-usability-tasks.md` on `pagebuilder-tryout` (tasks 3, 7, 8, with the user's notes).
-- Whatever files the findings point at.
+- Task wording: `docs/puck-usability-tasks.md` on `pagebuilder-tryout` (tasks 3, 7, 8, with the user's notes); the spike's scores are in `docs/puck-spike-log.md` phase 8 there.
+- Seeding the task pages: `Sinwy.WebFrontend/e2e/editor-fixtures.ts` shows the POST plus PUT content calls and the `heading`/`section` builders. Photos, Hero and Services shapes are in `Sinwy.Shared/types/page/blocks/blocks.ts`. Each `pro-org` seed allows 5 pages.
+- Where findings usually land, in `src/modules/org-dashboard/components/page-editor/`:
+  - Task 3 (drawer, Photos): `BlockDrawer.tsx` (cards, sketches, first-run cards), `block-actions.ts` (`placementFor`, which decides where a clicked card goes), `editor-fields.tsx`.
+  - Task 7 (locked Booking): `BlockDrawer.tsx` (locked tile, upgrade dialog), `src/shared/components/UpgradePrompt.tsx`, and the manifest's `description` texts.
+  - Task 8 (moving a Section): `BlockChrome.tsx` (action bar, drag handle, toolbar move buttons), `use-block-actions.ts` (Alt+↑/↓), the Layers tab in `EditorLayout.tsx`.
+- Open questions for this phase in the standing notes: the drag ghost offset during handle drags, and an undo within 250 ms of an edit doing nothing.
 
 **Steps:**
 - Run the tasks with the `e2e-test` skill, worded as the owner would say them, with no hints about the UI. Record steps, ease (1–5) and dead ends per task, as the spike did.

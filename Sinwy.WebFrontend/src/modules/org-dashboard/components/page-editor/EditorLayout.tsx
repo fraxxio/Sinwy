@@ -34,6 +34,7 @@ import { BlockToolbar } from "./BlockChrome";
 import { BlockDrawer } from "./BlockDrawer";
 import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
+import { PreloadRichText } from "./editor-fields";
 import { hasUnsavedChanges, type PageData, type SaveResult } from "./save";
 import { useEditorHotkeys, useEditorKeys } from "./use-block-actions";
 
@@ -316,6 +317,7 @@ export function EditorLayout({
 				<EditorCanvas />
 				<RightPanel />
 			</div>
+			<PreloadRichText />
 		</div>
 	);
 }
