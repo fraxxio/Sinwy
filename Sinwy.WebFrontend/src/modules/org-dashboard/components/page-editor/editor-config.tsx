@@ -11,6 +11,7 @@ import {
 	PageFrame,
 } from "#/shared/components/page-builder/blocks";
 import { puckConfigFrom } from "#/shared/components/page-builder/puck-config";
+import { FirstRunBlocks } from "./BlockDrawer";
 import { ROOT_ZONE } from "./block-actions";
 import { lockedField, serviceIdsField } from "./editor-fields";
 
@@ -32,16 +33,7 @@ function EditorPage({
 	const isEmpty = usePuck((s) => s.appState.data.content.length === 0);
 	return (
 		<PageFrame metadata={metadata} className="min-h-svh content-start p-6">
-			{isEmpty && (
-				<div className="grid gap-1 pt-10 text-center">
-					<p className="font-heading font-semibold text-lg">
-						This page is empty
-					</p>
-					<p className="text-muted-foreground text-sm">
-						Add your first block from the Add panel.
-					</p>
-				</div>
-			)}
+			{isEmpty && <FirstRunBlocks />}
 			{renderDropZone({
 				zone: ROOT_ZONE,
 				allow: [...ROOT_ALLOW],

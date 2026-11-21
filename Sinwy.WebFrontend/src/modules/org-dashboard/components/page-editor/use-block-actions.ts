@@ -1,7 +1,46 @@
 import { type ComponentData, useGetPuck } from "@puckeditor/core";
 import type { BlockNode } from "@sinwy/shared";
 import { useMemo } from "react";
-import { cloneBlock, moveTarget, type Selector } from "./block-actions";
+import {
+	cloneBlock,
+	moveTarget,
+	newBlockId,
+	placementFor,
+	ROOT_ZONE,
+	type Selector,
+	WRAPPER,
+} from "./block-actions";
+
+/** Scrolls the canvas to a block once Puck has rendered it, unless it's already in view. */
+function scrollToBlock(id: string, timeoutMs = 3_000) {
+	const frame = document.querySelector<HTMLIFrameElement>(
+		"iframe#preview-frame",
+	);
+	const doc = frame?.contentDocument;
+	const view = frame?.contentWindow;
+	if (!doc?.body || !view) return;
+	const selector = `[data-puck-component="${CSS.escape(id)}"]`;
+	const reveal = (element: Element) => {
+		const { top, bottom, height } = element.getBoundingClientRect();
+		if (top >= 0 && bottom <= view.innerHeight) return;
+		const margin = Math.max(24, (view.innerHeight - height) / 2);
+		view.scrollTo({ top: view.scrollY + top - margin, behavior: "smooth" });
+	};
+	const found = doc.querySelector(selector);
+	if (found) return reveal(found);
+	const observer = new MutationObserver(() => {
+		const element = doc.querySelector(selector);
+		if (!element) return;
+		stop();
+		reveal(element);
+	});
+	const timer = setTimeout(() => stop(), timeoutMs);
+	const stop = () => {
+		observer.disconnect();
+		clearTimeout(timer);
+	};
+	observer.observe(doc.body, { childList: true, subtree: true });
+}
 
 /**
  * The block toolbar's and action bar's commands on the selected block. Each one is a single history entry: Puck
@@ -26,6 +65,40 @@ export function useBlockActions() {
 			getPuck().dispatch({ type: "setUi", ui: { itemSelector } });
 
 		return {
+			/** Adds a block with its defaults where `placementFor` says, selects it and scrolls to it. */
+			add: (type: string) => {
+				const { appState, dispatch } = getPuck();
+				const selector = appState.ui.itemSelector;
+				const placement = placementFor(
+					appState.data.content as BlockNode[],
+					type,
+					selector?.zone
+						? { zone: selector.zone, index: selector.index }
+						: null,
+				);
+				let at: Selector = placement;
+				if (placement.wrap) {
+					const wrapperId = newBlockId(WRAPPER.type);
+					dispatch({
+						type: "insert",
+						componentType: WRAPPER.type,
+						destinationZone: ROOT_ZONE,
+						destinationIndex: placement.index,
+						id: wrapperId,
+					});
+					at = { zone: `${wrapperId}:${WRAPPER.slot}`, index: 0 };
+				}
+				const id = newBlockId(type);
+				dispatch({
+					type: "insert",
+					componentType: type,
+					destinationZone: at.zone,
+					destinationIndex: at.index,
+					id,
+				});
+				select(at);
+				scrollToBlock(id);
+			},
 			duplicate: () => {
 				const current = selected();
 				if (!current) return;

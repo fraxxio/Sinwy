@@ -7,6 +7,7 @@ import {
 import type { ReactNode } from "react";
 import type { PageMetadata } from "#/shared/components/page-builder/blocks";
 import { chromeOverrides } from "./BlockChrome";
+import { BlockAccessProvider } from "./BlockDrawer";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
 import { EditorServicesContext, fieldOverrides } from "./editor-fields";
@@ -43,18 +44,20 @@ export function PageEditor({
 }) {
 	return (
 		<EditorServicesContext value={metadata.services}>
-			<Puck
-				config={editorConfig}
-				data={data as Data}
-				metadata={metadata}
-				ui={INITIAL_UI}
-				viewports={VIEWPORTS}
-				overrides={OVERRIDES}
-				dnd={DND}
-				height="100%"
-			>
-				<EditorLayout title={title} path={path} back={back} onSave={onSave} />
-			</Puck>
+			<BlockAccessProvider>
+				<Puck
+					config={editorConfig}
+					data={data as Data}
+					metadata={metadata}
+					ui={INITIAL_UI}
+					viewports={VIEWPORTS}
+					overrides={OVERRIDES}
+					dnd={DND}
+					height="100%"
+				>
+					<EditorLayout title={title} path={path} back={back} onSave={onSave} />
+				</Puck>
+			</BlockAccessProvider>
 		</EditorServicesContext>
 	);
 }

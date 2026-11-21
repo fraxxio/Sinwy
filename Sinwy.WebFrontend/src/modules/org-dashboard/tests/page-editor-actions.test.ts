@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { type BlockNode, pageDocumentSchema } from "@sinwy/shared";
 import {
 	cloneBlock,
+	drawerGroups,
 	moveTarget,
+	placementFor,
 	ROOT_ZONE,
 	zoneContent,
 } from "../components/page-editor/block-actions";
@@ -94,5 +96,110 @@ describe("moveTarget", () => {
 	it("finds nothing for an unknown zone or a prop that isn't a slot", () => {
 		expect(zoneContent(content, "missing:items")).toBeUndefined();
 		expect(zoneContent(content, "heading-1:text")).toBeUndefined();
+	});
+});
+
+describe("placementFor", () => {
+	const page = (): BlockNode[] => [
+		block("Section", "s1", {
+			items: [
+				block("RichText", "text-1"),
+				block("Image", "image-1"),
+				block("Photos", "photos-1", {
+					items: [block("Image", "photo-1"), block("Image", "photo-2")],
+				}),
+			],
+		}),
+		block("Section", "s2", { items: [] }),
+	];
+
+	it("puts a block right after the selected one in the same slot", () => {
+		expect(
+			placementFor(page(), "Image", { zone: "s1:items", index: 0 }),
+		).toEqual({ zone: "s1:items", index: 1 });
+		expect(
+			placementFor(page(), "Heading", { zone: "s1:items", index: 1 }),
+		).toEqual({ zone: "s1:items", index: 2 });
+	});
+
+	it("walks up to the closest ancestor slot that takes the type", () => {
+		expect(
+			placementFor(page(), "Heading", { zone: "photos-1:items", index: 0 }),
+		).toEqual({ zone: "s1:items", index: 3 });
+		expect(
+			placementFor(page(), "Hero", { zone: "s1:items", index: 1 }),
+		).toEqual({ zone: ROOT_ZONE, index: 1 });
+	});
+
+	it("fills the selected block's own slot when it takes the type", () => {
+		expect(
+			placementFor(page(), "Image", { zone: ROOT_ZONE, index: 1 }),
+		).toEqual({ zone: "s2:items", index: 0 });
+		expect(
+			placementFor(page(), "Image", { zone: "s1:items", index: 2 }),
+		).toEqual({ zone: "photos-1:items", index: 2 });
+		expect(
+			placementFor(page(), "Heading", { zone: "s1:items", index: 2 }),
+		).toEqual({ zone: "s1:items", index: 3 });
+	});
+
+	it("goes to the end of the page with nothing selected", () => {
+		expect(placementFor(page(), "Hero", null)).toEqual({
+			zone: ROOT_ZONE,
+			index: 2,
+		});
+		expect(placementFor([], "Hero", null)).toEqual({
+			zone: ROOT_ZONE,
+			index: 0,
+		});
+	});
+
+	it("goes to the end of the page when no slot takes the type", () => {
+		expect(
+			placementFor(page(), "Unknown", { zone: "s1:items", index: 1 }),
+		).toEqual({ zone: ROOT_ZONE, index: 2 });
+	});
+
+	it("wraps a block the top level refuses in a new Section", () => {
+		expect(placementFor(page(), "Image", null)).toEqual({
+			zone: ROOT_ZONE,
+			index: 2,
+			wrap: true,
+		});
+		const withHero = [block("Hero", "hero-1", { items: [] }), ...page()];
+		expect(
+			placementFor(withHero, "Image", { zone: ROOT_ZONE, index: 0 }),
+		).toEqual({ zone: ROOT_ZONE, index: 1, wrap: true });
+	});
+});
+
+describe("drawerGroups", () => {
+	const tiles = (features: Parameters<typeof drawerGroups>[0]) =>
+		drawerGroups(features).flatMap((group) => group.tiles);
+
+	it("lists Ready-made, Content and Layout in that order", () => {
+		expect(drawerGroups([]).map((group) => group.title)).toEqual([
+			"Ready-made",
+			"Content",
+			"Layout",
+		]);
+		expect(drawerGroups([])[0]?.tiles.map((tile) => tile.type)).toEqual([
+			"Hero",
+			"Services",
+			"Photos",
+			"Booking",
+		]);
+	});
+
+	it("locks a block whose feature the plan lacks", () => {
+		const booking = tiles([]).find((tile) => tile.type === "Booking");
+		expect(booking?.lockedBy).toBe("premium-blocks");
+		expect(tiles([]).filter((tile) => tile.lockedBy)).toHaveLength(1);
+	});
+
+	it("unlocks it once the plan has the feature", () => {
+		expect(tiles(["premium-blocks"]).every((tile) => !tile.lockedBy)).toBe(
+			true,
+		);
 	});
 });

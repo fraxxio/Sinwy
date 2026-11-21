@@ -18,6 +18,7 @@ import {
 import { toast } from "#/shared/components/ui/toast";
 import { cn } from "#/shared/lib/utils";
 import { BlockToolbar } from "./BlockChrome";
+import { BlockDrawer } from "./BlockDrawer";
 import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
 import { hasUnsavedChanges, type PageData, type SaveResult } from "./save";
@@ -130,9 +131,10 @@ function LeftPanel() {
 				</div>
 				<TabsContent value="add" className="min-h-0 overflow-y-auto p-3">
 					<p className="mb-3 text-muted-foreground text-xs">
-						Drag a block onto the page.
+						Click Add to put a block after the one you selected, or drag it onto
+						the page.
 					</p>
-					<Puck.Components />
+					<BlockDrawer />
 				</TabsContent>
 				<TabsContent value="layers" className="min-h-0 overflow-y-auto p-3">
 					<Puck.Outline />
