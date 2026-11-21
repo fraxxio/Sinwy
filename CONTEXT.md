@@ -44,7 +44,7 @@ The editor where an organization lays out and fills its hosted pages. Available 
 _Avoid_: CMS (for the editor), premium editor
 
 **Block**:
-One piece of a hosted page placed in the Page Builder (section, columns, heading, rich text, image, button, hero, services, …). Some block types may be reserved for higher tiers (Premium blocks).
+One piece of a hosted page placed in the Page Builder (section, columns, heading, rich text, image, button, hero, services, photos, booking, …). Photos puts images side by side; Booking is a "Book online" panel that links into the booking flow. Some block types are reserved for higher tiers (Premium blocks); Booking is the first.
 _Avoid_: Widget, component
 
 **Branding**:

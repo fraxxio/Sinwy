@@ -186,6 +186,31 @@ test.describe("on Professional", () => {
 		const saved = await pages.saved(pageId);
 		expect(saved.map((block) => block.props.id)).toEqual(["second", "first"]);
 	});
+
+	test("a save refused for a newer version keeps the edits unsaved", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(twoSections());
+		await editor.open(pageId);
+		await pages.saveElsewhere(pageId, [
+			section("elsewhere", [heading("elsewhere-title", "From another tab")]),
+		]);
+
+		const title = editor.block("first-title");
+		await title.click();
+		await editor.settings
+			.getByLabel("Text", { exact: true })
+			.fill("Welcome to the salon");
+		await editor.button("Save").click();
+		await expect(page.getByText(/saved somewhere else/)).toBeVisible();
+		await expect(editor.status("Unsaved changes")).toBeVisible();
+		await expect(editor.button("Save")).toBeEnabled();
+		await expect(title).toHaveText("Welcome to the salon");
+		const [saved] = await pages.saved(pageId);
+		expect(saved?.props.id).toBe("elsewhere");
+	});
 });
 
 test.describe("on Starter", () => {

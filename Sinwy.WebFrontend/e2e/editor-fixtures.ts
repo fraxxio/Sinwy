@@ -36,6 +36,8 @@ type Pages = {
 	create: (blocks?: Block[]) => Promise<string>;
 	/** The blocks of the page's latest saved version. */
 	saved: (pageId: string) => Promise<Block[]>;
+	/** Saves `blocks` as a new version, as another tab would. */
+	saveElsewhere: (pageId: string, blocks: Block[]) => Promise<void>;
 };
 
 export const editorFor = (page: Page, org: SeededOrg) => {
@@ -124,6 +126,15 @@ export const test = base.extend<{
 			return json.data;
 		};
 
+		const saveOver = (page: PageDetailDto, blocks: Block[]) =>
+			call("PUT", `/pages/${page.id}/content`, {
+				baseVersion: page.latestVersion.version,
+				content: {
+					schemaVersion: 2,
+					data: { root: { props: {} }, content: blocks },
+				},
+			});
+
 		await use({
 			create: async (blocks) => {
 				const slug = `e2e-${crypto.randomUUID().slice(0, 8)}`;
@@ -131,19 +142,18 @@ export const test = base.extend<{
 					title: `Editor ${slug}`,
 					slug,
 				});
-				if (blocks)
-					await call("PUT", `/pages/${created.id}/content`, {
-						baseVersion: created.latestVersion.version,
-						content: {
-							schemaVersion: 2,
-							data: { root: { props: {} }, content: blocks },
-						},
-					});
+				if (blocks) await saveOver(created, blocks);
 				return created.id;
 			},
 			saved: async (pageId) => {
 				const detail = await call<PageDetailDto>("GET", `/pages/${pageId}`);
 				return detail.latestVersion.content.data.content as Block[];
+			},
+			saveElsewhere: async (pageId, blocks) => {
+				await saveOver(
+					await call<PageDetailDto>("GET", `/pages/${pageId}`),
+					blocks,
+				);
 			},
 		});
 	},

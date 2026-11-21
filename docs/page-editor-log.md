@@ -350,3 +350,40 @@ Finished phases of [page-editor-plan.md](page-editor-plan.md), each with its spe
   - Task pages were seeded by a scratch script through the real API (`/tmp/sinwy-p8/seed.ts`), with three services added to the `pro-org`, so the agent never read the e2e fixtures. Hero, Services and a "Find us" Section (Heading + Text) on each page.
   - The refused-drop check first required unchanged page data. Puck can reorder the refused block inside its own slot, so it now checks that the block is still in the zone it started in.
 - Checked in the running app: all three tasks saved, and each `page_content` row matched (pro `seed-b4cedec8`: Home v3 with two Photos, About us v3 and Contact v3 in the order Hero, Find us, Services; starter `seed-6b433bb1`: Home v3 with a Button in a new Section). The upgrade button opens the Change plan dialog (cancelled). No console errors; the only new log line is the expected `Polar subscription read failed` for the seeded subscription on Billing. `bun run test:editor` 5/5. Not checked: a real upgrade through Polar unlocking Booking, and the final toast wording (changed after the rerun, unit-tested only).
+
+## Phase 9: Code review, docs and cleanup
+
+**Goal:** the editor's plan gating and save paths have been reviewed, the docs describe the editor, and nothing temporary is left behind.
+
+**Files:**
+- Every file the earlier phases changed: `git diff master --stat`. The editor is `Sinwy.WebFrontend/src/modules/org-dashboard/components/page-editor/` plus the route `_shell.pages.$id.edit.tsx`; shared pieces are `src/shared/components/page-builder/puck-config.ts`, `Sinwy.Shared/types/page/blocks/` and the backend pages module (`listsServices`, `lockedBlocksIn`).
+- Plan gating: `BlockDrawer.tsx` (locked tiles, `BlockAccessProvider`, `LOCKED_ALTERNATIVES`), `use-block-actions.ts` (`add` is the only keyboard/click insert path), `save.ts` (`saveErrorMessage`, `hasUnsavedChanges`), `EditorLayout.tsx` (`SaveControls`), the backend content save that returns 402.
+- Delete paths: `blockActions.remove`, `useEditorHotkeys` (Delete/Backspace), `BlockChrome.tsx` (toolbar and action bar Delete).
+- Docs: `CONTEXT.md` (Page Builder, Block), `docs/org-rules-map.md`, `.agents/skills/e2e-test/references/app-map.md`, `README.md`.
+- Cleanup: the scratch list and running servers in the standing notes, `.playwright-cli/page-*.yml`, `console-*.log` and `editor-e2e/` output.
+
+**Steps:**
+- Review with the plan gating in focus: a locked tile can't be dragged or inserted by keyboard; a downgraded org keeps its existing Booking blocks and can still save; a 402 or 409 never clears the dirty state or loses the user's edits.
+- Review the delete paths: block delete is undoable, and nothing in the editor deletes pages or versions.
+- Add the editor route and its flows to the e2e skill's `app-map.md`. Add Photos and Booking to the Block entry in `CONTEXT.md`.
+- Close out the plan: Status, log, and prune the standing notes.
+- Stop every dev server started during the plan's work, unless the user asked to keep it running. Delete probe scripts, screenshots, console logs and scratch data in `/tmp` and the repo that the plan created.
+
+**Tests that matter:**
+- Whatever the review finds missing on the gating and save paths.
+
+**Done when:**
+- Review findings are fixed or filed, `bun run verify` and `bun run test:editor` pass, and `git status` shows no stray files.
+
+**Verify:** None.
+
+### Log (2026-11-21, `test(web): cover a refused save in the editor spec and document the page editor`)
+- Shipped:
+  - Review of plan gating: locked tiles render as plain buttons, not `Drawer.Item`s, so they can't be dragged; no keyboard path inserts blocks; `add` is only reached from unlocked cards. The server's 402 check (`lockedBlocksIn`, by type against the latest version) is the real guard, and its downgrade case is covered by `pages.test.ts`. No finding.
+  - Review of save: `api()` never throws, so every failure comes back as a result; a 402, 409 or 400 leaves `saved` untouched and the editor dirty. `SaveControls` now resets "Saving…" in a `finally`, so a throwing `onSave` can't leave Save disabled for good.
+  - Review of delete paths: `remove` is one recorded Puck dispatch, so it is undoable (unit and e2e tested). Nothing in the editor deletes pages or versions.
+  - New e2e test: a save refused for a newer version (409) shows the reload message, keeps "Unsaved changes", Save enabled and the edit in the canvas, and doesn't overwrite the other save. Fixture `pages.saveElsewhere`.
+  - Docs: Photos and Booking in `CONTEXT.md`'s Block entry; a Pages and page editor section and the `page`/`page_content` tables in the e2e skill's `app-map.md`; the README spec list names the refused-save test. `org-rules-map.md` already named Booking as the premium block.
+  - Cleanup: dev servers on :3000/:3001 stopped; this plan's `/tmp/sinwy-*` scratch, `.playwright-cli` snapshots, console logs, `editor-e2e/` output, its `auth/` storage states and `Sinwy.WebFrontend/dist/` deleted.
+- Differs from plan: no 402 e2e test. A 402 can't be reached through the UI (locked tiles can't be added, and a downgrade mid-session needs a plan change between load and save); it shares the dirty-state path with the 409 test and is covered by `saveErrorMessage` unit tests and the backend tests. Standing notes were cut to what #77 and Puck upgrades need.
+- Checked in the running app: `bun run test:editor` 6/6 before the servers were stopped. Left alone: `/tmp/sinwy-build*.log`, `/tmp/sinwy-e2e`, `/tmp/sinwy-issue`, `/tmp/sinwy-phase4` and five `.playwright-cli/auth` files, all older than this branch.

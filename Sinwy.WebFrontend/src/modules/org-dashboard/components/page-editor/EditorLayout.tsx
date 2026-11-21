@@ -197,8 +197,7 @@ function SaveControls({
 		if (saving) return;
 		const attempted = getPuck().appState.data as PageData;
 		setSaving(true);
-		const result = await onSave(attempted);
-		setSaving(false);
+		const result = await onSave(attempted).finally(() => setSaving(false));
 		if (result.ok) {
 			setSaved(attempted);
 			toast.add({ type: "success", title: "Changes saved", timeout: 3_000 });

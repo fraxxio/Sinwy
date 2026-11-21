@@ -138,7 +138,7 @@ Run the two servers as separate long-running processes, each with its output in 
 - dragging a drawer card to the end of the page, and moving a block by its handle;
 - editing a field, and undo and redo that keep the phone view;
 - the keyboard shortcuts;
-- saving and reloading;
+- saving and reloading, and a save refused for a newer version keeping the edits;
 - the locked Booking tile on Starter.
 
 It checks the saved document through the API. It isn't part of `bun run verify`. **Run it before any `@puckeditor/core` upgrade, and upgrade only if it passes.** Failure traces are written to `.playwright-cli/editor-e2e/results/`.
