@@ -1,8 +1,15 @@
-import { type Data, Puck, type UiState } from "@puckeditor/core";
+import {
+	type Data,
+	type Overrides,
+	Puck,
+	type UiState,
+} from "@puckeditor/core";
 import type { ReactNode } from "react";
 import type { PageMetadata } from "#/shared/components/page-builder/blocks";
+import { chromeOverrides } from "./BlockChrome";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
+import { EditorServicesContext, fieldOverrides } from "./editor-fields";
 import type { PageData, SaveResult } from "./save";
 
 /** Puck's canvas picks the starting viewport and ours isn't Puck's, so the editor opens on desktop here. */
@@ -13,6 +20,11 @@ const INITIAL_UI: Partial<UiState> = {
 		options: VIEWPORTS,
 	},
 };
+
+const OVERRIDES: Partial<Overrides> = { ...fieldOverrides, ...chromeOverrides };
+
+/** With the handle on, a selected Text block's body press goes to its inline editor and the handle moves it. */
+const DND = { enableDragHandle: true };
 
 export function PageEditor({
 	data,
@@ -30,15 +42,19 @@ export function PageEditor({
 	onSave: (data: PageData) => Promise<SaveResult>;
 }) {
 	return (
-		<Puck
-			config={editorConfig}
-			data={data as Data}
-			metadata={metadata}
-			ui={INITIAL_UI}
-			viewports={VIEWPORTS}
-			height="100%"
-		>
-			<EditorLayout title={title} path={path} back={back} onSave={onSave} />
-		</Puck>
+		<EditorServicesContext value={metadata.services}>
+			<Puck
+				config={editorConfig}
+				data={data as Data}
+				metadata={metadata}
+				ui={INITIAL_UI}
+				viewports={VIEWPORTS}
+				overrides={OVERRIDES}
+				dnd={DND}
+				height="100%"
+			>
+				<EditorLayout title={title} path={path} back={back} onSave={onSave} />
+			</Puck>
+		</EditorServicesContext>
 	);
 }

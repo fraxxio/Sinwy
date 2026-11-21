@@ -1,5 +1,7 @@
 import {
+	type Config,
 	createUsePuck,
+	type Field,
 	type PuckContext,
 	type Viewports,
 } from "@puckeditor/core";
@@ -9,6 +11,8 @@ import {
 	PageFrame,
 } from "#/shared/components/page-builder/blocks";
 import { puckConfigFrom } from "#/shared/components/page-builder/puck-config";
+import { ROOT_ZONE } from "./block-actions";
+import { lockedField, serviceIdsField } from "./editor-fields";
 
 export const usePuck = createUsePuck();
 
@@ -19,8 +23,6 @@ export const VIEWPORTS = [
 	{ width: 768, height: "auto", label: "Tablet" },
 	{ width: 375, height: "auto", label: "Phone" },
 ] satisfies Viewports;
-
-const ROOT_ZONE = "root:default-zone";
 
 function EditorPage({
 	puck: { metadata, renderDropZone },
@@ -50,9 +52,32 @@ function EditorPage({
 	);
 }
 
-/** Top-level drops are limited to what the server accepts there; Puck has no `root.allow`. */
-export const editorConfig = puckConfigFrom(BLOCKS, BLOCK_RENDERS, {
-	root: {
-		render: ({ puck }: { puck: PuckContext }) => <EditorPage puck={puck} />,
-	},
+const withLockedFields = (config: Config): Config => ({
+	...config,
+	components: Object.fromEntries(
+		Object.entries(config.components).map(([type, component]) => [
+			type,
+			{
+				...component,
+				fields: Object.fromEntries(
+					Object.entries((component.fields ?? {}) as Record<string, Field>).map(
+						([name, field]) => [
+							name,
+							field.metadata?.["locked"] ? lockedField(field) : field,
+						],
+					),
+				),
+			},
+		]),
+	),
 });
+
+/** Top-level drops are limited to what the server accepts there; Puck has no `root.allow`. */
+export const editorConfig = withLockedFields(
+	puckConfigFrom(BLOCKS, BLOCK_RENDERS, {
+		customFields: { serviceIds: serviceIdsField },
+		root: {
+			render: ({ puck }: { puck: PuckContext }) => <EditorPage puck={puck} />,
+		},
+	}),
+);

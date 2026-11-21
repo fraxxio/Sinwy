@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Editor route, layout and save | – | done | `feat(web): add page editor route, layout and save` |
-| 2 | Fields, action bar and block toolbar | 1 | todo | |
+| 2 | Fields, action bar and block toolbar | 1 | done | `feat(web): add editor fields, block toolbar and action bar` |
 | 3 | Photos and Booking blocks, drawer metadata | 1 | todo | |
 | 4 | Block drawer, locked tiles and insert-and-scroll | 2, 3 | todo | |
 | 5 | History, viewport and keyboard | 2 | todo | |
@@ -45,20 +45,23 @@ Settled with the product owner. Ask before changing any of them.
 
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
-- **Spike reference, not code to merge.** Phase 1 ported the header, canvas and panels. The spike's editor is on branch `pagebuilder-tryout` under `Sinwy.WebFrontend/src/shared/components/page-builder/`: `EditorChrome.tsx` (949 lines: header, `EditorCanvas`, `BlockDrawer`, `BlockToolbar`, `CanvasActionBar`, `CanvasOverlay`, `useKeepViewportOnHistory`), `PageEditor.tsx`, `use-block-actions.ts` (`useBlockActions`, `useEditorHotkeys`), `editor-actions.ts` (`placementFor`, `slotAccepts`, `cloneBlock`, `ROOT_ZONE`), `editor-fields.tsx` (field overrides), `ServicePicker.tsx` and the route `_shell.pages.$id.edit.tsx`. Read them with `git show pagebuilder-tryout:<path>`. They target the old `PuckDocument` types, FreeGrid and templates, all of which are gone on master.
+- **Spike reference, not code to merge.** Phase 1 ported the header, canvas and panels; phase 2 the fields, toolbar, action bar and overlay. The spike's editor is on branch `pagebuilder-tryout` under `Sinwy.WebFrontend/src/shared/components/page-builder/`: `EditorChrome.tsx` (949 lines: header, `EditorCanvas`, `BlockDrawer`, `BlockToolbar`, `CanvasActionBar`, `CanvasOverlay`, `useKeepViewportOnHistory`), `PageEditor.tsx`, `use-block-actions.ts` (`useBlockActions`, `useEditorHotkeys`), `editor-actions.ts` (`placementFor`, `slotAccepts`, `cloneBlock`, `ROOT_ZONE`), `editor-fields.tsx` (field overrides), `ServicePicker.tsx` and the route `_shell.pages.$id.edit.tsx`. Read them with `git show pagebuilder-tryout:<path>`. They target the old `PuckDocument` types, FreeGrid and templates, all of which are gone on master.
 - **Puck** is `@puckeditor/core` 0.24.0, pinned exactly in `Sinwy.WebFrontend/package.json`. Don't import `puck.css`; 0.22+ injects its own, unlayered, so overriding it from Tailwind needs the `!` modifier. Under StrictMode, the children of `<Puck>` remount once (#1884).
-- **Editor code (phase 1):** `org-dashboard/components/page-editor/`: `PageEditor.tsx` (mounts `<Puck>`), `EditorLayout.tsx` (header, `ViewportSwitch`, `SaveControls`, `LeftPanel`, `RightPanel`), `EditorCanvas.tsx`, `editor-config.tsx` (`usePuck`, `VIEWPORTS`, `editorConfig`, the root render), `save.ts` (dirty compare, `saveErrorMessage`). The route `_shell.pages.$id.edit.tsx` loads `PageEditor` with `lazy()`, holds the base version in a ref and saves through `savePageContent`. It drops the shell with `staticData.fullWindow`, which `_shell.tsx` reads.
+- **Editor code:** `org-dashboard/components/page-editor/`: `PageEditor.tsx` (mounts `<Puck>` with `overrides` and `dnd`, inside `EditorServicesContext`), `EditorLayout.tsx` (header, `ViewportSwitch`, `SaveControls`, `LeftPanel`, `RightPanel`), `EditorCanvas.tsx`, `editor-config.tsx` (`usePuck`, `VIEWPORTS`, `editorConfig`, the root render, `withLockedFields`), `editor-fields.tsx` (`fieldOverrides`, `serviceIdsField` checklist, `lockedField`), `BlockChrome.tsx` (`BlockToolbar`, action bar, overlay, `setCanvasZoom`), `use-block-actions.ts` (`useBlockActions`: duplicate, move, remove, selectParent), `block-actions.ts` (pure: `ROOT_ZONE`, `cloneBlock`, `zoneContent`, `moveTarget`), `save.ts`. The route `_shell.pages.$id.edit.tsx` loads `PageEditor` with `lazy()`, holds the base version in a ref and saves through `savePageContent`. It drops the shell with `staticData.fullWindow`, which `_shell.tsx` reads.
 - **Dirty state** compares Puck's `appState.data` with the data last sent in a successful save (`hasUnsavedChanges`, memoised on the data reference), not with the server's answer, whose normalised rich text could differ.
 - **Config:** `puckConfigFrom(BLOCKS, BLOCK_RENDERS, { customFields, root })` in `src/shared/components/page-builder/puck-config.ts` builds `fields` and `defaultProps` from the manifest and trims Tiptap to the rich-text allowlist. Custom kinds without a UI in `customFields` are left out. Locked fields get `metadata: { locked: true }`.
-- **Locked fields** must render read-only through a custom field that wraps Puck's exported `AutoField` with `readOnly`. Returning `readOnly` from `resolveData` makes Puck record a `replace` about 0.75 s after load, which turns on Undo and shows "unsaved" before any click.
+- **Locked fields** go through `lockedField` (Puck's `AutoField` with `readOnly`). Never return `readOnly` from `resolveData`: Puck then records a `replace` about 0.75 s after load, which turns on Undo and shows "unsaved". No manifest field is locked yet.
 - **Root drops:** the root render uses `puck.renderDropZone({ zone: "root:default-zone", allow: ROOT_ALLOW })` (Puck special-cases that zone id). Verified in the browser: a Heading dragged to the root is refused, a Section is accepted. The server refuses it too (400 "Heading can't go at the top level of a page").
+- **History recording:** Puck records 250 ms after the last recorded dispatch (debounced), so consecutive recorded dispatches fold into one entry; `setUi` and `setData` aren't recorded unless `recordHistory: true`. Insert-with-data is `insert` (with our `id`) then `replace` (`replace` can't change an id). Dispatch `setUi` before `reorder`/`remove` so the recorded state's selection is right. `remove` doesn't clear the selection. Puck's built-in Ctrl+Z / Ctrl+Shift+Z already work on the host and in the iframe (phase 5 must not double them). See log phase 2.
 - **History:** every history entry stores the whole app state, `ui` included, so undo and redo also restore the viewport. A dispatched `setUi` is never recorded. The spike's fix is a layout effect on `history.index` that dispatches `setUi({ viewports })` with the user's viewport after undo or redo, which covers the buttons and Puck's own hotkeys on the host and in the iframe. Still open: with a RichText block selected, Redo is followed by a `replace` that only carries `ui.field`. Puck records it as a data-identical entry, so getting back takes two Undo clicks.
 - **Drawer:** `Drawer` and `Drawer.Item` are exported. `Drawer.Item`'s `children` render function must be a stable module-level const. Don't pass `droppableId` or `direction` to `Drawer`; both are deprecated and log `console.error`. `Drawer.Item` renders its content twice; set `inert` on the closest `[class*="Drawer-draggableBg"]` from the card's ref so screen readers announce it once, and put `isolate` on the grid so the copy stays visible while dragging. A locked tile is a plain button, not a `Drawer.Item`.
-- **Action bar:** `dnd={{ enableDragHandle: true }}` makes Puck pass `dragHandle` to the `actionBar` override. A selected Text block's body press goes to the inline editor, so the handle is how you move Text. Puck clips the bar at the top of the iframe; the override measures its own top on mount and on iframe scroll and shifts itself down. `componentOverlay` replaces the hover and selection ring and renders inside the iframe, where Tailwind classes apply.
-- **Scripted drags:** a release with no pointer move after reaching the target cancels the drop. Probes and the e2e spec add a 2 px settle move before releasing.
+- **Action bar:** `dnd={{ enableDragHandle: true }}` makes Puck pass `dragHandle` to the `actionBar` override. A selected Text block's body press goes to the inline editor, so the handle is how you move Text. `actionBar` and `componentOverlay` render inside the iframe (Tailwind applies) but outside `Puck.Preview`'s React tree: a context from `EditorCanvas` doesn't reach them, so the zoom goes through `setCanvasZoom`'s module store. During a handle drag the drag ghost sits near the iframe's left edge, not under the pointer (drops still land); unchecked whether our scaled bar causes it (phase 8).
+- **Puck API:** `usePuck`/`getPuck` have no `metadata`, and fields don't get it either; editor-only data goes through React context around `<Puck>`. `getParentById` returns the root for a top-level block, so "has a parent" is `itemSelector.zone !== ROOT_ZONE`. Puck pads each settings field itself; our field components add no padding.
+- **Scripted drags:** a release with no pointer move after reaching the target cancels the drop. Probes and the e2e spec add a 2 px settle move before releasing. On a page with blocks, a drop on the dashed "Drop blocks here" area at the end of the root zone doesn't land (5, 20 and 40 px above the zone's bottom all failed); ~8 px below the last block does. Phase 4 must fix or explain this. Inside a slot, aim at the lower half of the last child; 8 px below it hits the Section's padding and is ignored.
 - **Hero's default `items` have no ids;** Puck 0.24 adds them on insert. `BlockTemplate` in `blocks/fields.ts` documents this.
 - **Save API:** `PUT /organizations/:orgId/pages/:pageId/content` (`savePageContent` in `page-queries.ts`). Errors: 409 `PAGE_VERSION_CONFLICT`; 402 `PLAN_UPGRADE_REQUIRED`, whose message doesn't name the block, so `saveErrorMessage` names it with `lockedBlocksIn` (shared, the same check the server runs); 400 with the server's message. Versions are stored in the `page_content` table (`page_id`, `version`, `content`), not `page_content`.
 - **Empty documents:** new pages start with `emptyPageDocument()`, and every existing page was reset to an empty document. There are no templates for now.
+- **shadcn CLI:** `shadcn add` installed a stray `cn` package and imported `cn` from `"cn"`; revert `package.json`/`bun.lock` and import from `@/shared/lib/utils`.
 - **Plan names:** `PLAN_NAMES.professional` is "Business", so `minimumPlanFor("premium-blocks")` shows as "Business" (phase 4's Verify says "Professional").
 - **Plans on the client:** `useEntitlements().has(feature)` (`src/shared/lib/auth/entitlements.ts`), fed by the org shell's route context. `minimumPlanFor` and `FEATURE_NAMES` are in `src/shared/lib/plans.ts`. `UpgradeAction` is in `src/shared/components/UpgradePrompt.tsx`. `featuresFor`, `PLAN_FEATURES` and `hasFeature` are in `Sinwy.Shared/types/plan/PlanFeatures.ts`. Starter has no `premium-blocks`; Professional and Enterprise do.
 - **Route context:** the editor route is under `_shell`, whose `beforeLoad` provides `organization`, `member` and `entitlements`.
@@ -67,39 +70,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Seeds:** `bun run dev:seed-scenario subscribed-org` (Starter), `pro-org` (Professional, `premium-blocks`) and `bookable-org` (Starter with services and hours). `bun run dev:login-as` logs in. Both are described in `.agents/skills/e2e-test/references/`.
 - **Spike performance baseline** (production build, Ryzen 5 7600X, headless Chromium, 1440×900): typing on a 252-block page took 24–32 ms per key unthrottled and 96–104 ms per key at 4× CPU, with a long task on every key. The cost is Puck rebuilding its whole-tree index on every change (O(blocks)); only about 8 components re-render per key. Better Auth refuses the `vite preview` origin (:4173, `set-active` → 403 `INVALID_ORIGIN`). The spike's probes proxied `/api` through Playwright's `route.fetch` with `Origin: http://localhost:3000`.
 - **Plan gating docs:** `docs/org-rules-map.md` L203 says premium blocks gate "none yet". Phase 3 changes that.
-
----
-
-## Phase 2: Fields, action bar and block toolbar
-
-**Goal:** every block's settings can be edited in our own field UI, locked fields are read-only, and every block has an action bar with a drag handle and a toolbar whose actions have text labels.
-
-**Files:**
-- `src/modules/org-dashboard/components/page-editor/`: `PageEditor.tsx` (add `overrides` and `dnd={{ enableDragHandle: true }}` to `<Puck>`), `EditorLayout.tsx` (`RightPanel` gets the block toolbar), `editor-config.tsx` (`editorConfig` takes `customFields`).
-- `src/shared/components/page-builder/puck-config.ts` (`CustomFields`, `CustomFieldUi`, `metadata.locked`).
-- `Sinwy.Shared/types/page/blocks/fields.ts` (`field.serviceIds`, `locked`).
-- `src/modules/org-dashboard/lib/service-queries.ts` (`servicesQuery`; the editor route already loads it and passes active services as `metadata.services`).
-- Spike: `ServicePicker.tsx`, `editor-fields.tsx` (`fieldOverrides`, `EditorFieldLabel`, controls), `EditorChrome.tsx` (`BlockToolbar`, `CanvasActionBar`, `CanvasOverlay`), `use-block-actions.ts`, `editor-actions.ts`.
-
-**Steps:**
-- `customFields.serviceIds`: a checklist of the org's active services, in their order, with "All services" meaning an empty list.
-- Locked fields: wrap any field with `metadata.locked` in a custom field that renders `AutoField` read-only with a lock icon and a one-line reason. No `resolveData`.
-- Field overrides use shadcn controls and plain labels, matching the dashboard's forms.
-- `actionBar` override: drag handle, the block's label, Duplicate and Delete. `dnd.enableDragHandle` is on. The bar shifts itself down when Puck would clip it at the iframe top.
-- `componentOverlay`: our ring for hover and selected, with the block's label on hover.
-- Block toolbar at the top of the settings panel, with text labels, not only icons: "Move up", "Move down", "Duplicate", "Delete", "Select parent block". Each dispatches through `useGetPuck().dispatch` and is one history entry.
-- Duplicate gives every copied block, nested ones included, a fresh id.
-
-**Tests that matter:**
-- Duplicate re-ids every nested block, and the copy passes `pageDocumentSchema`.
-- Move up and down stay within the slot and do nothing at its ends.
-
-**Done when:**
-- A Services block's picker saves the chosen ids, and the storefront shows only those.
-- A Text block can be moved by its handle.
-- Selecting any block adds no history entry.
-
-**Verify:** Seed `bookable-org` (two services), log in, create a page and open the editor. Add Services, then in its settings untick "Colouring" and Save: the latest `page_content` row's Services props hold only Haircut's id, and Preview lists only Haircut. Add a Section with a Text inside. Drag the Text by its handle to below another block: it moves. With the Text selected, "Select parent block" selects the Section, "Duplicate" adds a copy below, "Move up" moves it, and "Delete" removes it. Each of these is one Undo step (checked with Ctrl+Z after phase 5; for now check that the history length grows by one). Nothing is simulated except login.
 
 ---
 
@@ -114,6 +84,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - `Sinwy.Backend/modules/pages/service.ts` (`savePageContent`, the gated-type check) and `tests/pageDocument.test.ts`.
 - `src/shared/tests/puck-config.test.ts`, `page-document-view.test.ts`.
 - `docs/org-rules-map.md` around L203.
+- Editor: Booking's `serviceIds` uses `field.serviceIds`, so `serviceIdsField` in `page-editor/editor-fields.tsx` renders it with no editor change; `cloneBlock` and `zoneContent` read slots from the manifest, so Photos' `items` needs nothing there either.
 
 **Steps:**
 - `defineBlock` requires `description` (one plain sentence) and `group` (`"ready" | "content" | "layout"`). Write descriptions for every block in a salon owner's words; for example, Section: "A band across the page that holds text, photos and buttons."

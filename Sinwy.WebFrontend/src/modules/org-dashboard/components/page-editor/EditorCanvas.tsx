@@ -1,5 +1,6 @@
 import { Puck, useGetPuck } from "@puckeditor/core";
 import { useLayoutEffect, useRef, useState } from "react";
+import { setCanvasZoom } from "./BlockChrome";
 import { usePuck } from "./editor-config";
 
 /** Puck's own canvas isn't exported: this one sizes the preview to the viewport and scales it down to fit. */
@@ -26,6 +27,8 @@ export function EditorCanvas() {
 	const frameWidth = typeof width === "number" ? width : box.width;
 	const zoom =
 		box.width && frameWidth ? Math.min(1, box.width / frameWidth) : 1;
+
+	useLayoutEffect(() => setCanvasZoom(zoom), [zoom]);
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: clicking around the page deselects, as in Puck's own canvas

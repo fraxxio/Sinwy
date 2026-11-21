@@ -17,6 +17,7 @@ import {
 } from "#/shared/components/ui/tabs";
 import { toast } from "#/shared/components/ui/toast";
 import { cn } from "#/shared/lib/utils";
+import { BlockToolbar } from "./BlockChrome";
 import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
 import { hasUnsavedChanges, type PageData, type SaveResult } from "./save";
@@ -142,11 +143,16 @@ function LeftPanel() {
 }
 
 function RightPanel() {
-	const hasSelection = usePuck((s) => s.appState.ui.itemSelector !== null);
+	const hasSelection = usePuck((s) => !!s.selectedItem);
 	return (
-		<aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l bg-card">
+		<aside className="flex w-80 shrink-0 flex-col border-l bg-card">
 			{hasSelection ? (
-				<Puck.Fields />
+				<>
+					<BlockToolbar />
+					<div className="min-h-0 flex-1 overflow-y-auto">
+						<Puck.Fields />
+					</div>
+				</>
 			) : (
 				<p className="p-6 text-muted-foreground text-sm">
 					Select a block on the page to change its settings.
