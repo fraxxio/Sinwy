@@ -87,6 +87,72 @@ export function slotAccepts(
 	return !!field && isSlotField(field) && field.allow.includes(type);
 }
 
+function findWithParent(
+	content: readonly BlockNode[],
+	id: string,
+	blocks: Blocks,
+	parent: BlockNode | null = null,
+): { block: BlockNode; parent: BlockNode | null } | undefined {
+	for (const block of content) {
+		if (block.props.id === id) return { block, parent };
+		for (const slot of slotsOf(block, blocks)) {
+			const found = findWithParent(childrenIn(block, slot), id, blocks, block);
+			if (found) return found;
+		}
+	}
+	return undefined;
+}
+
+const labelOf = (type: string, blocks: Blocks) =>
+	ownEntry(blocks, type)?.label ?? type;
+
+/** The text of the first Heading directly in a block's slots, which is how an owner tells their Sections apart. */
+export function blockTitle(
+	block: BlockNode,
+	blocks: Blocks = BLOCKS,
+): string | null {
+	for (const slot of slotsOf(block, blocks))
+		for (const child of childrenIn(block, slot)) {
+			const text = child.type === "Heading" ? child.props["text"] : null;
+			if (typeof text === "string" && text.trim()) return text.trim();
+		}
+	return null;
+}
+
+/** "Section · Find us" for a titled block, "Heading in Find us" for a block inside one, else the block's label. */
+export function canvasLabel(
+	content: readonly BlockNode[],
+	id: string,
+	blocks: Blocks = BLOCKS,
+): string | null {
+	const found = findWithParent(content, id, blocks);
+	if (!found) return null;
+	const label = labelOf(found.block.type, blocks);
+	const own = blockTitle(found.block, blocks);
+	if (own) return `${label} · ${own}`;
+	const around = found.parent && blockTitle(found.parent, blocks);
+	return around ? `${label} in ${around}` : label;
+}
+
+/** What to tell the owner when a block is dropped on a zone that doesn't take it, so Puck kept it where it was. */
+export function refusedDropNotice(
+	content: readonly BlockNode[],
+	draggedId: string,
+	zone: string,
+	blocks: Blocks = BLOCKS,
+	rootAllow: readonly string[] = ROOT_ALLOW,
+): string | null {
+	const found = findWithParent(content, draggedId, blocks);
+	if (!found || slotAccepts(content, zone, found.block.type, blocks, rootAllow))
+		return null;
+	const label = labelOf(found.block.type, blocks);
+	if (!found.parent) return `This ${label} can't go there.`;
+	const parent = labelOf(found.parent.type, blocks).toLowerCase();
+	const around = blockTitle(found.parent, blocks);
+	const stayed = `This ${label} can't go there on its own, so it stayed in ${around ? `“${around}”` : `its ${parent}`}.`;
+	return `${stayed} To move the whole ${parent}, click ⮤ in the bar above the ${label}, then drag the ${parent} by ⠿ or use Move up and Move down.`;
+}
+
 /** The top-level block a new block is wrapped in when it can't go at the top level itself. */
 export const WRAPPER = { type: "Section", slot: "items" } as const;
 

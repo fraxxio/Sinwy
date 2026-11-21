@@ -36,7 +36,12 @@ import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
 import { PreloadRichText } from "./editor-fields";
 import { hasUnsavedChanges, type PageData, type SaveResult } from "./save";
-import { useEditorHotkeys, useEditorKeys } from "./use-block-actions";
+import {
+	useBlockActions,
+	useEditorHotkeys,
+	useEditorKeys,
+	useRefusedDropNotice,
+} from "./use-block-actions";
 
 const MOD =
 	typeof navigator !== "undefined" &&
@@ -94,7 +99,7 @@ function ViewportSwitch() {
 }
 
 function HistoryButtons() {
-	const getPuck = useGetPuck();
+	const actions = useBlockActions();
 	const hasPast = usePuck((s) => s.history.hasPast);
 	const hasFuture = usePuck((s) => s.history.hasFuture);
 	const buttons = [
@@ -103,14 +108,14 @@ function HistoryButtons() {
 			keys: `${MOD}Z`,
 			icon: Undo2Icon,
 			enabled: hasPast,
-			run: () => getPuck().history.back(),
+			run: actions.undo,
 		},
 		{
 			label: "Redo",
 			keys: `${MOD}Shift+Z`,
 			icon: Redo2Icon,
 			enabled: hasFuture,
-			run: () => getPuck().history.forward(),
+			run: actions.redo,
 		},
 	];
 	return (
@@ -295,6 +300,7 @@ export function EditorLayout({
 	onSave: (data: PageData) => Promise<SaveResult>;
 }) {
 	useEditorHotkeys();
+	useRefusedDropNotice();
 	return (
 		<div className="flex h-svh flex-col bg-background">
 			<header className="flex h-14 shrink-0 items-center gap-3 border-b bg-card px-3">

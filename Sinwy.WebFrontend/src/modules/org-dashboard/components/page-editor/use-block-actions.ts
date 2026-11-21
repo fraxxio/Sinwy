@@ -1,6 +1,7 @@
 import { type ComponentData, type PuckApi, useGetPuck } from "@puckeditor/core";
 import type { BlockNode } from "@sinwy/shared";
 import { useEffect, useEffectEvent, useMemo } from "react";
+import { toast } from "#/shared/components/ui/toast";
 import {
 	cloneBlock,
 	moveTarget,
@@ -8,6 +9,7 @@ import {
 	parentSelector,
 	placementFor,
 	ROOT_ZONE,
+	refusedDropNotice,
 	type Selector,
 	stepInReadingOrder,
 	WRAPPER,
@@ -49,6 +51,24 @@ function scrollToBlock(id: string, timeoutMs = 3_000) {
  * The commands on the selected block, from the toolbar, the action bar and the keyboard. Each edit is a single
  * history entry: Puck records history 250 ms after the last recorded dispatch and never records `setUi`.
  */
+/** Puck records an edit 250 ms after it; history travel before that skips the edit and the late record drops the redo. */
+const historyPending = ({ appState, history }: PuckApi) =>
+	history.histories[history.index]?.state.data !== appState.data;
+
+const SETTLE_POLL_MS = 50;
+const SETTLE_TIMEOUT_MS = 500;
+
+/** Undoes or redoes once Puck has recorded the latest edit. */
+async function travelWhenRecorded(
+	getPuck: () => PuckApi,
+	direction: "back" | "forward",
+) {
+	const started = Date.now();
+	while (historyPending(getPuck()) && Date.now() - started < SETTLE_TIMEOUT_MS)
+		await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
+	getPuck().history[direction]();
+}
+
 export function blockActions(getPuck: () => PuckApi) {
 	const selected = () => {
 		const puck = getPuck();
@@ -172,6 +192,9 @@ export function blockActions(getPuck: () => PuckApi) {
 			return true;
 		},
 		hasSelection: () => !!selected(),
+		historyPending: () => historyPending(getPuck()),
+		undo: () => travelWhenRecorded(getPuck, "back"),
+		redo: () => travelWhenRecorded(getPuck, "forward"),
 	};
 }
 
@@ -194,6 +217,60 @@ export function useEditorKeys(onKeyDown: (event: KeyboardEvent) => void) {
 	}, [frame]);
 }
 
+const DRAG_DISTANCE_PX = 8;
+/** Puck finishes a drop 250 ms after the pointer is released. */
+const DROP_SETTLE_MS = 400;
+
+/** Explains a drag released over a zone that doesn't take the block, which Puck keeps in its own zone without a word. */
+export function useRefusedDropNotice() {
+	const frame = useCanvasDocument();
+	const getPuck = useGetPuck();
+	useEffect(() => {
+		if (!frame) return;
+		let drag: { id: string; x: number; y: number; zone: string } | null = null;
+		const zoneOf = (id: string) => getPuck().getSelectorForId(id)?.zone;
+		const down = (event: PointerEvent) => {
+			const block = (event.target as Element | null)?.closest?.(
+				"[data-puck-component]",
+			);
+			const id = block?.getAttribute("data-puck-component");
+			const zone = id && zoneOf(id);
+			drag =
+				id && zone ? { id, x: event.clientX, y: event.clientY, zone } : null;
+		};
+		const up = (event: PointerEvent) => {
+			const started = drag;
+			drag = null;
+			if (
+				!started ||
+				Math.hypot(event.clientX - started.x, event.clientY - started.y) <
+					DRAG_DISTANCE_PX
+			)
+				return;
+			const target = frame
+				.elementFromPoint(event.clientX, event.clientY)
+				?.closest("[data-puck-dropzone]")
+				?.getAttribute("data-puck-dropzone");
+			if (!target || target === started.zone) return;
+			setTimeout(() => {
+				if (zoneOf(started.id) !== started.zone) return;
+				const notice = refusedDropNotice(
+					getPuck().appState.data.content as BlockNode[],
+					started.id,
+					target,
+				);
+				if (notice) toast.add({ type: "info", title: notice, timeout: 10_000 });
+			}, DROP_SETTLE_MS);
+		};
+		frame.addEventListener("pointerdown", down, true);
+		frame.addEventListener("pointerup", up, true);
+		return () => {
+			frame.removeEventListener("pointerdown", down, true);
+			frame.removeEventListener("pointerup", up, true);
+		};
+	}, [frame, getPuck]);
+}
+
 const roles = (...names: string[]) =>
 	names.map((name) => `[role="${name}"]`).join(", ");
 
@@ -208,16 +285,35 @@ const focusIn = (event: KeyboardEvent, selector: string) => {
 	return typeof origin?.closest === "function" && !!origin.closest(selector);
 };
 
+/** Toasts are non-modal dialogs and leave the keys to the editor. */
 const modalOpen = () =>
-	!!document.querySelector('[role="dialog"], [role="alertdialog"]');
+	!!document.querySelector(
+		'[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"]',
+	);
+
+/** The undo and redo combos Puck listens for. */
+const historyKey = (event: KeyboardEvent) => {
+	if (!(event.ctrlKey || event.metaKey) || event.altKey) return null;
+	if (event.code === "KeyZ") return event.shiftKey ? "redo" : "undo";
+	if (event.code === "KeyY" && !event.shiftKey) return "redo";
+	return null;
+};
 
 /**
  * Delete, Backspace, ↑ ↓, Alt+↑ ↓ and Esc on the selected block, on the host page and inside the canvas. Undo and
- * redo are Puck's own. Delete is taken over from Puck, whose `remove` leaves the next block selected.
+ * redo are Puck's own, except right after an edit, when they wait for it to be recorded. Delete is taken over from
+ * Puck, whose `remove` leaves the next block selected.
  */
 export function useEditorHotkeys() {
 	const actions = useBlockActions();
 	useEditorKeys((event) => {
+		const travel = historyKey(event);
+		if (travel && actions.historyPending()) {
+			event.preventDefault();
+			event.stopPropagation();
+			void actions[travel]();
+			return;
+		}
 		if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
 		if (focusIn(event, TEXT_ENTRY) || modalOpen()) return;
 		const arrowsTaken = focusIn(event, ARROW_WIDGETS);

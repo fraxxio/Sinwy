@@ -87,6 +87,12 @@ const SKETCHES: Record<BlockType, ReactNode> = {
 	),
 };
 
+/** What a plan without the block can do instead, so an owner doesn't upgrade for something they already have. */
+const LOCKED_ALTERNATIVES: Partial<Record<string, string>> = {
+	Booking:
+		"Customers can already book online on your plan: Hero and Services blocks come with Book buttons that open your booking page, and a Button block can link there too.",
+};
+
 type BlockAccess = {
 	groups: ReturnType<typeof drawerGroups>;
 	askToUpgrade: (tile: DrawerTile) => void;
@@ -130,6 +136,11 @@ export function BlockAccessProvider({ children }: { children: ReactNode }) {
 								? `Your plan doesn't include it. Upgrade to ${getPlanName(plan)} to add it to your pages.`
 								: "It isn't included in any plan yet."}
 						</DialogDescription>
+						{upgrading && LOCKED_ALTERNATIVES[upgrading.type] && (
+							<p className="text-muted-foreground text-sm">
+								{LOCKED_ALTERNATIVES[upgrading.type]}
+							</p>
+						)}
 					</DialogHeader>
 					{plan && (
 						<DialogFooter>

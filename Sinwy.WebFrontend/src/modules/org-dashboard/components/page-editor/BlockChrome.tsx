@@ -1,4 +1,5 @@
 import { ActionBar, type Overrides } from "@puckeditor/core";
+import type { BlockNode } from "@sinwy/shared";
 import {
 	ArrowDownIcon,
 	ArrowUpIcon,
@@ -15,7 +16,7 @@ import {
 } from "react";
 import { Button } from "#/shared/components/ui/button";
 import { cn } from "#/shared/lib/utils";
-import { ROOT_ZONE } from "./block-actions";
+import { blockTitle, canvasLabel, ROOT_ZONE } from "./block-actions";
 import { usePuck } from "./editor-config";
 import { useBlockActions } from "./use-block-actions";
 
@@ -47,6 +48,9 @@ export function BlockToolbar() {
 			? (s.config.components[s.selectedItem.type]?.label ?? s.selectedItem.type)
 			: null,
 	);
+	const title = usePuck((s) =>
+		s.selectedItem ? blockTitle(s.selectedItem as BlockNode) : null,
+	);
 	const first = usePuck((s) => s.appState.ui.itemSelector?.index === 0);
 	const last = usePuck((s) => {
 		const selector = s.appState.ui.itemSelector;
@@ -64,7 +68,14 @@ export function BlockToolbar() {
 	return (
 		<div className="grid gap-3 border-(--line-soft) border-b p-4">
 			<div className="flex items-center justify-between gap-2">
-				<h2 className="truncate font-heading font-semibold text-sm">{label}</h2>
+				<div className="min-w-0">
+					<h2 className="truncate font-heading font-semibold text-sm">
+						{label}
+					</h2>
+					{title && (
+						<p className="truncate text-muted-foreground text-xs">{title}</p>
+					)}
+				</div>
 				{hasParent && (
 					<Button variant="ghost" size="xs" onClick={actions.selectParent}>
 						<CornerLeftUpIcon aria-hidden />
@@ -125,14 +136,26 @@ function useUnclippedShift() {
 	return [ref, shift] as const;
 }
 
+/** The canvas's name for a block, from its own Heading or the titled block around it. */
+const useCanvasLabel = (id: string | undefined) =>
+	usePuck((s) =>
+		id ? canvasLabel(s.appState.data.content as BlockNode[], id) : null,
+	);
+
 function BlockActionBar({
 	label,
 	dragHandle,
+	parentAction,
 }: {
 	label?: string | undefined;
 	dragHandle?: ReactNode;
+	parentAction?: ReactNode;
 }) {
 	const actions = useBlockActions();
+	const selectedId = usePuck(
+		(s) => s.selectedItem?.props.id as string | undefined,
+	);
+	const name = useCanvasLabel(selectedId) ?? label;
 	const zoom = useCanvasZoom();
 	const [ref, shift] = useUnclippedShift();
 	return (
@@ -146,11 +169,12 @@ function BlockActionBar({
 		>
 			<ActionBar>
 				{dragHandle && <ActionBar.Group>{dragHandle}</ActionBar.Group>}
-				{label && (
+				{name && (
 					<ActionBar.Group>
-						<ActionBar.Label label={label} />
+						<ActionBar.Label label={name} />
 					</ActionBar.Group>
 				)}
+				{parentAction && <ActionBar.Group>{parentAction}</ActionBar.Group>}
 				<ActionBar.Group>
 					<ActionBar.Action label="Duplicate" onClick={actions.duplicate}>
 						<CopyPlusIcon className="size-4" />
@@ -167,16 +191,16 @@ function BlockActionBar({
 function BlockOverlay({
 	hover,
 	isSelected,
+	componentId,
 	componentType,
 }: {
 	hover: boolean;
 	isSelected: boolean;
+	componentId: string;
 	componentType: string;
 }) {
 	const zoom = useCanvasZoom();
-	const label = usePuck(
-		(s) => s.config.components[componentType]?.label ?? componentType,
-	);
+	const label = useCanvasLabel(componentId) ?? componentType;
 	if (!hover && !isSelected) return null;
 	return (
 		<div
@@ -187,7 +211,7 @@ function BlockOverlay({
 		>
 			{hover && !isSelected && (
 				<span
-					className="absolute top-0 left-0 origin-top-left rounded-br bg-sky-600 px-1.5 py-0.5 font-medium text-[11px] text-white"
+					className="absolute top-0 left-0 max-w-64 origin-top-left truncate rounded-br bg-sky-600 px-1.5 py-0.5 font-medium text-[11px] text-white"
 					style={{ transform: `scale(${1 / zoom})` }}
 				>
 					{label}
@@ -198,13 +222,18 @@ function BlockOverlay({
 }
 
 export const chromeOverrides: Partial<Overrides> = {
-	actionBar: ({ label, dragHandle }) => (
-		<BlockActionBar label={label} dragHandle={dragHandle} />
+	actionBar: ({ label, dragHandle, parentAction }) => (
+		<BlockActionBar
+			label={label}
+			dragHandle={dragHandle}
+			parentAction={parentAction}
+		/>
 	),
-	componentOverlay: ({ hover, isSelected, componentType }) => (
+	componentOverlay: ({ hover, isSelected, componentId, componentType }) => (
 		<BlockOverlay
 			hover={hover}
 			isSelected={isSelected}
+			componentId={componentId}
 			componentType={componentType}
 		/>
 	),

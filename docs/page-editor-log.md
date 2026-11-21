@@ -300,3 +300,53 @@ Finished phases of [page-editor-plan.md](page-editor-plan.md), each with its spe
   - The first 1× Text run in the probe was invalid until the fix (the dropped keys above). The numbers in the table are from after the fix; 4× numbers before it were the same within noise.
   - No Playwright helper was committed: the probe is scratch in `/tmp/sinwy-p7`.
 - Checked in the running app: the above on the production build, against the `pro-org` seed `seed-ef4a0c14` (page `92af5647-…`); `bun run test:editor` 5/5 afterwards on the dev servers. Not checked: a real network or a mid-range device (CPU throttling only), and the dev build.
+
+## Phase 8: Usability rerun (tasks 3, 7, 8)
+
+**Goal:** an agent driving the browser cold reruns usability tasks 3 (drawer part), 7 and 8 from the spike and hits no dead end, and what it finds is fixed or filed.
+
+**Files:**
+- Task wording: `docs/puck-usability-tasks.md` on `pagebuilder-tryout` (tasks 3, 7, 8, with the user's notes); the spike's scores are in `docs/puck-spike-log.md` phase 8 there.
+- Seeding the task pages: `Sinwy.WebFrontend/e2e/editor-fixtures.ts` shows the POST plus PUT content calls and the `heading`/`section` builders. Photos, Hero and Services shapes are in `Sinwy.Shared/types/page/blocks/blocks.ts`. Each `pro-org` seed allows 5 pages.
+- Where findings usually land, in `src/modules/org-dashboard/components/page-editor/`:
+  - Task 3 (drawer, Photos): `BlockDrawer.tsx` (cards, sketches, first-run cards), `block-actions.ts` (`placementFor`, which decides where a clicked card goes), `editor-fields.tsx`.
+  - Task 7 (locked Booking): `BlockDrawer.tsx` (locked tile, upgrade dialog), `src/shared/components/UpgradePrompt.tsx`, and the manifest's `description` texts.
+  - Task 8 (moving a Section): `BlockChrome.tsx` (action bar, drag handle, toolbar move buttons), `use-block-actions.ts` (Alt+↑/↓), the Layers tab in `EditorLayout.tsx`.
+- Open questions for this phase in the standing notes: the drag ghost offset during handle drags, and an undo within 250 ms of an edit doing nothing.
+
+**Steps:**
+- Run the tasks with the `e2e-test` skill, worded as the owner would say them, with no hints about the UI. Record steps, ease (1–5) and dead ends per task, as the spike did.
+- Fix small findings in this phase. File larger ones as GitHub issues (ask before creating them) and list them in the log.
+
+**Tests that matter:**
+- Any fix keeps the e2e spec green.
+
+**Done when:**
+- Tasks 3 (drawer part), 7 and 8 score 4 or 5 with no dead end.
+
+**Verify:** Task 3: seed `pro-org`, "Put two photos of the salon side by side", then "Under 'Find us', add two photos of the street next to each other" (seed a "Find us" Section with a Heading first). Task 7: seed `subscribed-org` (Starter), "Add an online booking form to my page": the agent finds the locked Booking tile and its upgrade path, or the Services/Button workaround. Task 8: a page with Hero, Services and a "Find us" Section, "Move the 'Find us' part up, right under the welcome banner". Each task ends with a Save, and the `page_content` row matches. Nothing is simulated except login.
+
+### Log (2026-11-21, `fix(web): name sections in the canvas, explain refused drops and wait for history before undo`)
+- Shipped:
+  - Undo and redo wait for Puck to record the latest edit (`historyPending`, `travelWhenRecorded` in `use-block-actions.ts`), from the keys and the header buttons. Unit tests with a fake history; the e2e keyboard test now presses Ctrl+Z straight after Delete.
+  - Canvas names from headings (`blockTitle`, `canvasLabel`): hover tag, action bar label, and the title under the block type in the settings header. Puck's `parentAction` (⮤) is rendered in our action bar. The block around a hovered block gets a dashed outline (`styles.css`, `:has`).
+  - `useRefusedDropNotice` with `refusedDropNotice`: a toast when a dragged block is released over a zone that refuses it.
+  - `modalOpen` ignores non-modal dialogs: Base UI toasts are `role="dialog"`, so Delete, arrows and Esc did nothing for 3–10 s after every save.
+  - Booking's upgrade dialog says online booking already works through the Book buttons (`LOCKED_ALTERNATIVES`); the Business plan card names Booking ("Premium page blocks, like online Booking").
+- Scores (cold agent, owner wording, no UI hints):
+
+  | Task | First run | After fixes | Dead end |
+  | --- | --- | --- | --- |
+  | 3, two photos side by side, then under "Find us" | 4 | – | Images only by URL (#80) |
+  | 7, booking form on Starter | 4 | – | none: locked tile → upgrade dialog → billing, or the Button workaround |
+  | 8, move "Find us" under the banner | 3 | 4 | first run: dragging the heading moved nothing and said nothing; rerun: the toast named the way out |
+
+  Task 3's URL-only images is a dead end for a real owner but out of this phase's scope; the agent was given addresses as the spike's tasks file says.
+- Open questions answered: the drag ghost keeps its grab offset (Puck, left as is); an undo within 250 ms of an edit did nothing on fresh history and went one step too far otherwise, which a person notices (Redo greys out), so fixed.
+- Filed: #80 image upload, #81 link picker for buttons, #82 section names in Layers (sub-issues of #73).
+- Not fixed (small, for later): the toast sits top-right, away from the drop and over the settings header; no "not allowed" cue during a refused drag; dnd-kit's screen-reader announcements read internal ids ("Draggable item Heading-… was dropped"); the "Drop blocks here" box at the page end may look like page content; the action bar covers the top-right of the selected block (e.g. a Book button); Photos' Images default to Square and crop wide photos; the Layers drag ghost overlaps rows; the action bar's ⮤ is titled "Select parent", the settings button "Select parent block".
+- Differs from plan:
+  - Task 7 used `bookable-org` (Starter with services) instead of `subscribed-org`, so the Services workaround showed real services.
+  - Task pages were seeded by a scratch script through the real API (`/tmp/sinwy-p8/seed.ts`), with three services added to the `pro-org`, so the agent never read the e2e fixtures. Hero, Services and a "Find us" Section (Heading + Text) on each page.
+  - The refused-drop check first required unchanged page data. Puck can reorder the refused block inside its own slot, so it now checks that the block is still in the zone it started in.
+- Checked in the running app: all three tasks saved, and each `page_content` row matched (pro `seed-b4cedec8`: Home v3 with two Photos, About us v3 and Contact v3 in the order Hero, Find us, Services; starter `seed-6b433bb1`: Home v3 with a Button in a new Section). The upgrade button opens the Change plan dialog (cancelled). No console errors; the only new log line is the expected `Polar subscription read failed` for the seeded subscription on Billing. `bun run test:editor` 5/5. Not checked: a real upgrade through Polar unlocking Booking, and the final toast wording (changed after the rerun, unit-tested only).

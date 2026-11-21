@@ -172,8 +172,7 @@ test.describe("on Professional", () => {
 
 		await page.keyboard.press("Delete");
 		await expect(editor.block("first")).toHaveCount(0);
-		// Puck records an edit 250 ms after it; an undo before that has nothing to go back to
-		await expect(editor.button("Undo")).toBeEnabled();
+		// Puck records the delete 250 ms after it; an undo pressed at once waits for that
 		await page.keyboard.press("ControlOrMeta+z");
 		await expect(editor.block("first")).toBeVisible();
 		await expect(editor.status("All changes saved")).toBeVisible();

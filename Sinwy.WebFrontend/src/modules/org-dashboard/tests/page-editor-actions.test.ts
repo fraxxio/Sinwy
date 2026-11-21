@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import type { PuckAction, PuckApi } from "@puckeditor/core";
 import { type BlockNode, pageDocumentSchema } from "@sinwy/shared";
 import {
+	blockTitle,
+	canvasLabel,
 	cloneBlock,
 	drawerGroups,
 	moveTarget,
@@ -9,6 +11,7 @@ import {
 	placementFor,
 	ROOT_ZONE,
 	readingOrder,
+	refusedDropNotice,
 	type Selector,
 	stepInReadingOrder,
 	zoneContent,
@@ -260,6 +263,95 @@ describe("keyboard edits", () => {
 			},
 			{ type: "setUi", ui: { itemSelector: null } },
 		]);
+	});
+});
+
+describe("canvas names", () => {
+	const content = () => [
+		section(),
+		block("Section", "section-2", {
+			items: [block("Heading", "heading-2", { text: "  " })],
+		}),
+	];
+
+	it("names a block after the first Heading directly in its slots", () => {
+		expect(blockTitle(section())).toBe("Find us");
+		expect(blockTitle(content()[1] as BlockNode)).toBeNull();
+		expect(blockTitle(block("Heading", "h", { text: "Find us" }))).toBeNull();
+	});
+
+	it("labels a titled block, the blocks inside it, and untitled blocks", () => {
+		const labels = ["section-1", "heading-1", "image-1", "section-2", "nope"];
+		expect(labels.map((id) => canvasLabel(content(), id))).toEqual([
+			"Section · Find us",
+			"Heading in Find us",
+			"Image",
+			"Section",
+			null,
+		]);
+	});
+
+	it("explains a drop the zone refuses, pointing to the titled block around it", () => {
+		expect(refusedDropNotice(content(), "heading-1", ROOT_ZONE)).toBe(
+			"This Heading can't go there on its own, so it stayed in “Find us”. To move the whole section, click ⮤ in the bar above the Heading, then drag the section by ⠿ or use Move up and Move down.",
+		);
+		expect(refusedDropNotice(content(), "heading-2", ROOT_ZONE)).toStartWith(
+			"This Heading can't go there on its own, so it stayed in its section.",
+		);
+		expect(refusedDropNotice(content(), "section-1", "section-2:items")).toBe(
+			"This Section can't go there.",
+		);
+	});
+
+	it("says nothing for a drop the zone takes", () => {
+		expect(refusedDropNotice(content(), "section-1", ROOT_ZONE)).toBeNull();
+		expect(
+			refusedDropNotice(content(), "heading-1", "section-2:items"),
+		).toBeNull();
+	});
+});
+
+describe("undo and redo", () => {
+	/** Puck's history over two data states, with the latest edit recorded or still waiting for its 250 ms. */
+	const fakeHistory = (pending: boolean) => {
+		const saved = { root: { props: {} }, content: [] as BlockNode[] };
+		const edited = { root: { props: {} }, content: [section()] };
+		const travels: string[] = [];
+		const history = {
+			histories: [{ state: { data: saved } }],
+			index: 0,
+			back: () => travels.push(`back from ${history.index}`),
+			forward: () => travels.push(`forward from ${history.index}`),
+		};
+		const record = () => {
+			history.histories.push({ state: { data: edited } });
+			history.index = 1;
+		};
+		if (!pending) record();
+		const puck = { appState: { data: edited }, history };
+		return {
+			actions: blockActions(() => puck as unknown as PuckApi),
+			record,
+			travels,
+		};
+	};
+
+	it("travels at once when the last edit is recorded", () => {
+		const { actions, travels } = fakeHistory(false);
+		expect(actions.historyPending()).toBe(false);
+		void actions.undo();
+		void actions.redo();
+		expect(travels).toEqual(["back from 1", "forward from 1"]);
+	});
+
+	it("waits for the last edit to be recorded, so undo reverts that edit", async () => {
+		const { actions, record, travels } = fakeHistory(true);
+		expect(actions.historyPending()).toBe(true);
+		const undone = actions.undo();
+		expect(travels).toEqual([]);
+		setTimeout(record, 120);
+		await undone;
+		expect(travels).toEqual(["back from 1"]);
 	});
 });
 

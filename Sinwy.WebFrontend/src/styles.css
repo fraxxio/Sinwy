@@ -846,3 +846,11 @@ body:has([data-slot="sidebar-wrapper"]) {
 	--puck-radius-m: 0.5rem;
 	--puck-radius-l: 0.75rem;
 }
+
+/* Page editor canvas: the block around the hovered one shows its edge, so its parts read as one group. */
+[data-puck-component]:has([data-puck-component]:hover):not(
+	:has([data-puck-component] [data-puck-component]:hover)
+) {
+	outline: 1px dashed var(--color-sky-400);
+	outline-offset: -1px;
+}
