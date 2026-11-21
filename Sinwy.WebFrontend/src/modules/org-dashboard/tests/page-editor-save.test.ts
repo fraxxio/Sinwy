@@ -1,9 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
 	API_ERROR_CODES,
-	BLOCKS,
-	type Blocks,
-	defineBlock,
 	emptyPageDocument,
 	type PageDocument,
 } from "@sinwy/shared";
@@ -76,15 +73,6 @@ describe("hasUnsavedChanges", () => {
 	});
 });
 
-const premium: Blocks = {
-	...BLOCKS,
-	Booking: defineBlock({
-		label: "Booking",
-		fields: {},
-		requires: "premium-blocks",
-	}),
-};
-
 const withBooking = (): PageDocument =>
 	toPageDocument({
 		root: { props: {} },
@@ -96,7 +84,6 @@ describe("saveErrorMessage", () => {
 		saved: emptyPageDocument(),
 		attempted: withBooking(),
 		features: [],
-		blocks: premium,
 	};
 
 	it("tells a version conflict to reload", () => {

@@ -10,7 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Editor route, layout and save | – | done | `feat(web): add page editor route, layout and save` |
 | 2 | Fields, action bar and block toolbar | 1 | done | `feat(web): add editor fields, block toolbar and action bar` |
-| 3 | Photos and Booking blocks, drawer metadata | 1 | todo | |
+| 3 | Photos and Booking blocks, drawer metadata | 1 | done | `feat(backend, web, shared): add Photos and Booking blocks with drawer metadata` |
 | 4 | Block drawer, locked tiles and insert-and-scroll | 2, 3 | todo | |
 | 5 | History, viewport and keyboard | 2 | todo | |
 | 6 | Editor e2e spec for Puck upgrades | 4, 5 | todo | |
@@ -58,6 +58,8 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Action bar:** `dnd={{ enableDragHandle: true }}` makes Puck pass `dragHandle` to the `actionBar` override. A selected Text block's body press goes to the inline editor, so the handle is how you move Text. `actionBar` and `componentOverlay` render inside the iframe (Tailwind applies) but outside `Puck.Preview`'s React tree: a context from `EditorCanvas` doesn't reach them, so the zoom goes through `setCanvasZoom`'s module store. During a handle drag the drag ghost sits near the iframe's left edge, not under the pointer (drops still land); unchecked whether our scaled bar causes it (phase 8).
 - **Puck API:** `usePuck`/`getPuck` have no `metadata`, and fields don't get it either; editor-only data goes through React context around `<Puck>`. `getParentById` returns the root for a top-level block, so "has a parent" is `itemSelector.zone !== ROOT_ZONE`. Puck pads each settings field itself; our field components add no padding.
 - **Scripted drags:** a release with no pointer move after reaching the target cancels the drop. Probes and the e2e spec add a 2 px settle move before releasing. On a page with blocks, a drop on the dashed "Drop blocks here" area at the end of the root zone doesn't land (5, 20 and 40 px above the zone's bottom all failed); ~8 px below the last block does. Phase 4 must fix or explain this. Inside a slot, aim at the lower half of the last child; 8 px below it hits the Section's padding and is ignored.
+- **Manifest (phase 3):** every block has `description` and `group` (`BlockGroup`); `BLOCKS` is in drawer order within each group. Booking is the only gated block (`requires: "premium-blocks"`); `saveErrorMessage` reads `BLOCKS` directly. The public page loads services when it has a Services or a Booking block (`listsServices` in the pages service). See log phase 3.
+- **Photos layout** is CSS only (`auto-fit` grid of up to 4 columns, `--gap` var, `max-sm:grid-cols-1` when stacked), so it never counts its children. Page detail's block count includes the Images inside Photos, like Hero's children.
 - **Hero's default `items` have no ids;** Puck 0.24 adds them on insert. `BlockTemplate` in `blocks/fields.ts` documents this.
 - **Save API:** `PUT /organizations/:orgId/pages/:pageId/content` (`savePageContent` in `page-queries.ts`). Errors: 409 `PAGE_VERSION_CONFLICT`; 402 `PLAN_UPGRADE_REQUIRED`, whose message doesn't name the block, so `saveErrorMessage` names it with `lockedBlocksIn` (shared, the same check the server runs); 400 with the server's message. Versions are stored in the `page_content` table (`page_id`, `version`, `content`), not `page_content`.
 - **Empty documents:** new pages start with `emptyPageDocument()`, and every existing page was reset to an empty document. There are no templates for now.
@@ -66,44 +68,9 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Plans on the client:** `useEntitlements().has(feature)` (`src/shared/lib/auth/entitlements.ts`), fed by the org shell's route context. `minimumPlanFor` and `FEATURE_NAMES` are in `src/shared/lib/plans.ts`. `UpgradeAction` is in `src/shared/components/UpgradePrompt.tsx`. `featuresFor`, `PLAN_FEATURES` and `hasFeature` are in `Sinwy.Shared/types/plan/PlanFeatures.ts`. Starter has no `premium-blocks`; Professional and Enterprise do.
 - **Route context:** the editor route is under `_shell`, whose `beforeLoad` provides `organization`, `member` and `entitlements`.
 - **Storefront bundle:** `bun run check:storefront-bundle` (`scripts/storefrontBundleCheck.ts`) fails if Tiptap, ProseMirror, dnd-kit, react-grid-layout or happy-dom reach the storefront route. Editor code must never be imported from `src/shared/components/page-builder/` or the storefront.
-- **Browser driving:** Base UI renders our link buttons with role `button` (`getByRole('button', { name: 'Edit content' })`). The canvas iframe is scaled (zoom ≈ 0.6 at Desktop in 1440×900); page coords = iframe rect + inner coords × zoom. The root zone is `[data-puck-dropzone="root:default-zone"]`. The first Vite dev load of the editor compiles Puck and takes a few seconds.
+- **Browser driving:** Base UI renders our link buttons with role `button` (`getByRole('button', { name: 'Edit content' })`), including the header's Desktop/Tablet/Phone switch. The canvas iframe is scaled (zoom ≈ 0.6 at Desktop in 1440×900); page coords = iframe rect + inner coords × zoom. The root zone is `[data-puck-dropzone="root:default-zone"]`. The first Vite dev load of the editor compiles Puck and takes a few seconds.
 - **Seeds:** `bun run dev:seed-scenario subscribed-org` (Starter), `pro-org` (Professional, `premium-blocks`) and `bookable-org` (Starter with services and hours). `bun run dev:login-as` logs in. Both are described in `.agents/skills/e2e-test/references/`.
 - **Spike performance baseline** (production build, Ryzen 5 7600X, headless Chromium, 1440×900): typing on a 252-block page took 24–32 ms per key unthrottled and 96–104 ms per key at 4× CPU, with a long task on every key. The cost is Puck rebuilding its whole-tree index on every change (O(blocks)); only about 8 components re-render per key. Better Auth refuses the `vite preview` origin (:4173, `set-active` → 403 `INVALID_ORIGIN`). The spike's probes proxied `/api` through Playwright's `route.fetch` with `Origin: http://localhost:3000`.
-- **Plan gating docs:** `docs/org-rules-map.md` L203 says premium blocks gate "none yet". Phase 3 changes that.
-
----
-
-## Phase 3: Photos and Booking blocks, drawer metadata
-
-**Goal:** the manifest has a ready-made Photos block and a Booking block gated by `premium-blocks`, every block has a plain-language description and a drawer group, and the server refuses a new Booking block on Starter.
-
-**Files:**
-- `Sinwy.Shared/types/page/blocks/blocks.ts` (`BLOCKS`, `ROOT_ALLOW`, `CONTENT`), `fields.ts` (`defineBlock`, `BlockDefinition`).
-- `src/shared/components/page-builder/blocks.tsx` (`BLOCK_RENDERS`, `ServiceList`, `Placeholder`), `urls.ts`.
-- `src/modules/storefront/routes/book.tsx` (search param `service`).
-- `Sinwy.Backend/modules/pages/service.ts` (`savePageContent`, the gated-type check) and `tests/pageDocument.test.ts`.
-- `src/shared/tests/puck-config.test.ts`, `page-document-view.test.ts`.
-- `docs/org-rules-map.md` around L203.
-- Editor: Booking's `serviceIds` uses `field.serviceIds`, so `serviceIdsField` in `page-editor/editor-fields.tsx` renders it with no editor change; `cloneBlock` and `zoneContent` read slots from the manifest, so Photos' `items` needs nothing there either.
-
-**Steps:**
-- `defineBlock` requires `description` (one plain sentence) and `group` (`"ready" | "content" | "layout"`). Write descriptions for every block in a salon owner's words; for example, Section: "A band across the page that holds text, photos and buttons."
-- Photos and Booking follow Defaults 8 and 9. Add Photos to `ROOT_ALLOW` and to Section's `allow`, and Booking to `ROOT_ALLOW`.
-- Photos on the storefront: a grid with as many columns as photos (up to 4, then it wraps), the chosen gap, and on a phone either side by side or stacked. Empty Image placeholders keep their own size and don't overlap on a phone (the spike's task 4 bug).
-- Booking on the storefront: a panel with title, intro, the chosen services as buttons into `/book?service=<id>`, and a main "Book now" button to `/book`. Reuse the Services list markup where it fits.
-- Don't touch the server's gating logic. Check that it already refuses a new Booking block on Starter and allows one that the latest version already has.
-- Update `docs/org-rules-map.md`: `premium-blocks` now gates Booking.
-
-**Tests that matter:**
-- Server: saving a document with a new Booking block on a Starter org returns 402 `PLAN_UPGRADE_REQUIRED`; on Professional it saves; on Starter, a page whose latest version already has Booking (downgrade case) saves.
-- Photos accepts only Image children, and a Photos block nested deeper than allowed is refused.
-- `puckConfigFrom` keeps working for the new blocks: fields and defaults come from the manifest.
-
-**Done when:**
-- Both blocks render on the storefront and pass the document schema.
-- `bun run check:storefront-bundle` passes.
-
-**Verify:** Seed `pro-org`. Through the editor from phase 1, add Photos and Booking (Puck's default drawer lists them), fill two image URLs (`https://picsum.photos/id/1062/800/800`, `https://picsum.photos/id/1027/800/800`), Save and publish from page detail. The public page shows two photos side by side on desktop and stacked at 375 px wide, and Booking's buttons lead to `/<org>/book?service=…` and `/<org>/book`. Seed `subscribed-org` (Starter). Saving a document with a Booking block through the API (`PUT …/content`, as the owner) returns 402 with `PLAN_UPGRADE_REQUIRED`, and no new `page_content` row exists. Nothing is simulated except login.
 
 ---
 
@@ -112,9 +79,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** the Add panel is our own drawer of large preview cards in plain language, ready-made blocks first, with locked tiles for blocks the plan lacks, and a click adds the block where the user expects and scrolls to it.
 
 **Files:**
-- `src/modules/org-dashboard/components/page-editor/` (Add tab, first-run state from phase 1).
-- `Sinwy.Shared/types/page/blocks/blocks.ts` (`description`, `group`, `requires` from phase 3).
-- `src/shared/lib/auth/entitlements.ts` (`useEntitlements`), `src/shared/lib/plans.ts` (`minimumPlanFor`), `src/shared/components/UpgradePrompt.tsx` (`UpgradeAction`).
+- `src/modules/org-dashboard/components/page-editor/`: `EditorLayout.tsx` (`LeftPanel`'s Add tab renders `Puck.Components` today), `EditorCanvas.tsx` (first-run state), `PageEditor.tsx` (`EditorServicesContext`; add an entitlements value next to it if fields or overlays need it), `block-actions.ts` (`ROOT_ZONE`, `cloneBlock`, `zoneContent`; add `placementFor`/`slotAccepts` here), `use-block-actions.ts` (add insert).
+- `Sinwy.Shared/types/page/blocks/fields.ts` (`BlockGroup`, `description`, `group`, `requires` on `BlockDefinition`), `blocks.ts` (`BLOCKS` is already in drawer order within each group; `ROOT_ALLOW`, slot `allow` lists).
+- `src/shared/lib/auth/entitlements.ts` (`useEntitlements`), `src/shared/lib/plans.ts` (`minimumPlanFor`, `getPlanName`), `src/shared/components/UpgradePrompt.tsx` (`UpgradeAction`).
+- Tests: `src/modules/org-dashboard/tests/` (next to `page-editor-save.test.ts`).
 - Spike: `EditorChrome.tsx` (`DRAWER_GROUPS`, `BLOCK_INFO` sketches, `BlockCard`, `BlockDrawer`), `editor-actions.ts` (`placementFor`, `slotAccepts`), `use-block-actions.ts` (insert).
 
 **Steps:**

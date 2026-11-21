@@ -142,6 +142,53 @@ describe("PageDocumentView", () => {
 			expect(html).toContain(name);
 	});
 
+	test("Photos renders its images side by side, stacked on a phone unless set otherwise", () => {
+		const photos = (props: Record<string, unknown>) =>
+			block("Photos", {
+				...props,
+				items: [
+					block("Image", { src: "https://cdn.example/1.jpg" }),
+					block("Image", { src: "https://cdn.example/2.jpg" }),
+					block("Image"),
+				],
+			});
+		const stacked = render(doc([photos({})]));
+		const row = render(doc([photos({ phoneLayout: "row", gap: "none" })]));
+
+		expect(stacked).toContain('src="https://cdn.example/1.jpg"');
+		expect(stacked).toContain('src="https://cdn.example/2.jpg"');
+		expect(stacked.match(/<img/g)).toHaveLength(2);
+		expect(stacked).toContain("max-sm:grid-cols-1");
+		expect(stacked).toContain("[--gap:--spacing(4)]");
+		expect(row).not.toContain("max-sm:grid-cols-1");
+		expect(row).toContain("[--gap:0px]");
+	});
+
+	test("Booking lists the chosen services into booking, with a main Book now button", () => {
+		const html = render(
+			doc([
+				block("Booking", {
+					title: "Book with us",
+					intro: "<p>Any time</p>",
+					serviceIds: ["svc-3"],
+				}),
+			]),
+		);
+
+		for (const text of ["Book with us", "Any time", "Shave", "Book now"])
+			expect(html).toContain(text);
+		expect(html).not.toContain("Haircut");
+		expect(html).toContain('href="/acme/book?service=svc-3"');
+		expect(html).toContain('href="/acme/book"');
+	});
+
+	test("Booking lists every service when none are chosen", () => {
+		const html = render(doc([block("Booking")]));
+
+		for (const name of ["Haircut", "Colouring", "Shave"])
+			expect(html).toContain(name);
+	});
+
 	test("renders rich text safely", () => {
 		const html = render(
 			doc([

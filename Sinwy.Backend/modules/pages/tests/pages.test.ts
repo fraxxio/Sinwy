@@ -330,6 +330,40 @@ test("content: a stale baseVersion → 409 PAGE_VERSION_CONFLICT, and concurrent
 	expect(racing.map((res) => res.status).sort()).toEqual([200, 409]);
 });
 
+const bookingPage = () => document(section(block("Heading")), block("Booking"));
+
+test("content: a new Booking block on Starter → 402 PLAN_UPGRADE_REQUIRED, and no version is written", async () => {
+	const created = await create();
+
+	const res = await save(created.id, 1, bookingPage());
+
+	expect(res.status).toBe(402);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.PLAN_UPGRADE_REQUIRED);
+	expect(await versionsOf(created.id)).toHaveLength(1);
+});
+
+test("content: Professional can add a Booking block", async () => {
+	await setPlan("professional");
+	const created = await create();
+
+	expect((await save(created.id, 1, bookingPage())).status).toBe(200);
+	expect(await versionsOf(created.id)).toHaveLength(2);
+});
+
+test("content: after a downgrade to Starter, a page whose latest version has Booking still saves", async () => {
+	await setPlan("professional");
+	const created = await create();
+	expect((await save(created.id, 1, bookingPage())).status).toBe(200);
+	await setPlan("starter");
+
+	const edited = document(
+		section(block("Heading", { text: "Edited" })),
+		block("Booking"),
+	);
+	expect((await save(created.id, 2, edited)).status).toBe(200);
+	expect(await versionsOf(created.id)).toHaveLength(3);
+});
+
 const nestedSections = (depth: number): unknown =>
 	depth === 1
 		? section(block("Heading", { text: "Deep" }))
@@ -707,7 +741,7 @@ const insertService = (name: string, isActive = true) =>
 		isActive,
 	});
 
-test("public: the organization's active services come with a page that has a Services block, and only then", async () => {
+test("public: the organization's active services come with a page that has a Services or Booking block, and only then", async () => {
 	await setPlan("professional");
 	await insertService("Haircut");
 	await insertService("Retired", false);
@@ -718,6 +752,9 @@ test("public: the organization's active services come with a page that has a Ser
 		document(section(block("Heading")), block("Services")),
 	);
 	await publish(withServices.id);
+	const booking = await create({ slug: "booking" });
+	await save(booking.id, 1, document(block("Booking")));
+	await publish(booking.id);
 	const plain = await create({ slug: "plain" });
 	await save(plain.id, 1);
 	await publish(plain.id);
@@ -729,6 +766,8 @@ test("public: the organization's active services come with a page that has a Ser
 		priceMinor: 2500,
 		currency: "EUR",
 	});
+	const withBooking = await unwrap<PublicPageDto>(await readPublic("booking"));
+	expect(withBooking.services.map((s) => s.name)).toEqual(["Haircut"]);
 	const without = await unwrap<PublicPageDto>(await readPublic("plain"));
 	expect(without.services).toEqual([]);
 });

@@ -89,6 +89,19 @@ const COLUMNS = {
 	"4": "sm:grid-cols-2 lg:grid-cols-4",
 };
 
+/** Up to four photos share a row, then the row wraps; `--gap` is the space between them. */
+const PHOTO_ROW =
+	"grid gap-(--gap) [grid-template-columns:repeat(auto-fit,minmax(calc((100%_-_3*var(--gap))/4),1fr))]";
+
+const PHOTO_GAPS = {
+	none: "[--gap:0px]",
+	small: "[--gap:--spacing(2)]",
+	medium: "[--gap:--spacing(4)]",
+	large: "[--gap:--spacing(8)]",
+};
+
+const PHOTO_PHONE_LAYOUTS = { row: "", stack: "max-sm:grid-cols-1" };
+
 const HEADINGS = {
 	"1": "text-3xl font-heading font-semibold tracking-tight text-balance sm:text-5xl",
 	"2": "text-2xl font-heading font-semibold tracking-tight text-balance sm:text-3xl",
@@ -230,6 +243,16 @@ export const BLOCK_RENDERS: {
 		</div>
 	),
 
+	Photos: ({ items: Items, gap, phoneLayout }) => (
+		<Items
+			className={cn(
+				PHOTO_ROW,
+				PHOTO_GAPS[gap],
+				PHOTO_PHONE_LAYOUTS[phoneLayout],
+			)}
+		/>
+	),
+
 	Hero: ({ items: Items, image, align }) => {
 		const src = imageSrc(image);
 		return (
@@ -266,6 +289,30 @@ export const BLOCK_RENDERS: {
 				) : (
 					puck.isEditing && <Placeholder>No services to show yet.</Placeholder>
 				)}
+			</section>
+		);
+	},
+
+	Booking: ({ title, intro, serviceIds, puck }) => {
+		const { services, organizationSlug } = pageMetadata(puck.metadata);
+		const shown = shownServices(services, serviceIds);
+		return (
+			<section className="grid gap-4 rounded-xl bg-muted p-6 sm:p-8">
+				{title && <h2 className={HEADINGS["2"]}>{title}</h2>}
+				{intro && <div className={RICH_TEXT}>{intro}</div>}
+				{shown.length > 0 ? (
+					<ServiceList services={shown} organizationSlug={organizationSlug} />
+				) : (
+					puck.isEditing && <Placeholder>No services to show yet.</Placeholder>
+				)}
+				<div>
+					<a
+						href={`/${organizationSlug}/book`}
+						className={buttonVariants({ size: "lg" })}
+					>
+						Book now
+					</a>
+				</div>
 			</section>
 		);
 	},

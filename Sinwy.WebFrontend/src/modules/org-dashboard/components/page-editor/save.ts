@@ -1,7 +1,6 @@
 import {
 	API_ERROR_CODES,
 	BLOCKS,
-	type Blocks,
 	type Feature,
 	lockedBlocksIn,
 	ownEntry,
@@ -51,9 +50,9 @@ const listOf = (words: string[]) =>
 		? words.join("")
 		: `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
 
-const planNeededBy = (types: string[], blocks: Blocks) => {
+const planNeededBy = (types: string[]) => {
 	const feature = types
-		.map((type) => ownEntry(blocks, type)?.requires)
+		.map((type) => ownEntry(BLOCKS, type)?.requires)
 		.find((required): required is Feature => required !== undefined);
 	const plan = feature && minimumPlanFor(feature);
 	return plan ? getPlanName(plan) : null;
@@ -66,23 +65,21 @@ export const saveErrorMessage = (
 		saved,
 		attempted,
 		features,
-		blocks = BLOCKS,
 	}: {
 		saved: PageDocument;
 		attempted: PageDocument;
 		features: readonly Feature[];
-		blocks?: Blocks;
 	},
 ): string => {
 	switch (error.code) {
 		case API_ERROR_CODES.PAGE_VERSION_CONFLICT:
 			return "This page was saved somewhere else, maybe in another tab. Reload to get the latest version; your changes here aren't saved.";
 		case API_ERROR_CODES.PLAN_UPGRADE_REQUIRED: {
-			const types = lockedBlocksIn(saved, attempted, features, blocks);
+			const types = lockedBlocksIn(saved, attempted, features);
 			if (!types.length)
 				return "Your plan doesn't include one of the blocks on this page.";
-			const labels = types.map((type) => ownEntry(blocks, type)?.label ?? type);
-			const plan = planNeededBy(types, blocks);
+			const labels = types.map((type) => ownEntry(BLOCKS, type)?.label ?? type);
+			const plan = planNeededBy(types);
 			const noun = labels.length === 1 ? "block" : "blocks";
 			return `The ${listOf(labels)} ${noun} ${labels.length === 1 ? "needs" : "need"} ${plan ? `the ${plan} plan` : "a higher plan"}. Remove ${labels.length === 1 ? "it" : "them"} or upgrade to save.`;
 		}
