@@ -3,11 +3,19 @@ import {
 	LayersIcon,
 	type LucideIcon,
 	MonitorIcon,
+	Redo2Icon,
 	SmartphoneIcon,
 	SquarePlusIcon,
 	TabletIcon,
+	Undo2Icon,
 } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import {
+	type ReactNode,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Button } from "#/shared/components/ui/button";
 import {
 	Tabs,
@@ -16,12 +24,24 @@ import {
 	TabsTrigger,
 } from "#/shared/components/ui/tabs";
 import { toast } from "#/shared/components/ui/toast";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "#/shared/components/ui/tooltip";
 import { cn } from "#/shared/lib/utils";
 import { BlockToolbar } from "./BlockChrome";
 import { BlockDrawer } from "./BlockDrawer";
 import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
 import { hasUnsavedChanges, type PageData, type SaveResult } from "./save";
+import { useEditorHotkeys, useEditorKeys } from "./use-block-actions";
+
+const MOD =
+	typeof navigator !== "undefined" &&
+	/Mac|iPhone|iPad/.test(navigator.userAgent)
+		? "⌘"
+		: "Ctrl+";
 
 const VIEWPORT_ICONS: Record<string, LucideIcon> = {
 	Desktop: MonitorIcon,
@@ -72,6 +92,90 @@ function ViewportSwitch() {
 	);
 }
 
+function HistoryButtons() {
+	const getPuck = useGetPuck();
+	const hasPast = usePuck((s) => s.history.hasPast);
+	const hasFuture = usePuck((s) => s.history.hasFuture);
+	const buttons = [
+		{
+			label: "Undo",
+			keys: `${MOD}Z`,
+			icon: Undo2Icon,
+			enabled: hasPast,
+			run: () => getPuck().history.back(),
+		},
+		{
+			label: "Redo",
+			keys: `${MOD}Shift+Z`,
+			icon: Redo2Icon,
+			enabled: hasFuture,
+			run: () => getPuck().history.forward(),
+		},
+	];
+	return (
+		<div className="flex items-center gap-1">
+			{buttons.map(({ label, keys, icon: Icon, enabled, run }) => (
+				<Tooltip key={label}>
+					<TooltipTrigger
+						render={
+							<Button
+								variant="ghost"
+								size="sm"
+								disabled={!enabled}
+								onClick={run}
+							/>
+						}
+					>
+						<Icon aria-hidden />
+						{label}
+					</TooltipTrigger>
+					<TooltipContent>{keys}</TooltipContent>
+				</Tooltip>
+			))}
+		</div>
+	);
+}
+
+/**
+ * Undo and redo restore a whole app state, `ui` included; only the page should change. The user's `ui` goes back,
+ * with their selection while its block exists. Puck remounts the fields, so no field keeps focus: a kept rich-text
+ * focus makes the new editor record a duplicate entry that drops the redo history.
+ */
+function KeepUiOnHistory() {
+	const getPuck = useGetPuck();
+	const index = usePuck((s) => s.history.index);
+	const ui = usePuck((s) => s.appState.ui);
+	const selectedId = usePuck((s) => s.selectedItem?.props.id ?? null);
+	const kept = useRef({ ui, selectedId });
+	const lastIndex = useRef(index);
+	useLayoutEffect(() => {
+		const travelled = index !== lastIndex.current && ui !== kept.current.ui;
+		lastIndex.current = index;
+		if (!travelled) {
+			kept.current = { ui, selectedId };
+			return;
+		}
+		const { dispatch, getItemBySelector, getSelectorForId } = getPuck();
+		const selection = kept.current.selectedId
+			? getSelectorForId(kept.current.selectedId)
+			: undefined;
+		const restored = ui.itemSelector;
+		dispatch({
+			type: "setUi",
+			ui: {
+				...kept.current.ui,
+				field: { focus: null },
+				itemSelector: selection
+					? { zone: selection.zone, index: selection.index }
+					: restored && getItemBySelector(restored)
+						? restored
+						: null,
+			},
+		});
+	}, [getPuck, index, ui, selectedId]);
+	return null;
+}
+
 function SaveControls({
 	onSave,
 }: {
@@ -84,6 +188,7 @@ function SaveControls({
 	const dirty = useMemo(() => hasUnsavedChanges(data, saved), [data, saved]);
 
 	const save = async () => {
+		if (saving) return;
 		const attempted = getPuck().appState.data as PageData;
 		setSaving(true);
 		const result = await onSave(attempted);
@@ -99,6 +204,13 @@ function SaveControls({
 				timeout: 10_000,
 			});
 	};
+
+	useEditorKeys((event) => {
+		const mod = event.ctrlKey || event.metaKey;
+		if (!mod || event.altKey || event.shiftKey || event.code !== "KeyS") return;
+		event.preventDefault();
+		if (dirty) save();
+	});
 
 	return (
 		<>
@@ -175,6 +287,7 @@ export function EditorLayout({
 	back: ReactNode;
 	onSave: (data: PageData) => Promise<SaveResult>;
 }) {
+	useEditorHotkeys();
 	return (
 		<div className="flex h-svh flex-col bg-background">
 			<header className="flex h-14 shrink-0 items-center gap-3 border-b bg-card px-3">
@@ -188,6 +301,8 @@ export function EditorLayout({
 				<div className="mx-auto">
 					<ViewportSwitch />
 				</div>
+				<KeepUiOnHistory />
+				<HistoryButtons />
 				<SaveControls onSave={onSave} />
 			</header>
 			<div className="flex min-h-0 flex-1">

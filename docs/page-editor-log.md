@@ -161,3 +161,51 @@ Finished phases of [page-editor-plan.md](page-editor-plan.md), each with its spe
   - Photos went to the end with the canvas scrolled to the bottom;
   - `page_content` matched; on pro-org, Booking was added by click and by drag and saved.
 - Noted, not changed: on a long page the iframe's background gradient ends partway down (it's sized to the iframe viewport; it predates this phase; phase 8). A drop on the canvas's empty space below the root zone adds nothing (Puck: the pointer isn't over the zone).
+
+## Phase 5: History, viewport and keyboard
+
+**Goal:** undo and redo never change the viewport and take one step each, selecting never records history, and the editor can be driven by keyboard per Default 6.
+
+**Files:**
+- `src/modules/org-dashboard/components/page-editor/`: `EditorLayout.tsx` (header: `ViewportSwitch`, `SaveControls`; undo/redo go here), `PageEditor.tsx` (where a hotkeys hook mounts inside `<Puck>`), `use-block-actions.ts` (`remove`, `move`, `selectParent`, `scrollToBlock` for ↑/↓), `block-actions.ts` (`selectorFor`, `zoneContent`, `moveTarget`; add the reading-order walk here), `BlockChrome.tsx` (toolbar and action bar call the same actions), `EditorCanvas.tsx`.
+- Tests: `src/modules/org-dashboard/tests/page-editor-actions.test.ts`.
+- Spike: `EditorChrome.tsx` (`useKeepViewportOnHistory`, the header's undo and redo), `use-block-actions.ts` (`useEditorHotkeys`).
+
+**Steps:**
+- Header: Undo and Redo buttons with text labels and their shortcuts in the tooltip.
+- Keep the viewport per the standing note. Clear the selection if it points at a block that no longer exists after undo.
+- Fix the RichText Redo duplicate entry. First find where the `replace` with only `ui.field` comes from. If it can't be stopped at the source, drop an entry whose `data` equals the previous entry's with `history.setHistories`. Record which way worked.
+- Hotkeys per Default 6, on the host and inside the iframe, never while typing in an input, a select or the inline rich-text editor. Check which of these Puck 0.24 already handles, so it doesn't run twice.
+- ↑ and ↓ follow the reading order of the whole tree (depth-first), and the canvas scrolls the newly selected block into view.
+- Delete keeps Undo as the safety net. No confirmation dialog.
+
+**Tests that matter:**
+- Reading-order navigation over a nested tree: next and previous, first and last, Esc to the parent.
+- Each keyboard edit (delete, move) is exactly one history entry.
+
+**Done when:**
+- Edit on desktop, switch to phone, undo and redo by button, Ctrl+Z and Ctrl+Shift+Z: the view stays on phone.
+- Edit a Text block, Redo after Undo: getting back takes one Undo.
+
+**Verify:** Seed `pro-org`, open a page with a Hero and two Sections (built in the editor and saved). Edit the Hero heading on desktop, switch to Phone, press Undo, Ctrl+Z (focus in the canvas) and Ctrl+Shift+Z: the text reverts and returns, and the view stays on Phone. Select blocks one by one: Undo stays disabled and the status stays "Saved". Edit a Text block's words, Undo, Redo, Undo: the text is back after one Undo. With a Section selected: ↓ selects its first child, Esc selects the Section again, Alt+↓ moves it below the next Section, Delete removes it, Ctrl+Z brings it back. Save: the `page_content` row matches the canvas. Nothing is simulated except login.
+
+### Log (2026-11-21, `feat(web): add undo and redo, keyboard shortcuts and keep the view on history`)
+- Shipped: header Undo and Redo buttons with text labels and their shortcut in a tooltip (`HistoryButtons`). `KeepUiOnHistory` puts the user's whole `ui` back after undo or redo: the viewport, and the selection by block id while that block exists (else the restored selection if it's valid, else none). It also clears `field.focus`. `useEditorHotkeys`: Delete/Backspace (taken over from Puck, which left the next block selected), ↑/↓ in depth-first reading order with scroll into view (skipping Columns' hidden columns), Esc to parent then deselect, Alt+↑/↓ move. `SaveControls` handles Ctrl/⌘+S. All of them listen in the capture phase on the host and the canvas document; the canvas document comes from an `iframe` override (`useCanvasDocument`), not polling. `blockActions(getPuck)` is now a plain function behind `useBlockActions`. Tests: reading order (next, previous, ends, hidden columns, parent), and delete, move and Esc each making exactly one recorded dispatch (or none for Esc) with the selection set first.
+- Differs from plan:
+  - **RichText duplicate entry.** It was stopped at the source, so `setHistories` wasn't needed. Puck recreates the rich-text editor on every time travel. If the restored `ui.field.focus` still names that field, the new editor's debounced `onChange` dispatches a data-identical `replace`. Puck records it, which also truncates the redo stack. Clearing `field.focus` after travel stops it. I traced it with a temporary `onAction` logger; Tiptap's `update` never fired.
+  - **Selection and UI restore.** Keeping only the viewport, as the spike did, wasn't enough. Ctrl+Z after typing deselected the block, because history entries carry their old selection. Then typing after an undo was silently dropped, because the restored `field.focus` was null. So the whole `ui` is kept now.
+  - **Undo and redo are Puck's own.** Puck 0.24 binds Ctrl/⌘+Z, Shift+Z and Y on both documents, even inside inputs; that wasn't changed.
+  - **Ctrl/⌘+S works while typing,** because Default 6 lists it with the other keys, but saving from a field is what users expect. The other keys are ignored in text entry, and the arrows are also ignored in tab lists, menus and radio groups.
+  - **↑/↓ with nothing selected** start at the first or last block, but only when focus is in the canvas.
+  - **Text blocks have no inline editor in the canvas;** they're edited in the settings panel.
+- Checked in the running app:
+  - Inline on `pro-org` (`seed-320a92a9`), reading Puck's history through a temporary debug handle:
+    - typing and then Undo/Redo/Undo, by button and by keys with focus in the Tiptap editor, each step one entry;
+    - the viewport stays 375 through the buttons, Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y from the canvas;
+    - selecting never records;
+    - ↑/↓/Esc walk the tree;
+    - Alt+↓, Alt+↑ and Delete each add one entry, and Ctrl+Z restores the block;
+    - Backspace in a settings input only edits the text, and from the host page it deletes the block;
+    - Ctrl+S from the canvas saved version 3.
+  - The full Verify brief then passed in a subagent on a fresh `pro-org` (`seed-a06af397`): the view stayed on Phone through every undo/redo, Undo stayed disabled while selecting, and the Text was back after one Undo. ↓, Esc, Alt+↓, Delete and Ctrl+Z worked as briefed, and `page_content` version 3 matched the canvas. No console errors. Server logs weren't checked (servers started by the user).
+- Noted, not changed: after undoing a delete nothing is selected, because the deleted block was deselected first. After undo the rich-text editor loses DOM focus (Puck remounts it), so the user clicks back in to keep typing.

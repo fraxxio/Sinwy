@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import type { PageMetadata } from "#/shared/components/page-builder/blocks";
 import { chromeOverrides } from "./BlockChrome";
 import { BlockAccessProvider } from "./BlockDrawer";
+import { canvasOverrides } from "./EditorCanvas";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
 import { EditorServicesContext, fieldOverrides } from "./editor-fields";
@@ -22,7 +23,11 @@ const INITIAL_UI: Partial<UiState> = {
 	},
 };
 
-const OVERRIDES: Partial<Overrides> = { ...fieldOverrides, ...chromeOverrides };
+const OVERRIDES: Partial<Overrides> = {
+	...fieldOverrides,
+	...chromeOverrides,
+	...canvasOverrides,
+};
 
 /** With the handle on, a selected Text block's body press goes to its inline editor and the handle moves it. */
 const DND = { enableDragHandle: true };

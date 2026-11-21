@@ -170,6 +170,64 @@ export function moveTarget(
 	return siblings && target >= 0 && target < siblings.length ? target : null;
 }
 
+/** The slots the canvas shows: Columns renders only its first `count` columns. */
+const shownSlots = (block: BlockNode, blocks: Blocks) => {
+	const slots = slotsOf(block, blocks);
+	return block.type === "Columns"
+		? slots.slice(0, Number(block.props["count"]) || slots.length)
+		: slots;
+};
+
+/** Every block on the canvas in reading order: depth first, each block before the blocks in its slots. */
+export function readingOrder(
+	content: readonly BlockNode[],
+	blocks: Blocks = BLOCKS,
+	zone: string = ROOT_ZONE,
+): Selector[] {
+	return content.flatMap((block, index) => [
+		{ zone, index },
+		...shownSlots(block, blocks).flatMap((slot) =>
+			readingOrder(
+				childrenIn(block, slot),
+				blocks,
+				`${block.props.id}:${slot}`,
+			),
+		),
+	]);
+}
+
+/**
+ * The block before or after the selected one in reading order. With nothing selected, ↓ starts at the first block
+ * and ↑ at the last; `null` past either end.
+ */
+export function stepInReadingOrder(
+	content: readonly BlockNode[],
+	selected: Selector | null,
+	step: -1 | 1,
+	blocks: Blocks = BLOCKS,
+): Selector | null {
+	const order = readingOrder(content, blocks);
+	const at = selected
+		? order.findIndex(
+				({ zone, index }) => zone === selected.zone && index === selected.index,
+			)
+		: -1;
+	const target = at === -1 ? (step === 1 ? 0 : order.length - 1) : at + step;
+	return order[target] ?? null;
+}
+
+/** The block whose slot holds the block at `selected`; `null` at the top level. */
+export function parentSelector(
+	content: readonly BlockNode[],
+	selected: Selector,
+	blocks: Blocks = BLOCKS,
+): Selector | null {
+	if (selected.zone === ROOT_ZONE) return null;
+	return (
+		selectorFor(content, splitZone(selected.zone).parentId, blocks) ?? null
+	);
+}
+
 export type DrawerTile = {
 	type: string;
 	label: string;

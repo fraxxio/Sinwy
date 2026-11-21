@@ -1,13 +1,19 @@
 import { describe, expect, it } from "bun:test";
+import type { PuckAction, PuckApi } from "@puckeditor/core";
 import { type BlockNode, pageDocumentSchema } from "@sinwy/shared";
 import {
 	cloneBlock,
 	drawerGroups,
 	moveTarget,
+	parentSelector,
 	placementFor,
 	ROOT_ZONE,
+	readingOrder,
+	type Selector,
+	stepInReadingOrder,
 	zoneContent,
 } from "../components/page-editor/block-actions";
+import { blockActions } from "../components/page-editor/use-block-actions";
 
 const block = (
 	type: string,
@@ -96,6 +102,164 @@ describe("moveTarget", () => {
 	it("finds nothing for an unknown zone or a prop that isn't a slot", () => {
 		expect(zoneContent(content, "missing:items")).toBeUndefined();
 		expect(zoneContent(content, "heading-1:text")).toBeUndefined();
+	});
+});
+
+describe("reading order", () => {
+	const content = [
+		section(),
+		block("Section", "section-2", { items: [block("RichText", "text-2")] }),
+	];
+	const idAt = (selector: Selector | null) =>
+		selector && zoneContent(content, selector.zone)?.[selector.index]?.props.id;
+	const at = (id: string) =>
+		readingOrder(content).find((selector) => idAt(selector) === id) ?? null;
+	const step = (id: string | null, by: -1 | 1) =>
+		idAt(stepInReadingOrder(content, id ? at(id) : null, by));
+
+	it("lists each block before the blocks in its slots, depth first", () => {
+		expect(readingOrder(content).map(idAt)).toEqual([
+			"section-1",
+			"heading-1",
+			"columns-1",
+			"image-1",
+			"text-1",
+			"button-1",
+			"section-2",
+			"text-2",
+		]);
+	});
+
+	it("steps into, through and out of nested slots", () => {
+		expect(step("section-1", 1)).toBe("heading-1");
+		expect(step("columns-1", 1)).toBe("image-1");
+		expect(step("text-1", 1)).toBe("button-1");
+		expect(step("button-1", 1)).toBe("section-2");
+		expect(step("section-2", -1)).toBe("button-1");
+		expect(step("image-1", -1)).toBe("columns-1");
+	});
+
+	it("starts at the first or last block with nothing selected and stops at either end", () => {
+		expect(step(null, 1)).toBe("section-1");
+		expect(step(null, -1)).toBe("text-2");
+		expect(step("section-1", -1)).toBeNull();
+		expect(step("text-2", 1)).toBeNull();
+	});
+
+	it("skips the columns a Columns block doesn't show", () => {
+		const columns = block("Columns", "columns-2", {
+			count: "2",
+			column1: [block("Image", "image-a")],
+			column2: [],
+			column3: [block("Image", "image-hidden")],
+			column4: [],
+		});
+		const order = readingOrder([columns]).map(
+			(selector) =>
+				zoneContent([columns], selector.zone)?.[selector.index]?.props.id,
+		);
+		expect(order).toEqual(["columns-2", "image-a"]);
+	});
+
+	it("goes to the parent block, and to nothing at the top level", () => {
+		expect(idAt(parentSelector(content, at("image-1") as Selector))).toBe(
+			"columns-1",
+		);
+		expect(idAt(parentSelector(content, at("columns-1") as Selector))).toBe(
+			"section-1",
+		);
+		expect(parentSelector(content, at("section-1") as Selector)).toBeNull();
+	});
+});
+
+/** A stand-in for Puck's API over a fixed page that records what the actions dispatch. */
+const fakePuck = (content: BlockNode[], selected: Selector | null) => {
+	const dispatched: PuckAction[] = [];
+	const puck = {
+		appState: {
+			data: { root: { props: {} }, content },
+			ui: { itemSelector: selected },
+		},
+		selectedItem: selected
+			? zoneContent(content, selected.zone)?.[selected.index]
+			: null,
+		dispatch: (action: PuckAction) => dispatched.push(action),
+	};
+	return {
+		actions: blockActions(() => puck as unknown as PuckApi),
+		dispatched,
+	};
+};
+
+/** Puck records every dispatch but a `setUi`, and folds the ones made together into one history entry. */
+const recorded = (actions: PuckAction[]) =>
+	actions.filter(
+		(action) => action.type !== "setUi" || action.recordHistory === true,
+	);
+
+describe("keyboard edits", () => {
+	const content = () => [
+		section(),
+		block("Section", "section-2", { items: [] }),
+	];
+
+	it("deletes with one recorded dispatch, after clearing the selection", () => {
+		const { actions, dispatched } = fakePuck(content(), {
+			zone: ROOT_ZONE,
+			index: 1,
+		});
+		actions.remove();
+		expect(recorded(dispatched)).toEqual([
+			{ type: "remove", zone: ROOT_ZONE, index: 1 },
+		]);
+		expect(dispatched[0]).toEqual({
+			type: "setUi",
+			ui: { itemSelector: null },
+		});
+	});
+
+	it("moves with one recorded dispatch, the selection following the block", () => {
+		const { actions, dispatched } = fakePuck(content(), {
+			zone: ROOT_ZONE,
+			index: 0,
+		});
+		actions.move(1);
+		expect(recorded(dispatched)).toEqual([
+			{
+				type: "reorder",
+				sourceIndex: 0,
+				destinationIndex: 1,
+				destinationZone: ROOT_ZONE,
+			},
+		]);
+		expect(dispatched[0]).toEqual({
+			type: "setUi",
+			ui: { itemSelector: { zone: ROOT_ZONE, index: 1 } },
+		});
+	});
+
+	it("dispatches nothing past the end of the slot or with nothing selected", () => {
+		const last = fakePuck(content(), { zone: "section-1:items", index: 2 });
+		last.actions.move(1);
+		const none = fakePuck(content(), null);
+		none.actions.remove();
+		none.actions.move(-1);
+		expect([...last.dispatched, ...none.dispatched]).toEqual([]);
+	});
+
+	it("Esc selects the parent, then deselects, without recording", () => {
+		const nested = fakePuck(content(), { zone: "section-1:items", index: 1 });
+		expect(nested.actions.escape()).toBe(true);
+		const top = fakePuck(content(), { zone: ROOT_ZONE, index: 0 });
+		expect(top.actions.escape()).toBe(true);
+		expect(fakePuck(content(), null).actions.escape()).toBe(false);
+		expect([...nested.dispatched, ...top.dispatched]).toEqual([
+			{
+				type: "setUi",
+				ui: { itemSelector: { zone: ROOT_ZONE, index: 0 } },
+			},
+			{ type: "setUi", ui: { itemSelector: null } },
+		]);
 	});
 });
 

@@ -1,7 +1,51 @@
-import { Puck, useGetPuck } from "@puckeditor/core";
-import { useLayoutEffect, useRef, useState } from "react";
+import { type Overrides, Puck, useGetPuck } from "@puckeditor/core";
+import {
+	type ReactNode,
+	useLayoutEffect,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
 import { setCanvasZoom } from "./BlockChrome";
 import { usePuck } from "./editor-config";
+
+let canvasDocument: Document | null = null;
+const documentListeners = new Set<() => void>();
+
+const setCanvasDocument = (doc: Document | null) => {
+	if (doc === canvasDocument) return;
+	canvasDocument = doc;
+	for (const listener of documentListeners) listener();
+};
+
+/** The canvas iframe's document once Puck has mounted it, for listeners that must also work inside the canvas. */
+export const useCanvasDocument = () =>
+	useSyncExternalStore(
+		(listener) => {
+			documentListeners.add(listener);
+			return () => documentListeners.delete(listener);
+		},
+		() => canvasDocument,
+		() => null,
+	);
+
+function CanvasFrame({
+	children,
+	document,
+}: {
+	children: ReactNode;
+	document?: Document;
+}) {
+	useLayoutEffect(() => {
+		setCanvasDocument(document ?? null);
+		return () => setCanvasDocument(null);
+	}, [document]);
+	return children;
+}
+
+export const canvasOverrides: Partial<Overrides> = {
+	iframe: (props) => <CanvasFrame {...props} />,
+};
 
 /** Puck's own canvas isn't exported: this one sizes the preview to the viewport and scales it down to fit. */
 export function EditorCanvas() {
