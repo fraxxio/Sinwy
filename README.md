@@ -132,13 +132,14 @@ Run the two servers as separate long-running processes, each with its output in 
 
 ### Page editor spec
 
-`bun run test:editor` runs the page editor's Playwright spec (`Sinwy.WebFrontend/e2e/`) in the system Chromium against the running stack. Its global setup seeds a fresh `pro-org` and `subscribed-org` and logs their owners in. It stops with a message if either server is down. The spec covers:
+`bun run test:editor` runs the page editor's Playwright spec (`Sinwy.WebFrontend/e2e/`) in the system Chromium against the running stack. Its global setup seeds two fresh `pro-org`s (a Professional org holds only 5 pages) and a `subscribed-org`, and logs their owners in. It stops with a message if either server is down. The spec covers:
 
 - adding blocks by click, where they land and the scroll to them;
 - dragging a drawer card to the end of the page, and moving a block by its handle;
 - editing a field, and undo and redo that keep the phone view;
 - the keyboard shortcuts;
-- saving and reloading, and a save refused for a newer version keeping the edits;
+- autosave with no click, which survives a reload, and Ctrl+S saving what was just typed;
+- a save refused for a newer version keeping the edits;
 - the locked Booking tile on Starter.
 
 It checks the saved document through the API. It isn't part of `bun run verify`. **Run it before any `@puckeditor/core` upgrade, and upgrade only if it passes.** Failure traces are written to `.playwright-cli/editor-e2e/results/`.

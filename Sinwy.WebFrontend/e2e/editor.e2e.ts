@@ -78,7 +78,6 @@ test.describe("on Professional", () => {
 			y: zone.y + zone.height - 20,
 		});
 		await expect(editor.canvas.getByText("Our services")).toBeVisible();
-		await expect(editor.status("Unsaved changes")).toBeVisible();
 
 		await editor.select("second");
 		await expect(editor.selected).toHaveText("Section");
@@ -90,6 +89,11 @@ test.describe("on Professional", () => {
 			x: first.x + first.width / 2,
 			y: first.y + first.height / 4,
 		});
+		await expect(
+			editor.canvas.locator(
+				'[data-puck-component="second"] ~ [data-puck-component="first"]',
+			),
+		).toHaveCount(1);
 
 		await editor.save();
 		const saved = await pages.saved(pageId);
@@ -116,14 +120,13 @@ test.describe("on Professional", () => {
 		await title.click();
 		await editor.select("second");
 		await expect(editor.button("Undo")).toBeDisabled();
-		await expect(editor.status("All changes saved")).toBeVisible();
+		await expect(editor.status).toHaveText("Saved");
 
 		await title.click();
 		await editor.settings
 			.getByLabel("Text", { exact: true })
 			.fill("Welcome to the salon");
 		await expect(title).toHaveText("Welcome to the salon");
-		await expect(editor.status("Unsaved changes")).toBeVisible();
 
 		const phone = editor.button("Phone");
 		await phone.click();
@@ -131,7 +134,6 @@ test.describe("on Professional", () => {
 
 		await editor.button("Undo").click();
 		await expect(title).toHaveText("First part");
-		await expect(editor.status("All changes saved")).toBeVisible();
 		await editor.button("Redo").click();
 		await expect(title).toHaveText("Welcome to the salon");
 
@@ -147,7 +149,7 @@ test.describe("on Professional", () => {
 		await expect(editor.block("first-title")).toHaveText(
 			"Welcome to the salon",
 		);
-		await expect(editor.status("All changes saved")).toBeVisible();
+		await expect(editor.status).toHaveText("Saved");
 		const [first] = await pages.saved(pageId);
 		const [saved] = (first?.props["items"] ?? []) as Block[];
 		expect(saved?.props["text"]).toBe("Welcome to the salon");
@@ -175,20 +177,16 @@ test.describe("on Professional", () => {
 		// Puck records the delete 250 ms after it; an undo pressed at once waits for that
 		await page.keyboard.press("ControlOrMeta+z");
 		await expect(editor.block("first")).toBeVisible();
-		await expect(editor.status("All changes saved")).toBeVisible();
 
 		await editor.block("first-title").click();
 		await page.keyboard.press("Escape");
 		await page.keyboard.press("Alt+ArrowDown");
-		await expect(editor.status("Unsaved changes")).toBeVisible();
-		await page.keyboard.press("ControlOrMeta+s");
-		await expect(editor.status("All changes saved")).toBeVisible();
+		await editor.save();
 		const saved = await pages.saved(pageId);
 		expect(saved.map((block) => block.props.id)).toEqual(["second", "first"]);
 	});
 
 	test("a save refused for a newer version keeps the edits unsaved", async ({
-		page,
 		pages,
 		editor,
 	}) => {
@@ -203,10 +201,7 @@ test.describe("on Professional", () => {
 		await editor.settings
 			.getByLabel("Text", { exact: true })
 			.fill("Welcome to the salon");
-		await editor.button("Save").click();
-		await expect(page.getByText(/saved somewhere else/)).toBeVisible();
-		await expect(editor.status("Unsaved changes")).toBeVisible();
-		await expect(editor.button("Save")).toBeEnabled();
+		await expect(editor.status).toHaveText(/saved somewhere else/);
 		await expect(title).toHaveText("Welcome to the salon");
 		const [saved] = await pages.saved(pageId);
 		expect(saved?.props.id).toBe("elsewhere");
@@ -214,7 +209,7 @@ test.describe("on Professional", () => {
 });
 
 test.describe("on Starter", () => {
-	test.use({ plan: "starter" });
+	test.use({ seed: "starter" });
 
 	test("Booking is a locked tile that explains the upgrade and can't be dragged in", async ({
 		page,
@@ -239,7 +234,7 @@ test.describe("on Starter", () => {
 			y: zone.y + zone.height / 2,
 		});
 		await expect(firstRun).toBeVisible();
-		await expect(editor.status("All changes saved")).toBeVisible();
+		await expect(editor.status).toHaveText("Saved");
 
 		await locked.click();
 		const dialog = page.getByRole("dialog");
@@ -259,5 +254,52 @@ test.describe("on Starter", () => {
 		expect(outline(await pages.saved(pageId))).toEqual([
 			{ Hero: ["Heading", "RichText", "Button"] },
 		]);
+	});
+});
+
+test.describe("autosave", () => {
+	test.use({ seed: "secondPro" });
+
+	test("an edit saves with no click and survives a reload, and Ctrl+S saves what was just typed", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create([
+			section("intro", [heading("title", "Welcome")]),
+		]);
+		await editor.open(pageId);
+		const textField = editor.settings.getByLabel("Text", { exact: true });
+		const savedTitle = async () => {
+			const [intro] = await pages.saved(pageId);
+			const [title] = (intro?.props["items"] ?? []) as Block[];
+			return title?.props["text"];
+		};
+
+		await editor.block("title").click();
+		await textField.fill("Welcome to the salon");
+		await expect(editor.status).toHaveText("Saving…");
+		await expect(editor.status).toHaveText("Saved");
+		expect(await savedTitle()).toBe("Welcome to the salon");
+
+		await page.reload();
+		await expect(editor.block("title")).toHaveText("Welcome to the salon");
+		await expect(editor.status).toHaveText("Saved");
+
+		await editor.block("title").click();
+		await textField.press("End");
+		await textField.pressSequentially(" today");
+		// Autosave waits a second after the last key; the shortcut doesn't
+		const put = page.waitForRequest(
+			(request) =>
+				request.method() === "PUT" &&
+				request.postData()?.includes("Welcome to the salon today") === true,
+			{ timeout: 500 },
+		);
+		await page.keyboard.press("ControlOrMeta+s");
+		await put;
+		await expect(editor.status).toHaveText("Saved");
+		await expect(page.getByText("Changes saved")).toHaveCount(0);
+		expect(await savedTitle()).toBe("Welcome to the salon today");
 	});
 });

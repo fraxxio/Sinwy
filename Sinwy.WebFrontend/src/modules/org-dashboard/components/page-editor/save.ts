@@ -10,8 +10,6 @@ import { getPlanName, minimumPlanFor } from "#/shared/lib/plans";
 
 export type PageData = PageDocument["data"];
 
-export type SaveResult = { ok: true } | { ok: false; message: string };
-
 const definedKeys = (value: object) =>
 	Object.keys(value).filter(
 		(key) => (value as Record<string, unknown>)[key] !== undefined,

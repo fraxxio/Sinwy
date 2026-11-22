@@ -6,9 +6,20 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeftIcon } from "lucide-react";
-import { lazy, type ReactNode, Suspense, useRef, useState } from "react";
 import {
-	type PageData,
+	lazy,
+	type ReactNode,
+	Suspense,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
+import {
+	type Autosave,
+	createAutosave,
+	type SaveFn,
+} from "#/modules/org-dashboard/components/page-editor/autosave";
+import {
 	saveErrorMessage,
 	toPageDocument,
 } from "#/modules/org-dashboard/components/page-editor/save";
@@ -117,26 +128,40 @@ function EditorScreen({
 	const [initialData] = useState(() => page.latestVersion.content.data);
 	const latest = useRef(page.latestVersion);
 
-	const save = async (data: PageData) => {
+	const save: SaveFn = async (data, base) => {
 		const attempted = toPageDocument(data);
 		const res = await savePageContent(organization.id, page.id, {
-			baseVersion: latest.current.version,
+			baseVersion: base,
 			content: attempted,
 		});
 		if (!res.isSuccess)
 			return {
 				ok: false,
+				code: res.code,
 				message: saveErrorMessage(res, {
 					saved: latest.current.content,
 					attempted,
 					features: entitlements.features,
 				}),
-			} as const;
+			};
 		latest.current = res.data.latestVersion;
-		await storePage(queryClient, organization.id, res.data);
-		return { ok: true } as const;
+		void storePage(queryClient, organization.id, res.data);
+		return { ok: true, base: res.data.latestVersion.version };
 	};
+	// Made in an effect, so StrictMode's second mount gets an engine that isn't disposed
+	const [autosave, setAutosave] = useState<Autosave | null>(null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: one engine per mount, holding the document it opened with
+	useEffect(() => {
+		const engine = createAutosave({
+			data: initialData,
+			base: page.latestVersion.version,
+			save,
+		});
+		setAutosave(engine);
+		return engine.dispose;
+	}, []);
 
+	if (!autosave) return loading;
 	return (
 		<PageEditor
 			data={initialData}
@@ -148,7 +173,7 @@ function EditorScreen({
 			title={page.title}
 			path={publicPagePath(organization.slug, page.slug)}
 			back={back}
-			onSave={save}
+			autosave={autosave}
 		/>
 	);
 }

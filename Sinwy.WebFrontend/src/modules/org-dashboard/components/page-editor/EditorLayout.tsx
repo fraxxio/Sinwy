@@ -11,10 +11,10 @@ import {
 } from "lucide-react";
 import {
 	type ReactNode,
+	useEffect,
 	useLayoutEffect,
-	useMemo,
 	useRef,
-	useState,
+	useSyncExternalStore,
 } from "react";
 import { Button } from "#/shared/components/ui/button";
 import {
@@ -30,12 +30,13 @@ import {
 	TooltipTrigger,
 } from "#/shared/components/ui/tooltip";
 import { cn } from "#/shared/lib/utils";
+import type { Autosave, AutosaveState } from "./autosave";
 import { BlockToolbar } from "./BlockChrome";
 import { BlockDrawer } from "./BlockDrawer";
 import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
 import { PreloadRichText } from "./editor-fields";
-import { hasUnsavedChanges, type PageData, type SaveResult } from "./save";
+import type { PageData } from "./save";
 import {
 	useBlockActions,
 	useEditorHotkeys,
@@ -182,53 +183,79 @@ function KeepUiOnHistory() {
 	return null;
 }
 
-function SaveControls({
-	onSave,
-}: {
-	onSave: (data: PageData) => Promise<SaveResult>;
-}) {
+const STATUS_TEXT = {
+	saved: "Saved",
+	pending: "Saving…",
+	saving: "Saving…",
+	failed: "Not saved, retrying",
+} as const;
+
+/** Tells the owner about a save that went wrong once, not on every retry or every refused burst of edits. */
+function useSaveErrorToast(state: AutosaveState) {
+	const shown = useRef<string | null>(null);
+	useEffect(() => {
+		if (state.status === "saved") shown.current = null;
+		const first =
+			state.status === "failed"
+				? state.attempt === 1
+				: state.status === "blocked" || state.status === "conflict";
+		if (!first || !("message" in state) || shown.current === state.message)
+			return;
+		shown.current = state.message;
+		toast.add({
+			type: "error",
+			title: "Not saved",
+			description: state.message,
+			timeout: 10_000,
+		});
+	}, [state]);
+}
+
+function SaveStatus({ autosave }: { autosave: Autosave }) {
 	const getPuck = useGetPuck();
 	const data = usePuck((s) => s.appState.data) as PageData;
-	const [saved, setSaved] = useState(data);
-	const [saving, setSaving] = useState(false);
-	const dirty = useMemo(() => hasUnsavedChanges(data, saved), [data, saved]);
+	const state = useSyncExternalStore(
+		autosave.subscribe,
+		autosave.getState,
+		autosave.getState,
+	);
+	useSaveErrorToast(state);
 
-	const save = async () => {
-		if (saving) return;
-		const attempted = getPuck().appState.data as PageData;
-		setSaving(true);
-		const result = await onSave(attempted).finally(() => setSaving(false));
-		if (result.ok) {
-			setSaved(attempted);
-			toast.add({ type: "success", title: "Changes saved", timeout: 3_000 });
-		} else
-			toast.add({
-				type: "error",
-				title: "Not saved",
-				description: result.message,
-				timeout: 10_000,
-			});
-	};
+	const opening = useRef(true);
+	useEffect(() => {
+		// Puck fills in props a stored block lacks, which isn't the owner's change
+		if (opening.current) autosave.reset(data, autosave.getBase());
+		else autosave.change(data);
+		opening.current = false;
+	}, [autosave, data]);
 
 	useEditorKeys((event) => {
 		const mod = event.ctrlKey || event.metaKey;
 		if (!mod || event.altKey || event.shiftKey || event.code !== "KeyS") return;
 		event.preventDefault();
-		if (dirty) save();
+		autosave.change(getPuck().appState.data as PageData);
+		void autosave.flush();
 	});
 
+	const problem = state.status === "blocked" || state.status === "conflict";
 	return (
-		<>
+		<div className="flex items-center gap-2">
 			<span
-				className="w-32 text-right text-muted-foreground text-xs"
-				aria-live="polite"
+				className={cn(
+					"line-clamp-2 min-w-32 max-w-64 text-right text-xs",
+					problem ? "text-destructive" : "text-muted-foreground",
+				)}
+				title={problem ? state.message : undefined}
+				role="status"
 			>
-				{saving ? "Saving…" : dirty ? "Unsaved changes" : "All changes saved"}
+				{problem ? state.message : STATUS_TEXT[state.status]}
 			</span>
-			<Button disabled={saving || !dirty} onClick={save}>
-				Save
-			</Button>
-		</>
+			{state.status === "failed" && (
+				<Button variant="outline" size="sm" onClick={autosave.retryNow}>
+					Retry now
+				</Button>
+			)}
+		</div>
 	);
 }
 
@@ -291,12 +318,12 @@ export function EditorLayout({
 	title,
 	path,
 	back,
-	onSave,
+	autosave,
 }: {
 	title: string;
 	path: string;
 	back: ReactNode;
-	onSave: (data: PageData) => Promise<SaveResult>;
+	autosave: Autosave;
 }) {
 	useEditorHotkeys();
 	useRefusedDropNotice();
@@ -315,7 +342,7 @@ export function EditorLayout({
 				</div>
 				<KeepUiOnHistory />
 				<HistoryButtons />
-				<SaveControls onSave={onSave} />
+				<SaveStatus autosave={autosave} />
 			</header>
 			<div className="flex min-h-0 flex-1">
 				<LeftPanel />

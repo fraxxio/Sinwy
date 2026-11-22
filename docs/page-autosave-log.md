@@ -74,3 +74,36 @@ Finished phases of [page-autosave-plan.md](page-autosave-plan.md), each with its
 - Shipped: `createAutosave({ data, base, save, clock? })` in `page-editor/autosave.ts`, with `change`, `flush`, `retryNow`, `resolveConflict`, `reset`, `dispose`, `getState`, `subscribe` and `getBase`. `save(data, base)` returns `{ ok: true, base }` or `{ ok: false, code, message }`; the message is shown as is, so the caller maps it with `saveErrorMessage`. A save that throws counts as a network error. 25 unit tests with a fake clock.
 - Differs from plan: added `getBase()` (phase 5 publishes and discards with it). Failures are classified by the HTTP status the app code starts with (4021 is a 402): the version conflict is `conflict`; `0`, 5xx, 408 and 429 retry; everything else, including 401/403/404, is `blocked`. Changes made while `failed` wait for the next retry rather than starting a debounce. `flush()` resolves with the final `AutosaveState`, saves only what changed before the call, and stops after one failed attempt. `reset` ignores the result of a save still in flight; it can't cancel the request. A `blocked` or `failed` document that the user reverts to the saved one goes back to `saved`.
 - Checked in the running app: nothing (Verify was None).
+
+## Phase 3: Autosave in the editor
+
+**Goal:** edits save on their own, the header status is trustworthy, Ctrl/⌘+S saves straight away, and the e2e spec runs on autosave.
+
+**Files:**
+- `page-editor/autosave.ts` (`createAutosave`, `AutosaveState`, `SaveOutcome`): create it once per `EditorScreen` mount, `dispose` on unmount.
+- `page-editor/EditorLayout.tsx`: `SaveControls` (:185–233, holds the `saved`/`dirty` state and the Save button) is replaced by a status driven by the engine's `subscribe`/`getState`; header (:290–319). `usePuck` data feeds `change`.
+- `routes/_shell.pages.$id.edit.tsx` (`EditorScreen`, :117–152): `save` becomes the engine's `SaveFn`. It sends `baseVersion: base` from the engine instead of the `latest` ref, maps failures with `saveErrorMessage` and returns `{ ok: true, base: res.data.latestVersion.version }`. `storePage` runs after each success. Keep `latest.current.content` for `saveErrorMessage`'s `saved`.
+- `page-editor/PageEditor.tsx` (:41–63): `onSave` gives way to the engine.
+- `Sinwy.WebFrontend/e2e/editor-fixtures.ts` (`status`, `open`, `save`) and `e2e/editor.e2e.ts` (the save and status assertions at :56, :81, :94, :107–150, :156–185, :190–208, :242, :258). `e2e/global-setup.ts`: seed a second `pro-org` (Defaults 12).
+- `README.md:133-146`: the spec's coverage list.
+
+**Steps:**
+- Feed the engine from Puck's data, gated on the dirty flag. The status reads "Saved", "Saving…", "Not saved, retrying" with "Retry now", or the blocked message. It is `aria-live`.
+- Ctrl/⌘+S calls `flush`. Remove the Save button and the success toast.
+- Leave the 409 message as it is for now; phase 4 replaces it.
+- The fixtures wait for "Saved" and read the result through the API. `editor.save()` becomes "press Ctrl+S and wait".
+
+**Tests that matter:**
+- e2e: an edit is saved with no click and survives a reload.
+- e2e: Ctrl+S straight after typing saves that text.
+- The existing spec stays green.
+
+**Done when:**
+- `bun run test:editor` passes and `bun run verify` passes.
+
+**Verify:** Seed `pro-org` and create a page with a Heading through the API. Open the editor and change the heading text in three bursts within a minute, without pressing anything. The status goes "Saving…" and then "Saved". In `page_content` the page has one draft row whose version rose with each burst, with the same id. Reload, and the editor shows the last text. Press Ctrl+S straight after typing: one more save, with no toast. Nothing is simulated except login.
+
+### Log (2026-11-22, `feat(web): autosave page edits in the editor`)
+- Shipped: `EditorScreen` creates the engine (its `save` sends the engine's base, maps failures with `saveErrorMessage` and calls `storePage` without awaiting it) and passes it through `PageEditor` to `EditorLayout`. `SaveStatus` replaces `SaveControls`: a header `role="status"` reading "Saved", "Saving…" (pending and in flight), "Not saved, retrying" with "Retry now", or the blocked/conflict message in red. Ctrl/⌘+S feeds Puck's current data and calls `flush`. An error toast shows on the first failed attempt and once per distinct blocked/conflict message. The Save button, the success toast and `SaveResult` are gone. e2e: a `seed` option (`pro`, `secondPro`, `starter`) replaces `plan`, global setup seeds a second `pro-org`, `editor.status` is a locator, `editor.save()` presses Ctrl+S and waits for "Saved", and a new test covers autosave, reload and Ctrl+S straight after typing.
+- Differs from plan: the app runs under React StrictMode (TanStack Start's default client entry), so an engine made in `useState` and disposed in an effect cleanup was dead after the simulated remount; it's created in an effect and `EditorScreen` shows the loading skeleton until it exists. Puck fills in props a stored block lacks (a Photos block saved with only an `id`), which made opening such a page save on its own; `SaveStatus` now `reset`s the engine to Puck's first data instead of feeding it as a change. The drag test now waits for the canvas to show the move before Ctrl+S, because a drop lands 250 ms after release and a flush before that saved the old order (autosave then saved the move a second later). The intermediate "Unsaved changes" assertions were dropped, since the status now moves on by itself.
+- Checked in the running app (subagent, e2e-test): opening sends no PUT; three typing bursts each sent one PUT about 0.92 s after the last key, with "Saving…" then "Saved" and no toast; one `page_content` row kept its id while its version went 3, 4, 5; reload showed the last text; Ctrl+S sent its PUT 2 ms after the last key, exactly one save, no toast. A throwaway spec confirmed opening a page with an incomplete Photos block sends no PUT and an edit then saves once. Not checked: the retrying and error states in the browser, the 10 s cap, and whether Ctrl+S suppresses the browser's own save dialog in headed Chrome.
