@@ -13,6 +13,7 @@ import { canvasOverrides } from "./EditorCanvas";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
 import { EditorServicesContext, fieldOverrides } from "./editor-fields";
+import type { ConflictActions } from "./SaveControls";
 import type { PageData } from "./save";
 
 /** Puck's canvas picks the starting viewport and ours isn't Puck's, so the editor opens on desktop here. */
@@ -40,6 +41,7 @@ export function PageEditor({
 	path,
 	back,
 	autosave,
+	conflict,
 }: {
 	data: PageData;
 	metadata: PageMetadata;
@@ -47,6 +49,7 @@ export function PageEditor({
 	path: string;
 	back: ReactNode;
 	autosave: Autosave;
+	conflict: ConflictActions;
 }) {
 	return (
 		<EditorServicesContext value={metadata.services}>
@@ -66,6 +69,7 @@ export function PageEditor({
 						path={path}
 						back={back}
 						autosave={autosave}
+						conflict={conflict}
 					/>
 				</Puck>
 			</BlockAccessProvider>

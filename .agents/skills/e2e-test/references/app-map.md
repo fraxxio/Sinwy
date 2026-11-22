@@ -24,11 +24,11 @@ An org is `active` when it holds a slot (`organization.slot_held_at`), isn't sch
 | --- | --- | --- |
 | Pages list | `/dashboard/<org slug>/pages`, new page at `/pages/new` | the plan caps the count (Starter 1, Professional 5, Enterprise 25) |
 | Page detail | `/dashboard/<org slug>/pages/<id>` | title, slug, SEO, publish; the Content section's "Edit content" button opens the editor |
-| Page editor | `/dashboard/<org slug>/pages/<id>/edit` | fills the window. Left: Add (block drawer) and Layers; middle: the canvas in `iframe#preview-frame`; right: Block settings. Header: Desktop/Tablet/Phone, Undo, Redo, Save |
+| Page editor | `/dashboard/<org slug>/pages/<id>/edit` | fills the window. Left: Add (block drawer) and Layers; middle: the canvas in `iframe#preview-frame`; right: Block settings. Header: Back (a button), Desktop/Tablet/Phone, Undo, Redo, save status |
 | Public page | `/<org slug>/<page slug>` | serves the published version |
 
 - Add a block by its card's Add button (after the selected block) or by dragging the card onto the canvas. Booking needs `premium-blocks` (Professional and up); on Starter it's a locked tile that opens an upgrade dialog and can't be dragged.
-- Save is manual (Save or Ctrl/⌘+S); the header says "Unsaved changes" or "All changes saved". A refused save (409 newer version, 402 plan, 400 invalid) shows a toast and keeps the edits unsaved.
+- Autosave: a save goes 1 s after the last change (Ctrl/⌘+S saves at once). The header `role="status"` reads "Saved", "Saving…", "Not saved, retrying" (with "Retry now") or a refused save's reason (402 plan, 400 invalid). A 409 (saved elsewhere) stops autosave, shows "Not saved" and a `role="alert"` banner with "Keep mine" and "Load latest". Back saves first and asks "Leave without saving?" only when that save fails.
 - Keys outside text fields: Delete/Backspace delete, ↑/↓ select, Alt+↑/↓ move, Esc selects the parent, Ctrl/⌘+Z and Ctrl/⌘+Shift+Z undo and redo.
 - Driving it: inner coordinates are scaled (`locator.boundingBox()` gives page coordinates); blocks are `[data-puck-component="<block id>"]`, the root zone `[data-puck-dropzone="root:default-zone"]`. Scripted drags need a 2 px move at the target before the release. `Sinwy.WebFrontend/e2e/editor-fixtures.ts` has working helpers.
 

@@ -33,6 +33,7 @@ import { servicesQuery } from "#/modules/org-dashboard/lib/service-queries";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
+import { toast } from "#/shared/components/ui/toast";
 import { organizationsQuery } from "#/shared/lib/organizations";
 
 const PageEditor = lazy(() =>
@@ -66,6 +67,12 @@ function PageEditPage() {
 		...servicesQuery(organization.id),
 		enabled: canWrite,
 	});
+	// A new key opens a fresh editor on the latest document, after a conflict
+	const [opened, setOpened] = useState(0);
+	const loadLatest = async () => {
+		await page.refetch();
+		setOpened((count) => count + 1);
+	};
 
 	const back = (
 		<Button
@@ -99,10 +106,11 @@ function PageEditPage() {
 	return (
 		<Suspense fallback={loading}>
 			<EditorScreen
-				key={page.data.id}
+				key={`${page.data.id}:${opened}`}
 				page={page.data}
 				services={services.data ?? []}
 				back={back}
+				loadLatest={loadLatest}
 			/>
 		</Suspense>
 	);
@@ -112,10 +120,12 @@ function EditorScreen({
 	page,
 	services,
 	back,
+	loadLatest,
 }: {
 	page: PageDetailDto;
 	services: ServiceDto[];
 	back: ReactNode;
+	loadLatest: () => Promise<void>;
 }) {
 	const { organization, entitlements } = Route.useRouteContext();
 	const queryClient = useQueryClient();
@@ -162,6 +172,24 @@ function EditorScreen({
 	}, []);
 
 	if (!autosave) return loading;
+
+	const keepMine = async () => {
+		try {
+			const fresh = await queryClient.fetchQuery({
+				...pageQuery(organization.id, page.id),
+				staleTime: 0,
+			});
+			latest.current = fresh.latestVersion;
+			await autosave.resolveConflict(fresh.latestVersion.version);
+		} catch (error) {
+			toast.add({
+				type: "error",
+				title: "Couldn't load the latest version",
+				description: error instanceof Error ? error.message : undefined,
+				timeout: 6_000,
+			});
+		}
+	};
 	return (
 		<PageEditor
 			data={initialData}
@@ -174,6 +202,7 @@ function EditorScreen({
 			path={publicPagePath(organization.slug, page.slug)}
 			back={back}
 			autosave={autosave}
+			conflict={{ keepMine, loadLatest }}
 		/>
 	);
 }

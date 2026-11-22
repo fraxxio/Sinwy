@@ -45,6 +45,7 @@ export const editorFor = (page: Page, org: SeededOrg) => {
 	const settings = page.getByRole("complementary", { name: "Block settings" });
 	const status = page.getByRole("banner").getByRole("status");
 	return {
+		page,
 		canvas,
 		drawer: page.getByRole("complementary", { name: "Blocks" }),
 		settings,
@@ -53,6 +54,8 @@ export const editorFor = (page: Page, org: SeededOrg) => {
 		block: (id: string) => canvas.locator(`[data-puck-component="${id}"]`),
 		rootZone: canvas.locator('[data-puck-dropzone="root:default-zone"]'),
 		button: (name: string) => page.getByRole("button", { name, exact: true }),
+		/** The header's way out of the editor, to the page's detail screen. */
+		back: page.getByRole("banner").getByText("Back", { exact: true }),
 		/** The save status in the header: "Saved", "Saving…" or what went wrong. */
 		status,
 

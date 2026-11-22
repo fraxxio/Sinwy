@@ -1,6 +1,8 @@
 import {
 	type Block,
 	drag,
+	type Editor,
+	editorFor,
 	expect,
 	heading,
 	outline,
@@ -12,6 +14,25 @@ const twoSections = () => [
 	section("first", [heading("first-title", "First part")]),
 	section("second", [heading("second-title", "Second part")]),
 ];
+
+const welcome = () => [section("intro", [heading("title", "Welcome")])];
+
+const titleSaved = async (
+	pages: { saved: (pageId: string) => Promise<Block[]> },
+	pageId: string,
+) => {
+	const [intro] = await pages.saved(pageId);
+	const [title] = (intro?.props["items"] ?? []) as Block[];
+	return title?.props["text"];
+};
+
+const editTitle = async (editor: Editor, text: string) => {
+	await editor.block("title").click();
+	await editor.settings.getByLabel("Text", { exact: true }).fill(text);
+};
+
+const conflictBanner = (editor: Editor) =>
+	editor.page.getByRole("alert").filter({ hasText: "saved somewhere else" });
 
 test.describe("on Professional", () => {
 	test("click-to-add places the block where the owner expects and scrolls to it", async ({
@@ -186,7 +207,8 @@ test.describe("on Professional", () => {
 		expect(saved.map((block) => block.props.id)).toEqual(["second", "first"]);
 	});
 
-	test("a save refused for a newer version keeps the edits unsaved", async ({
+	test("a save refused for a newer version stops autosave and keeps the edits", async ({
+		page,
 		pages,
 		editor,
 	}) => {
@@ -198,11 +220,20 @@ test.describe("on Professional", () => {
 
 		const title = editor.block("first-title");
 		await title.click();
-		await editor.settings
-			.getByLabel("Text", { exact: true })
-			.fill("Welcome to the salon");
-		await expect(editor.status).toHaveText(/saved somewhere else/);
-		await expect(title).toHaveText("Welcome to the salon");
+		const textField = editor.settings.getByLabel("Text", { exact: true });
+		await textField.fill("Welcome to the salon");
+		await expect(conflictBanner(editor)).toBeVisible();
+		await expect(editor.status).toHaveText("Not saved");
+
+		let puts = 0;
+		page.on("request", (request) => {
+			if (request.method() === "PUT") puts += 1;
+		});
+		await textField.fill("Welcome to the salon today");
+		await page.keyboard.press("ControlOrMeta+s");
+		await page.waitForTimeout(1500);
+		expect(puts).toBe(0);
+		await expect(title).toHaveText("Welcome to the salon today");
 		const [saved] = await pages.saved(pageId);
 		expect(saved?.props.id).toBe("elsewhere");
 	});
@@ -260,21 +291,99 @@ test.describe("on Starter", () => {
 test.describe("autosave", () => {
 	test.use({ seed: "secondPro" });
 
+	test("a save in another tab pauses autosave until the owner keeps theirs or loads the latest", async ({
+		page,
+		context,
+		org,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(welcome());
+		const savedTitle = () => titleSaved(pages, pageId);
+		const other = editorFor(await context.newPage(), org);
+		await editor.open(pageId);
+		await other.open(pageId);
+
+		await editTitle(other, "From tab B");
+		await expect.poll(savedTitle).toBe("From tab B");
+		await editTitle(editor, "From tab A");
+		const banner = conflictBanner(editor);
+		await expect(banner).toBeVisible();
+		await expect(editor.status).toHaveText("Not saved");
+		expect(await savedTitle()).toBe("From tab B");
+
+		await banner.getByRole("button", { name: "Keep mine" }).click();
+		await expect(banner).toBeHidden();
+		await expect(editor.status).toHaveText("Saved");
+		expect(await savedTitle()).toBe("From tab A");
+
+		await other.open(pageId);
+		await editTitle(other, "Tab B again");
+		await expect.poll(savedTitle).toBe("Tab B again");
+		await editTitle(editor, "Tab A again");
+		await expect(banner).toBeVisible();
+		await banner.getByRole("button", { name: "Load latest" }).click();
+		await page
+			.getByRole("alertdialog")
+			.getByRole("button", { name: "Load latest" })
+			.click();
+		await expect(editor.block("title")).toHaveText("Tab B again");
+		await expect(editor.status).toHaveText("Saved");
+		expect(await savedTitle()).toBe("Tab B again");
+	});
+
+	test("Back straight after typing saves the edit and leaves with no prompt", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(welcome());
+		await editor.open(pageId);
+
+		await editTitle(editor, "Welcome to the salon");
+		await expect(editor.status).toHaveText("Saving…");
+		await editor.back.click();
+		await expect(page).toHaveURL(new RegExp(`/pages/${pageId}$`));
+		await expect(page.getByRole("alertdialog")).toHaveCount(0);
+		expect(await titleSaved(pages, pageId)).toBe("Welcome to the salon");
+	});
+
+	test("Back with a save that can't go through asks first, and Cancel keeps the edits", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(welcome());
+		await editor.open(pageId);
+		const content = `**/pages/${pageId}/content`;
+		await page.route(content, (route) =>
+			route.request().method() === "PUT" ? route.abort() : route.continue(),
+		);
+
+		await editTitle(editor, "Welcome to the salon");
+		await editor.back.click();
+		const prompt = page.getByRole("alertdialog");
+		await expect(prompt).toContainText("Leave without saving?");
+		await prompt.getByRole("button", { name: "Cancel" }).click();
+		await expect(prompt).toBeHidden();
+		await expect(page).toHaveURL(/\/edit$/);
+		await expect(editor.block("title")).toHaveText("Welcome to the salon");
+
+		await page.unroute(content);
+		await editor.button("Retry now").click();
+		await expect(editor.status).toHaveText("Saved");
+		expect(await titleSaved(pages, pageId)).toBe("Welcome to the salon");
+	});
+
 	test("an edit saves with no click and survives a reload, and Ctrl+S saves what was just typed", async ({
 		page,
 		pages,
 		editor,
 	}) => {
-		const pageId = await pages.create([
-			section("intro", [heading("title", "Welcome")]),
-		]);
+		const pageId = await pages.create(welcome());
 		await editor.open(pageId);
 		const textField = editor.settings.getByLabel("Text", { exact: true });
-		const savedTitle = async () => {
-			const [intro] = await pages.saved(pageId);
-			const [title] = (intro?.props["items"] ?? []) as Block[];
-			return title?.props["text"];
-		};
+		const savedTitle = () => titleSaved(pages, pageId);
 
 		await editor.block("title").click();
 		await textField.fill("Welcome to the salon");

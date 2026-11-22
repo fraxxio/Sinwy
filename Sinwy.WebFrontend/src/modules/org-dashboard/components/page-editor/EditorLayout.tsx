@@ -9,13 +9,7 @@ import {
 	TabletIcon,
 	Undo2Icon,
 } from "lucide-react";
-import {
-	type ReactNode,
-	useEffect,
-	useLayoutEffect,
-	useRef,
-	useSyncExternalStore,
-} from "react";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { Button } from "#/shared/components/ui/button";
 import {
 	Tabs,
@@ -23,24 +17,27 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "#/shared/components/ui/tabs";
-import { toast } from "#/shared/components/ui/toast";
 import {
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "#/shared/components/ui/tooltip";
 import { cn } from "#/shared/lib/utils";
-import type { Autosave, AutosaveState } from "./autosave";
+import type { Autosave } from "./autosave";
 import { BlockToolbar } from "./BlockChrome";
 import { BlockDrawer } from "./BlockDrawer";
 import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
 import { PreloadRichText } from "./editor-fields";
-import type { PageData } from "./save";
+import {
+	type ConflictActions,
+	ConflictBanner,
+	LeaveGuard,
+	SaveStatus,
+} from "./SaveControls";
 import {
 	useBlockActions,
 	useEditorHotkeys,
-	useEditorKeys,
 	useRefusedDropNotice,
 } from "./use-block-actions";
 
@@ -183,82 +180,6 @@ function KeepUiOnHistory() {
 	return null;
 }
 
-const STATUS_TEXT = {
-	saved: "Saved",
-	pending: "Saving…",
-	saving: "Saving…",
-	failed: "Not saved, retrying",
-} as const;
-
-/** Tells the owner about a save that went wrong once, not on every retry or every refused burst of edits. */
-function useSaveErrorToast(state: AutosaveState) {
-	const shown = useRef<string | null>(null);
-	useEffect(() => {
-		if (state.status === "saved") shown.current = null;
-		const first =
-			state.status === "failed"
-				? state.attempt === 1
-				: state.status === "blocked" || state.status === "conflict";
-		if (!first || !("message" in state) || shown.current === state.message)
-			return;
-		shown.current = state.message;
-		toast.add({
-			type: "error",
-			title: "Not saved",
-			description: state.message,
-			timeout: 10_000,
-		});
-	}, [state]);
-}
-
-function SaveStatus({ autosave }: { autosave: Autosave }) {
-	const getPuck = useGetPuck();
-	const data = usePuck((s) => s.appState.data) as PageData;
-	const state = useSyncExternalStore(
-		autosave.subscribe,
-		autosave.getState,
-		autosave.getState,
-	);
-	useSaveErrorToast(state);
-
-	const opening = useRef(true);
-	useEffect(() => {
-		// Puck fills in props a stored block lacks, which isn't the owner's change
-		if (opening.current) autosave.reset(data, autosave.getBase());
-		else autosave.change(data);
-		opening.current = false;
-	}, [autosave, data]);
-
-	useEditorKeys((event) => {
-		const mod = event.ctrlKey || event.metaKey;
-		if (!mod || event.altKey || event.shiftKey || event.code !== "KeyS") return;
-		event.preventDefault();
-		autosave.change(getPuck().appState.data as PageData);
-		void autosave.flush();
-	});
-
-	const problem = state.status === "blocked" || state.status === "conflict";
-	return (
-		<div className="flex items-center gap-2">
-			<span
-				className={cn(
-					"line-clamp-2 min-w-32 max-w-64 text-right text-xs",
-					problem ? "text-destructive" : "text-muted-foreground",
-				)}
-				title={problem ? state.message : undefined}
-				role="status"
-			>
-				{problem ? state.message : STATUS_TEXT[state.status]}
-			</span>
-			{state.status === "failed" && (
-				<Button variant="outline" size="sm" onClick={autosave.retryNow}>
-					Retry now
-				</Button>
-			)}
-		</div>
-	);
-}
-
 function LeftPanel() {
 	return (
 		<aside
@@ -319,16 +240,18 @@ export function EditorLayout({
 	path,
 	back,
 	autosave,
+	conflict,
 }: {
 	title: string;
 	path: string;
 	back: ReactNode;
 	autosave: Autosave;
+	conflict: ConflictActions;
 }) {
 	useEditorHotkeys();
 	useRefusedDropNotice();
 	return (
-		<div className="flex h-svh flex-col bg-background">
+		<div data-slot="page-editor" className="flex h-svh flex-col bg-background">
 			<header className="flex h-14 shrink-0 items-center gap-3 border-b bg-card px-3">
 				{back}
 				<div className="min-w-0">
@@ -344,6 +267,8 @@ export function EditorLayout({
 				<HistoryButtons />
 				<SaveStatus autosave={autosave} />
 			</header>
+			<ConflictBanner autosave={autosave} actions={conflict} />
+			<LeaveGuard autosave={autosave} />
 			<div className="flex min-h-0 flex-1">
 				<LeftPanel />
 				<EditorCanvas />
