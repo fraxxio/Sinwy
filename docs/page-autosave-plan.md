@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Backend: checkpoint saves, guarded publish, discard | – | done | `feat(backend, web, shared): save page drafts as checkpoints, guard publish and add discard` |
-| 2 | Autosave engine (plain module) | – | todo | |
+| 2 | Autosave engine (plain module) | – | done | `feat(web): add the page autosave engine` |
 | 3 | Autosave in the editor | 1, 2 | todo | |
 | 4 | Conflicts and the leave guard | 3 | todo | |
 | 5 | Draft vs published in the editor, and discard | 1, 4 | todo | |
@@ -48,42 +48,12 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - `hasUnpublishedChanges` (`service.ts` `toDetailDto`) compares the pinned row's version with the latest; the pinned row is never edited in place, so it stays correct.
 - Frontend `publishPage(orgId, pageId, { baseVersion })` exists in `lib/page-queries.ts`; there's no `discardDraft` query yet (phase 5).
 - The server stores a normalised document (canonical rich-text HTML, NUL stripped, `zones` and `readOnly` dropped). `hasUnsavedChanges` in `page-editor/save.ts` compares against the data *sent* in the last successful save, so never compare against the server's answer.
-- Puck can change the data reference without changing the document. Trigger saves on the dirty flag, not on data identity.
-- `api()` never throws: network errors come back as `code: 0`. 400/402/409/413 fail the same way every time.
 - Owner-facing version numbers: `PageContentSummary.tsx:65-75`, `PagePublishing.tsx:119`, `_shell.pages.$id.preview.tsx:74-80`.
 - Base UI toasts are `role="dialog"`. `modalOpen` in the editor ignores non-modal dialogs, so editor keys keep working while a toast shows. Modal dialogs (confirms) do disable editor keys.
 - Unit tests have no DOM. Keep queue, retry and check logic in plain modules.
+- The engine (`page-editor/autosave.ts`) compares documents itself with `hasUnsavedChanges`, so pass it every Puck data change. `getState()` returns the same object until the state changes (fit for `useSyncExternalStore`). `failed` carries `attempt` (toast on 1) and `retryAt`. `flush()` resolves with the final state. `reset` ignores the result of an in-flight save but can't cancel it, so a discard right after it can still get a 409. Error classes: log, phase 2.
 - e2e: `bun run test:editor` runs against the running stack. `e2e/global-setup.ts` seeds `pro-org` and `subscribed-org` through `dev:seed-scenario`. `editor-fixtures.ts` has `pages.create/saved/saveElsewhere` (API) and `editor.status/save/open`, which assume the manual Save texts "All changes saved" and "Unsaved changes".
 - Usability rerun method: `git show c9d93c2^:docs/page-editor-log.md`, lines 304–353 (phase 8): a cold agent with the owner's wording and no UI hints, and task pages seeded by a scratch script through the real API. Task wording: `git show origin/pagebuilder-tryout:docs/puck-usability-tasks.md` (tasks 5 and 6, lines 78–94).
-
----
-
-## Phase 2: Autosave engine (plain module)
-
-**Goal:** a DOM-free module owns debouncing, one-save-at-a-time queuing, retries and save state, and is unit-tested with a fake clock.
-
-**Files:**
-- New: `Sinwy.WebFrontend/src/modules/org-dashboard/components/page-editor/autosave.ts`, `Sinwy.WebFrontend/src/modules/org-dashboard/tests/page-editor-autosave.test.ts`.
-- Read: `page-editor/save.ts` (`hasUnsavedChanges`, `saveErrorMessage`, `SaveResult`), `lib/page-queries.ts` `savePageContent` (:82; its answer's `latestVersion.version` is the next base), and the shared `api()` helper (`grep -rn "export const api"` in `src/shared/`), to see how 5xx surfaces.
-
-**Steps:**
-- States: `saved`, `pending`, `saving`, `failed` (retryable, with a next-attempt time), `blocked` (400/402/413, with the message) and `conflict` (409).
-- Inputs: `change(data)`, `flush()` (resolves when everything pending is saved or has failed), `retryNow()`, `resolveConflict(newBase)`, `reset(data, base)` and `dispose()`, plus a subscribe/get-state pair for React.
-- Only one save is in flight. Changes made during a save run one follow-up save, with the base the first save returned.
-- A `blocked` state ends only when the document differs from the one that was refused. `conflict` ends only through `resolveConflict` or `reset`.
-- Inject the clock and the save function. The engine knows nothing about Puck or React.
-
-**Tests that matter:**
-- Changes made during an in-flight save never start a second concurrent save, and the follow-up uses the new base.
-- A 409 never retries. A 402 doesn't retry, and the next real change tries once.
-- A network error or 5xx backs off, then success returns to `saved`.
-- `flush` waits for the in-flight save and the pending one, and reports a failure.
-- The debounce and the maximum wait during continuous changes.
-
-**Done when:**
-- The engine's unit tests cover the behaviours above and `bun run verify` passes.
-
-**Verify:** None.
 
 ---
 
@@ -92,9 +62,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** edits save on their own, the header status is trustworthy, Ctrl/⌘+S saves straight away, and the e2e spec runs on autosave.
 
 **Files:**
-- `page-editor/EditorLayout.tsx`: `SaveControls` (:185–233) is replaced; header (:290–319).
-- `routes/_shell.pages.$id.edit.tsx`: `EditorScreen.save` and the `latest` ref feed the engine; `storePage` after each success.
-- `page-editor/PageEditor.tsx`: props.
+- `page-editor/autosave.ts` (`createAutosave`, `AutosaveState`, `SaveOutcome`): create it once per `EditorScreen` mount, `dispose` on unmount.
+- `page-editor/EditorLayout.tsx`: `SaveControls` (:185–233, holds the `saved`/`dirty` state and the Save button) is replaced by a status driven by the engine's `subscribe`/`getState`; header (:290–319). `usePuck` data feeds `change`.
+- `routes/_shell.pages.$id.edit.tsx` (`EditorScreen`, :117–152): `save` becomes the engine's `SaveFn`. It sends `baseVersion: base` from the engine instead of the `latest` ref, maps failures with `saveErrorMessage` and returns `{ ok: true, base: res.data.latestVersion.version }`. `storePage` runs after each success. Keep `latest.current.content` for `saveErrorMessage`'s `saved`.
+- `page-editor/PageEditor.tsx` (:41–63): `onSave` gives way to the engine.
 - `Sinwy.WebFrontend/e2e/editor-fixtures.ts` (`status`, `open`, `save`) and `e2e/editor.e2e.ts` (the save and status assertions at :56, :81, :94, :107–150, :156–185, :190–208, :242, :258). `e2e/global-setup.ts`: seed a second `pro-org` (Defaults 12).
 - `README.md:133-146`: the spec's coverage list.
 
