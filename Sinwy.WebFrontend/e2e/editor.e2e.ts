@@ -497,6 +497,66 @@ test.describe("publishing", () => {
 		expect(await live.heading()).toBe("Welcome");
 	});
 
+	test("Publish warns about empty photos and sample text, shows the block, and publishes anyway", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const photo = (id: string): Block => ({
+			type: "Image",
+			props: { id, src: "", alt: "", aspect: "square" },
+		});
+		const pageId = await pages.create([
+			section("intro", [heading("title", "Heading")]),
+			{
+				type: "Photos",
+				props: {
+					id: "photos",
+					gap: "medium",
+					phoneLayout: "stack",
+					items: [photo("photo-1"), photo("photo-2")],
+				},
+			},
+		]);
+		await editor.open(pageId);
+		const dialog = page.getByRole("alertdialog");
+		const rows = dialog.getByRole("listitem");
+
+		await editor.button("Publish").click();
+		await expect(rows).toHaveText([
+			/^Heading in Section · Still has its sample text/,
+			/^Image 1 in Photos · Has no photo/,
+			/^Image 2 in Photos · Has no photo/,
+		]);
+		await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+		await rows.nth(1).getByRole("button", { name: "Show" }).click();
+		await expect(dialog).toBeHidden();
+		await expect(editor.selected).toHaveText("Image");
+		await expect(editor.block("photo-1")).toBeInViewport();
+		await expect(editor.pageState).toHaveText("Draft, not public");
+
+		await editor.button("Publish").click();
+		await dialog.getByRole("button", { name: "Publish anyway" }).click();
+		await expect(editor.pageState).toHaveText("Live");
+		await expect(dialog).toBeHidden();
+
+		await editTitle(editor, "Our work");
+		await expect(editor.status).toHaveText("Saved");
+		await editor.back.click();
+		await expect(
+			page.getByRole("heading", { name: "Publishing" }),
+		).toBeVisible();
+		await page.getByRole("button", { name: "Publish changes" }).click();
+		await expect(rows).toHaveText([/Has no photo$/, /Has no photo$/]);
+		await expect(dialog.getByRole("button", { name: "Show" })).toHaveCount(0);
+		await expect(
+			dialog.getByRole("link", { name: "Open the editor" }),
+		).toBeVisible();
+		await dialog.getByRole("button", { name: "Publish anyway" }).click();
+		await expect(page.getByText("Changes published")).toBeVisible();
+		expect((await pages.detail(pageId)).hasUnpublishedChanges).toBe(false);
+	});
+
 	test("Discard on the detail page drops a draft saved earlier", async ({
 		page,
 		org,

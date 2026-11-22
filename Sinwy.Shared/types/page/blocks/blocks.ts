@@ -79,7 +79,7 @@ const Heading = defineBlock({
 	description: "A title that introduces a part of your page.",
 	group: "content",
 	fields: {
-		text: field.text({ label: "Text", default: "Heading" }),
+		text: field.text({ label: "Text", default: "Heading", placeholder: true }),
 		size: field.select({
 			label: "Size",
 			options: [
@@ -101,6 +101,7 @@ const RichText = defineBlock({
 		content: field.richText({
 			label: "Text",
 			default: "<p>Write something your customers should know.</p>",
+			placeholder: true,
 		}),
 	},
 });
@@ -110,7 +111,7 @@ const Image = defineBlock({
 	description: "A single photo.",
 	group: "content",
 	fields: {
-		src: field.image({ label: "Image URL" }),
+		src: field.image({ label: "Image URL", required: true }),
 		alt: field.text({ label: "Description (for screen readers)" }),
 		aspect: field.select({
 			label: "Shape",
@@ -129,8 +130,8 @@ const Button = defineBlock({
 	description: "A button that takes customers to booking or another page.",
 	group: "content",
 	fields: {
-		label: field.text({ label: "Label", default: "Book now" }),
-		href: field.link({ label: "Link", default: "book" }),
+		label: field.text({ label: "Label", default: "Book now", required: true }),
+		href: field.link({ label: "Link", default: "book", required: true }),
 		variant: field.select({
 			label: "Style",
 			options: [

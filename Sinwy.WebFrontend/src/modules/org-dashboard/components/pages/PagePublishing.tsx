@@ -1,5 +1,6 @@
-import type { PageDetailDto } from "@sinwy/shared";
+import type { BlockNode, PageDetailDto } from "@sinwy/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
 import { ExternalLinkIcon, InfoIcon } from "lucide-react";
 import { useState } from "react";
@@ -38,6 +39,11 @@ import { Button } from "#/shared/components/ui/button";
 import { Label } from "#/shared/components/ui/label";
 import { Switch } from "#/shared/components/ui/switch";
 import { toast } from "#/shared/components/ui/toast";
+import { PublishIssuesDialog } from "../page-editor/PublishIssuesDialog";
+import {
+	type PublishIssue,
+	publishIssues,
+} from "../page-editor/publish-checks";
 
 type WriteAction = "publish" | "unpublish" | "update" | "discard";
 
@@ -70,6 +76,10 @@ export function PagePublishing({
 	const path = publicPagePath(organization.slug, page.slug);
 
 	const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+	const [checked, setChecked] = useState<{
+		action: "publish" | "update";
+		issues: PublishIssue[];
+	} | null>(null);
 
 	const write = useMutation({
 		mutationFn: async (action: WriteAction) => {
@@ -90,7 +100,10 @@ export function PagePublishing({
 				timeout: 4_000,
 			});
 		},
-		onSettled: () => setConfirmingDiscard(false),
+		onSettled: () => {
+			setConfirmingDiscard(false);
+			setChecked(null);
+		},
 		onError: (error) => {
 			if (error.message)
 				toast.add({ type: "error", title: error.message, timeout: 6_000 });
@@ -98,6 +111,14 @@ export function PagePublishing({
 	});
 
 	const published = page.status === "published";
+
+	const checkThenPublish = (action: "publish" | "update") => {
+		const issues = publishIssues(
+			page.latestVersion.content.data.content as BlockNode[],
+		);
+		if (issues.length > 0) setChecked({ action, issues });
+		else write.mutate(action);
+	};
 
 	return (
 		<SettingsSection
@@ -115,8 +136,8 @@ export function PagePublishing({
 							id="page-published"
 							checked={published}
 							disabled={write.isPending}
-							onCheckedChange={(checked) =>
-								write.mutate(checked ? "publish" : "unpublish")
+							onCheckedChange={(on) =>
+								on ? checkThenPublish("publish") : write.mutate("unpublish")
 							}
 						/>
 						<Label htmlFor="page-published">Published</Label>
@@ -135,7 +156,7 @@ export function PagePublishing({
 								type="button"
 								variant="outline"
 								disabled={write.isPending}
-								onClick={() => write.mutate("update")}
+								onClick={() => checkThenPublish("update")}
 							>
 								Publish changes
 							</Button>
@@ -187,6 +208,22 @@ export function PagePublishing({
 					</AlertDescription>
 				</Alert>
 			)}
+
+			<PublishIssuesDialog
+				issues={checked?.issues ?? []}
+				busy={write.isPending}
+				onCancel={() => setChecked(null)}
+				onPublish={() => checked && write.mutate(checked.action)}
+				footer={
+					<Link
+						to="/dashboard/$organizationSlug/pages/$id/edit"
+						params={{ organizationSlug: organization.slug, id: page.id }}
+						className="w-fit text-primary text-sm underline underline-offset-4"
+					>
+						Open the editor
+					</Link>
+				}
+			/>
 
 			<AlertDialog
 				open={confirmingDiscard}

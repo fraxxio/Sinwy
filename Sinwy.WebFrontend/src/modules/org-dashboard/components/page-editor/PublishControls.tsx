@@ -1,5 +1,5 @@
 import { useGetPuck } from "@puckeditor/core";
-import type { PageDetailDto } from "@sinwy/shared";
+import type { BlockNode, PageDetailDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
@@ -19,8 +19,11 @@ import {
 import { Badge } from "#/shared/components/ui/badge";
 import { Button } from "#/shared/components/ui/button";
 import type { Autosave } from "./autosave";
+import { PublishIssuesDialog } from "./PublishIssuesDialog";
+import { type PublishIssue, publishIssues } from "./publish-checks";
 import { useAutosaveState } from "./SaveControls";
 import type { PageData } from "./save";
+import { useBlockActions } from "./use-block-actions";
 
 /** The page as the server last answered, and the editor's ways to make it public or drop its draft. */
 export type Publishing = {
@@ -81,9 +84,11 @@ export function PublishActions({
 	publishing: Publishing;
 }) {
 	const getPuck = useGetPuck();
+	const actions = useBlockActions();
 	const { changed } = usePageState(autosave, page);
 	const [busy, setBusy] = useState<"publish" | "discard" | null>(null);
 	const [confirming, setConfirming] = useState(false);
+	const [issues, setIssues] = useState<PublishIssue[]>([]);
 	const published = page.status === "published";
 
 	const run = async (
@@ -96,7 +101,14 @@ export function PublishActions({
 		} finally {
 			setBusy(null);
 			setConfirming(false);
+			setIssues([]);
 		}
+	};
+
+	const checkThenPublish = () => {
+		const found = publishIssues(getPuck().appState.data.content as BlockNode[]);
+		if (found.length > 0) setIssues(found);
+		else void run("publish", publish);
 	};
 
 	return (
@@ -143,11 +155,7 @@ export function PublishActions({
 				</>
 			)}
 			{(!published || changed) && (
-				<Button
-					size="sm"
-					disabled={busy !== null}
-					onClick={() => run("publish", publish)}
-				>
+				<Button size="sm" disabled={busy !== null} onClick={checkThenPublish}>
 					{busy === "publish"
 						? "Publishing…"
 						: published
@@ -155,6 +163,16 @@ export function PublishActions({
 							: "Publish"}
 				</Button>
 			)}
+			<PublishIssuesDialog
+				issues={issues}
+				busy={busy === "publish"}
+				onCancel={() => setIssues([])}
+				onPublish={() => run("publish", publish)}
+				onShow={(issue) => {
+					setIssues([]);
+					actions.show(issue.id);
+				}}
+			/>
 		</div>
 	);
 }

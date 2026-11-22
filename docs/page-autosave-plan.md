@@ -13,7 +13,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 3 | Autosave in the editor | 1, 2 | done | `feat(web): autosave page edits in the editor` |
 | 4 | Conflicts and the leave guard | 3 | done | `feat(web): pause autosave on conflicts and guard leaving the editor` |
 | 5 | Draft vs published in the editor, and discard | 1, 4 | done | `feat(web): show whether page changes are live, and publish and discard from the editor` |
-| 6 | Pre-publish checks | 5 | todo | |
+| 6 | Pre-publish checks | 5 | done | `feat(web, shared): warn about unfilled blocks before publishing a page` |
 | 7 | Usability rerun: tasks 5 and 6 (research) | 6 | todo | |
 | 8 | Code review, docs and cleanup | 7 | todo | |
 
@@ -51,41 +51,16 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - Base UI toasts are `role="dialog"`. `modalOpen` in the editor ignores non-modal dialogs, so editor keys keep working while a toast shows. Modal dialogs (confirms) do disable editor keys.
 - Unit tests have no DOM. Keep queue, retry and check logic in plain modules.
 - The engine (`page-editor/autosave.ts`) compares documents itself with `hasUnsavedChanges`, so pass it every Puck data change. `getState()` returns the same object until the state changes (fit for `useSyncExternalStore`). `failed` carries `attempt` (toast on 1) and `retryAt`. `flush()` resolves with the final state. `reset` ignores the result of an in-flight save but can't cancel it, so a discard right after it can still get a 409. Error classes: log, phase 2.
-- e2e: `bun run test:editor` runs against the running stack. The `seed` option picks the org: `pro`, `starter` and `secondPro` have no free page slots; `thirdPro` (the `publishing` describe) has 2 left, and a further org goes in `e2e/global-setup.ts`. `editor.status` is the header's `role="status"` locator ("Saved", "Saving…", "Not saved" or the error), `editor.open` waits for "Saved", `editor.save()` presses Ctrl+S and waits for "Saved", `editor.back` is the header's Back (a button, not a link), and `editor.page` is the tab. `editorFor(page, org)` drives a second tab. `editor.pageState` is the header's state badge. `pages.create/saved/saveElsewhere/publish/detail` go through the API, and `storefront()` in the `publishing` describe reads the live page's first heading. In `editor.e2e.ts`, `welcome()`, `titleSaved`, `editTitle` and `conflictBanner` are shared helpers. A Heading can't be top level; wrap it in `section(...)`.
+- e2e: `bun run test:editor` runs against the running stack. The `seed` option picks the org: `pro`, `starter` and `secondPro` have no free page slots; `thirdPro` (the `publishing` describe) has 1 left, and a further org goes in `e2e/global-setup.ts`. `editor.status` is the header's `role="status"` locator ("Saved", "Saving…", "Not saved" or the error), `editor.open` waits for "Saved", `editor.save()` presses Ctrl+S and waits for "Saved", `editor.back` is the header's Back (a button, not a link), and `editor.page` is the tab. `editorFor(page, org)` drives a second tab. `editor.pageState` is the header's state badge. `pages.create/saved/saveElsewhere/publish/detail` go through the API, and `storefront()` in the `publishing` describe reads the live page's first heading. In `editor.e2e.ts`, `welcome()`, `titleSaved`, `editTitle` and `conflictBanner` are shared helpers. A Heading can't be top level; wrap it in `section(...)`.
 - After a drag, wait for the canvas to show the drop before Ctrl+S: Puck lands it 250 ms after release (log, phase 3).
 - Save UI lives in `page-editor/SaveControls.tsx`: `SaveStatus`, `ConflictBanner` and `LeaveGuard`. `LeaveGuard` uses `useBlocker` with an async `shouldBlockFn` (feeds Puck's data, awaits `flush()`, blocks unless "saved"), `enableBeforeUnload` as a function, and `withResolver` for its dialog. Any in-app navigation goes through it; actions that don't navigate don't. `ConflictActions` and `Publishing` (page, `publish`, `discard`) go from `EditorScreen` through `PageEditor` to `EditorLayout` (log, phases 4 and 5).
 - `PageEditPage` keys `EditorScreen` by `` `${id}:${opened}` ``; `reopen({ refetch })` bumps `opened`, refetching `pageQuery` first when asked, so a remount on fresh server data is one call. `EditorScreen` keeps `latest` (a ref to the last saved `latestVersion`, used for 402 messages); update it after any write.
 - In the editor, toasts open below the header (`--toast-top`, set by `:root:has([data-slot="page-editor"])` in `styles.css`), so they don't cover the save status.
 - The app runs under StrictMode, so `EditorScreen` creates the engine in an effect and renders the loading skeleton until it exists; a remount (new `key`) makes a fresh engine. `SaveStatus` in `EditorLayout.tsx` resets the engine to Puck's first data, because Puck fills in missing block props (log, phase 3).
+- Pre-publish checks: `publishIssues` in `page-editor/publish-checks.ts` reads the `placeholder` and `required` flags on field definitions (`Sinwy.Shared/types/page/blocks/fields.ts`), skips Columns' hidden columns, and names rows like "Image 2 in Photos". The dialog is `PublishIssuesDialog.tsx` (Cancel gets first focus), used by `PublishActions` (with "Show", which calls `blockActions().show(id)`) and `PagePublishing.tsx` (with an "Open the editor" link). `blockTitle` ignores a Heading still on its sample text (log, phase 6).
+- e2e: after `editor.back`, wait for the detail page (e.g. the "Publishing" heading) before clicking a button both screens have, such as "Publish changes"; the editor stays rendered until the flush finishes (log, phase 6).
+- Seeding for agent runs: `bun run dev:seed-scenario pro-org`, then `dev:login-as --state` (the e2e-test skill). Its orgs are also named `seed-*`.
 - Usability rerun method: `git show c9d93c2^:docs/page-editor-log.md`, lines 304–353 (phase 8): a cold agent with the owner's wording and no UI hints, and task pages seeded by a scratch script through the real API. Task wording: `git show origin/pagebuilder-tryout:docs/puck-usability-tasks.md` (tasks 5 and 6, lines 78–94).
-
----
-
-## Phase 6: Pre-publish checks
-
-**Goal:** publishing warns about empty images and unfilled placeholder text, and can jump to the block.
-
-**Files:**
-- New: `page-editor/publish-checks.ts` and `tests/page-editor-publish-checks.test.ts`.
-- `Sinwy.Shared/types/page/blocks/fields.ts` (field options) and `blocks.ts`: Heading `text` default (:82), RichText default (:103), Image `src` (:113), Button `label`/`href` (:132–133), Photos' default Images (~:212).
-- `Sinwy.Shared/types/page/PageDocument.ts` `blocksIn` (:281), as the slot-walk reference.
-- Editor entry point: `PublishActions` in `page-editor/PublishControls.tsx`. Run the checks on `getPuck().appState.data` in its `run("publish", …)` before calling `publish`, and put the dialog there (it's inside Puck, so "Show" can select). Detail page: `PagePublishing.tsx`, the Switch's `publish` and the "Publish changes" `update` both go through `write.mutate`; check `page.latestVersion.content` first.
-- Block names: `blockTitle` and `canvasLabel` in `page-editor/`. Selecting a block: Puck's selection helpers used in `use-block-actions.ts`.
-- e2e: the `publishing` describe in `e2e/editor.e2e.ts` (`thirdPro`, 2 free page slots); existing publish tests use filled Headings, so they shouldn't hit the dialog.
-
-**Steps:**
-- Mark placeholder defaults on the field definitions, instead of comparing every default: "Our services" and "Book now" are fine content.
-- Checks: an Image block with an empty `src`, a marked field still equal to its default, and a Button with an empty label or link. The Hero background image is optional and isn't flagged.
-- The editor dialog lists each issue by block name, with "Show" (select and scroll to it), "Publish anyway" and "Cancel". The detail page lists them without "Show" and links to the editor.
-
-**Tests that matter:**
-- Unit: issues inside nested slots (Photos in a Section in Columns), and nothing flagged on a filled page.
-- Unit: a rich-text default still counts as unfilled after server normalisation.
-
-**Done when:**
-- Publishing a page with the Photos preset untouched warns about two empty images, and `bun run verify` passes.
-
-**Verify:** Seed `pro-org` and a page. Add Photos and a Heading from the drawer without filling them, then press Publish. The dialog lists two empty images and the "Heading" placeholder. "Show" selects the first image. "Publish anyway" publishes. On a filled page, Publish shows no dialog. Nothing is simulated except login.
 
 ---
 
@@ -93,7 +68,10 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 **Goal:** a cold agent reruns usability tasks 5 and 6 and loses no work, including after leaving the editor (the issue's Done when).
 
-**Files:** Rerun method and task wording: Standing notes. Findings usually land in the files of phases 3–6.
+**Files:**
+- Rerun method, task wording and seeding: Standing notes. Plant the "stylign" page with a scratch script that creates, saves and publishes it through the API (`POST .../pages`, save, `publish` with `{ baseVersion }`), and delete the script afterwards.
+- Where findings usually land: `page-editor/SaveControls.tsx` (save status, conflict banner, leave prompt), `page-editor/PublishControls.tsx` (state badge, Publish, Discard), `page-editor/PublishIssuesDialog.tsx` and `publish-checks.ts` (the pre-publish warning; a sample-text Hero won't trigger it), `components/pages/PagePublishing.tsx` (detail-page Discard and Publish changes), and the labels in `lib/pages.ts`.
+- Any fix that changes the editor's copy: the matching assertions in `e2e/editor.e2e.ts`.
 
 **Steps:**
 - Run the tasks with the `e2e-test` skill, in the owner's words and with no UI hints. Seed the task pages with a scratch script through the real API. Before task 5, plant the "stylign" typo in the welcome banner and publish.

@@ -27,6 +27,10 @@ type FieldMeta = {
 	label: string;
 	/** Shown read-only in the editor; the server still validates the value. */
 	locked?: boolean;
+	/** The default is sample text to replace; publishing warns while it's unchanged. */
+	placeholder?: boolean;
+	/** Publishing warns while it's empty; saving still accepts it. */
+	required?: boolean;
 };
 
 type ValueField<Kind extends string, Value> = FieldMeta & {
@@ -91,13 +95,23 @@ const url = (isSafe: (value: string) => boolean, message: string) =>
 		.transform(noNul)
 		.refine((value) => value === "" || isSafe(value), message);
 
-type Meta = { label: string; locked?: boolean };
+type Meta = Pick<FieldMeta, "label" | "locked">;
+type Checked = Meta & Pick<FieldMeta, "placeholder" | "required">;
 
-const meta = ({ label, locked }: Meta): FieldMeta =>
-	locked ? { label, locked } : { label };
+const meta = ({
+	label,
+	locked,
+	placeholder,
+	required,
+}: Checked): FieldMeta => ({
+	label,
+	...(locked && { locked }),
+	...(placeholder && { placeholder }),
+	...(required && { required }),
+});
 
 export const field = {
-	text: (options: Meta & { default?: string }): TextField => ({
+	text: (options: Checked & { default?: string }): TextField => ({
 		...meta(options),
 		kind: "text",
 		default: options.default ?? "",
@@ -125,7 +139,7 @@ export const field = {
 	},
 
 	/** Stored as allowlisted HTML; any HTML is accepted and normalised on save. */
-	richText: (options: Meta & { default?: string }): RichTextField => ({
+	richText: (options: Checked & { default?: string }): RichTextField => ({
 		...meta(options),
 		kind: "richText",
 		default: options.default ?? "",
@@ -138,14 +152,14 @@ export const field = {
 			.transform(normalizeRichText),
 	}),
 
-	link: (options: Meta & { default?: string }): LinkField => ({
+	link: (options: Checked & { default?: string }): LinkField => ({
 		...meta(options),
 		kind: "link",
 		default: options.default ?? "",
 		schema: url(isSafeLink, "is not a safe link"),
 	}),
 
-	image: (options: Meta & { default?: string }): ImageField => ({
+	image: (options: Checked & { default?: string }): ImageField => ({
 		...meta(options),
 		kind: "image",
 		default: options.default ?? "",
