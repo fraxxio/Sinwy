@@ -239,6 +239,13 @@
       "when": 1795109482962,
       "tag": "0033_page_document_reset",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795366035929,
+      "tag": "0034_page_content_updated_at",
+      "breakpoints": true
     }
   ]
 }

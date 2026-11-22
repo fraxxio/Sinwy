@@ -3,6 +3,7 @@ import type { IApp } from "@backend/lib/app/types";
 import {
 	createPageHandler,
 	deletePageHandler,
+	discardDraftHandler,
 	getPageHandler,
 	getPublicPageHandler,
 	listPagesHandler,
@@ -39,6 +40,10 @@ export const registerPageRoutes = (app: IApp) => {
 		routeMiddlewares: write,
 	});
 	app.route(organizationPath("pages/:pageId/publish"), publishPageHandler, {
+		method: "POST",
+		routeMiddlewares: write,
+	});
+	app.route(organizationPath("pages/:pageId/discard"), discardDraftHandler, {
 		method: "POST",
 		routeMiddlewares: write,
 	});

@@ -51,7 +51,7 @@ export const page = pgTable(
 	],
 );
 
-/** Every content save is a new numbered version; old ones are kept. */
+/** A checkpoint of the page's content; saves bump `version` and may update the latest draft row in place. */
 export const pageContent = pgTable(
 	"page_content",
 	{
@@ -65,6 +65,7 @@ export const pageContent = pgTable(
 			onDelete: "set null",
 		}),
 		createdAt: timestamp("created_at").notNull().defaultNow(),
+		updatedAt: timestamp("updated_at").notNull().defaultNow(),
 	},
 	(table) => [
 		uniqueIndex("page_content_page_version_uidx").on(

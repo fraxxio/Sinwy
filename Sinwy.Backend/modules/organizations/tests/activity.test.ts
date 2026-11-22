@@ -141,7 +141,11 @@ test("team, page, service and transfer actions each record one entry naming the 
 	});
 	const { id: pageId } = await data<{ id: string }>(page);
 	expect(
-		(await call("POST", org(`pages/${pageId}/publish`), owner.cookie)).status,
+		(
+			await call("POST", org(`pages/${pageId}/publish`), owner.cookie, {
+				baseVersion: 1,
+			})
+		).status,
 	).toBe(200);
 
 	const service = await call("POST", org("services"), owner.cookie, {

@@ -6,7 +6,7 @@ import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 export type PageRow = typeof page.$inferSelect;
 export type PageVersionRow = Pick<
 	typeof pageContent.$inferSelect,
-	"id" | "version" | "content" | "createdAt"
+	"id" | "version" | "content" | "createdAt" | "updatedAt"
 >;
 type PageUpdate = {
 	[K in "title" | "slug" | "seoTitle" | "seoDescription"]?:
@@ -24,7 +24,11 @@ const versionColumns = {
 	version: pageContent.version,
 	content: pageContent.content,
 	createdAt: pageContent.createdAt,
+	updatedAt: pageContent.updatedAt,
 };
+
+/** How long one user's saves keep landing in the same draft checkpoint. */
+const CHECKPOINT_WINDOW_MINUTES = 10;
 
 /** Drizzle wraps the driver's error, so the Postgres fields sit on `cause`. */
 export const isSlugClash = (error: unknown) => {
@@ -34,6 +38,25 @@ export const isSlugClash = (error: unknown) => {
 		cause?.["constraint"] === SLUG_INDEX
 	);
 };
+
+/** Locks the page row until the transaction ends, so saves, publish and discard see each other's versions. */
+const lockPage = async (tx: Tx, organizationId: string, pageId: string) => {
+	const [locked] = await tx
+		.select({ publishedVersionId: page.publishedVersionId })
+		.from(page)
+		.where(byId(organizationId, pageId))
+		.for("update");
+	return locked ?? null;
+};
+
+const latestLockedVersion = async (tx: Tx, pageId: string) => {
+	const latest = await latestVersionOf(tx, pageId);
+	if (!latest) throw new Error(`Page ${pageId} has no content version`);
+	return latest;
+};
+
+const touchPage = (tx: Tx, pageId: string) =>
+	tx.update(page).set({ updatedAt: new Date() }).where(eq(page.id, pageId));
 
 /** Serializes page creation in one organization until the transaction ends. */
 const lockOrganization = (tx: Tx, organizationId: string) =>
@@ -153,40 +176,49 @@ export type ContentSaveCheck = (
 ) => "version-conflict" | "upgrade-required" | null;
 
 /**
- * Locks the page row, so concurrent saves see each other's version, then
- * inserts the next version when `check` passes.
+ * Saves the next version when `check` passes. The latest row is updated in
+ * place when it is an unpublished checkpoint the same user started within the
+ * window; otherwise a new row is inserted. Either way `version` goes up.
  */
 export const insertNextVersion = (
 	organizationId: string,
 	pageId: string,
 	content: PageDocument,
-	createdByUserId: string,
+	userId: string,
 	check: ContentSaveCheck,
 ) =>
 	db.transaction(async (tx) => {
-		const [locked] = await tx
-			.select({ id: page.id })
-			.from(page)
-			.where(byId(organizationId, pageId))
-			.for("update");
+		const locked = await lockPage(tx, organizationId, pageId);
 		if (!locked) return { ok: false, error: "not-found" } as const;
 
-		const latest = await latestVersionOf(tx, pageId);
-		if (!latest) throw new Error(`Page ${pageId} has no content version`);
+		const latest = await latestLockedVersion(tx, pageId);
 		const refused = check(latest);
 		if (refused) return { ok: false, error: refused } as const;
 
-		await tx.insert(pageContent).values({
-			id: crypto.randomUUID(),
-			pageId,
-			version: latest.version + 1,
-			content,
-			createdByUserId,
-		});
-		await tx
-			.update(page)
-			.set({ updatedAt: new Date() })
-			.where(eq(page.id, pageId));
+		const version = latest.version + 1;
+		const [updated] =
+			latest.id === locked.publishedVersionId
+				? []
+				: await tx
+						.update(pageContent)
+						.set({ content, version, updatedAt: sql`now()` })
+						.where(
+							and(
+								eq(pageContent.id, latest.id),
+								eq(pageContent.createdByUserId, userId),
+								sql`${pageContent.createdAt} > now() - make_interval(mins => ${CHECKPOINT_WINDOW_MINUTES})`,
+							),
+						)
+						.returning({ id: pageContent.id });
+		if (!updated)
+			await tx.insert(pageContent).values({
+				id: crypto.randomUUID(),
+				pageId,
+				version,
+				content,
+				createdByUserId: userId,
+			});
+		await touchPage(tx, pageId);
 		return { ok: true } as const;
 	});
 
@@ -199,18 +231,19 @@ export const deletePage = async (organizationId: string, pageId: string) => {
 	return row ?? null;
 };
 
-/** Pins the latest version under the page lock, so a concurrent save can't slip between reading and pinning it. */
-export const publishPage = (organizationId: string, pageId: string) =>
+/** Pins the latest version, refusing when it isn't the one the caller last saw. */
+export const publishPage = (
+	organizationId: string,
+	pageId: string,
+	baseVersion: number,
+) =>
 	db.transaction(async (tx) => {
-		const [locked] = await tx
-			.select({ id: page.id })
-			.from(page)
-			.where(byId(organizationId, pageId))
-			.for("update");
-		if (!locked) return null;
+		const locked = await lockPage(tx, organizationId, pageId);
+		if (!locked) return { ok: false, error: "not-found" } as const;
 
-		const latest = await latestVersionOf(tx, pageId);
-		if (!latest) throw new Error(`Page ${pageId} has no content version`);
+		const latest = await latestLockedVersion(tx, pageId);
+		if (latest.version !== baseVersion)
+			return { ok: false, error: "version-conflict" } as const;
 		const [row] = await tx
 			.update(page)
 			.set({
@@ -220,7 +253,53 @@ export const publishPage = (organizationId: string, pageId: string) =>
 			})
 			.where(eq(page.id, pageId))
 			.returning();
-		return row ?? null;
+		if (!row) throw new Error(`Page ${pageId} vanished under its lock`);
+		return { ok: true, row } as const;
+	});
+
+/**
+ * Copies the pinned content into a new latest version and pins that, so the
+ * draft is dropped without versions going backwards. The discarded draft stays
+ * as a history row; `publishedAt` is left alone.
+ */
+export const discardDraft = (
+	organizationId: string,
+	pageId: string,
+	baseVersion: number,
+	userId: string,
+) =>
+	db.transaction(async (tx) => {
+		const locked = await lockPage(tx, organizationId, pageId);
+		if (!locked) return { ok: false, error: "not-found" } as const;
+		const pinnedId = locked.publishedVersionId;
+		if (!pinnedId) return { ok: false, error: "not-published" } as const;
+
+		const latest = await latestLockedVersion(tx, pageId);
+		if (latest.version !== baseVersion)
+			return { ok: false, error: "version-conflict" } as const;
+
+		if (latest.id !== pinnedId) {
+			const [pinned] = await tx
+				.select({ content: pageContent.content })
+				.from(pageContent)
+				.where(eq(pageContent.id, pinnedId));
+			if (!pinned) throw new Error(`Page ${pageId} pins a missing version`);
+			const id = crypto.randomUUID();
+			await tx.insert(pageContent).values({
+				id,
+				pageId,
+				version: latest.version + 1,
+				content: pinned.content,
+				createdByUserId: userId,
+			});
+			await tx
+				.update(page)
+				.set({ publishedVersionId: id, updatedAt: new Date() })
+				.where(eq(page.id, pageId));
+		}
+		const [row] = await tx.select().from(page).where(eq(page.id, pageId));
+		if (!row) throw new Error(`Page ${pageId} vanished under its lock`);
+		return { ok: true, row } as const;
 	});
 
 export const unpublishPage = async (organizationId: string, pageId: string) => {

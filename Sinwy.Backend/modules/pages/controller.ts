@@ -5,6 +5,7 @@ import {
 	API_ERROR_CODES,
 	createPageSchema,
 	PAGE_DOCUMENT_LIMITS,
+	pageBaseVersionSchema,
 	savePageContentSchema,
 	updatePageSchema,
 } from "@sinwy/shared";
@@ -12,6 +13,7 @@ import type { z } from "zod";
 import {
 	createPage,
 	deletePage,
+	discardDraft,
 	getPage,
 	getPublicPage,
 	listPages,
@@ -53,6 +55,12 @@ const respondError = (error: PageError) => {
 				"This page was saved somewhere else. Reload to get the latest version.",
 				409,
 				API_ERROR_CODES.PAGE_VERSION_CONFLICT,
+			);
+		case "not-published":
+			return fail(
+				"This page isn't published, so there's nothing to go back to",
+				409,
+				API_ERROR_CODES.PAGE_NOT_PUBLISHED,
 			);
 		case "not-found":
 			return fail("Not found", 404);
@@ -146,10 +154,14 @@ export const deletePageHandler: Handler = async (c) => {
 };
 
 export const publishPageHandler: Handler = async (c) => {
+	const body = await parseBody(c, pageBaseVersionSchema);
+	if (!body.ok) return body.response;
+
 	const result = await publishPage(
 		membershipFrom(c),
 		sessionFrom(c).user,
 		pageIdFrom(c),
+		body.data,
 	);
 	return result.ok
 		? ok(result.data, 200, "Page published")
@@ -164,6 +176,21 @@ export const unpublishPageHandler: Handler = async (c) => {
 	);
 	return result.ok
 		? ok(result.data, 200, "Page unpublished")
+		: respondError(result.error);
+};
+
+export const discardDraftHandler: Handler = async (c) => {
+	const body = await parseBody(c, pageBaseVersionSchema);
+	if (!body.ok) return body.response;
+
+	const result = await discardDraft(
+		membershipFrom(c),
+		sessionFrom(c).user.id,
+		pageIdFrom(c),
+		body.data,
+	);
+	return result.ok
+		? ok(result.data, 200, "Unpublished changes discarded")
 		: respondError(result.error);
 };
 

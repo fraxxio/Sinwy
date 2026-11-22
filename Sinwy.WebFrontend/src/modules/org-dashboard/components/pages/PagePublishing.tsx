@@ -51,10 +51,11 @@ export function PagePublishing({
 	const write = useMutation({
 		mutationFn: async (action: "publish" | "unpublish" | "update") =>
 			unwrap(
-				await (action === "unpublish" ? unpublishPage : publishPage)(
-					organization.id,
-					page.id,
-				),
+				await (action === "unpublish"
+					? unpublishPage(organization.id, page.id)
+					: publishPage(organization.id, page.id, {
+							baseVersion: page.latestVersion.version,
+						})),
 			),
 		onSuccess: async (saved, action) => {
 			await storePage(queryClient, organization.id, saved);
