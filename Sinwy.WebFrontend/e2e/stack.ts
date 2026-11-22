@@ -17,10 +17,11 @@ export type SeededOrg = {
 	storageStateFile: string;
 };
 
-/** What the global setup seeded for this run; `secondPro` is there because a Professional org holds only 5 pages. */
+/** What the global setup seeded for this run; there are several Professional orgs because one holds only 5 pages. */
 export type Stack = {
 	pro: SeededOrg;
 	secondPro: SeededOrg;
+	thirdPro: SeededOrg;
 	starter: SeededOrg;
 };
 

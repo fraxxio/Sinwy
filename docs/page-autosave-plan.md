@@ -12,7 +12,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 2 | Autosave engine (plain module) | – | done | `feat(web): add the page autosave engine` |
 | 3 | Autosave in the editor | 1, 2 | done | `feat(web): autosave page edits in the editor` |
 | 4 | Conflicts and the leave guard | 3 | done | `feat(web): pause autosave on conflicts and guard leaving the editor` |
-| 5 | Draft vs published in the editor, and discard | 1, 4 | todo | |
+| 5 | Draft vs published in the editor, and discard | 1, 4 | done | `feat(web): show whether page changes are live, and publish and discard from the editor` |
 | 6 | Pre-publish checks | 5 | todo | |
 | 7 | Usability rerun: tasks 5 and 6 (research) | 6 | todo | |
 | 8 | Code review, docs and cleanup | 7 | todo | |
@@ -46,48 +46,18 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - Save, publish and discard all run under the page row lock (`lockPage` in `Sinwy.Backend/modules/pages/repository.ts`). Publish and discard take `{ baseVersion }` and answer 409 `PAGE_VERSION_CONFLICT` when it isn't the latest; discard on an unpublished page answers 409 `PAGE_NOT_PUBLISHED`. Every successful save and every discard that changes something raises `latestVersion.version`; take the new base from the answer.
 - A fresh page's version 1 row is a checkpoint: the creator's first save within 10 minutes updates it in place. `latestVersion.savedAt` is the last save time, `createdAt` the checkpoint start. Use `savedAt` for "Saved … ago".
 - `hasUnpublishedChanges` (`service.ts` `toDetailDto`) compares the pinned row's version with the latest; the pinned row is never edited in place, so it stays correct.
-- Frontend `publishPage(orgId, pageId, { baseVersion })` exists in `lib/page-queries.ts`; there's no `discardDraft` query yet (phase 5).
+- Publish and discard in the editor go through `page-editor/publishing.ts` (`publishAfterSave`, `discardAfterSave`: flush first, then write with `getBase()`), called from `EditorScreen`'s `publish`/`discard`. The header buttons are `PublishActions` in `page-editor/PublishControls.tsx`, which passes Puck's current data. The detail page publishes from `PagePublishing.tsx`'s `write` mutation (`publish`/`update`), using `page.latestVersion.version` (log, phase 5).
 - The server stores a normalised document (canonical rich-text HTML, NUL stripped, `zones` and `readOnly` dropped); the engine compares against the data it *sent*, never the server's answer.
-- Owner-facing version numbers: `PageContentSummary.tsx:65-75`, `PagePublishing.tsx:119`, `_shell.pages.$id.preview.tsx:74-80`.
 - Base UI toasts are `role="dialog"`. `modalOpen` in the editor ignores non-modal dialogs, so editor keys keep working while a toast shows. Modal dialogs (confirms) do disable editor keys.
 - Unit tests have no DOM. Keep queue, retry and check logic in plain modules.
 - The engine (`page-editor/autosave.ts`) compares documents itself with `hasUnsavedChanges`, so pass it every Puck data change. `getState()` returns the same object until the state changes (fit for `useSyncExternalStore`). `failed` carries `attempt` (toast on 1) and `retryAt`. `flush()` resolves with the final state. `reset` ignores the result of an in-flight save but can't cancel it, so a discard right after it can still get a 409. Error classes: log, phase 2.
-- e2e: `bun run test:editor` runs against the running stack. The `seed` option picks the org: `pro`, `starter` and `secondPro` all have no free page slots (phase 4 used the last three), so new tests need another org seeded in `e2e/global-setup.ts`. `editor.status` is the header's `role="status"` locator ("Saved", "Saving…", "Not saved" or the error), `editor.open` waits for "Saved", `editor.save()` presses Ctrl+S and waits for "Saved", `editor.back` is the header's Back (a button, not a link), and `editor.page` is the tab. `editorFor(page, org)` drives a second tab. `pages.create/saved/saveElsewhere` go through the API. In `editor.e2e.ts`, `welcome()`, `titleSaved`, `editTitle` and `conflictBanner` are shared helpers. A Heading can't be top level; wrap it in `section(...)`.
+- e2e: `bun run test:editor` runs against the running stack. The `seed` option picks the org: `pro`, `starter` and `secondPro` have no free page slots; `thirdPro` (the `publishing` describe) has 2 left, and a further org goes in `e2e/global-setup.ts`. `editor.status` is the header's `role="status"` locator ("Saved", "Saving…", "Not saved" or the error), `editor.open` waits for "Saved", `editor.save()` presses Ctrl+S and waits for "Saved", `editor.back` is the header's Back (a button, not a link), and `editor.page` is the tab. `editorFor(page, org)` drives a second tab. `editor.pageState` is the header's state badge. `pages.create/saved/saveElsewhere/publish/detail` go through the API, and `storefront()` in the `publishing` describe reads the live page's first heading. In `editor.e2e.ts`, `welcome()`, `titleSaved`, `editTitle` and `conflictBanner` are shared helpers. A Heading can't be top level; wrap it in `section(...)`.
 - After a drag, wait for the canvas to show the drop before Ctrl+S: Puck lands it 250 ms after release (log, phase 3).
-- Save UI lives in `page-editor/SaveControls.tsx`: `SaveStatus`, `ConflictBanner` and `LeaveGuard`. `LeaveGuard` uses `useBlocker` with an async `shouldBlockFn` (feeds Puck's data, awaits `flush()`, blocks unless "saved"), `enableBeforeUnload` as a function, and `withResolver` for its dialog. Any in-app navigation goes through it; actions that don't navigate don't. `ConflictActions` (`keepMine`, `loadLatest`) go from `EditorScreen` through `PageEditor` to `EditorLayout`; header actions for phase 5 can take the same path (log, phase 4).
-- `PageEditPage` keys `EditorScreen` by `` `${id}:${opened}` ``; `loadLatest` refetches `pageQuery` and bumps `opened`, so a remount on fresh server data is one call. `EditorScreen` keeps `latest` (a ref to the last saved `latestVersion`, used for 402 messages); update it after any write.
+- Save UI lives in `page-editor/SaveControls.tsx`: `SaveStatus`, `ConflictBanner` and `LeaveGuard`. `LeaveGuard` uses `useBlocker` with an async `shouldBlockFn` (feeds Puck's data, awaits `flush()`, blocks unless "saved"), `enableBeforeUnload` as a function, and `withResolver` for its dialog. Any in-app navigation goes through it; actions that don't navigate don't. `ConflictActions` and `Publishing` (page, `publish`, `discard`) go from `EditorScreen` through `PageEditor` to `EditorLayout` (log, phases 4 and 5).
+- `PageEditPage` keys `EditorScreen` by `` `${id}:${opened}` ``; `reopen({ refetch })` bumps `opened`, refetching `pageQuery` first when asked, so a remount on fresh server data is one call. `EditorScreen` keeps `latest` (a ref to the last saved `latestVersion`, used for 402 messages); update it after any write.
 - In the editor, toasts open below the header (`--toast-top`, set by `:root:has([data-slot="page-editor"])` in `styles.css`), so they don't cover the save status.
 - The app runs under StrictMode, so `EditorScreen` creates the engine in an effect and renders the loading skeleton until it exists; a remount (new `key`) makes a fresh engine. `SaveStatus` in `EditorLayout.tsx` resets the engine to Puck's first data, because Puck fills in missing block props (log, phase 3).
 - Usability rerun method: `git show c9d93c2^:docs/page-editor-log.md`, lines 304–353 (phase 8): a cold agent with the owner's wording and no UI hints, and task pages seeded by a scratch script through the real API. Task wording: `git show origin/pagebuilder-tryout:docs/puck-usability-tasks.md` (tasks 5 and 6, lines 78–94).
-
----
-
-## Phase 5: Draft vs published in the editor, and discard
-
-**Goal:** the editor says whether changes are live, publishes from the header after a flush and links to the live page, and a draft can be discarded back to the published version.
-
-**Files:**
-- `page-editor/EditorLayout.tsx`: the header (title, path, viewport switch, history, `SaveStatus`); add the page state and the Publish and Discard controls here, with their props drilled like `conflict`. `page-editor/SaveControls.tsx`: `useAutosaveState` (not exported yet) for reading the engine state in new controls.
-- `routes/_shell.pages.$id.edit.tsx`: `EditorScreen` has the page (`page.status`, `publishedVersion` via `PageDetailDto`), the engine and `latest`. Publish: `autosave.flush()`, then `publishPage(..., { baseVersion: autosave.getBase() })` and `storePage`. Discard: `autosave.reset(...)` first, then the call, then `storePage` and the remount through `PageEditPage`'s `opened` counter (generalise `loadLatest` into a remount callback).
-- `lib/page-queries.ts`: `publishPage` (:92, already sends `{ baseVersion }`) and a new `discardDraft` (`POST .../discard`, `{ baseVersion }`). `lib/pages.ts`: `pageState`, `PAGE_STATE_LABELS` (:36–45), `publicPagePath` (:50).
-- `components/pages/PagePublishing.tsx`: Discard on the detail page, and the version copy (:119).
-- `components/pages/PageContentSummary.tsx:65-75` and `routes/_shell.pages.$id.preview.tsx:74-80`: version numbers become times (Defaults 11).
-- `e2e/global-setup.ts` and `e2e/stack.ts`: seed another `pro-org` for the new tests (no free slots left). `e2e/editor.e2e.ts`: reuse `welcome()`, `titleSaved`, `editTitle`.
-
-**Steps:**
-- The header shows one of: "Draft, not public", "Live", "Changes not live yet", or "Published, not live" (over the limit, linking to the detail section).
-- Publish flushes first. If the flush fails, it doesn't publish and says why. It publishes with the engine's base. After publishing, it toasts and the header links to the live page.
-- Discard shows when there are unpublished changes and asks for a confirm (Defaults 7). It resets the engine before calling discard, so no pending autosave lands after it.
-
-**Tests that matter:**
-- e2e: publishing straight after an edit publishes that edit (the storefront shows it).
-- e2e: discard restores the published content in the editor and the API, and the storefront doesn't change.
-- A save still in flight when Discard is pressed can't overwrite the discarded state silently: the order is enforced by the engine, or the discard gets a 409.
-
-**Done when:**
-- Owners can see from the editor alone whether their changes are live, and `bun run test:editor` and `bun run verify` pass.
-
-**Verify:** Seed `pro-org` and a published page with a Photos section. Open the editor: "Live". Delete the Photos section: "Changes not live yet", and the storefront still has the photos. Press Back and reopen: the deletion is still there (saved). Press Discard and confirm: Photos is back, the state is "Live", the storefront is unchanged and `published_version_id` points to a new row. Edit the heading and press Publish at once: the storefront shows the new heading and the header links to it. On the detail page, Discard works the same way. Nothing is simulated except login.
 
 ---
 
@@ -99,7 +69,9 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - New: `page-editor/publish-checks.ts` and `tests/page-editor-publish-checks.test.ts`.
 - `Sinwy.Shared/types/page/blocks/fields.ts` (field options) and `blocks.ts`: Heading `text` default (:82), RichText default (:103), Image `src` (:113), Button `label`/`href` (:132–133), Photos' default Images (~:212).
 - `Sinwy.Shared/types/page/PageDocument.ts` `blocksIn` (:281), as the slot-walk reference.
-- The publish entry points from phase 5 (editor header, `PagePublishing.tsx`). Block names: `blockTitle` and `canvasLabel` in `page-editor/`. Selecting a block: Puck's selection helpers used in `use-block-actions.ts`.
+- Editor entry point: `PublishActions` in `page-editor/PublishControls.tsx`. Run the checks on `getPuck().appState.data` in its `run("publish", …)` before calling `publish`, and put the dialog there (it's inside Puck, so "Show" can select). Detail page: `PagePublishing.tsx`, the Switch's `publish` and the "Publish changes" `update` both go through `write.mutate`; check `page.latestVersion.content` first.
+- Block names: `blockTitle` and `canvasLabel` in `page-editor/`. Selecting a block: Puck's selection helpers used in `use-block-actions.ts`.
+- e2e: the `publishing` describe in `e2e/editor.e2e.ts` (`thirdPro`, 2 free page slots); existing publish tests use filled Headings, so they shouldn't hit the dialog.
 
 **Steps:**
 - Mark placeholder defaults on the field definitions, instead of comparing every default: "Our services" and "Book now" are fine content.

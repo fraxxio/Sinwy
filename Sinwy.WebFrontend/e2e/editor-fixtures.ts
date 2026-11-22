@@ -38,12 +38,16 @@ type Pages = {
 	saved: (pageId: string) => Promise<Block[]>;
 	/** Saves `blocks` as a new version, as another tab would. */
 	saveElsewhere: (pageId: string, blocks: Block[]) => Promise<void>;
+	/** Publishes the latest version. */
+	publish: (pageId: string) => Promise<PageDetailDto>;
+	detail: (pageId: string) => Promise<PageDetailDto>;
 };
 
 export const editorFor = (page: Page, org: SeededOrg) => {
 	const canvas = page.locator("iframe#preview-frame").contentFrame();
 	const settings = page.getByRole("complementary", { name: "Block settings" });
-	const status = page.getByRole("banner").getByRole("status");
+	const banner = page.getByRole("banner");
+	const status = banner.getByRole("status");
 	return {
 		page,
 		canvas,
@@ -58,6 +62,8 @@ export const editorFor = (page: Page, org: SeededOrg) => {
 		back: page.getByRole("banner").getByText("Back", { exact: true }),
 		/** The save status in the header: "Saved", "Saving…" or what went wrong. */
 		status,
+		/** Whether the page is public: "Live", "Changes not live yet", "Draft, not public"… */
+		pageState: banner.locator('[data-slot="badge"]'),
 
 		open: async (pageId: string) => {
 			await page.goto(`/dashboard/${org.slug}/pages/${pageId}/edit`);
@@ -131,6 +137,9 @@ export const test = base.extend<{
 			return json.data;
 		};
 
+		const detail = (pageId: string) =>
+			call<PageDetailDto>("GET", `/pages/${pageId}`);
+
 		const saveOver = (page: PageDetailDto, blocks: Block[]) =>
 			call("PUT", `/pages/${page.id}/content`, {
 				baseVersion: page.latestVersion.version,
@@ -150,16 +159,16 @@ export const test = base.extend<{
 				if (blocks) await saveOver(created, blocks);
 				return created.id;
 			},
-			saved: async (pageId) => {
-				const detail = await call<PageDetailDto>("GET", `/pages/${pageId}`);
-				return detail.latestVersion.content.data.content as Block[];
-			},
+			saved: async (pageId) =>
+				(await detail(pageId)).latestVersion.content.data.content as Block[],
 			saveElsewhere: async (pageId, blocks) => {
-				await saveOver(
-					await call<PageDetailDto>("GET", `/pages/${pageId}`),
-					blocks,
-				);
+				await saveOver(await detail(pageId), blocks);
 			},
+			publish: async (pageId) =>
+				call<PageDetailDto>("POST", `/pages/${pageId}/publish`, {
+					baseVersion: (await detail(pageId)).latestVersion.version,
+				}),
+			detail,
 		});
 	},
 

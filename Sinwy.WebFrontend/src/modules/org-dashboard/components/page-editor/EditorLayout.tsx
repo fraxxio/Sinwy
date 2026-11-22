@@ -1,5 +1,6 @@
 import { Puck, useGetPuck } from "@puckeditor/core";
 import {
+	ExternalLinkIcon,
 	LayersIcon,
 	type LucideIcon,
 	MonitorIcon,
@@ -29,6 +30,11 @@ import { BlockDrawer } from "./BlockDrawer";
 import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
 import { PreloadRichText } from "./editor-fields";
+import {
+	PageStateBadge,
+	PublishActions,
+	type Publishing,
+} from "./PublishControls";
 import {
 	type ConflictActions,
 	ConflictBanner,
@@ -241,12 +247,14 @@ export function EditorLayout({
 	back,
 	autosave,
 	conflict,
+	publishing,
 }: {
 	title: string;
 	path: string;
 	back: ReactNode;
 	autosave: Autosave;
 	conflict: ConflictActions;
+	publishing: Publishing;
 }) {
 	useEditorHotkeys();
 	useRefusedDropNotice();
@@ -255,10 +263,26 @@ export function EditorLayout({
 			<header className="flex h-14 shrink-0 items-center gap-3 border-b bg-card px-3">
 				{back}
 				<div className="min-w-0">
-					<h1 className="truncate font-heading font-semibold text-sm leading-tight">
-						{title}
-					</h1>
-					<p className="truncate text-muted-foreground text-xs">{path}</p>
+					<div className="flex items-center gap-2">
+						<h1 className="truncate font-heading font-semibold text-sm leading-tight">
+							{title}
+						</h1>
+						<PageStateBadge autosave={autosave} publishing={publishing} />
+					</div>
+					{publishing.page.live ? (
+						<a
+							href={path}
+							target="_blank"
+							rel="noreferrer"
+							className="flex w-fit items-center gap-1 truncate text-muted-foreground text-xs hover:underline"
+						>
+							{path}
+							<ExternalLinkIcon className="size-3" aria-hidden />
+							<span className="sr-only">(live page, opens in a new tab)</span>
+						</a>
+					) : (
+						<p className="truncate text-muted-foreground text-xs">{path}</p>
+					)}
 				</div>
 				<div className="mx-auto">
 					<ViewportSwitch />
@@ -266,6 +290,7 @@ export function EditorLayout({
 				<KeepUiOnHistory />
 				<HistoryButtons />
 				<SaveStatus autosave={autosave} />
+				<PublishActions autosave={autosave} publishing={publishing} />
 			</header>
 			<ConflictBanner autosave={autosave} actions={conflict} />
 			<LeaveGuard autosave={autosave} />

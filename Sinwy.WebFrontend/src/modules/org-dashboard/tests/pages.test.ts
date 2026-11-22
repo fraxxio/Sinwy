@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
 import { pageSlugSchema } from "@sinwy/shared";
-import { slugFromTitle } from "../lib/pages";
+import { editorPageState, slugFromTitle } from "../lib/pages";
 
 it("derives an address from a title", () => {
 	expect(slugFromTitle("About us")).toBe("about-us");
@@ -33,4 +33,21 @@ it("keeps within the length limit without a trailing hyphen", () => {
 
 it("gives nothing for a title with no letters or digits", () => {
 	expect(slugFromTitle("!!! ???")).toBe("");
+});
+
+it("tells the editor whether its changes are live", () => {
+	const page = {
+		status: "published",
+		live: true,
+		hasUnpublishedChanges: false,
+	} as const;
+	expect(editorPageState(page, false)).toBe("live");
+	expect(editorPageState(page, true)).toBe("changed");
+	expect(editorPageState({ ...page, hasUnpublishedChanges: true }, false)).toBe(
+		"changed",
+	);
+	expect(editorPageState({ ...page, live: false }, true)).toBe("not-live");
+	expect(editorPageState({ ...page, status: "draft", live: false }, true)).toBe(
+		"draft",
+	);
 });

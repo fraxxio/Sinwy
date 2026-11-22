@@ -1,3 +1,5 @@
+import type { BrowserContext } from "@playwright/test";
+import type { PageDetailDto } from "@sinwy/shared";
 import {
 	type Block,
 	drag,
@@ -410,5 +412,112 @@ test.describe("autosave", () => {
 		await expect(editor.status).toHaveText("Saved");
 		await expect(page.getByText("Changes saved")).toHaveCount(0);
 		expect(await savedTitle()).toBe("Welcome to the salon today");
+	});
+});
+
+test.describe("publishing", () => {
+	test.use({ seed: "thirdPro" });
+
+	/** The page as customers see it, in a tab of its own. */
+	const storefront = async (
+		context: BrowserContext,
+		pages: { detail: (pageId: string) => Promise<PageDetailDto> },
+		org: { slug: string },
+		pageId: string,
+	) => {
+		const tab = await context.newPage();
+		const path = `/${org.slug}/${(await pages.detail(pageId)).slug}`;
+		return {
+			path,
+			heading: async () => {
+				await tab.goto(path);
+				return tab.getByRole("heading", { level: 2 }).first().textContent();
+			},
+		};
+	};
+
+	test("Publish straight after an edit publishes that edit and links to the live page", async ({
+		context,
+		org,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(welcome());
+		const live = await storefront(context, pages, org, pageId);
+		await editor.open(pageId);
+		await expect(editor.pageState).toHaveText("Draft, not public");
+		await editor.button("Publish").click();
+		await expect(editor.pageState).toHaveText("Live");
+		expect(await live.heading()).toBe("Welcome");
+
+		await editTitle(editor, "Welcome to the salon");
+		await expect(editor.pageState).toHaveText("Changes not live yet");
+		await editor.button("Publish changes").click();
+		await expect(editor.page.getByText("Changes published")).toBeVisible();
+		await expect(editor.pageState).toHaveText("Live");
+		await expect(editor.button("Publish changes")).toBeHidden();
+		await expect(
+			editor.page.getByRole("banner").getByRole("link", { name: live.path }),
+		).toHaveAttribute("href", live.path);
+		expect(await live.heading()).toBe("Welcome to the salon");
+		expect(await titleSaved(pages, pageId)).toBe("Welcome to the salon");
+	});
+
+	test("Discard in the editor restores what's live, and the live page doesn't change", async ({
+		page,
+		context,
+		org,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(welcome());
+		const pinned = (await pages.publish(pageId)).latestVersion.version;
+		const live = await storefront(context, pages, org, pageId);
+		await editor.open(pageId);
+		await expect(editor.pageState).toHaveText("Live");
+
+		await editTitle(editor, "Not ready yet");
+		await expect(editor.status).toHaveText("Saved");
+		await expect(editor.pageState).toHaveText("Changes not live yet");
+		expect(await live.heading()).toBe("Welcome");
+
+		await editor.button("Discard changes").click();
+		const confirm = page.getByRole("alertdialog");
+		await expect(confirm).toContainText("undo history");
+		await confirm.getByRole("button", { name: "Discard changes" }).click();
+		await expect(editor.block("title")).toHaveText("Welcome");
+		await expect(editor.pageState).toHaveText("Live");
+		await expect(editor.status).toHaveText("Saved");
+		await expect(editor.button("Discard changes")).toBeHidden();
+
+		const after = await pages.detail(pageId);
+		expect(await titleSaved(pages, pageId)).toBe("Welcome");
+		expect(after.hasUnpublishedChanges).toBe(false);
+		expect(after.publishedVersion).toBeGreaterThan(pinned);
+		expect(await live.heading()).toBe("Welcome");
+	});
+
+	test("Discard on the detail page drops a draft saved earlier", async ({
+		page,
+		org,
+		pages,
+	}) => {
+		const pageId = await pages.create(welcome());
+		await pages.publish(pageId);
+		await pages.saveElsewhere(pageId, [
+			section("intro", [heading("title", "Draft only")]),
+		]);
+		await page.goto(`/dashboard/${org.slug}/pages/${pageId}`);
+
+		await page.getByRole("button", { name: "Discard changes" }).click();
+		await page
+			.getByRole("alertdialog")
+			.getByRole("button", { name: "Discard changes" })
+			.click();
+		await expect(page.getByText("Changes discarded")).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "Discard changes" }),
+		).toBeHidden();
+		expect(await titleSaved(pages, pageId)).toBe("Welcome");
 	});
 });

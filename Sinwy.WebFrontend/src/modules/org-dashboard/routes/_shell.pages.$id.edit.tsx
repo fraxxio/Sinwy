@@ -1,4 +1,5 @@
 import {
+	API_ERROR_CODES,
 	hasPermission,
 	type PageDetailDto,
 	type ServiceDto,
@@ -20,11 +21,18 @@ import {
 	type SaveFn,
 } from "#/modules/org-dashboard/components/page-editor/autosave";
 import {
+	discardAfterSave,
+	publishAfterSave,
+} from "#/modules/org-dashboard/components/page-editor/publishing";
+import {
+	type PageData,
 	saveErrorMessage,
 	toPageDocument,
 } from "#/modules/org-dashboard/components/page-editor/save";
 import {
+	discardDraft,
 	pageQuery,
+	publishPage,
 	savePageContent,
 	storePage,
 } from "#/modules/org-dashboard/lib/page-queries";
@@ -67,10 +75,10 @@ function PageEditPage() {
 		...servicesQuery(organization.id),
 		enabled: canWrite,
 	});
-	// A new key opens a fresh editor on the latest document, after a conflict
+	// A new key opens a fresh editor on the page's cached document, refetched first when asked
 	const [opened, setOpened] = useState(0);
-	const loadLatest = async () => {
-		await page.refetch();
+	const reopen = async ({ refetch }: { refetch: boolean }) => {
+		if (refetch) await page.refetch();
 		setOpened((count) => count + 1);
 	};
 
@@ -110,7 +118,7 @@ function PageEditPage() {
 				page={page.data}
 				services={services.data ?? []}
 				back={back}
-				loadLatest={loadLatest}
+				reopen={reopen}
 			/>
 		</Suspense>
 	);
@@ -120,12 +128,12 @@ function EditorScreen({
 	page,
 	services,
 	back,
-	loadLatest,
+	reopen,
 }: {
 	page: PageDetailDto;
 	services: ServiceDto[];
 	back: ReactNode;
-	loadLatest: () => Promise<void>;
+	reopen: (options: { refetch: boolean }) => Promise<void>;
 }) {
 	const { organization, entitlements } = Route.useRouteContext();
 	const queryClient = useQueryClient();
@@ -190,6 +198,60 @@ function EditorScreen({
 			});
 		}
 	};
+	const publish = async (data: PageData) => {
+		const outcome = await publishAfterSave(autosave, data, (baseVersion) =>
+			publishPage(organization.id, page.id, { baseVersion }),
+		);
+		if (!outcome.ok) {
+			toast.add({
+				type: "error",
+				title: "Not published",
+				description: outcome.message,
+				timeout: 10_000,
+			});
+			return;
+		}
+		latest.current = outcome.page.latestVersion;
+		await storePage(queryClient, organization.id, outcome.page);
+		toast.add({
+			type: "success",
+			title:
+				page.status === "published" ? "Changes published" : "Page published",
+			description: outcome.page.live
+				? "Customers see it now."
+				: "It isn't live yet: your plan's page limit is reached.",
+			timeout: 6_000,
+		});
+	};
+	const discard = async (data: PageData) => {
+		const outcome = await discardAfterSave(autosave, data, (baseVersion) =>
+			discardDraft(organization.id, page.id, { baseVersion }),
+		);
+		if (!outcome.ok) {
+			const moved =
+				outcome.code === API_ERROR_CODES.PAGE_VERSION_CONFLICT ||
+				outcome.code === API_ERROR_CODES.PAGE_NOT_PUBLISHED;
+			toast.add({
+				type: "error",
+				title: "Changes not discarded",
+				description: moved
+					? "This page changed somewhere else. The editor now shows its latest version."
+					: outcome.message,
+				timeout: 10_000,
+			});
+			if (moved) await reopen({ refetch: true });
+			return;
+		}
+		await storePage(queryClient, organization.id, outcome.page);
+		await reopen({ refetch: false });
+		toast.add({
+			type: "success",
+			title: "Changes discarded",
+			description: "The page is back to what's live.",
+			timeout: 6_000,
+		});
+	};
+
 	return (
 		<PageEditor
 			data={initialData}
@@ -202,7 +264,13 @@ function EditorScreen({
 			path={publicPagePath(organization.slug, page.slug)}
 			back={back}
 			autosave={autosave}
-			conflict={{ keepMine, loadLatest }}
+			conflict={{ keepMine, loadLatest: () => reopen({ refetch: true }) }}
+			publishing={{
+				page,
+				organizationSlug: organization.slug,
+				publish,
+				discard,
+			}}
 		/>
 	);
 }

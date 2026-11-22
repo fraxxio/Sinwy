@@ -13,6 +13,7 @@ import { canvasOverrides } from "./EditorCanvas";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
 import { EditorServicesContext, fieldOverrides } from "./editor-fields";
+import type { Publishing } from "./PublishControls";
 import type { ConflictActions } from "./SaveControls";
 import type { PageData } from "./save";
 
@@ -42,6 +43,7 @@ export function PageEditor({
 	back,
 	autosave,
 	conflict,
+	publishing,
 }: {
 	data: PageData;
 	metadata: PageMetadata;
@@ -50,6 +52,7 @@ export function PageEditor({
 	back: ReactNode;
 	autosave: Autosave;
 	conflict: ConflictActions;
+	publishing: Publishing;
 }) {
 	return (
 		<EditorServicesContext value={metadata.services}>
@@ -70,6 +73,7 @@ export function PageEditor({
 						back={back}
 						autosave={autosave}
 						conflict={conflict}
+						publishing={publishing}
 					/>
 				</Puck>
 			</BlockAccessProvider>

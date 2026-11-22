@@ -22,6 +22,7 @@ import { toast } from "#/shared/components/ui/toast";
 import { cn } from "#/shared/lib/utils";
 import type { Autosave, AutosaveState } from "./autosave";
 import { usePuck } from "./editor-config";
+import { unsavedReason } from "./publishing";
 import type { PageData } from "./save";
 import { useEditorKeys } from "./use-block-actions";
 
@@ -33,7 +34,7 @@ export type ConflictActions = {
 	loadLatest: () => Promise<void>;
 };
 
-const useAutosaveState = (autosave: Autosave) =>
+export const useAutosaveState = (autosave: Autosave) =>
 	useSyncExternalStore(
 		autosave.subscribe,
 		autosave.getState,
@@ -177,19 +178,6 @@ export function ConflictBanner({
 	);
 }
 
-const leaveReason = (state: AutosaveState) => {
-	switch (state.status) {
-		case "conflict":
-			return "This page was saved somewhere else, so your changes here aren't saved.";
-		case "blocked":
-			return state.message;
-		case "failed":
-			return "Your latest changes couldn't be saved. Check your connection.";
-		default:
-			return "Your latest changes aren't saved yet.";
-	}
-};
-
 /** Leaving in the app saves first and asks only when that fails; closing or reloading the tab asks while anything is unsaved. */
 export function LeaveGuard({ autosave }: { autosave: Autosave }) {
 	const getPuck = useGetPuck();
@@ -218,7 +206,7 @@ export function LeaveGuard({ autosave }: { autosave: Autosave }) {
 				<AlertDialogHeader>
 					<AlertDialogTitle>Leave without saving?</AlertDialogTitle>
 					<AlertDialogDescription>
-						{leaveReason(state)} If you leave now, they're lost.
+						{unsavedReason(state)} If you leave now, they're lost.
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
