@@ -41,6 +41,7 @@
 		2 +
 		var(--page-gutter)
 	);
+	--toast-top: 2rem;
 
 	/* Brand palette (unchanged) */
 	--sea-ink: #173a40;
@@ -136,6 +137,11 @@
 	--glass-bg-strong: color-mix(in oklab, var(--card) 82%, transparent);
 	--glass-border: color-mix(in oklab, var(--sea-ink) 12%, transparent);
 	--glass-highlight: rgba(255, 255, 255, 0.4);
+}
+
+/* The editor's header holds the save status; toasts open below it */
+:root:has([data-slot="page-editor"]) {
+	--toast-top: 4.5rem;
 }
 
 /* ------------------------------------------------------------------ */

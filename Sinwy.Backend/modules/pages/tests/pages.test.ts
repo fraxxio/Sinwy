@@ -144,11 +144,21 @@ const versionsOf = (pageId: string) =>
 
 const setPlan = (plan: PlanSlug | null) => givePlan(org.ownerId, plan);
 
+const publishAt = (pageId: string, baseVersion: number) =>
+	call("POST", `pages/${pageId}/publish`, org.ownerCookie, { baseVersion });
+
+const detailOf = async (pageId: string) =>
+	unwrap<PageDetailDto>(await call("GET", `pages/${pageId}`));
+
 const publish = async (pageId: string) => {
-	const res = await call("POST", `pages/${pageId}/publish`);
+	const { latestVersion } = await detailOf(pageId);
+	const res = await publishAt(pageId, latestVersion.version);
 	expect(res.status).toBe(200);
 	return unwrap<PageDetailDto>(res);
 };
+
+const discard = (pageId: string, baseVersion: number) =>
+	call("POST", `pages/${pageId}/discard`, org.ownerCookie, { baseVersion });
 
 const readPublic = (pageSlug: string, organizationSlug = org.orgId) =>
 	fetch(
@@ -282,7 +292,7 @@ test("update: title, slug and SEO; empty SEO strings store null; updatedAt moves
 const MESSY_TEXT =
 	'<div><b>Walk-ins</b> welcome<script>x()</script><a href="https://maps.example" onclick="x()">Find us</a></div>';
 
-test("content: each save stores the parsed document as the next version, rich text normalised, and bumps updatedAt", async () => {
+test("content: a save stores the parsed document under the next version, rich text normalised, and bumps updatedAt", async () => {
 	const created = await create();
 	await Bun.sleep(5);
 
@@ -303,8 +313,8 @@ test("content: each save stores the parsed document as the next version, rich te
 		.from(pageContent)
 		.where(eq(pageContent.pageId, created.id))
 		.orderBy(asc(pageContent.version));
-	expect(versions.map((row) => row.version)).toEqual([1, 2]);
-	const stored = versions[1]?.content;
+	expect(versions.map((row) => row.version)).toEqual([2]);
+	const stored = versions[0]?.content;
 	expect(stored).toEqual(saved.latestVersion.content);
 	const items = stored?.data.content[0]?.props["items"] as {
 		type: string;
@@ -330,6 +340,169 @@ test("content: a stale baseVersion → 409 PAGE_VERSION_CONFLICT, and concurrent
 	expect(racing.map((res) => res.status).sort()).toEqual([200, 409]);
 });
 
+/** Resolves once `count` sessions wait on a lock, so requests queue in a known order. */
+const lockWaiters = async (count: number) => {
+	for (let tries = 0; tries < 200; tries++) {
+		const [row] = await db.execute(
+			sql`select count(*)::int as n from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()`,
+		);
+		if (row?.["n"] === count) return;
+		await Bun.sleep(10);
+	}
+	throw new Error(`${count} lock waiters never showed up`);
+};
+
+test("content: a save answers with the version it wrote, not the one a queued save writes next", async () => {
+	const created = await create();
+	const queued = await db.transaction(async (tx) => {
+		await tx
+			.select({ id: page.id })
+			.from(page)
+			.where(eq(page.id, created.id))
+			.for("update");
+		const first = save(created.id, 1, headingPage("First"));
+		await lockWaiters(1);
+		const second = save(created.id, 2, headingPage("Second"));
+		await lockWaiters(2);
+		return { first, second };
+	});
+	const [first, second] = await Promise.all([queued.first, queued.second]);
+	expect(second.status).toBe(200);
+	const answer = await unwrap<PageDetailDto>(first);
+	expect(answer.latestVersion.version).toBe(2);
+	expect(JSON.stringify(answer.latestVersion.content)).toContain("First");
+});
+
+const versionRows = (pageId: string) =>
+	db
+		.select({
+			id: pageContent.id,
+			version: pageContent.version,
+			createdAt: pageContent.createdAt,
+			updatedAt: pageContent.updatedAt,
+		})
+		.from(pageContent)
+		.where(eq(pageContent.pageId, pageId))
+		.orderBy(asc(pageContent.version));
+
+const backdate = (pageId: string, minutes: number) =>
+	db
+		.update(pageContent)
+		.set({
+			createdAt: sql`${pageContent.createdAt} - make_interval(mins => ${minutes})`,
+		})
+		.where(eq(pageContent.pageId, pageId));
+
+test("checkpoint: quick saves by one user update one draft row in place, with a rising version and savedAt", async () => {
+	const created = await create();
+	const [before] = await versionRows(created.id);
+
+	let saved = created;
+	for (const text of ["One", "Two", "Three"]) {
+		await Bun.sleep(5);
+		const res = await save(
+			created.id,
+			saved.latestVersion.version,
+			headingPage(text),
+		);
+		expect(res.status).toBe(200);
+		saved = await unwrap<PageDetailDto>(res);
+	}
+
+	const rows = await versionRows(created.id);
+	expect(rows).toHaveLength(1);
+	expect(rows[0]).toMatchObject({
+		id: before?.id,
+		version: 4,
+		createdAt: before?.createdAt,
+	});
+	expect(saved.latestVersion.version).toBe(4);
+	expect(saved.latestVersion.createdAt).toBe(created.latestVersion.createdAt);
+	expect(saved.latestVersion.savedAt > created.latestVersion.savedAt).toBe(
+		true,
+	);
+	expect(JSON.stringify(saved.latestVersion.content)).toContain("Three");
+});
+
+test("checkpoint: a pinned latest, another user's row or a row past the window each force a new row", async () => {
+	await setPlan("professional");
+	const editor = await createUserWithSession();
+	await joinOrganization(org.orgId, editor.userId, "admin");
+
+	const pinned = await create();
+	await publish(pinned.id);
+	expect((await save(pinned.id, 1)).status).toBe(200);
+	expect((await versionRows(pinned.id)).map((row) => row.version)).toEqual([
+		1, 2,
+	]);
+
+	const theirs = await create();
+	const byEditor = await call(
+		"PUT",
+		`pages/${theirs.id}/content`,
+		editor.cookie,
+		{ baseVersion: 1, content: headingPage() },
+	);
+	expect(byEditor.status).toBe(200);
+	expect((await versionRows(theirs.id)).map((row) => row.version)).toEqual([
+		1, 2,
+	]);
+
+	const old = await create();
+	await backdate(old.id, 11);
+	expect((await save(old.id, 1)).status).toBe(200);
+	expect((await versionRows(old.id)).map((row) => row.version)).toEqual([1, 2]);
+
+	expect((await save(old.id, 2)).status).toBe(200);
+	expect((await versionRows(old.id)).map((row) => row.version)).toEqual([1, 3]);
+});
+
+test("checkpoint: an in-place save still bumps the version, so the old base gets a 409", async () => {
+	const created = await create();
+	expect((await save(created.id, 1, headingPage("Tab A"))).status).toBe(200);
+
+	const stale = await save(created.id, 1, headingPage("Tab B"));
+	expect(stale.status).toBe(409);
+	expect(await codeOf(stale)).toBe(API_ERROR_CODES.PAGE_VERSION_CONFLICT);
+	const [row] = await db
+		.select({ content: pageContent.content })
+		.from(pageContent)
+		.where(eq(pageContent.pageId, created.id));
+	expect(JSON.stringify(row?.content)).toContain("Tab A");
+});
+
+test("checkpoint: saves never change the published content or its pinned row", async () => {
+	const created = await create({ slug: "live" });
+	await save(created.id, 1, headingPage("Live text"));
+	const published = await publish(created.id);
+	const [pin] = await db
+		.select({ id: page.publishedVersionId })
+		.from(page)
+		.where(eq(page.id, created.id));
+	const pinnedRow = () =>
+		db
+			.select()
+			.from(pageContent)
+			.where(eq(pageContent.id, pin?.id ?? ""));
+	const [pinnedBefore] = await pinnedRow();
+
+	let base = published.latestVersion.version;
+	for (const text of ["Draft 1", "Draft 2", "Draft 3"]) {
+		const res = await save(created.id, base, headingPage(text));
+		base = (await unwrap<PageDetailDto>(res)).latestVersion.version;
+	}
+
+	const live = await unwrap<PublicPageDto>(await readPublic("live"));
+	expect(live.content).toEqual(published.latestVersion.content);
+	expect(pinnedBefore?.version).toBe(published.latestVersion.version);
+	expect((await pinnedRow())[0]).toEqual(pinnedBefore);
+	expect(await versionsOf(created.id)).toHaveLength(2);
+	expect(await detailOf(created.id)).toMatchObject({
+		hasUnpublishedChanges: true,
+		publishedVersion: published.latestVersion.version,
+	});
+});
+
 const bookingPage = () => document(section(block("Heading")), block("Booking"));
 
 test("content: a new Booking block on Starter → 402 PLAN_UPGRADE_REQUIRED, and no version is written", async () => {
@@ -346,8 +519,9 @@ test("content: Professional can add a Booking block", async () => {
 	await setPlan("professional");
 	const created = await create();
 
-	expect((await save(created.id, 1, bookingPage())).status).toBe(200);
-	expect(await versionsOf(created.id)).toHaveLength(2);
+	const res = await save(created.id, 1, bookingPage());
+	expect(res.status).toBe(200);
+	expect((await unwrap<PageDetailDto>(res)).latestVersion.version).toBe(2);
 });
 
 test("content: after a downgrade to Starter, a page whose latest version has Booking still saves", async () => {
@@ -360,8 +534,9 @@ test("content: after a downgrade to Starter, a page whose latest version has Boo
 		section(block("Heading", { text: "Edited" })),
 		block("Booking"),
 	);
-	expect((await save(created.id, 2, edited)).status).toBe(200);
-	expect(await versionsOf(created.id)).toHaveLength(3);
+	const res = await save(created.id, 2, edited);
+	expect(res.status).toBe(200);
+	expect((await unwrap<PageDetailDto>(res)).latestVersion.version).toBe(3);
 });
 
 const nestedSections = (depth: number): unknown =>
@@ -455,7 +630,7 @@ test("the page document migration empties v1 and spike rows; versions and the pu
 		.from(pageContent)
 		.where(sql`${pageContent.pageId} in (${v1Page.id}, ${spikePage.id})`)
 		.orderBy(asc(pageContent.pageId), asc(pageContent.version));
-	expect(rows).toHaveLength(3);
+	expect(rows).toHaveLength(2);
 	for (const row of rows) expect(row.content).toEqual(emptyPageDocument());
 
 	for (const slug of ["v1-page", "spike-page"]) {
@@ -594,7 +769,12 @@ test("staff: reads answer, writes → 403", async () => {
 			content: headingPage(),
 		}),
 		call("DELETE", `pages/${created.id}`, org.staffCookie),
-		call("POST", `pages/${created.id}/publish`, org.staffCookie),
+		call("POST", `pages/${created.id}/publish`, org.staffCookie, {
+			baseVersion: 1,
+		}),
+		call("POST", `pages/${created.id}/discard`, org.staffCookie, {
+			baseVersion: 1,
+		}),
 		call("POST", `pages/${created.id}/unpublish`, org.staffCookie),
 	];
 	for (const res of await Promise.all(writes)) expect(res.status).toBe(403);
@@ -624,7 +804,8 @@ test("inactive organization: writes → 409 ORGANIZATION_INACTIVE, reads answer 
 		call("PATCH", `pages/${created.id}`, org.ownerCookie, { title: "x" }),
 		save(created.id, 1),
 		call("DELETE", `pages/${created.id}`),
-		call("POST", `pages/${created.id}/publish`),
+		publishAt(created.id, 1),
+		discard(created.id, 1),
 		call("POST", `pages/${created.id}/unpublish`),
 	];
 	for (const res of await Promise.all(writes)) {
@@ -654,7 +835,8 @@ test("another organization's page id → 404 on every route", async () => {
 		call("GET", `pages/${foreign.id}`),
 		call("PATCH", `pages/${foreign.id}`, org.ownerCookie, { title: "Mine" }),
 		save(foreign.id, 1),
-		call("POST", `pages/${foreign.id}/publish`),
+		publishAt(foreign.id, 1),
+		discard(foreign.id, 1),
 		call("POST", `pages/${foreign.id}/unpublish`),
 		call("DELETE", `pages/${foreign.id}`),
 	];
@@ -727,6 +909,140 @@ test("publish: pins the latest version; later saves stay off the public page unt
 	expect(
 		(await unwrap<PublicPageDto>(await readPublic("welcome"))).content,
 	).toEqual(saved.latestVersion.content);
+});
+
+test("publish: a draft saved back to the published content has no unpublished changes", async () => {
+	const created = await create({ slug: "undone" });
+	const live = headingPage("Live");
+	await save(created.id, 1, live);
+	const published = await publish(created.id);
+	const base = published.latestVersion.version;
+	const changed = await unwrap<PageDetailDto>(
+		await save(created.id, base, headingPage("Oops")),
+	);
+	expect(changed.hasUnpublishedChanges).toBe(true);
+
+	const undone = await unwrap<PageDetailDto>(
+		await save(created.id, changed.latestVersion.version, live),
+	);
+
+	expect(undone).toMatchObject({
+		publishedVersion: base,
+		hasUnpublishedChanges: false,
+	});
+	expect(undone.latestVersion.version).toBeGreaterThan(base);
+	expect(await detailOf(created.id)).toMatchObject({
+		hasUnpublishedChanges: false,
+	});
+});
+
+test("publish: a stale baseVersion → 409 PAGE_VERSION_CONFLICT, and the pin doesn't move", async () => {
+	const created = await create({ slug: "stale" });
+	const first = await publish(created.id);
+	expect((await save(created.id, 1)).status).toBe(200);
+
+	const res = await publishAt(created.id, 1);
+
+	expect(res.status).toBe(409);
+	expect(await codeOf(res)).toBe(API_ERROR_CODES.PAGE_VERSION_CONFLICT);
+	expect(await detailOf(created.id)).toMatchObject({
+		publishedVersion: 1,
+		publishedAt: first.publishedAt,
+		hasUnpublishedChanges: true,
+	});
+});
+
+test("discard: copies the published content into a new pinned version; the public page doesn't change", async () => {
+	const created = await create({ slug: "discard" });
+	await save(created.id, 1, headingPage("Published"));
+	const published = await publish(created.id);
+	const base = published.latestVersion.version;
+	const draft = await unwrap<PageDetailDto>(
+		await save(created.id, base, headingPage("Oops")),
+	);
+	const draftVersion = draft.latestVersion.version;
+
+	const res = await discard(created.id, draftVersion);
+
+	expect(res.status).toBe(200);
+	const discarded = await unwrap<PageDetailDto>(res);
+	expect(discarded).toMatchObject({
+		status: "published",
+		publishedAt: published.publishedAt,
+		hasUnpublishedChanges: false,
+		publishedVersion: draftVersion + 1,
+	});
+	expect(discarded.latestVersion.version).toBe(draftVersion + 1);
+	expect(discarded.latestVersion.content).toEqual(
+		published.latestVersion.content,
+	);
+	const live = await unwrap<PublicPageDto>(await readPublic("discard"));
+	expect(live.content).toEqual(published.latestVersion.content);
+	expect((await versionRows(created.id)).map((row) => row.version)).toEqual([
+		base,
+		draftVersion,
+		draftVersion + 1,
+	]);
+
+	const stale = await save(created.id, draftVersion, headingPage("Late tab"));
+	expect(stale.status).toBe(409);
+	expect(await codeOf(stale)).toBe(API_ERROR_CODES.PAGE_VERSION_CONFLICT);
+	const next = await save(created.id, draftVersion + 1, headingPage("Again"));
+	expect(next.status).toBe(200);
+	expect(await versionsOf(created.id)).toHaveLength(4);
+});
+
+test("discard: a stale base → 409; nothing to discard answers unchanged; a never-published page → 409 PAGE_NOT_PUBLISHED", async () => {
+	const created = await create();
+	const draft = await discard(created.id, 1);
+	expect(draft.status).toBe(409);
+	expect(await codeOf(draft)).toBe(API_ERROR_CODES.PAGE_NOT_PUBLISHED);
+
+	await publish(created.id);
+	const unchanged = await discard(created.id, 1);
+	expect(unchanged.status).toBe(200);
+	expect(await unwrap<PageDetailDto>(unchanged)).toMatchObject({
+		publishedVersion: 1,
+		hasUnpublishedChanges: false,
+	});
+	expect(await versionsOf(created.id)).toHaveLength(1);
+
+	expect((await save(created.id, 1)).status).toBe(200);
+	const stale = await discard(created.id, 1);
+	expect(stale.status).toBe(409);
+	expect(await codeOf(stale)).toBe(API_ERROR_CODES.PAGE_VERSION_CONFLICT);
+	expect(await detailOf(created.id)).toMatchObject({
+		publishedVersion: 1,
+		hasUnpublishedChanges: true,
+	});
+
+	const malformed = await call(
+		"POST",
+		`pages/${created.id}/discard`,
+		org.ownerCookie,
+		{},
+	);
+	expect(malformed.status).toBe(400);
+});
+
+test("discard: after a downgrade to Starter, a published Booking block comes back", async () => {
+	await setPlan("professional");
+	const created = await create({ slug: "booking-back" });
+	await save(created.id, 1, bookingPage());
+	const published = await publish(created.id);
+	await setPlan("starter");
+	const withoutBooking = await unwrap<PageDetailDto>(
+		await save(created.id, published.latestVersion.version, headingPage()),
+	);
+
+	const res = await discard(created.id, withoutBooking.latestVersion.version);
+
+	expect(res.status).toBe(200);
+	const restored = await unwrap<PageDetailDto>(res);
+	expect(restored.latestVersion.content).toEqual(
+		published.latestVersion.content,
+	);
+	expect(JSON.stringify(restored.latestVersion.content)).toContain("Booking");
 });
 
 const insertService = (name: string, isActive = true) =>
@@ -863,7 +1179,7 @@ test("public: unknown organization, unknown page, draft, inactive and over-limit
 		"POST",
 		`pages/${theirs.id}/publish`,
 		other.ownerCookie,
-		undefined,
+		{ baseVersion: 1 },
 		other.orgId,
 	);
 	expect(publishTheirs.status).toBe(200);

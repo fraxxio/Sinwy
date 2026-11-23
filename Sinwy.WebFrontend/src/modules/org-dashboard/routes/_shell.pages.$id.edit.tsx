@@ -1,4 +1,5 @@
 import {
+	API_ERROR_CODES,
 	hasPermission,
 	type PageDetailDto,
 	type ServiceDto,
@@ -6,14 +7,32 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeftIcon } from "lucide-react";
-import { lazy, type ReactNode, Suspense, useRef, useState } from "react";
+import {
+	lazy,
+	type ReactNode,
+	Suspense,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
+import {
+	type Autosave,
+	createAutosave,
+	type SaveFn,
+} from "#/modules/org-dashboard/components/page-editor/autosave";
+import {
+	discardAfterSave,
+	publishAfterSave,
+} from "#/modules/org-dashboard/components/page-editor/publishing";
 import {
 	type PageData,
 	saveErrorMessage,
 	toPageDocument,
 } from "#/modules/org-dashboard/components/page-editor/save";
 import {
+	discardDraft,
 	pageQuery,
+	publishPage,
 	savePageContent,
 	storePage,
 } from "#/modules/org-dashboard/lib/page-queries";
@@ -22,6 +41,7 @@ import { servicesQuery } from "#/modules/org-dashboard/lib/service-queries";
 import { Button } from "#/shared/components/ui/button";
 import { FieldError } from "#/shared/components/ui/field";
 import { Skeleton } from "#/shared/components/ui/skeleton";
+import { toast } from "#/shared/components/ui/toast";
 import { organizationsQuery } from "#/shared/lib/organizations";
 
 const PageEditor = lazy(() =>
@@ -55,6 +75,12 @@ function PageEditPage() {
 		...servicesQuery(organization.id),
 		enabled: canWrite,
 	});
+	// A new key opens a fresh editor on the page's cached document, refetched first when asked
+	const [opened, setOpened] = useState(0);
+	const reopen = async ({ refetch }: { refetch: boolean }) => {
+		if (refetch) await page.refetch();
+		setOpened((count) => count + 1);
+	};
 
 	const back = (
 		<Button
@@ -88,10 +114,11 @@ function PageEditPage() {
 	return (
 		<Suspense fallback={loading}>
 			<EditorScreen
-				key={page.data.id}
+				key={`${page.data.id}:${opened}`}
 				page={page.data}
 				services={services.data ?? []}
 				back={back}
+				reopen={reopen}
 			/>
 		</Suspense>
 	);
@@ -101,10 +128,12 @@ function EditorScreen({
 	page,
 	services,
 	back,
+	reopen,
 }: {
 	page: PageDetailDto;
 	services: ServiceDto[];
 	back: ReactNode;
+	reopen: (options: { refetch: boolean }) => Promise<void>;
 }) {
 	const { organization, entitlements } = Route.useRouteContext();
 	const queryClient = useQueryClient();
@@ -117,24 +146,110 @@ function EditorScreen({
 	const [initialData] = useState(() => page.latestVersion.content.data);
 	const latest = useRef(page.latestVersion);
 
-	const save = async (data: PageData) => {
+	const save: SaveFn = async (data, base) => {
 		const attempted = toPageDocument(data);
 		const res = await savePageContent(organization.id, page.id, {
-			baseVersion: latest.current.version,
+			baseVersion: base,
 			content: attempted,
 		});
 		if (!res.isSuccess)
 			return {
 				ok: false,
+				code: res.code,
 				message: saveErrorMessage(res, {
 					saved: latest.current.content,
 					attempted,
 					features: entitlements.features,
 				}),
-			} as const;
+			};
 		latest.current = res.data.latestVersion;
-		await storePage(queryClient, organization.id, res.data);
-		return { ok: true } as const;
+		void storePage(queryClient, organization.id, res.data);
+		return { ok: true, base: res.data.latestVersion.version };
+	};
+	// Made in an effect, so StrictMode's second mount gets an engine that isn't disposed
+	const [autosave, setAutosave] = useState<Autosave | null>(null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: one engine per mount, holding the document it opened with
+	useEffect(() => {
+		const engine = createAutosave({
+			data: initialData,
+			base: page.latestVersion.version,
+			save,
+		});
+		setAutosave(engine);
+		return engine.dispose;
+	}, []);
+
+	if (!autosave) return loading;
+
+	const keepMine = async () => {
+		try {
+			const fresh = await queryClient.fetchQuery({
+				...pageQuery(organization.id, page.id),
+				staleTime: 0,
+			});
+			latest.current = fresh.latestVersion;
+			await autosave.resolveConflict(fresh.latestVersion.version);
+		} catch (error) {
+			toast.add({
+				type: "error",
+				title: "Couldn't load the latest version",
+				description: error instanceof Error ? error.message : undefined,
+				timeout: 6_000,
+			});
+		}
+	};
+	const publish = async (data: PageData) => {
+		const outcome = await publishAfterSave(autosave, data, (baseVersion) =>
+			publishPage(organization.id, page.id, { baseVersion }),
+		);
+		if (!outcome.ok) {
+			toast.add({
+				type: "error",
+				title: "Not published",
+				description: outcome.message,
+				timeout: 10_000,
+			});
+			return;
+		}
+		latest.current = outcome.page.latestVersion;
+		await storePage(queryClient, organization.id, outcome.page);
+		toast.add({
+			type: "success",
+			title:
+				page.status === "published" ? "Changes published" : "Page published",
+			description: outcome.page.live
+				? "Customers see it now."
+				: "It isn't live yet: your plan's page limit is reached.",
+			timeout: 6_000,
+		});
+	};
+	const discard = async (data: PageData) => {
+		const outcome = await discardAfterSave(autosave, data, (baseVersion) =>
+			discardDraft(organization.id, page.id, { baseVersion }),
+		);
+		if (!outcome.ok) {
+			const moved =
+				outcome.code === API_ERROR_CODES.PAGE_VERSION_CONFLICT ||
+				outcome.code === API_ERROR_CODES.PAGE_NOT_PUBLISHED;
+			toast.add({
+				type: "error",
+				title: "Changes not discarded",
+				description: moved
+					? "This page changed somewhere else. The editor now shows its latest version."
+					: outcome.message,
+				timeout: 10_000,
+			});
+			if (moved) await reopen({ refetch: true });
+			return;
+		}
+		await storePage(queryClient, organization.id, outcome.page);
+		await reopen({ refetch: false });
+		toast.add({
+			type: "success",
+			title: "Changes discarded",
+			description: "The page is back to what's live.",
+			timeout: 6_000,
+		});
 	};
 
 	return (
@@ -148,7 +263,14 @@ function EditorScreen({
 			title={page.title}
 			path={publicPagePath(organization.slug, page.slug)}
 			back={back}
-			onSave={save}
+			autosave={autosave}
+			conflict={{ keepMine, loadLatest: () => reopen({ refetch: true }) }}
+			publishing={{
+				page,
+				organizationSlug: organization.slug,
+				publish,
+				discard,
+			}}
 		/>
 	);
 }

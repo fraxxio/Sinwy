@@ -86,7 +86,7 @@ describe("saveErrorMessage", () => {
 		features: [],
 	};
 
-	it("tells a version conflict to reload", () => {
+	it("tells a version conflict to keep this version or load the latest", () => {
 		const message = saveErrorMessage(
 			{
 				code: API_ERROR_CODES.PAGE_VERSION_CONFLICT,
@@ -95,7 +95,8 @@ describe("saveErrorMessage", () => {
 			context,
 		);
 		expect(message).toContain("saved somewhere else");
-		expect(message).toContain("Reload");
+		expect(message).toContain("Keep yours");
+		expect(message).toContain("load the latest");
 	});
 
 	it("names the block a 402 is about and the plan that has it", () => {

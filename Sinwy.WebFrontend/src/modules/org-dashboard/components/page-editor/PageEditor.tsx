@@ -6,13 +6,16 @@ import {
 } from "@puckeditor/core";
 import type { ReactNode } from "react";
 import type { PageMetadata } from "#/shared/components/page-builder/blocks";
+import type { Autosave } from "./autosave";
 import { chromeOverrides } from "./BlockChrome";
 import { BlockAccessProvider } from "./BlockDrawer";
 import { canvasOverrides } from "./EditorCanvas";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
 import { EditorServicesContext, fieldOverrides } from "./editor-fields";
-import type { PageData, SaveResult } from "./save";
+import type { Publishing } from "./PublishControls";
+import type { ConflictActions } from "./SaveControls";
+import type { PageData } from "./save";
 
 /** Puck's canvas picks the starting viewport and ours isn't Puck's, so the editor opens on desktop here. */
 const INITIAL_UI: Partial<UiState> = {
@@ -38,14 +41,18 @@ export function PageEditor({
 	title,
 	path,
 	back,
-	onSave,
+	autosave,
+	conflict,
+	publishing,
 }: {
 	data: PageData;
 	metadata: PageMetadata;
 	title: string;
 	path: string;
 	back: ReactNode;
-	onSave: (data: PageData) => Promise<SaveResult>;
+	autosave: Autosave;
+	conflict: ConflictActions;
+	publishing: Publishing;
 }) {
 	return (
 		<EditorServicesContext value={metadata.services}>
@@ -60,7 +67,14 @@ export function PageEditor({
 					dnd={DND}
 					height="100%"
 				>
-					<EditorLayout title={title} path={path} back={back} onSave={onSave} />
+					<EditorLayout
+						title={title}
+						path={path}
+						back={back}
+						autosave={autosave}
+						conflict={conflict}
+						publishing={publishing}
+					/>
 				</Puck>
 			</BlockAccessProvider>
 		</EditorServicesContext>

@@ -106,15 +106,18 @@ function findWithParent(
 const labelOf = (type: string, blocks: Blocks) =>
 	ownEntry(blocks, type)?.label ?? type;
 
-/** The text of the first Heading directly in a block's slots, which is how an owner tells their Sections apart. */
+/** The text of the first Heading directly in a block's slots, which is how an owner tells their Sections apart; sample text doesn't count. */
 export function blockTitle(
 	block: BlockNode,
 	blocks: Blocks = BLOCKS,
 ): string | null {
+	const sample = ownEntry(blocks, "Heading")?.fields["text"];
 	for (const slot of slotsOf(block, blocks))
 		for (const child of childrenIn(block, slot)) {
 			const text = child.type === "Heading" ? child.props["text"] : null;
-			if (typeof text === "string" && text.trim()) return text.trim();
+			if (typeof text !== "string" || !text.trim()) continue;
+			if (sample?.placeholder && text.trim() === sample.default) continue;
+			return text.trim();
 		}
 	return null;
 }

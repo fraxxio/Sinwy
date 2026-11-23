@@ -17,8 +17,13 @@ export type SeededOrg = {
 	storageStateFile: string;
 };
 
-/** What the global setup seeded for this run. */
-export type Stack = { pro: SeededOrg; starter: SeededOrg };
+/** What the global setup seeded for this run; there are several Professional orgs because one holds only 5 pages. */
+export type Stack = {
+	pro: SeededOrg;
+	secondPro: SeededOrg;
+	thirdPro: SeededOrg;
+	starter: SeededOrg;
+};
 
 export const readStack = (): Stack =>
 	JSON.parse(readFileSync(STACK_FILE, "utf8")) as Stack;

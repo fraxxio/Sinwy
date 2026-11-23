@@ -1,5 +1,6 @@
 import {
 	PAGE_LIMITS,
+	type PageDetailDto,
 	type PageListItemDto,
 	type PageUsageDto,
 	RESERVED_PAGE_SLUGS,
@@ -42,6 +43,26 @@ export const PAGE_STATE_LABELS: Record<PageState, string> = {
 	live: "Published",
 	"not-live": "Published, not live",
 	draft: "Draft",
+};
+
+/** What the editor tells the owner: whether what they see is public. */
+export type EditorPageState = PageState | "changed";
+
+export const editorPageState = (
+	page: Pick<PageDetailDto, "status" | "live" | "hasUnpublishedChanges">,
+	unsaved: boolean,
+): EditorPageState => {
+	const state = pageState(page);
+	return state === "live" && (page.hasUnpublishedChanges || unsaved)
+		? "changed"
+		: state;
+};
+
+export const EDITOR_PAGE_STATE_LABELS: Record<EditorPageState, string> = {
+	draft: "Draft, not public",
+	live: "Live",
+	changed: "Changes not live yet",
+	"not-live": "Published, not live",
 };
 
 export const isAtPageLimit = (usage: PageUsageDto) => usage.used >= usage.limit;

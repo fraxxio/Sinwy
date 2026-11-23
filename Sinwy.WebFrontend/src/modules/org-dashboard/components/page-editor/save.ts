@@ -10,8 +10,6 @@ import { getPlanName, minimumPlanFor } from "#/shared/lib/plans";
 
 export type PageData = PageDocument["data"];
 
-export type SaveResult = { ok: true } | { ok: false; message: string };
-
 const definedKeys = (value: object) =>
 	Object.keys(value).filter(
 		(key) => (value as Record<string, unknown>)[key] !== undefined,
@@ -73,7 +71,7 @@ export const saveErrorMessage = (
 ): string => {
 	switch (error.code) {
 		case API_ERROR_CODES.PAGE_VERSION_CONFLICT:
-			return "This page was saved somewhere else, maybe in another tab. Reload to get the latest version; your changes here aren't saved.";
+			return "This page was saved somewhere else, maybe in another tab, so your changes here aren't saved. Keep yours to save them over it, or load the latest version.";
 		case API_ERROR_CODES.PLAN_UPGRADE_REQUIRED: {
 			const types = lockedBlocksIn(saved, attempted, features);
 			if (!types.length)

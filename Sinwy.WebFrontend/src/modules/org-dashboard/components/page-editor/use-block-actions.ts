@@ -183,6 +183,13 @@ export function blockActions(getPuck: () => PuckApi) {
 			select(target);
 			scrollToBlock(item.props.id);
 		},
+		/** Selects a block by id and scrolls to it. */
+		show: (id: string) => {
+			const at = getPuck().getSelectorForId(id);
+			if (!at?.zone) return;
+			select({ zone: at.zone, index: at.index });
+			scrollToBlock(id);
+		},
 		/** Selects the parent block, or deselects at the top level. */
 		escape: () => {
 			const current = selected();

@@ -206,9 +206,23 @@ Pages (every tier has them, up to a limit per organization)
 │   └─ a premium block type the page's latest version already has stays
 │      allowed, more of it included, so a downgraded page can still be saved;
 │      once removed, adding it back is refused again
-├─ content is versioned: every save is a new version; publishing pins the
-│  latest one, so later saves stay private until the next publish
-├─ publishing is always allowed; unpublishing makes the page a draft again
+├─ content is versioned in checkpoints: every save raises the version
+│   ├─ a save updates the latest version in place when it isn't the
+│   │  published one, the same member started it and it is under 10 minutes
+│   │  old; otherwise it starts a new one; the published one never changes
+│   └─ a save, publish or discard from an older version than the latest →
+│      refused, "saved somewhere else", so nobody overwrites or publishes
+│      content they haven't seen
+├─ publishing pins the latest version, so later saves stay private until
+│  the next publish; it is always allowed; unpublishing makes the page a
+│  draft again, and the version it had pinned an ordinary one
+├─ a published page has unpublished changes only when its latest content
+│  differs from the pinned content; a draft edited back to it has none
+├─ discarding drops the unpublished changes: the published content becomes a
+│  new latest version and is pinned, so the public page doesn't change and
+│  the discarded draft stays in the history; it skips the premium block check
+│  (the content was already published); a page that isn't published has
+│  nothing to discard → refused, "not published"
 └─ over the limit (after a downgrade): no page is deleted or unpublished; only
    the oldest published pages by creation, up to the limit, are served
    publicly, and the dashboard shows the rest "Published, not live"

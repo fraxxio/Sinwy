@@ -5,7 +5,7 @@ import {
 	type Page,
 } from "@playwright/test";
 import type { ApiResponse, PageDetailDto } from "@sinwy/shared";
-import { readStack, type SeededOrg, WEB_URL } from "./stack";
+import { readStack, type SeededOrg, type Stack, WEB_URL } from "./stack";
 
 export type Block = {
 	type: string;
@@ -38,12 +38,18 @@ type Pages = {
 	saved: (pageId: string) => Promise<Block[]>;
 	/** Saves `blocks` as a new version, as another tab would. */
 	saveElsewhere: (pageId: string, blocks: Block[]) => Promise<void>;
+	/** Publishes the latest version. */
+	publish: (pageId: string) => Promise<PageDetailDto>;
+	detail: (pageId: string) => Promise<PageDetailDto>;
 };
 
 export const editorFor = (page: Page, org: SeededOrg) => {
 	const canvas = page.locator("iframe#preview-frame").contentFrame();
 	const settings = page.getByRole("complementary", { name: "Block settings" });
+	const banner = page.getByRole("banner");
+	const status = banner.getByRole("status");
 	return {
+		page,
 		canvas,
 		drawer: page.getByRole("complementary", { name: "Blocks" }),
 		settings,
@@ -52,15 +58,19 @@ export const editorFor = (page: Page, org: SeededOrg) => {
 		block: (id: string) => canvas.locator(`[data-puck-component="${id}"]`),
 		rootZone: canvas.locator('[data-puck-dropzone="root:default-zone"]'),
 		button: (name: string) => page.getByRole("button", { name, exact: true }),
-		status: (text: "All changes saved" | "Unsaved changes") =>
-			page.getByText(text, { exact: true }),
+		/** The header's way out of the editor, to the page's detail screen. */
+		back: page.getByRole("banner").getByText("Back", { exact: true }),
+		/** The save status in the header: "Saved", "Saving…" or what went wrong. */
+		status,
+		/** Whether the page is public: "Live", "Changes not live yet", "Draft, not public"… */
+		pageState: banner.locator('[data-slot="badge"]'),
 
 		open: async (pageId: string) => {
 			await page.goto(`/dashboard/${org.slug}/pages/${pageId}/edit`);
 			await expect(
 				canvas.locator('[data-puck-dropzone="root:default-zone"]'),
 			).toBeVisible();
-			await expect(page.getByText("All changes saved")).toBeVisible();
+			await expect(status).toHaveText("Saved");
 		},
 
 		/** Clicks the block's own padding, so it's selected rather than a child. */
@@ -70,9 +80,10 @@ export const editorFor = (page: Page, org: SeededOrg) => {
 				.click({ position: { x: 6, y: 6 } });
 		},
 
+		/** Saves at once with the shortcut and waits until everything is saved. */
 		save: async () => {
-			await page.getByRole("button", { name: "Save", exact: true }).click();
-			await expect(page.getByText("All changes saved")).toBeVisible();
+			await page.keyboard.press("ControlOrMeta+s");
+			await expect(status).toHaveText("Saved");
 		},
 	};
 };
@@ -105,13 +116,13 @@ export const drag = async (page: Page, from: Locator, to: Point) => {
 const ORIGIN = { origin: new URL(WEB_URL).origin };
 
 export const test = base.extend<{
-	plan: "pro" | "starter";
+	seed: keyof Stack;
 	org: SeededOrg;
 	pages: Pages;
 	editor: Editor;
 }>({
-	plan: ["pro", { option: true }],
-	org: async ({ plan }, use) => use(readStack()[plan]),
+	seed: ["pro", { option: true }],
+	org: async ({ seed }, use) => use(readStack()[seed]),
 	storageState: async ({ org }, use) => use(org.storageStateFile),
 
 	pages: async ({ page, org }, use) => {
@@ -125,6 +136,9 @@ export const test = base.extend<{
 				throw new Error(`${method} ${path} → ${res.status()} ${json.message}`);
 			return json.data;
 		};
+
+		const detail = (pageId: string) =>
+			call<PageDetailDto>("GET", `/pages/${pageId}`);
 
 		const saveOver = (page: PageDetailDto, blocks: Block[]) =>
 			call("PUT", `/pages/${page.id}/content`, {
@@ -145,16 +159,16 @@ export const test = base.extend<{
 				if (blocks) await saveOver(created, blocks);
 				return created.id;
 			},
-			saved: async (pageId) => {
-				const detail = await call<PageDetailDto>("GET", `/pages/${pageId}`);
-				return detail.latestVersion.content.data.content as Block[];
-			},
+			saved: async (pageId) =>
+				(await detail(pageId)).latestVersion.content.data.content as Block[],
 			saveElsewhere: async (pageId, blocks) => {
-				await saveOver(
-					await call<PageDetailDto>("GET", `/pages/${pageId}`),
-					blocks,
-				);
+				await saveOver(await detail(pageId), blocks);
 			},
+			publish: async (pageId) =>
+				call<PageDetailDto>("POST", `/pages/${pageId}/publish`, {
+					baseVersion: (await detail(pageId)).latestVersion.version,
+				}),
+			detail,
 		});
 	},
 

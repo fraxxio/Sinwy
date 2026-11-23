@@ -278,6 +278,8 @@ describe("canvas names", () => {
 		expect(blockTitle(section())).toBe("Find us");
 		expect(blockTitle(content()[1] as BlockNode)).toBeNull();
 		expect(blockTitle(block("Heading", "h", { text: "Find us" }))).toBeNull();
+		const sample = block("Heading", "h", { text: "Heading" });
+		expect(blockTitle(block("Section", "s", { items: [sample] }))).toBeNull();
 	});
 
 	it("labels a titled block, the blocks inside it, and untitled blocks", () => {

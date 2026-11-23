@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { formatDistanceToNow } from "date-fns";
 import { pageQuery } from "#/modules/org-dashboard/lib/page-queries";
 import { servicesQuery } from "#/modules/org-dashboard/lib/service-queries";
 import { ContentBox } from "#/shared/components/ContentBox";
@@ -71,13 +72,13 @@ function PagePreviewPage() {
 
 	const { latestVersion } = page.data;
 	const isPublishedVersion =
-		page.data.publishedVersion === latestVersion.version;
+		page.data.status === "published" && !page.data.hasUnpublishedChanges;
 
 	return (
 		<>
 			<PageHeader
 				title="Preview"
-				description={`${page.data.title}, version ${latestVersion.version}. ${
+				description={`${page.data.title}, saved ${formatDistanceToNow(latestVersion.savedAt, { addSuffix: true })}. ${
 					isPublishedVersion
 						? "This is the version that's published."
 						: "Only your team can see this until it's published."

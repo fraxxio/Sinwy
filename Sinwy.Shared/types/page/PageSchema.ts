@@ -48,9 +48,14 @@ export const updatePageSchema = pageDetailsSchema.partial();
 
 export type UpdatePageInput = z.infer<typeof updatePageSchema>;
 
-export const savePageContentSchema = z.object({
-	/** The version the edit started from; a newer one means another save got there first. */
+/** Publish and discard: the version the owner last saw; a newer one means another save got there first. */
+export const pageBaseVersionSchema = z.object({
 	baseVersion: z.number().int().min(1),
+});
+
+export type PageBaseVersionInput = z.infer<typeof pageBaseVersionSchema>;
+
+export const savePageContentSchema = pageBaseVersionSchema.extend({
 	/** Parsed to what gets stored: migrated, with rich text normalised. */
 	content: pageDocumentSchema,
 });

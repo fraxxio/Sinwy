@@ -1,6 +1,7 @@
 import type {
 	CreatePageInput,
 	OrganizationOnboardingDto,
+	PageBaseVersionInput,
 	PageDetailDto,
 	PageListDto,
 	SavePageContentInput,
@@ -88,8 +89,26 @@ export const savePageContent = (
 		body: JSON.stringify(body),
 	});
 
-export const publishPage = (organizationId: string, pageId: string) =>
-	pageWrite(organizationId, pageId, "/publish", { method: "POST" });
+export const publishPage = (
+	organizationId: string,
+	pageId: string,
+	body: PageBaseVersionInput,
+) =>
+	pageWrite(organizationId, pageId, "/publish", {
+		method: "POST",
+		body: JSON.stringify(body),
+	});
+
+/** Drops the unpublished changes: the published content becomes the latest version again. */
+export const discardDraft = (
+	organizationId: string,
+	pageId: string,
+	body: PageBaseVersionInput,
+) =>
+	pageWrite(organizationId, pageId, "/discard", {
+		method: "POST",
+		body: JSON.stringify(body),
+	});
 
 export const unpublishPage = (organizationId: string, pageId: string) =>
 	pageWrite(organizationId, pageId, "/unpublish", { method: "POST" });

@@ -62,16 +62,15 @@ export function PageContentSummary({
 				/>
 				<div className="grid gap-1 text-sm">
 					<p className="font-medium">
-						Version {latestVersion.version} · {count}{" "}
-						{count === 1 ? "block" : "blocks"}
+						{count} {count === 1 ? "block" : "blocks"}
 					</p>
 					<p className="text-muted-foreground">
 						Last saved{" "}
 						<time
-							dateTime={latestVersion.createdAt}
-							title={new Date(latestVersion.createdAt).toLocaleString()}
+							dateTime={latestVersion.savedAt}
+							title={new Date(latestVersion.savedAt).toLocaleString()}
 						>
-							{formatDistanceToNow(latestVersion.createdAt, {
+							{formatDistanceToNow(latestVersion.savedAt, {
 								addSuffix: true,
 							})}
 						</time>

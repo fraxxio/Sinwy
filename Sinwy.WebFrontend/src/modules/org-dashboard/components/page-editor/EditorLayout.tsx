@@ -1,5 +1,6 @@
 import { Puck, useGetPuck } from "@puckeditor/core";
 import {
+	ExternalLinkIcon,
 	LayersIcon,
 	type LucideIcon,
 	MonitorIcon,
@@ -9,13 +10,7 @@ import {
 	TabletIcon,
 	Undo2Icon,
 } from "lucide-react";
-import {
-	type ReactNode,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { Button } from "#/shared/components/ui/button";
 import {
 	Tabs,
@@ -23,23 +18,32 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "#/shared/components/ui/tabs";
-import { toast } from "#/shared/components/ui/toast";
 import {
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "#/shared/components/ui/tooltip";
 import { cn } from "#/shared/lib/utils";
+import type { Autosave } from "./autosave";
 import { BlockToolbar } from "./BlockChrome";
 import { BlockDrawer } from "./BlockDrawer";
 import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
 import { PreloadRichText } from "./editor-fields";
-import { hasUnsavedChanges, type PageData, type SaveResult } from "./save";
+import {
+	PageStateBadge,
+	PublishActions,
+	type Publishing,
+} from "./PublishControls";
+import {
+	type ConflictActions,
+	ConflictBanner,
+	LeaveGuard,
+	SaveStatus,
+} from "./SaveControls";
 import {
 	useBlockActions,
 	useEditorHotkeys,
-	useEditorKeys,
 	useRefusedDropNotice,
 } from "./use-block-actions";
 
@@ -182,56 +186,6 @@ function KeepUiOnHistory() {
 	return null;
 }
 
-function SaveControls({
-	onSave,
-}: {
-	onSave: (data: PageData) => Promise<SaveResult>;
-}) {
-	const getPuck = useGetPuck();
-	const data = usePuck((s) => s.appState.data) as PageData;
-	const [saved, setSaved] = useState(data);
-	const [saving, setSaving] = useState(false);
-	const dirty = useMemo(() => hasUnsavedChanges(data, saved), [data, saved]);
-
-	const save = async () => {
-		if (saving) return;
-		const attempted = getPuck().appState.data as PageData;
-		setSaving(true);
-		const result = await onSave(attempted).finally(() => setSaving(false));
-		if (result.ok) {
-			setSaved(attempted);
-			toast.add({ type: "success", title: "Changes saved", timeout: 3_000 });
-		} else
-			toast.add({
-				type: "error",
-				title: "Not saved",
-				description: result.message,
-				timeout: 10_000,
-			});
-	};
-
-	useEditorKeys((event) => {
-		const mod = event.ctrlKey || event.metaKey;
-		if (!mod || event.altKey || event.shiftKey || event.code !== "KeyS") return;
-		event.preventDefault();
-		if (dirty) save();
-	});
-
-	return (
-		<>
-			<span
-				className="w-32 text-right text-muted-foreground text-xs"
-				aria-live="polite"
-			>
-				{saving ? "Saving…" : dirty ? "Unsaved changes" : "All changes saved"}
-			</span>
-			<Button disabled={saving || !dirty} onClick={save}>
-				Save
-			</Button>
-		</>
-	);
-}
-
 function LeftPanel() {
 	return (
 		<aside
@@ -291,32 +245,55 @@ export function EditorLayout({
 	title,
 	path,
 	back,
-	onSave,
+	autosave,
+	conflict,
+	publishing,
 }: {
 	title: string;
 	path: string;
 	back: ReactNode;
-	onSave: (data: PageData) => Promise<SaveResult>;
+	autosave: Autosave;
+	conflict: ConflictActions;
+	publishing: Publishing;
 }) {
 	useEditorHotkeys();
 	useRefusedDropNotice();
 	return (
-		<div className="flex h-svh flex-col bg-background">
+		<div data-slot="page-editor" className="flex h-svh flex-col bg-background">
 			<header className="flex h-14 shrink-0 items-center gap-3 border-b bg-card px-3">
 				{back}
 				<div className="min-w-0">
-					<h1 className="truncate font-heading font-semibold text-sm leading-tight">
-						{title}
-					</h1>
-					<p className="truncate text-muted-foreground text-xs">{path}</p>
+					<div className="flex items-center gap-2">
+						<h1 className="truncate font-heading font-semibold text-sm leading-tight">
+							{title}
+						</h1>
+						<PageStateBadge autosave={autosave} publishing={publishing} />
+					</div>
+					{publishing.page.live ? (
+						<a
+							href={path}
+							target="_blank"
+							rel="noreferrer"
+							className="flex w-fit items-center gap-1 truncate text-muted-foreground text-xs hover:underline"
+						>
+							{path}
+							<ExternalLinkIcon className="size-3" aria-hidden />
+							<span className="sr-only">(live page, opens in a new tab)</span>
+						</a>
+					) : (
+						<p className="truncate text-muted-foreground text-xs">{path}</p>
+					)}
 				</div>
 				<div className="mx-auto">
 					<ViewportSwitch />
 				</div>
 				<KeepUiOnHistory />
 				<HistoryButtons />
-				<SaveControls onSave={onSave} />
+				<SaveStatus autosave={autosave} />
+				<PublishActions autosave={autosave} publishing={publishing} />
 			</header>
+			<ConflictBanner autosave={autosave} actions={conflict} />
+			<LeaveGuard autosave={autosave} />
 			<div className="flex min-h-0 flex-1">
 				<LeftPanel />
 				<EditorCanvas />

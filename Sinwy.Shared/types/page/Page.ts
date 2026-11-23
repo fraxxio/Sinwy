@@ -37,7 +37,9 @@ export type PageListDto = {
 export type PageVersionDto = {
 	version: number;
 	content: PageDocument;
+	/** When this checkpoint started; saves within the checkpoint move `savedAt`. */
 	createdAt: string;
+	savedAt: string;
 };
 
 export type PageDetailDto = PageListItemDto & {

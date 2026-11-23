@@ -12,6 +12,7 @@ import {
 	featuresFor,
 	limitsFor,
 	lockedBlocksIn,
+	type PageBaseVersionInput,
 	type PageDetailDto,
 	type PageDocument,
 	type PageListDto,
@@ -25,18 +26,20 @@ import {
 import {
 	type ContentSaveCheck,
 	deletePage as deletePageRow,
+	discardDraft as discardDraftRow,
 	findLatestVersion,
 	findPage,
 	findPageLabels,
 	findPages,
+	findPinnedVersion,
 	findPublishedPageBySlug,
 	findPublishedPageIdBySlug,
 	findServedPageIds,
-	findVersionNumber,
 	insertNextVersion,
 	insertPageWithinLimit,
 	isSlugClash,
 	type PageRow,
+	type PageVersionRow,
 	publishPage as publishPageRow,
 	unpublishPage as unpublishPageRow,
 	updatePage as updatePageRow,
@@ -48,7 +51,8 @@ export type PageError =
 	| "limit-reached"
 	| "upgrade-required"
 	| "slug-taken"
-	| "version-conflict";
+	| "version-conflict"
+	| "not-published";
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: PageError };
 
@@ -70,16 +74,20 @@ const toListItemDto = (row: PageRow, served: Set<string>): PageListItemDto => ({
 	publishedAt: row.publishedAt?.toISOString() ?? null,
 });
 
+/** `saved` is the version a write just made; without it the latest is read. */
 const toDetailDto = async (
 	membership: Membership,
 	row: PageRow,
+	saved?: PageVersionRow,
 ): Promise<PageDetailDto> => {
-	const [served, latest, publishedVersion] = await Promise.all([
+	const [served, latest] = await Promise.all([
 		servedPageIds(membership),
-		findLatestVersion(row.id),
-		row.publishedVersionId ? findVersionNumber(row.publishedVersionId) : null,
+		saved ?? findLatestVersion(row.id),
 	]);
 	if (!latest) throw new Error(`Page ${row.id} has no content version`);
+	const pinned = row.publishedVersionId
+		? await findPinnedVersion(row.publishedVersionId, latest.id)
+		: null;
 	return {
 		...toListItemDto(row, served),
 		seoTitle: row.seoTitle,
@@ -89,10 +97,11 @@ const toDetailDto = async (
 			version: latest.version,
 			content: latest.content,
 			createdAt: latest.createdAt.toISOString(),
+			savedAt: latest.updatedAt.toISOString(),
 		},
-		publishedVersion,
+		publishedVersion: pinned?.version ?? null,
 		hasUnpublishedChanges:
-			row.status === "published" && publishedVersion !== latest.version,
+			row.status === "published" && pinned?.matchesLatest === false,
 	};
 };
 
@@ -215,7 +224,10 @@ export const savePageContent = async (
 		contentSaveCheck(membership, input),
 	);
 	if (!saved.ok) return fail(saved.error);
-	return getPage(membership, pageId);
+	return {
+		ok: true,
+		data: await toDetailDto(membership, saved.row, saved.saved),
+	};
 };
 
 export const deletePage = async (
@@ -233,30 +245,64 @@ export const deletePage = async (
 	return { ok: true, data: null };
 };
 
-const changeStatus =
-	(
-		write: typeof publishPageRow,
-		action: "page.published" | "page.unpublished",
-	) =>
-	async (
-		membership: Membership,
-		actor: ActivityActor,
-		pageId: string,
-	): Promise<Result<PageDetailDto>> => {
-		if (membership.status !== "active") return fail("inactive");
-		const row = await write(membership.organizationId, pageId);
-		if (!row) return fail("not-found");
-		await recordActivity(membership.organizationId, actor, {
-			action,
-			details: { title: row.title },
-		});
-		return { ok: true, data: await toDetailDto(membership, row) };
-	};
+const recordStatusChange = (
+	membership: Membership,
+	actor: ActivityActor,
+	action: "page.published" | "page.unpublished",
+	row: PageRow,
+) =>
+	recordActivity(membership.organizationId, actor, {
+		action,
+		details: { title: row.title },
+	});
 
 /** Always allowed: a page outside the plan's served set is published but not live. */
-export const publishPage = changeStatus(publishPageRow, "page.published");
+export const publishPage = async (
+	membership: Membership,
+	actor: ActivityActor,
+	pageId: string,
+	input: PageBaseVersionInput,
+): Promise<Result<PageDetailDto>> => {
+	if (membership.status !== "active") return fail("inactive");
+	const published = await publishPageRow(
+		membership.organizationId,
+		pageId,
+		input.baseVersion,
+	);
+	if (!published.ok) return fail(published.error);
+	await recordStatusChange(membership, actor, "page.published", published.row);
+	return { ok: true, data: await toDetailDto(membership, published.row) };
+};
 
-export const unpublishPage = changeStatus(unpublishPageRow, "page.unpublished");
+export const unpublishPage = async (
+	membership: Membership,
+	actor: ActivityActor,
+	pageId: string,
+): Promise<Result<PageDetailDto>> => {
+	if (membership.status !== "active") return fail("inactive");
+	const row = await unpublishPageRow(membership.organizationId, pageId);
+	if (!row) return fail("not-found");
+	await recordStatusChange(membership, actor, "page.unpublished", row);
+	return { ok: true, data: await toDetailDto(membership, row) };
+};
+
+/** Drops unpublished changes; the restored content skips plan gating, since it was already published. */
+export const discardDraft = async (
+	membership: Membership,
+	userId: string,
+	pageId: string,
+	input: PageBaseVersionInput,
+): Promise<Result<PageDetailDto>> => {
+	if (membership.status !== "active") return fail("inactive");
+	const discarded = await discardDraftRow(
+		membership.organizationId,
+		pageId,
+		input.baseVersion,
+		userId,
+	);
+	if (!discarded.ok) return fail(discarded.error);
+	return { ok: true, data: await toDetailDto(membership, discarded.row) };
+};
 
 /** Published and within the plan's page limit: the only pages the public may see. */
 const isServed = async (
