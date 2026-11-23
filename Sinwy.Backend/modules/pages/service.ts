@@ -31,10 +31,10 @@ import {
 	findPage,
 	findPageLabels,
 	findPages,
+	findPinnedVersion,
 	findPublishedPageBySlug,
 	findPublishedPageIdBySlug,
 	findServedPageIds,
-	findVersionNumber,
 	insertNextVersion,
 	insertPageWithinLimit,
 	isSlugClash,
@@ -77,10 +77,12 @@ const toDetailDto = async (
 	membership: Membership,
 	row: PageRow,
 ): Promise<PageDetailDto> => {
-	const [served, latest, publishedVersion] = await Promise.all([
+	const [served, latest, pinned] = await Promise.all([
 		servedPageIds(membership),
 		findLatestVersion(row.id),
-		row.publishedVersionId ? findVersionNumber(row.publishedVersionId) : null,
+		row.publishedVersionId
+			? findPinnedVersion(row.id, row.publishedVersionId)
+			: null,
 	]);
 	if (!latest) throw new Error(`Page ${row.id} has no content version`);
 	return {
@@ -94,9 +96,9 @@ const toDetailDto = async (
 			createdAt: latest.createdAt.toISOString(),
 			savedAt: latest.updatedAt.toISOString(),
 		},
-		publishedVersion,
+		publishedVersion: pinned?.version ?? null,
 		hasUnpublishedChanges:
-			row.status === "published" && publishedVersion !== latest.version,
+			row.status === "published" && pinned?.matchesLatest === false,
 	};
 };
 

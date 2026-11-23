@@ -123,12 +123,22 @@ const latestVersionOf = async (executor: Tx | typeof db, pageId: string) => {
 export const findLatestVersion = (pageId: string) =>
 	latestVersionOf(db, pageId);
 
-export const findVersionNumber = async (versionId: string) => {
+/** The pinned version's number, and whether the latest version holds the same content (an undo back to it). */
+export const findPinnedVersion = async (pageId: string, versionId: string) => {
+	const latestContent = db
+		.select({ content: pageContent.content })
+		.from(pageContent)
+		.where(eq(pageContent.pageId, pageId))
+		.orderBy(desc(pageContent.version))
+		.limit(1);
 	const [row] = await db
-		.select({ version: pageContent.version })
+		.select({
+			version: pageContent.version,
+			matchesLatest: sql<boolean>`${pageContent.content} = (${latestContent})`,
+		})
 		.from(pageContent)
 		.where(eq(pageContent.id, versionId));
-	return row?.version ?? null;
+	return row ?? null;
 };
 
 /** Counts and inserts under the organization lock, so two creates can't both take the last place. */

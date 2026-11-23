@@ -463,7 +463,7 @@ test.describe("publishing", () => {
 		expect(await titleSaved(pages, pageId)).toBe("Welcome to the salon");
 	});
 
-	test("Discard in the editor restores what's live, and the live page doesn't change", async ({
+	test("Undo back to what's live shows Live; Discard restores what's live, and the live page doesn't change", async ({
 		page,
 		context,
 		org,
@@ -474,6 +474,14 @@ test.describe("publishing", () => {
 		const pinned = (await pages.publish(pageId)).latestVersion.version;
 		const live = await storefront(context, pages, org, pageId);
 		await editor.open(pageId);
+		await expect(editor.pageState).toHaveText("Live");
+
+		await editTitle(editor, "Oops");
+		await expect.poll(() => titleSaved(pages, pageId)).toBe("Oops");
+		await expect(editor.pageState).toHaveText("Changes not live yet");
+		await editor.button("Undo").click();
+		await expect.poll(() => titleSaved(pages, pageId)).toBe("Welcome");
+		await expect(editor.status).toHaveText("Saved");
 		await expect(editor.pageState).toHaveText("Live");
 
 		await editTitle(editor, "Not ready yet");

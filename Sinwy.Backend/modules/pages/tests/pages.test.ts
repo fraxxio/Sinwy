@@ -878,6 +878,31 @@ test("publish: pins the latest version; later saves stay off the public page unt
 	).toEqual(saved.latestVersion.content);
 });
 
+test("publish: a draft saved back to the published content has no unpublished changes", async () => {
+	const created = await create({ slug: "undone" });
+	const live = headingPage("Live");
+	await save(created.id, 1, live);
+	const published = await publish(created.id);
+	const base = published.latestVersion.version;
+	const changed = await unwrap<PageDetailDto>(
+		await save(created.id, base, headingPage("Oops")),
+	);
+	expect(changed.hasUnpublishedChanges).toBe(true);
+
+	const undone = await unwrap<PageDetailDto>(
+		await save(created.id, changed.latestVersion.version, live),
+	);
+
+	expect(undone).toMatchObject({
+		publishedVersion: base,
+		hasUnpublishedChanges: false,
+	});
+	expect(undone.latestVersion.version).toBeGreaterThan(base);
+	expect(await detailOf(created.id)).toMatchObject({
+		hasUnpublishedChanges: false,
+	});
+});
+
 test("publish: a stale baseVersion → 409 PAGE_VERSION_CONFLICT, and the pin doesn't move", async () => {
 	const created = await create({ slug: "stale" });
 	const first = await publish(created.id);

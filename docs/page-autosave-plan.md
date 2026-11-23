@@ -14,7 +14,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 4 | Conflicts and the leave guard | 3 | done | `feat(web): pause autosave on conflicts and guard leaving the editor` |
 | 5 | Draft vs published in the editor, and discard | 1, 4 | done | `feat(web): show whether page changes are live, and publish and discard from the editor` |
 | 6 | Pre-publish checks | 5 | done | `feat(web, shared): warn about unfilled blocks before publishing a page` |
-| 7 | Usability rerun: tasks 5 and 6 (research) | 6 | todo | |
+| 7 | Usability rerun: tasks 5 and 6 (research) | 6 | done | `fix(backend): don't report unpublished changes when the draft matches what's live` |
 | 8 | Code review, docs and cleanup | 7 | todo | |
 
 ## Decisions
@@ -45,7 +45,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 - Save, publish and discard all run under the page row lock (`lockPage` in `Sinwy.Backend/modules/pages/repository.ts`). Publish and discard take `{ baseVersion }` and answer 409 `PAGE_VERSION_CONFLICT` when it isn't the latest; discard on an unpublished page answers 409 `PAGE_NOT_PUBLISHED`. Every successful save and every discard that changes something raises `latestVersion.version`; take the new base from the answer.
 - A fresh page's version 1 row is a checkpoint: the creator's first save within 10 minutes updates it in place. `latestVersion.savedAt` is the last save time, `createdAt` the checkpoint start. Use `savedAt` for "Saved … ago".
-- `hasUnpublishedChanges` (`service.ts` `toDetailDto`) compares the pinned row's version with the latest; the pinned row is never edited in place, so it stays correct.
+- `hasUnpublishedChanges` (`service.ts` `toDetailDto`) is true only when the latest row's content differs from the pinned row's (`findPinnedVersion`, a `jsonb` comparison in SQL); the pinned row is never edited in place. A draft undone back to what's live reads as no changes, though its version is higher (log, phase 7).
 - Publish and discard in the editor go through `page-editor/publishing.ts` (`publishAfterSave`, `discardAfterSave`: flush first, then write with `getBase()`), called from `EditorScreen`'s `publish`/`discard`. The header buttons are `PublishActions` in `page-editor/PublishControls.tsx`, which passes Puck's current data. The detail page publishes from `PagePublishing.tsx`'s `write` mutation (`publish`/`update`), using `page.latestVersion.version` (log, phase 5).
 - The server stores a normalised document (canonical rich-text HTML, NUL stripped, `zones` and `readOnly` dropped); the engine compares against the data it *sent*, never the server's answer.
 - Base UI toasts are `role="dialog"`. `modalOpen` in the editor ignores non-modal dialogs, so editor keys keep working while a toast shows. Modal dialogs (confirms) do disable editor keys.
@@ -59,32 +59,8 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - The app runs under StrictMode, so `EditorScreen` creates the engine in an effect and renders the loading skeleton until it exists; a remount (new `key`) makes a fresh engine. `SaveStatus` in `EditorLayout.tsx` resets the engine to Puck's first data, because Puck fills in missing block props (log, phase 3).
 - Pre-publish checks: `publishIssues` in `page-editor/publish-checks.ts` reads the `placeholder` and `required` flags on field definitions (`Sinwy.Shared/types/page/blocks/fields.ts`), skips Columns' hidden columns, and names rows like "Image 2 in Photos". The dialog is `PublishIssuesDialog.tsx` (Cancel gets first focus), used by `PublishActions` (with "Show", which calls `blockActions().show(id)`) and `PagePublishing.tsx` (with an "Open the editor" link). `blockTitle` ignores a Heading still on its sample text (log, phase 6).
 - e2e: after `editor.back`, wait for the detail page (e.g. the "Publishing" heading) before clicking a button both screens have, such as "Publish changes"; the editor stays rendered until the flush finishes (log, phase 6).
-- Seeding for agent runs: `bun run dev:seed-scenario pro-org`, then `dev:login-as --state` (the e2e-test skill). Its orgs are also named `seed-*`.
-- Usability rerun method: `git show c9d93c2^:docs/page-editor-log.md`, lines 304–353 (phase 8): a cold agent with the owner's wording and no UI hints, and task pages seeded by a scratch script through the real API. Task wording: `git show origin/pagebuilder-tryout:docs/puck-usability-tasks.md` (tasks 5 and 6, lines 78–94).
-
----
-
-## Phase 7: Usability rerun: tasks 5 and 6 (research)
-
-**Goal:** a cold agent reruns usability tasks 5 and 6 and loses no work, including after leaving the editor (the issue's Done when).
-
-**Files:**
-- Rerun method, task wording and seeding: Standing notes. Plant the "stylign" page with a scratch script that creates, saves and publishes it through the API (`POST .../pages`, save, `publish` with `{ baseVersion }`), and delete the script afterwards.
-- Where findings usually land: `page-editor/SaveControls.tsx` (save status, conflict banner, leave prompt), `page-editor/PublishControls.tsx` (state badge, Publish, Discard), `page-editor/PublishIssuesDialog.tsx` and `publish-checks.ts` (the pre-publish warning; a sample-text Hero won't trigger it), `components/pages/PagePublishing.tsx` (detail-page Discard and Publish changes), and the labels in `lib/pages.ts`.
-- Any fix that changes the editor's copy: the matching assertions in `e2e/editor.e2e.ts`.
-
-**Steps:**
-- Run the tasks with the `e2e-test` skill, in the owner's words and with no UI hints. Seed the task pages with a scratch script through the real API. Before task 5, plant the "stylign" typo in the welcome banner and publish.
-- Task 6 includes "…and what if I'd already saved and closed the editor?": the agent should find Discard.
-- Record steps, ease (1–5) and dead ends. Fix small findings here. Ask before filing larger ones as issues.
-
-**Tests that matter:**
-- Any fix keeps `bun run test:editor` green.
-
-**Done when:**
-- Both tasks score 4 or 5, and no edit is lost in either.
-
-**Verify:** Task 5: seed `pro-org` with a published Hero whose text has "stylign", and ask the agent to fix it so customers see the right word. The storefront shows "styling" and the edit was never lost. Task 6: a published page with a Photos section. "I deleted the photos part by accident. Get it back": Undo in the session, then delete, leave and reopen, and Discard. The `page_content` rows and `published_version_id` match what the agent did. Nothing is simulated except login.
+- `bun run start:server` has no watch mode: restart the backend after a backend change before `test:editor` or a browser check. An e2e edit undone within the 1 s autosave delay never reaches the server; wait for the save (e.g. `expect.poll` on `titleSaved`) to test a server path (log, phase 7).
+- Running from phase 7: database, backend (`bun run start:server`, log `/tmp/sinwy-p7/server.log`) and web app (`bun run start:web`, log `/tmp/sinwy-p7/web.log`), started by the agent; stop them in phase 8. Seeded org `seed-b73a28ad` (page "Home") can stay.
 
 ---
 
@@ -92,7 +68,11 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 **Goal:** the checkpoint overwrite, discard and conflict paths are reviewed for data loss, and the docs describe what shipped.
 
-**Files:** Every file changed in phases 1–7. `docs/org-rules-map.md` (content versioning), `README.md` (Page editor spec), and this plan and its log.
+**Files:**
+- Review: the diff of phases 1–7 (`git diff e10b275^..HEAD`). Backend: `Sinwy.Backend/modules/pages/repository.ts` (`insertNextVersion` checkpoint update, `publishPage`, `discardDraft`, `findPinnedVersion`) and `service.ts`. Web, in `src/modules/org-dashboard/components/page-editor/`: `autosave.ts` (queue, retry, `reset`), `publishing.ts` (flush then write), `SaveControls.tsx` (`LeaveGuard`, `ConflictBanner`), `PublishControls.tsx`, and `routes/_shell.pages.$id.edit.tsx` (`EditorScreen`, `latest`, `storePage`); `components/pages/PagePublishing.tsx`.
+- Tests: `Sinwy.Backend/modules/pages/tests/pages.test.ts`, the web unit tests for the engine and publish checks, `Sinwy.WebFrontend/e2e/editor.e2e.ts`.
+- Docs: `docs/org-rules-map.md` (content versioning: checkpoints, discard, `hasUnpublishedChanges` by content), `README.md` (Page editor spec), this plan and its log.
+- Cleanup: the servers in the standing notes, `/tmp/sinwy-p7/`, `.playwright-cli/` page and console files.
 
 **Steps:**
 - Review for data loss and races: in-place updates of a pinned row, the order of discard and autosave, conflicts that never surface, leaving with a save in flight, and retries of permanent errors.
