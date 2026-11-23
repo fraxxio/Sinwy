@@ -55,8 +55,15 @@ const latestLockedVersion = async (tx: Tx, pageId: string) => {
 	return latest;
 };
 
-const touchPage = (tx: Tx, pageId: string) =>
-	tx.update(page).set({ updatedAt: new Date() }).where(eq(page.id, pageId));
+const touchPage = async (tx: Tx, pageId: string) => {
+	const [row] = await tx
+		.update(page)
+		.set({ updatedAt: new Date() })
+		.where(eq(page.id, pageId))
+		.returning();
+	if (!row) throw new Error(`Page ${pageId} vanished under its lock`);
+	return row;
+};
 
 /** Serializes page creation in one organization until the transaction ends. */
 const lockOrganization = (tx: Tx, organizationId: string) =>
@@ -124,20 +131,21 @@ export const findLatestVersion = (pageId: string) =>
 	latestVersionOf(db, pageId);
 
 /** The pinned version's number, and whether the latest version holds the same content (an undo back to it). */
-export const findPinnedVersion = async (pageId: string, versionId: string) => {
+export const findPinnedVersion = async (
+	pinnedVersionId: string,
+	latestVersionId: string,
+) => {
 	const latestContent = db
 		.select({ content: pageContent.content })
 		.from(pageContent)
-		.where(eq(pageContent.pageId, pageId))
-		.orderBy(desc(pageContent.version))
-		.limit(1);
+		.where(eq(pageContent.id, latestVersionId));
 	const [row] = await db
 		.select({
 			version: pageContent.version,
 			matchesLatest: sql<boolean>`${pageContent.content} = (${latestContent})`,
 		})
 		.from(pageContent)
-		.where(eq(pageContent.id, versionId));
+		.where(eq(pageContent.id, pinnedVersionId));
 	return row ?? null;
 };
 
@@ -189,6 +197,7 @@ export type ContentSaveCheck = (
  * Saves the next version when `check` passes. The latest row is updated in
  * place when it is an unpublished checkpoint the same user started within the
  * window; otherwise a new row is inserted. Either way `version` goes up.
+ * Answers with the version it wrote, which a read after commit could miss.
  */
 export const insertNextVersion = (
 	organizationId: string,
@@ -219,17 +228,22 @@ export const insertNextVersion = (
 								sql`${pageContent.createdAt} > now() - make_interval(mins => ${CHECKPOINT_WINDOW_MINUTES})`,
 							),
 						)
-						.returning({ id: pageContent.id });
-		if (!updated)
-			await tx.insert(pageContent).values({
-				id: crypto.randomUUID(),
-				pageId,
-				version,
-				content,
-				createdByUserId: userId,
-			});
-		await touchPage(tx, pageId);
-		return { ok: true } as const;
+						.returning(versionColumns);
+		const [saved] = updated
+			? [updated]
+			: await tx
+					.insert(pageContent)
+					.values({
+						id: crypto.randomUUID(),
+						pageId,
+						version,
+						content,
+						createdByUserId: userId,
+					})
+					.returning(versionColumns);
+		if (!saved)
+			throw new Error(`Page ${pageId} version insert returned no row`);
+		return { ok: true, row: await touchPage(tx, pageId), saved } as const;
 	});
 
 /** The deleted page's title, or null when there was none. */

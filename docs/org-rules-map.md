@@ -215,7 +215,9 @@ Pages (every tier has them, up to a limit per organization)
 │      content they haven't seen
 ├─ publishing pins the latest version, so later saves stay private until
 │  the next publish; it is always allowed; unpublishing makes the page a
-│  draft again
+│  draft again, and the version it had pinned an ordinary one
+├─ a published page has unpublished changes only when its latest content
+│  differs from the pinned content; a draft edited back to it has none
 ├─ discarding drops the unpublished changes: the published content becomes a
 │  new latest version and is pinned, so the public page doesn't change and
 │  the discarded draft stays in the history; it skips the premium block check

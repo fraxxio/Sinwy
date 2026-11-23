@@ -239,3 +239,39 @@ Finished phases of [page-autosave-plan.md](page-autosave-plan.md), each with its
 - Not fixed (small or not reproduced): Undo once seemed to enable after only selecting a block. Not reproduced on a fresh open (Text, Heading, photo and its parent), and our e2e checks it for Heading. After Undo, the selection jumps to the block Puck had selected in that history entry (Puck). dnd-kit announces "Draggable item RichText-… was dropped" after a double-click (already logged in the page-editor plan). The "Changes published" toast covers the settings' Move buttons for a few seconds. Text edits only in the side panel, not inline on the canvas. Layers names sections "Section" (#82). "Edit content" and "Back" are buttons, not links.
 - Differs from plan: both tasks ran on one "Home" page (Hero with the typo, a "Inside the salon" Section with Photos, a "Find us" Section), in one agent, task 6 then rerun alone after the fix. The backend runs without watch, so the rerun agent and the first e2e attempt used the old code; the first e2e version also undid inside the 1 s autosave delay and never reached the server (standing note).
 - Checked in the running app: the storefront showed "styling" and the photos after Discard, and `published_version_id` was the discard's new row. No console errors, no new backend or web log warnings. Not checked by a cold agent: the fixed badge (e2e only).
+
+## Phase 8: Code review, docs and cleanup
+
+**Goal:** the checkpoint overwrite, discard and conflict paths are reviewed for data loss, and the docs describe what shipped.
+
+**Files:**
+- Review: the diff of phases 1–7 (`git diff e10b275^..HEAD`). Backend: `Sinwy.Backend/modules/pages/repository.ts` (`insertNextVersion` checkpoint update, `publishPage`, `discardDraft`, `findPinnedVersion`) and `service.ts`. Web, in `src/modules/org-dashboard/components/page-editor/`: `autosave.ts` (queue, retry, `reset`), `publishing.ts` (flush then write), `SaveControls.tsx` (`LeaveGuard`, `ConflictBanner`), `PublishControls.tsx`, and `routes/_shell.pages.$id.edit.tsx` (`EditorScreen`, `latest`, `storePage`); `components/pages/PagePublishing.tsx`.
+- Tests: `Sinwy.Backend/modules/pages/tests/pages.test.ts`, the web unit tests for the engine and publish checks, `Sinwy.WebFrontend/e2e/editor.e2e.ts`.
+- Docs: `docs/org-rules-map.md` (content versioning: checkpoints, discard, `hasUnpublishedChanges` by content), `README.md` (Page editor spec), this plan and its log.
+- Cleanup: the servers in the standing notes, `/tmp/sinwy-p7/`, `.playwright-cli/` page and console files.
+
+**Steps:**
+- Review for data loss and races: in-place updates of a pinned row, the order of discard and autosave, conflicts that never surface, leaving with a save in flight, and retries of permanent errors.
+- Fix what the review finds and record each finding in the log.
+- Update the docs. Move the finished phases to the log and shrink this plan.
+- Stop every dev server started during the plan's work, unless the user asked to keep it running. Delete scratch scripts, screenshots, console logs and seed data that are no longer needed.
+
+**Tests that matter:**
+- Every fix comes with a test of the path it fixes.
+
+**Done when:**
+- The review findings are fixed or filed, and `bun run verify` and `bun run test:editor` pass.
+
+**Verify:** None.
+
+### Log (2026-11-23, `fix(backend, web): answer a page save with the version it wrote, and refetch a page whose publish was refused`)
+- Reviewed `e852ca1^..HEAD` (the plan's `e10b275^` missed phase 1, which is `e852ca1`).
+- Fixed, a save answering with someone else's version: `savePageContent` committed, then read the answer with `getPage`. A save from another tab landing in between put that tab's version in this tab's answer; the engine takes its next base from it, so this tab's next save overwrote the other tab's edits with no 409, and Publish could pin content nobody here had seen. `insertNextVersion` now returns the page row and the version it wrote (from inside the transaction), and `toDetailDto` takes it; `findPinnedVersion` compares the pinned content against that version by id. Test: `content: a save answers with the version it wrote, not the one a queued save writes next` (two saves queued behind a held page lock). It passes on the old code too: through HTTP the first save's read always beat the queued save, so it documents the contract rather than reproducing the race.
+- Fixed, a detail-page publish or discard that kept failing: on 409 (`PAGE_VERSION_CONFLICT` or `PAGE_NOT_PUBLISHED`) `PagePublishing.tsx` kept the stale `latestVersion`, so every retry 409'd until something refetched. It now refetches the page and says "This page changed somewhere else. It now shows the latest version; check it and try again." The next click publishes the version now shown. e2e: `Publish on the detail page after a save elsewhere refuses once, then publishes the newer draft`.
+- Fixed, a latent edit loss: the engine's `reset(data, base)` marked everything saved and ignored an in-flight save; its only caller was `SaveStatus` on mount, so a remount after edits would have taken them as saved. Replaced by `opened(data)`, which takes Puck's filled-in first data as saved only before any change and is an ordinary `change` afterwards. Unit tests for both cases.
+- Checked, no change: the pinned row is never updated in place (save checks `publishedVersionId` under the lock); discard flushes first and writes with the engine's base, so a later own save 409s instead of landing on the restored content; a conflict pauses autosave and every leave path (Back, `beforeunload`) asks; permanent errors (4xx other than 408, 429 and the version conflict) are "blocked" and never retried; publish retries once only when this editor's own save moved the version.
+- Filed, not fixed: after Unpublish the version that was pinned is an ordinary checkpoint, so its author's next save within 10 minutes updates it in place and the content that was live leaves the history. It follows Decision 1 (only the published row is protected) and there's no history UI; raise it if version history ships.
+- Docs: `org-rules-map.md` (unpublished changes by content, unpublish frees the pinned version), README's Page editor spec (three `pro-org`s; conflicts, leave guard, publish and discard, pre-publish checks). Plan shrunk: all phases are in this log.
+- Cleanup: stopped the backend, web app and database (`bun run db:down`, volume kept); deleted `/tmp/sinwy-p7/` and the `.playwright-cli/` page and console files. `.playwright-cli/auth/` and `editor-e2e/` stay (the spec's logins and results). Seed org `seed-b73a28ad` stays in the database.
+- Differs from plan: the e2e spec's `thirdPro` org now has no free page slot; a new publishing test needs another seeded org in `e2e/global-setup.ts`.
+- Checked in the running app: `bun run test:editor` 15 passed on the restarted backend, before the database was stopped. `bun run verify` exit 0 (1047 server, 356 web, 19 script tests).

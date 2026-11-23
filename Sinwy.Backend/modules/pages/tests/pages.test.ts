@@ -340,6 +340,39 @@ test("content: a stale baseVersion → 409 PAGE_VERSION_CONFLICT, and concurrent
 	expect(racing.map((res) => res.status).sort()).toEqual([200, 409]);
 });
 
+/** Resolves once `count` sessions wait on a lock, so requests queue in a known order. */
+const lockWaiters = async (count: number) => {
+	for (let tries = 0; tries < 200; tries++) {
+		const [row] = await db.execute(
+			sql`select count(*)::int as n from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()`,
+		);
+		if (row?.["n"] === count) return;
+		await Bun.sleep(10);
+	}
+	throw new Error(`${count} lock waiters never showed up`);
+};
+
+test("content: a save answers with the version it wrote, not the one a queued save writes next", async () => {
+	const created = await create();
+	const queued = await db.transaction(async (tx) => {
+		await tx
+			.select({ id: page.id })
+			.from(page)
+			.where(eq(page.id, created.id))
+			.for("update");
+		const first = save(created.id, 1, headingPage("First"));
+		await lockWaiters(1);
+		const second = save(created.id, 2, headingPage("Second"));
+		await lockWaiters(2);
+		return { first, second };
+	});
+	const [first, second] = await Promise.all([queued.first, queued.second]);
+	expect(second.status).toBe(200);
+	const answer = await unwrap<PageDetailDto>(first);
+	expect(answer.latestVersion.version).toBe(2);
+	expect(JSON.stringify(answer.latestVersion.content)).toContain("First");
+});
+
 const versionRows = (pageId: string) =>
 	db
 		.select({

@@ -239,16 +239,10 @@ export function createAutosave({
 		clearRetry();
 	};
 
-	/** Starts over from a document the server already holds; a save still in flight is ignored. */
-	const reset = (data: PageData, base: number) => {
-		if (disposed) return;
-		stop();
+	/** Takes the editor's first data as saved, as Puck fills in props a stored block lacks; after any change it is a change. */
+	const opened = (data: PageData) => {
+		if (changeSeq > 0) return change(data);
 		saved = current = data;
-		currentBase = base;
-		refused = null;
-		attempt = 0;
-		savedSeq = changeSeq;
-		setState(SAVED);
 	};
 
 	const dispose = () => {
@@ -262,7 +256,7 @@ export function createAutosave({
 		flush,
 		retryNow,
 		resolveConflict,
-		reset,
+		opened,
 		dispose,
 		getState: () => state,
 		getBase: () => currentBase,

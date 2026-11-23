@@ -588,4 +588,32 @@ test.describe("publishing", () => {
 		).toBeHidden();
 		expect(await titleSaved(pages, pageId)).toBe("Welcome");
 	});
+
+	test("Publish on the detail page after a save elsewhere refuses once, then publishes the newer draft", async ({
+		page,
+		context,
+		org,
+		pages,
+	}) => {
+		const pageId = await pages.create(welcome());
+		await pages.publish(pageId);
+		await pages.saveElsewhere(pageId, [
+			section("intro", [heading("title", "First draft")]),
+		]);
+		await page.goto(`/dashboard/${org.slug}/pages/${pageId}`);
+		const publish = page.getByRole("button", { name: "Publish changes" });
+		await expect(publish).toBeVisible();
+		await pages.saveElsewhere(pageId, [
+			section("intro", [heading("title", "Second draft")]),
+		]);
+
+		await publish.click();
+		await expect(
+			page.getByText("This page changed somewhere else"),
+		).toBeVisible();
+		await publish.click();
+		await expect(page.getByText("Changes published")).toBeVisible();
+		const live = await storefront(context, pages, org, pageId);
+		expect(await live.heading()).toBe("Second draft");
+	});
 });

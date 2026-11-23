@@ -76,8 +76,7 @@ export function SaveStatus({ autosave }: { autosave: Autosave }) {
 
 	const opening = useRef(true);
 	useEffect(() => {
-		// Puck fills in props a stored block lacks, which isn't the owner's change
-		if (opening.current) autosave.reset(data, autosave.getBase());
+		if (opening.current) autosave.opened(data);
 		else autosave.change(data);
 		opening.current = false;
 	}, [autosave, data]);

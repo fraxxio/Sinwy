@@ -161,15 +161,23 @@ describe("autosave queue", () => {
 		expect(call(1)).toMatchObject({ data: doc("ab"), base: 2 });
 	});
 
-	it("ignores a save still in flight after a reset", async () => {
-		const { autosave, status, edit, call } = setup();
-		await edit("a");
-		autosave.reset(doc("published"), 9);
-		await call(0).resolve(fail(API_ERROR_CODES.PAGE_VERSION_CONFLICT));
+	it("takes the editor's first data as saved, without saving it", async () => {
+		const { autosave, advance, calls, status } = setup();
+		autosave.opened(doc("filled in"));
+		autosave.change(doc("filled in"));
+		await advance(AUTOSAVE_MAX_WAIT_MS);
 		expect(status()).toBe("saved");
+		expect(calls).toHaveLength(0);
+	});
 
-		await edit("b");
-		expect(call(1)).toMatchObject({ data: doc("b"), base: 9 });
+	it("treats first data after a change as a change, so no edit is taken as saved", async () => {
+		const { autosave, advance, status, edit, call } = setup();
+		await edit("a");
+		autosave.opened(doc("b"));
+		expect(status()).toBe("saving");
+		await call(0).resolve(ok(2));
+		await advance(AUTOSAVE_DEBOUNCE_MS);
+		expect(call(1)).toMatchObject({ data: doc("b"), base: 2 });
 	});
 
 	it("stops saving once disposed", async () => {

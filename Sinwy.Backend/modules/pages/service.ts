@@ -39,6 +39,7 @@ import {
 	insertPageWithinLimit,
 	isSlugClash,
 	type PageRow,
+	type PageVersionRow,
 	publishPage as publishPageRow,
 	unpublishPage as unpublishPageRow,
 	updatePage as updatePageRow,
@@ -73,18 +74,20 @@ const toListItemDto = (row: PageRow, served: Set<string>): PageListItemDto => ({
 	publishedAt: row.publishedAt?.toISOString() ?? null,
 });
 
+/** `saved` is the version a write just made; without it the latest is read. */
 const toDetailDto = async (
 	membership: Membership,
 	row: PageRow,
+	saved?: PageVersionRow,
 ): Promise<PageDetailDto> => {
-	const [served, latest, pinned] = await Promise.all([
+	const [served, latest] = await Promise.all([
 		servedPageIds(membership),
-		findLatestVersion(row.id),
-		row.publishedVersionId
-			? findPinnedVersion(row.id, row.publishedVersionId)
-			: null,
+		saved ?? findLatestVersion(row.id),
 	]);
 	if (!latest) throw new Error(`Page ${row.id} has no content version`);
+	const pinned = row.publishedVersionId
+		? await findPinnedVersion(row.publishedVersionId, latest.id)
+		: null;
 	return {
 		...toListItemDto(row, served),
 		seoTitle: row.seoTitle,
@@ -221,7 +224,10 @@ export const savePageContent = async (
 		contentSaveCheck(membership, input),
 	);
 	if (!saved.ok) return fail(saved.error);
-	return getPage(membership, pageId);
+	return {
+		ok: true,
+		data: await toDetailDto(membership, saved.row, saved.saved),
+	};
 };
 
 export const deletePage = async (

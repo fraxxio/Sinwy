@@ -1,4 +1,8 @@
-import type { BlockNode, PageDetailDto } from "@sinwy/shared";
+import {
+	API_ERROR_CODES,
+	type BlockNode,
+	type PageDetailDto,
+} from "@sinwy/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
@@ -6,6 +10,7 @@ import { ExternalLinkIcon, InfoIcon } from "lucide-react";
 import { useState } from "react";
 import {
 	discardDraft,
+	pageKeys,
 	pagesQuery,
 	publishPage,
 	storePage,
@@ -84,13 +89,24 @@ export function PagePublishing({
 	const write = useMutation({
 		mutationFn: async (action: WriteAction) => {
 			const base = { baseVersion: page.latestVersion.version };
-			return unwrap(
-				await (action === "unpublish"
-					? unpublishPage(organization.id, page.id)
-					: action === "discard"
-						? discardDraft(organization.id, page.id, base)
-						: publishPage(organization.id, page.id, base)),
-			);
+			const res = await (action === "unpublish"
+				? unpublishPage(organization.id, page.id)
+				: action === "discard"
+					? discardDraft(organization.id, page.id, base)
+					: publishPage(organization.id, page.id, base));
+			if (
+				!res.isSuccess &&
+				(res.code === API_ERROR_CODES.PAGE_VERSION_CONFLICT ||
+					res.code === API_ERROR_CODES.PAGE_NOT_PUBLISHED)
+			) {
+				await queryClient.invalidateQueries({
+					queryKey: pageKeys.detail(organization.id, page.id),
+				});
+				throw new Error(
+					"This page changed somewhere else. It now shows the latest version; check it and try again.",
+				);
+			}
+			return unwrap(res);
 		},
 		onSuccess: async (saved, action) => {
 			await storePage(queryClient, organization.id, saved);
