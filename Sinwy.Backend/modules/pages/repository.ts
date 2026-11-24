@@ -1,7 +1,7 @@
 import db, { type Tx } from "@db";
-import { page, pageContent } from "@db/schema/pageSchema";
+import { page, pageContent, pageImage } from "@db/schema/pageSchema";
 import type { PageDocument } from "@sinwy/shared";
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql, sum } from "drizzle-orm";
 
 export type PageRow = typeof page.$inferSelect;
 export type PageVersionRow = Pick<
@@ -65,7 +65,7 @@ const touchPage = async (tx: Tx, pageId: string) => {
 	return row;
 };
 
-/** Serializes page creation in one organization until the transaction ends. */
+/** Serializes page creation and image uploads in one organization until the transaction ends. */
 const lockOrganization = (tx: Tx, organizationId: string) =>
 	tx.execute(sql`select pg_advisory_xact_lock(hashtext(${organizationId}))`);
 
@@ -376,3 +376,31 @@ export const findPublishedPageBySlug = async (
 		);
 	return row ?? null;
 };
+
+const pageImageBytesUsed = async (
+	executor: Tx | typeof db,
+	organizationId: string,
+) => {
+	const [row] = await executor
+		.select({ bytes: sum(pageImage.bytes).mapWith(Number) })
+		.from(pageImage)
+		.where(eq(pageImage.organizationId, organizationId));
+	return row?.bytes ?? 0;
+};
+
+export type PageImageInsert = Omit<typeof pageImage.$inferInsert, "createdAt">;
+
+/** Under the organization lock: refuses (null) when the image would cross `limit`, else runs `store` and inserts the row. */
+export const insertPageImageWithinLimit = (
+	values: PageImageInsert,
+	limit: number,
+	store: () => Promise<void>,
+) =>
+	db.transaction(async (tx) => {
+		await lockOrganization(tx, values.organizationId);
+		const used = await pageImageBytesUsed(tx, values.organizationId);
+		if (used + values.bytes > limit) return null;
+		await store();
+		await tx.insert(pageImage).values(values);
+		return { used: used + values.bytes };
+	});

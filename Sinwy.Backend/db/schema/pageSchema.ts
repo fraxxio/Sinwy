@@ -75,3 +75,24 @@ export const pageContent = pgTable(
 		check("page_content_version_check", sql`${table.version} >= 1`),
 	],
 );
+
+/** A stored page image; counts against the organization's quota until it is swept as unused. */
+export const pageImage = pgTable(
+	"page_image",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		key: text("key").notNull().unique(),
+		bytes: integer("bytes").notNull(),
+		createdAt: timestamp("created_at").notNull().defaultNow(),
+	},
+	(table) => [
+		index("page_image_organization_created_idx").on(
+			table.organizationId,
+			table.createdAt,
+		),
+		check("page_image_bytes_check", sql`${table.bytes} > 0`),
+	],
+);

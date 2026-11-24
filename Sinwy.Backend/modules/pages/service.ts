@@ -1,4 +1,7 @@
 import type { Membership } from "@authModule";
+import { fileUrl, storageClient } from "@backend/infrastructure/storage";
+import { imageExtension, validateImage } from "@backend/lib/image";
+import { createLogger } from "@logger";
 import {
 	type ActivityActor,
 	findPublicOrganizationPlan,
@@ -15,6 +18,7 @@ import {
 	type PageBaseVersionInput,
 	type PageDetailDto,
 	type PageDocument,
+	type PageImageDto,
 	type PageListDto,
 	type PageListItemDto,
 	type PageStatus,
@@ -36,6 +40,7 @@ import {
 	findPublishedPageIdBySlug,
 	findServedPageIds,
 	insertNextVersion,
+	insertPageImageWithinLimit,
 	insertPageWithinLimit,
 	isSlugClash,
 	type PageRow,
@@ -52,9 +57,12 @@ export type PageError =
 	| "upgrade-required"
 	| "slug-taken"
 	| "version-conflict"
-	| "not-published";
+	| "not-published"
+	| "quota-exceeded";
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: PageError };
+
+const pagesLogger = createLogger("pages");
 
 const fail = <E extends PageError>(error: E) => ({ ok: false, error }) as const;
 
@@ -352,4 +360,42 @@ export const getPublicPage = async (
 			? await listPublicServices(organization.id)
 			: [],
 	};
+};
+
+/** Stores the image under `pages/<orgId>/` and counts it against the plan's quota. Throws `ImageError`. */
+export const uploadPageImage = async (
+	membership: Membership,
+	file: File,
+): Promise<Result<PageImageDto>> => {
+	if (membership.status !== "active") return fail("inactive");
+	const { organizationId } = membership;
+	const { bytes, type } = await validateImage(file);
+	const key = `pages/${organizationId}/${crypto.randomUUID()}.${imageExtension(type)}`;
+	const limit = limitsFor(membership.plan).pageImageBytes;
+	let stored = false;
+	try {
+		const inserted = await insertPageImageWithinLimit(
+			{ id: crypto.randomUUID(), organizationId, key, bytes: bytes.byteLength },
+			limit,
+			async () => {
+				await storageClient.put(key, bytes, type);
+				stored = true;
+			},
+		);
+		if (!inserted) return fail("quota-exceeded");
+		return {
+			ok: true,
+			data: { src: fileUrl(key), usage: { used: inserted.used, limit } },
+		};
+	} catch (error) {
+		if (stored)
+			await storageClient.delete(key).catch((deleteError: unknown) => {
+				pagesLogger.warn("Failed to delete an untracked page image", {
+					organizationId,
+					key,
+					error: deleteError,
+				});
+			});
+		throw error;
+	}
 };

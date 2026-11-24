@@ -223,9 +223,20 @@ Pages (every tier has them, up to a limit per organization)
 │  the discarded draft stays in the history; it skips the premium block check
 │  (the content was already published); a page that isn't published has
 │  nothing to discard → refused, "not published"
-└─ over the limit (after a downgrade): no page is deleted or unpublished; only
-   the oldest published pages by creation, up to the limit, are served
-   publicly, and the dashboard shows the rest "Published, not live"
+├─ over the limit (after a downgrade): no page is deleted or unpublished; only
+│  the oldest published pages by creation, up to the limit, are served
+│  publicly, and the dashboard shows the rest "Published, not live"
+└─ page images: uploaded photos belong to the organization and count against
+   a storage quota per organization
+    ├─ quota: Starter 100 MB, Professional 500 MB, Enterprise 2 GB; an
+    │  inactive organization can't upload
+    ├─ every uploaded image counts until it is swept: an image no saved
+    │  version of any of the organization's pages uses is deleted once it is
+    │  over a day old, so removed photos free their space within a day
+    ├─ an upload that would go over the quota → refused, naming the quota;
+    │  uploads at the same moment for the last space can't both pass
+    └─ over the quota (after a downgrade): existing images stay; only new
+       uploads are refused
 
 Seats (every tier, per organization)
 ├─ limit: Starter 3, Professional 10, Enterprise 25; an inactive organization 0

@@ -11,6 +11,7 @@ import {
 	savePageContentHandler,
 	unpublishPageHandler,
 	updatePageHandler,
+	uploadPageImageHandler,
 } from "./controller";
 
 const read = [requireAuth, requirePermission("pages:read")];
@@ -48,6 +49,10 @@ export const registerPageRoutes = (app: IApp) => {
 		routeMiddlewares: write,
 	});
 	app.route(organizationPath("pages/:pageId/unpublish"), unpublishPageHandler, {
+		method: "POST",
+		routeMiddlewares: write,
+	});
+	app.route(organizationPath("page-images"), uploadPageImageHandler, {
 		method: "POST",
 		routeMiddlewares: write,
 	});

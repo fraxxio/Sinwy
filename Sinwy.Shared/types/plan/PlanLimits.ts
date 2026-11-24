@@ -1,5 +1,7 @@
 import type { PlanSlug } from "./Plan";
 
+const MB = 1024 * 1024;
+
 /** Numeric caps per plan; `FEATURES` holds the yes/no entitlements. */
 export type PlanLimits = {
 	/** Every page counts, drafts included. */
@@ -8,18 +10,36 @@ export type PlanLimits = {
 	analyticsRetentionDays: number;
 	/** Members, the owner included, plus pending invitations that haven't expired. */
 	members: number;
+	/** Bytes of page images uploaded and not yet swept as unused. */
+	pageImageBytes: number;
 };
 
 export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
-	starter: { pages: 1, analyticsRetentionDays: 30, members: 3 },
-	professional: { pages: 5, analyticsRetentionDays: 365, members: 10 },
-	enterprise: { pages: 25, analyticsRetentionDays: 730, members: 25 },
+	starter: {
+		pages: 1,
+		analyticsRetentionDays: 30,
+		members: 3,
+		pageImageBytes: 100 * MB,
+	},
+	professional: {
+		pages: 5,
+		analyticsRetentionDays: 365,
+		members: 10,
+		pageImageBytes: 500 * MB,
+	},
+	enterprise: {
+		pages: 25,
+		analyticsRetentionDays: 730,
+		members: 25,
+		pageImageBytes: 2 * 1024 * MB,
+	},
 };
 
 const NO_PLAN_LIMITS: PlanLimits = {
 	pages: 0,
 	analyticsRetentionDays: 0,
 	members: 0,
+	pageImageBytes: 0,
 };
 
 /** No plan (inactive organization) allows nothing. */
