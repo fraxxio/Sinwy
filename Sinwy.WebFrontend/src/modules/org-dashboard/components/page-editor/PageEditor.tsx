@@ -4,7 +4,8 @@ import {
 	Puck,
 	type UiState,
 } from "@puckeditor/core";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
+import { uploadPageImage } from "#/modules/org-dashboard/lib/page-queries";
 import type { PageMetadata } from "#/shared/components/page-builder/blocks";
 import type { Autosave } from "./autosave";
 import { chromeOverrides } from "./BlockChrome";
@@ -13,6 +14,7 @@ import { canvasOverrides } from "./EditorCanvas";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
 import { EditorServicesContext, fieldOverrides } from "./editor-fields";
+import { EditorImageUploadContext, type UploadImage } from "./image-field";
 import type { Publishing } from "./PublishControls";
 import type { ConflictActions } from "./SaveControls";
 import type { PageData } from "./save";
@@ -36,6 +38,7 @@ const OVERRIDES: Partial<Overrides> = {
 const DND = { enableDragHandle: true };
 
 export function PageEditor({
+	organizationId,
 	data,
 	metadata,
 	title,
@@ -45,6 +48,7 @@ export function PageEditor({
 	conflict,
 	publishing,
 }: {
+	organizationId: string;
 	data: PageData;
 	metadata: PageMetadata;
 	title: string;
@@ -54,29 +58,35 @@ export function PageEditor({
 	conflict: ConflictActions;
 	publishing: Publishing;
 }) {
+	const uploadImage = useMemo<UploadImage>(
+		() => (image, signal) => uploadPageImage(organizationId, image, signal),
+		[organizationId],
+	);
 	return (
 		<EditorServicesContext value={metadata.services}>
-			<BlockAccessProvider>
-				<Puck
-					config={editorConfig}
-					data={data as Data}
-					metadata={metadata}
-					ui={INITIAL_UI}
-					viewports={VIEWPORTS}
-					overrides={OVERRIDES}
-					dnd={DND}
-					height="100%"
-				>
-					<EditorLayout
-						title={title}
-						path={path}
-						back={back}
-						autosave={autosave}
-						conflict={conflict}
-						publishing={publishing}
-					/>
-				</Puck>
-			</BlockAccessProvider>
+			<EditorImageUploadContext value={uploadImage}>
+				<BlockAccessProvider>
+					<Puck
+						config={editorConfig}
+						data={data as Data}
+						metadata={metadata}
+						ui={INITIAL_UI}
+						viewports={VIEWPORTS}
+						overrides={OVERRIDES}
+						dnd={DND}
+						height="100%"
+					>
+						<EditorLayout
+							title={title}
+							path={path}
+							back={back}
+							autosave={autosave}
+							conflict={conflict}
+							publishing={publishing}
+						/>
+					</Puck>
+				</BlockAccessProvider>
+			</EditorImageUploadContext>
 		</EditorServicesContext>
 	);
 }

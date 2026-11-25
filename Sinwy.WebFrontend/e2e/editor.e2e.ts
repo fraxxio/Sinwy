@@ -1,4 +1,4 @@
-import type { BrowserContext } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import type { PageDetailDto } from "@sinwy/shared";
 import {
 	type Block,
@@ -615,5 +615,104 @@ test.describe("publishing", () => {
 		await expect(page.getByText("Changes published")).toBeVisible();
 		const live = await storefront(context, pages, org, pageId);
 		expect(await live.heading()).toBe("Second draft");
+	});
+});
+
+test.describe("photos", () => {
+	test.use({ seed: "photos" });
+
+	const emptyPhoto = (id: string): Block => ({
+		type: "Image",
+		props: { id, src: "", alt: "", aspect: "square" },
+	});
+
+	/** A JPEG drawn in the browser, so no binary fixture has to live in the repo. */
+	const jpeg = async (
+		page: Page,
+		width: number,
+		height: number,
+	): Promise<Buffer> => {
+		const base64 = await page.evaluate(
+			([w, h]) => {
+				const canvas = document.createElement("canvas");
+				canvas.width = w;
+				canvas.height = h;
+				const context = canvas.getContext("2d");
+				if (!context) throw new Error("no 2d context");
+				const gradient = context.createLinearGradient(0, 0, w, h);
+				gradient.addColorStop(0, "#c084fc");
+				gradient.addColorStop(1, "#f59e0b");
+				context.fillStyle = gradient;
+				context.fillRect(0, 0, w, h);
+				return canvas.toDataURL("image/jpeg", 0.9).split(",")[1] ?? "";
+			},
+			[width, height] as const,
+		);
+		return Buffer.from(base64, "base64");
+	};
+
+	test("a photo from the device fills an Image with a fitting shape in one undo step, and a text file is refused", async ({
+		page,
+		pages,
+		editor,
+		org,
+	}) => {
+		const pageId = await pages.create([
+			{
+				type: "Photos",
+				props: {
+					id: "photos",
+					gap: "medium",
+					phoneLayout: "stack",
+					items: [emptyPhoto("photo-1"), emptyPhoto("photo-2")],
+				},
+			},
+		]);
+		await editor.open(pageId);
+		const stored = new RegExp(`/api/files/pages/${org.orgId}/[^/]+\\.jpg$`);
+		const photo = editor.block("photo-1").locator("img");
+		const shape = editor.settings.getByRole("combobox", { name: "Shape" });
+		const fileInput = editor.settings.getByLabel("Upload photo");
+
+		await editor.block("photo-1").click();
+		await expect(editor.selected).toHaveText("Image");
+		await expect(
+			editor.settings.getByText("Describe the photo for people"),
+		).toBeHidden();
+		await fileInput.setInputFiles({
+			name: "salon.jpg",
+			mimeType: "image/jpeg",
+			buffer: await jpeg(page, 1600, 900),
+		});
+		await expect(photo).toHaveAttribute("src", stored);
+		await expect(shape).toContainText("Wide");
+		await expect(
+			editor.settings.getByText("Describe the photo for people"),
+		).toBeVisible();
+
+		await editor.button("Undo").click();
+		await expect(photo).toHaveCount(0);
+		await expect(shape).toContainText("Square");
+		await editor.button("Redo").click();
+		await expect(photo).toHaveAttribute("src", stored);
+		await expect(shape).toContainText("Wide");
+
+		await fileInput.setInputFiles({
+			name: "notes.txt",
+			mimeType: "text/plain",
+			buffer: Buffer.from("not a photo"),
+		});
+		await expect(editor.settings.getByRole("alert")).toHaveText(
+			/can't be read as a photo/,
+		);
+		await expect(photo).toHaveAttribute("src", stored);
+
+		await editor.save();
+		const [photos] = await pages.saved(pageId);
+		const [first, second] = (photos?.props["items"] ?? []) as Block[];
+		expect(first?.props["src"]).toMatch(stored);
+		expect(first?.props["aspect"]).toBe("wide");
+		expect(second?.props["src"]).toBe("");
+		expect(JSON.stringify(photos)).not.toMatch(/blob:|data:/);
 	});
 });

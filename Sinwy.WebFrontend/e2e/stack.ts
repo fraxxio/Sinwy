@@ -22,6 +22,8 @@ export type Stack = {
 	pro: SeededOrg;
 	secondPro: SeededOrg;
 	thirdPro: SeededOrg;
+	/** Photo uploads; its files count against its own storage quota. */
+	photos: SeededOrg;
 	starter: SeededOrg;
 };
 

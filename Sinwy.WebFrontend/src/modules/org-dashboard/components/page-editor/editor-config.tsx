@@ -1,10 +1,4 @@
-import {
-	type Config,
-	createUsePuck,
-	type Field,
-	type PuckContext,
-	type Viewports,
-} from "@puckeditor/core";
+import type { Config, Field, PuckContext, Viewports } from "@puckeditor/core";
 import { BLOCKS, ROOT_ALLOW } from "@sinwy/shared";
 import {
 	BLOCK_RENDERS,
@@ -13,9 +7,10 @@ import {
 import { puckConfigFrom } from "#/shared/components/page-builder/puck-config";
 import { FirstRunBlocks } from "./BlockDrawer";
 import { ROOT_ZONE } from "./block-actions";
-import { lockedField, serviceIdsField } from "./editor-fields";
+import { lockedField, serviceIdsField, usePuck } from "./editor-fields";
+import { imageField } from "./image-field";
 
-export const usePuck = createUsePuck();
+export { usePuck };
 
 export const DESKTOP_WIDTH = 1280;
 
@@ -67,7 +62,7 @@ const withLockedFields = (config: Config): Config => ({
 /** Top-level drops are limited to what the server accepts there; Puck has no `root.allow`. */
 export const editorConfig = withLockedFields(
 	puckConfigFrom(BLOCKS, BLOCK_RENDERS, {
-		customFields: { serviceIds: serviceIdsField },
+		customFields: { serviceIds: serviceIdsField, image: imageField },
 		root: {
 			render: ({ puck }: { puck: PuckContext }) => <EditorPage puck={puck} />,
 		},

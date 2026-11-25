@@ -69,3 +69,39 @@ Finished phases of the [page images plan](page-images-plan.md), each with its sp
 - Shipped: `StorageClient.deletePrefix` (local: recursive `rm`, prefix must end in `/`, same root guard, so `""`, `/`, `../` and absolute paths throw). `findUnusedPageImages` (cutoff, keyset by `id`, `NOT EXISTS` over `page_content` joined to `page` of the same org with `strpos(content::text, key) > 0`) and `deletePageImages`. `sweepUnusedPageImages` / `sweepPageImagesJob` (hourly, batches of 100, file then row, a failed delete keeps its row). `PurgeHooks.onPurged`, called after `deleteOrganizations` and the logo; wired to `deleteOrganizationPageImages` in `jobs.ts`, which now exports `purgeHooks`. Tests: `pageImageSweep.test.ts` (4), two `deletePrefix` tests in `avatar.test.ts`, and a purge test using the app's `purgeHooks`.
 - Differs from plan: the sweep pages by `id` rather than `created_at`, so a row whose file keeps failing can't make a batch loop, and JS dates (ms) can't misplace the cursor against Postgres microseconds. The sweep and purge logic live in `sweep.ts` and `service.ts`; nothing was needed in `lib/jobs.ts`. The failed-delete test makes the key a directory so `unlink` fails.
 - Checked in the running app: in a fresh pro-org, uploaded two PNGs through the API (201), saved a page whose Image used one, backdated both rows 25 h, and ran `runJob(sweepPageImagesJob)` from a scratch script (deleted afterwards): `{ deleted: 1, failed: 0 }`, the unused URL 404 and its row gone, the used one still 200 through :3000. Then removed the owner membership (standing in for account deletion), set `deletion_scheduled_at` 31 days back and ran `bun run db:purge-organizations`: `purged: 1`, `.storage/pages/<orgId>/` gone, org, page and image rows 0. Server logs clean. Not checked: the sweep's own startup/hourly run in the live backend (it logs nothing when there's nothing to do), and a real account deletion before the purge.
+
+## Phase 3: Image field with upload in the editor
+
+**Goal:** in the Image settings (and Hero's background), an owner picks a photo from the device and sees a preview. It is shrunk, uploaded, and written into the block with a fitting shape in one undo step, with clear errors and a secondary web-address option.
+
+**Files:**
+- `Sinwy.Shared/types/page/blocks/blocks.ts` (labels on Image `src` and Hero `image`).
+- `WebFrontend/src/shared/components/page-builder/puck-config.ts` (`puckField`: let `customFields` override built-in kinds too, or key the override by kind).
+- `WebFrontend/src/modules/org-dashboard/components/page-editor/editor-config.tsx`, `editor-fields.tsx` (new image field UI, or a new `image-field.tsx` if it grows).
+- New plain modules in `page-editor/`: shrink planning (`planImageResize`) and shape choice (`shapeFor`), with a thin DOM wrapper for `createImageBitmap` and canvas `toBlob`.
+- `WebFrontend/src/shared/lib/api.ts` (`apiUpload` takes an optional `signal`).
+- `WebFrontend/src/shared/components/ImageUpload.tsx` (reuse or extract the client checks).
+- The upload answers `PageImageDto` (`Sinwy.Shared/types/page/Page.ts`); quota errors come as `PAGE_IMAGE_QUOTA_EXCEEDED` with the server's message. No backend change is expected.
+- Tests: `modules/org-dashboard/tests/` (new `page-editor-images.test.ts`), `e2e/editor.e2e.ts`.
+
+**Steps:**
+- The field shows the current image (or an empty drop area) and a real `<input type="file">` behind an "Upload photo" button, with drag-and-drop as an extra. It also has "Use a web address instead", which reveals the old text input, and Remove.
+- On pick: decode and shrink (Default 3), show the local preview from the field's own state (object URL, revoked on unmount), then upload to `page-images`. Errors in plain words: not an image or can't be read, still too big after shrinking, quota full (server message), network failure with Retry.
+- On success, write `src` and (only for blocks that have an `aspect` field) `aspect` from `shapeFor(width, height)` in one Puck dispatch. Address the block by the id it had when the upload started, not the current selection. If that block no longer exists, drop the result.
+- Description hint per Default 6. `src` keeps `required: true`.
+- Use context7 for the Puck API that replaces one item's props in a single dispatch (`getSelectorForId`, `replace`).
+
+**Tests that matter:**
+- `planImageResize`: keeps small images' size, caps the longest side, and picks the output type and quality steps per Default 3.
+- `shapeFor` boundaries (1.3, 0.8, portrait, square, extreme panorama).
+- e2e: upload a fixture JPEG through the file input, then Image shows it, `aspect` matches, and a single Undo removes both `src` and `aspect`. The saved `page_content` holds an `/api/files/pages/<orgId>/` URL, never `blob:` or `data:`. A text file shows the not-an-image error and changes nothing.
+
+**Done when:**
+- An owner can fill both images of a Photos block from local files, wide photos get `wide`, and the page saves and publishes with stored URLs.
+
+**Verify:** Seed `pro-org` with a page holding a Photos block. Open the editor, select the first image, upload a landscape JPEG (4000×3000, over 2 MB) with the file input: the preview appears at once, then the saved URL. The block's shape is Wide and the latest `page_content` row has the `/api/files/pages/<orgId>/…` URL. `page_image` has one row under 2 MB. Upload a portrait photo into the second: Original. Upload a `.txt`: an error and no change. Publish, and the storefront page shows both photos. Nothing is simulated except login.
+
+### Log (2026-11-25, `feat(web, shared): upload photos from the device into Image and Hero in the page editor`)
+- Shipped: labels "Photo" / "Background image". `puckField` looks up `customFields[kind]` for every kind, so `image` gets `imageField` (`image-field.tsx`): preview box with drag and drop, hidden file input behind "Upload photo"/"Change photo", Remove, "Use a web address instead" (open from the start when the value is a non-uploaded URL), "Preparing photo…"/"Uploading…", errors for unreadable, still over 2 MB, server message (quota) and network (Retry, also on 5xx). `images.ts`: `planImageResize`, `shapeFor`, `shrinkImage` (createImageBitmap, canvas, white fill under JPEG). On success one `replace` dispatch writes the field and, if the block type has `aspect`, the shape; a deleted block drops the result. Description hint on the `alt` text field when the selected block has a `src`. `apiUpload` takes a signal; `uploadPageImage` in `page-queries.ts`. Tests: `page-editor-images.test.ts` (7) and an e2e upload/undo/redo/`.txt` test on a new `photos` e2e org.
+- Differs from plan: `usePuck` moved to `editor-fields.tsx` to break an `editor-config` ↔ `image-field` import cycle. A new e2e org was needed because `pro` is at its page limit. After the verify, the empty-slot placeholder is hidden while busy and a failed state clears when the value changes; an error after a failed pick otherwise stays until the next pick or selection change (accepted). `ImageUpload.tsx` is unchanged: its checks (type allowlist, 2 MB) don't apply before shrinking.
+- Checked in the running app (subagent, e2e-test): a 4000×3000 6.3 MB JPEG showed "Preparing photo…" at 15 ms, the `blob:` preview at 172 ms and the stored URL at 222 ms, with Shape Wide. `page_content` had the `/api/files/pages/<orgId>/` URL and `aspect: wide`, and `page_image` had one row of 748 KB. A 3000×4000 portrait got "Original" (`auto`) and 747 KB. A `.txt` showed the error, with no new version and no new row. Publish went through and the storefront showed both photos at 2400×1800 and 1800×2400, with no console errors. Not checked: quota refusal in the UI, drag and drop, Retry after a network failure, the web address input, and Hero's background. The agent noticed autosave updates one draft row in place (`created_at` fixed, `updated_at` moving); this is the existing autosave design, not this phase.

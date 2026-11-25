@@ -71,13 +71,14 @@ export default async function globalSetup() {
 	await requireServer("backend", BACKEND_URL, "bun run start:server");
 	await requireServer("web app", WEB_URL, "bun run start:web");
 
-	const [pro, secondPro, thirdPro, starter] = await Promise.all([
+	const [pro, secondPro, thirdPro, photos, starter] = await Promise.all([
+		seedOrg("pro-org"),
 		seedOrg("pro-org"),
 		seedOrg("pro-org"),
 		seedOrg("pro-org"),
 		seedOrg("subscribed-org"),
 	]);
-	const stack: Stack = { pro, secondPro, thirdPro, starter };
+	const stack: Stack = { pro, secondPro, thirdPro, photos, starter };
 	await mkdir(OUTPUT_DIR, { recursive: true });
 	await writeFile(STACK_FILE, JSON.stringify(stack, null, "\t"));
 }

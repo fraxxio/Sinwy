@@ -3,12 +3,13 @@ import type {
 	OrganizationOnboardingDto,
 	PageBaseVersionInput,
 	PageDetailDto,
+	PageImageDto,
 	PageListDto,
 	SavePageContentInput,
 	UpdatePageInput,
 } from "@sinwy/shared";
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
-import { api } from "#/shared/lib/api";
+import { api, apiUpload } from "#/shared/lib/api";
 
 export const pageKeys = {
 	all: (organizationId: string) => ["pages", organizationId] as const,
@@ -20,6 +21,24 @@ export const pageKeys = {
 
 const pagesPath = (organizationId: string, suffix = "") =>
 	`/organizations/${organizationId}/pages${suffix}`;
+
+export const uploadPageImage = (
+	organizationId: string,
+	image: Blob,
+	signal?: AbortSignal,
+) => {
+	const form = new FormData();
+	form.append(
+		"file",
+		image,
+		image.type === "image/png" ? "photo.png" : "photo.jpg",
+	);
+	return apiUpload<PageImageDto>(
+		`/organizations/${organizationId}/page-images`,
+		form,
+		signal,
+	);
+};
 
 export const pagesQuery = (organizationId: string) =>
 	queryOptions({

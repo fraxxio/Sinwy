@@ -254,6 +254,7 @@ function EditorScreen({
 
 	return (
 		<PageEditor
+			organizationId={organization.id}
 			data={initialData}
 			metadata={{
 				organizationSlug: organization.slug,
