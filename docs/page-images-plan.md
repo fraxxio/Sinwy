@@ -13,7 +13,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 3 | Image field with upload in the editor | 1 | done | `feat(web, shared): upload photos from the device into Image and Hero in the page editor` |
 | 4 | Pending uploads in save status, Publish and leaving | 3 | done | `feat(web): track photo uploads in save status, Publish and leaving the page editor` |
 | 5 | Usability rerun: task 3 (research) | 4 | done | `feat(web): keep one shape for every photo in a Photos row after an upload` |
-| 6 | Code review, docs and cleanup | 5 | todo | |
+| 6 | Code review, docs and cleanup | 5 | done | `fix(backend): delete page images with a deleted organization and refuse storage prefixes that aren't a plain folder` |
 
 ## Decisions
 
@@ -44,34 +44,9 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Tests on storage.** `modules/user/tests/avatar.test.ts` builds a `createLocalStorageClient(tmpRoot)`; route tests use the real `storageClient` and delete what they wrote (`avatarRoute.test.ts`, `organizations/tests/general.test.ts`).
 - **Page image tracking (Phase 1).** `page_image` (`db/schema/pageSchema.ts`): id, organization_id (cascade), unique `key`, `bytes`, `created_at`, index (organization_id, created_at). `insertPageImageWithinLimit` (`modules/pages/repository.ts`) sums bytes and inserts under `lockOrganization`, which now serializes page creates and uploads. The upload answers 201 `{ src, usage }`; quota refusal is 409 `PAGE_IMAGE_QUOTA_EXCEEDED` (40928); a non-member gets 404, not 403.
 - **Test helpers.** `modules/pages/tests/pageImages.test.ts` has `fillQuota` (a row with no file) and `storedFiles(orgId)`; `pageImageSweep.test.ts` has `storeImage` (file and row, backdated) and `seedPage` (content rows straight into the table). Tests get a temp `STORAGE_LOCAL_DIR` from `test/setup.ts`.
-- **Sweep and purge (Phase 2).** `sweep-page-images` (`modules/pages/sweep.ts`) runs at server start and hourly. It deletes rows older than 24 h whose key no `page_content` row of a page in the same org contains, file first; it logs only when it deletes or fails something. `purgeHooks.onPurged` (`Sinwy.Backend/jobs.ts`) removes `pages/<orgId>/` after the org rows are gone.
-- **Running app.** Postgres may be down: `bun run db:up`. Seed with `bun run dev:seed-scenario pro-org` (no staff; `org-with-staff` has them) and log in with `dev:login-as`. `src` uses the `BETTER_AUTH_URL` origin (the web app, :3000), so it resolves only while the web app runs. The header Back control is an `<a role="button">`: locate it by button role or text. Left by verifies (Phase 6 cleanup covers them): Phase 1's upload in pro-org `86154843-…`; Phase 2's owner user without an org; Phase 3's pro-org `0857ecc7-…` (slug `seed-01379b03`, published "Gallery", two images); Phase 4's pro-org `a76b6922-…` (slug `seed-a1cc86a9`, published "Upload test", one used and one dropped image); Phase 5's pro-org `bc3939de-…` (slug `seed-9acce92c`, published "Home" with two photos) and `/tmp/sinwy-p5/` (the test photos and the agent's screenshots). The backend and web app write to `/tmp/sinwy-server.log` and `/tmp/sinwy-web.log`; they were already running when Phase 5 started.
+- **Sweep and purge (Phase 2).** `sweep-page-images` (`modules/pages/sweep.ts`) runs at server start and hourly. It deletes rows older than 24 h whose key no `page_content` row of a page in the same org contains, file first; it logs only when it deletes or fails something. `purgeHooks.onPurged` (`Sinwy.Backend/jobs.ts`) removes `pages/<orgId>/` after the org rows are gone. Deleting an org at once does the same from `afterDeleteOrganization` (`modules/auth/auth.ts`); `deletePrefix` refuses empty, `.` and `..` parts (Phase 6 log).
+- **Running app.** Postgres may be down: `bun run db:up`. Seed with `bun run dev:seed-scenario pro-org` (no staff; `org-with-staff` has them) and log in with `dev:login-as`. `src` uses the `BETTER_AUTH_URL` origin (the web app, :3000), so it resolves only while the web app runs. The header Back control is an `<a role="button">`: locate it by button role or text.
 - **Document rules.** `src` must pass `isSafeImageSrc` (http(s) or root-relative). Documents are capped at 256 KB (`PAGE_DOCUMENT_LIMITS.maxBytes`). Never put a `data:` or `blob:` URL in props: autosave sends every change after 1 s and would fail with an unfixable error. Image blocks can't be top-level; seed them inside a Section.
 - **Uploads (Phases 3–4).** `uploads.ts` (`createUploads`) owns each field's upload view under key `<blockId>:<field>`, the failure messages and preview URLs; `image-field.tsx` only renders it (via `EditorUploadsContext`) and writes the result with one `replace` dispatch. The edit route creates the tracker beside autosave and disposes it on remount; Discard and "Load latest" call `abort()` first. Publish waits for `settled()`, then runs the pre-publish check, so another empty Image still asks "Publish anyway". After dispose or abort, results are ignored by `signal.aborted` checks; whether the request itself is cancelled doesn't matter (Phase 4 log).
 - **Shapes.** Image renders `square` as `aspect-square` and `wide` as `aspect-video` with `object-cover` (`shared/components/page-builder/blocks.tsx` L113, L209), so a 4:3 photo set to Wide is cropped to 16:9 (seen in Phase 3's verify). Photos' default items are `square`; a standalone Image defaults to `wide`. In a Photos row, `useWriteImage` (`image-field.tsx`) replaces the whole Photos block so every item takes `rowShape` (Phase 5 log).
 - **e2e.** `bun run test:editor` (Playwright) needs `bun run start:server` (:3001) and `bun run start:web` (:3000). `e2e/global-setup.ts` seeds `pro` (full), `secondPro` (1 free page slot), `thirdPro` (1 free), `photos` (4 free, 3 used by its tests) and `starter`; add an org there if a test needs more. Helpers are in `e2e/editor-fixtures.ts`; the `photos` describe draws its JPEG in the page (`jpeg(page, w, h)`), uploads with `getByLabel("Upload photo").setInputFiles`, and holds uploads with `holdUploads(page)`. The Shape select's text includes its arrow, so assert with `toContainText`.
-
----
-
-## Phase 6: Code review, docs and cleanup
-
-**Goal:** the quota, sweep and purge are reviewed for data loss and bypasses, docs are current, and nothing temporary is left.
-
-**Files:**
-- Review: `git diff e838aba..HEAD`. Backend: `Sinwy.Backend/modules/pages/` (`repository.ts` `insertPageImageWithinLimit` and `lockOrganization`, `service.ts`, `controller.ts` upload handler, `sweep.ts`), `db/schema/pageSchema.ts` (`page_image`), `jobs.ts` (`purgeHooks.onPurged`), `organizations/purge.ts`, `infrastructure/storage/` (`deletePrefix`). Shared: `PLAN_LIMITS` quota, `IMAGE_UPLOAD_LIMITS`, `blocks.ts` labels. Web, in `src/modules/org-dashboard/components/page-editor/`: `uploads.ts`, `images.ts` (`shapeFor`, `rowShape`, shrink), `image-field.tsx` (`useWriteImage`), `SaveControls.tsx` (`LeaveGuard`, "Uploading…"), `PublishControls.tsx`, `publishing.ts`; the edit route `routes/_shell.pages.$id.edit.tsx`.
-- Tests: `modules/pages/tests/pageImages.test.ts`, `pageImageSweep.test.ts`, `organizations/tests/purge.test.ts`; web `page-editor-uploads.test.ts`, `page-editor-images.test.ts`, `page-editor-publishing.test.ts`; `e2e/editor.e2e.ts` `photos`.
-- Docs: `docs/org-rules-map.md` (page image quota per plan, sweep after 24 h, purge), `README.md` if it describes the page editor, this plan and its log.
-- Cleanup: the leftovers in the "Running app" note, `.playwright-cli/` page and console files, `.storage/pages/` test data.
-
-**Steps:**
-- Review with a focus on: files deleted while still referenced (sweep query, history rows, other orgs), `deletePrefix` path safety, quota races and bypasses (concurrent uploads, a wrong org id in the path), uploads by roles without `pages:write`, and late upload results writing into a remounted editor.
-- Fix findings, then update `docs/org-rules-map.md` and close out the plan and log.
-- Last step: stop every dev server started during this plan's work unless the user asked to keep it running, and delete temporary files (scratch seed scripts, screenshots, console logs, test photos outside the repo's fixtures, leftover `.storage/pages/` test data).
-
-**Tests that matter:**
-- Any test added for a review finding; `bun run verify` passes.
-
-**Done when:**
-- The review findings are fixed or recorded as accepted, the docs match the behaviour, and `bun run verify` passes.
-
-**Verify:** None

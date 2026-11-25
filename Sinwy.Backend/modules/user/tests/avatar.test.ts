@@ -105,7 +105,17 @@ describe("localStorageClient", () => {
 
 	test("deletePrefix refuses prefixes that aren't a folder inside the root", async () => {
 		await client.put("pages/o2/a.png", new Uint8Array(PNG), "image/png");
-		for (const prefix of ["", "/", "pages", "../", "pages/../", "/tmp/"])
+		for (const prefix of [
+			"",
+			"/",
+			"pages",
+			"../",
+			"pages/../",
+			"/tmp/",
+			"pages//",
+			"pages/./",
+			"pages/o2/../",
+		])
 			await expect(client.deletePrefix(prefix)).rejects.toThrow();
 		expect((await client.serve("pages/o2/a.png")).status).toBe(200);
 	});

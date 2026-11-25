@@ -73,8 +73,9 @@ const TEAM_ACTIVITY_PATHS = new Set([
 ]);
 
 // better-auth only type-checks name; apply the shared length/character rule
-// imported on use: the bookings module's routes need this module loaded first
+// imported on use: these modules' routes need this module loaded first
 const bookingsModule = () => import("@bookingsModule");
+const pagesModule = () => import("@pagesModule");
 
 const invitationPath = (id: string) => `/invite/${encodeURIComponent(id)}`;
 
@@ -466,8 +467,11 @@ export const auth = betterAuth({
 					const bookings = await bookingsModule();
 					await bookings.cancelUpcomingOrganizationBookings([organization.id]);
 				},
-				afterDeleteOrganization: ({ organization }) =>
-					deleteStoredLogo(organization.id, organization.logo ?? null),
+				afterDeleteOrganization: async ({ organization }) => {
+					await deleteStoredLogo(organization.id, organization.logo ?? null);
+					const pages = await pagesModule();
+					await pages.deleteOrganizationPageImages([organization.id]);
+				},
 			},
 			schema: {
 				organization: {

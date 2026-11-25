@@ -27,7 +27,12 @@ export const createLocalStorageClient = (rootDir: string): StorageClient => {
 			});
 		},
 		async deletePrefix(prefix) {
-			if (!prefix.endsWith("/") || prefix === "/") {
+			const segments = prefix.split("/").slice(0, -1);
+			if (
+				!prefix.endsWith("/") ||
+				segments.length === 0 ||
+				segments.some((s) => s === "" || s === "." || s === "..")
+			) {
 				throw new Error(`Storage prefix must name a folder: ${prefix}`);
 			}
 			await rm(pathFor(prefix), { recursive: true, force: true });

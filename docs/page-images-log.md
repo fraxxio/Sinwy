@@ -167,3 +167,34 @@ Finished phases of the [page images plan](page-images-plan.md), each with its sp
 - Recorded, not filed: the Pages list has no Edit control (only the title link, which looks like plain text), and the editor is two steps away (detail page → Edit content); the agent noticed no prompt for the description, although the hint "Describe the photo for people who can't see it." was shown (default 6 as designed); the storefront shows the Sinwy marketing header and a "Seed 9acce92c" label above the banner; 3× React warning "Detected a large number of updates inside startTransition" (`src/root.tsx:195`) during the editor session.
 - Checked in the running app: published version 7 holds both `http://localhost:3000/api/files/pages/bc3939de-…/` URLs with `aspect` "square", matching the two `page_image` rows and the files under `.storage/pages/bc3939de-…/`. No console errors; no new web log warnings; the backend log has no request lines. Not rerun by a cold agent after the fix (the e2e covers it), and not checked on a phone or a slow network.
 - Differs from plan: three photos instead of 2–3 "salon-like" real ones (drawn, with grain to reach phone sizes). The fix changes Decision default 4 for Photos rows (asked first).
+
+## Phase 6: Code review, docs and cleanup
+
+**Goal:** the quota, sweep and purge are reviewed for data loss and bypasses, docs are current, and nothing temporary is left.
+
+**Files:**
+- Review: `git diff e838aba..HEAD`. Backend: `Sinwy.Backend/modules/pages/` (`repository.ts` `insertPageImageWithinLimit` and `lockOrganization`, `service.ts`, `controller.ts` upload handler, `sweep.ts`), `db/schema/pageSchema.ts` (`page_image`), `jobs.ts` (`purgeHooks.onPurged`), `organizations/purge.ts`, `infrastructure/storage/` (`deletePrefix`). Shared: `PLAN_LIMITS` quota, `IMAGE_UPLOAD_LIMITS`, `blocks.ts` labels. Web, in `src/modules/org-dashboard/components/page-editor/`: `uploads.ts`, `images.ts` (`shapeFor`, `rowShape`, shrink), `image-field.tsx` (`useWriteImage`), `SaveControls.tsx` (`LeaveGuard`, "Uploading…"), `PublishControls.tsx`, `publishing.ts`; the edit route `routes/_shell.pages.$id.edit.tsx`.
+- Tests: `modules/pages/tests/pageImages.test.ts`, `pageImageSweep.test.ts`, `organizations/tests/purge.test.ts`; web `page-editor-uploads.test.ts`, `page-editor-images.test.ts`, `page-editor-publishing.test.ts`; `e2e/editor.e2e.ts` `photos`.
+- Docs: `docs/org-rules-map.md` (page image quota per plan, sweep after 24 h, purge), `README.md` if it describes the page editor, this plan and its log.
+- Cleanup: the leftovers in the "Running app" note, `.playwright-cli/` page and console files, `.storage/pages/` test data.
+
+**Steps:**
+- Review with a focus on: files deleted while still referenced (sweep query, history rows, other orgs), `deletePrefix` path safety, quota races and bypasses (concurrent uploads, a wrong org id in the path), uploads by roles without `pages:write`, and late upload results writing into a remounted editor.
+- Fix findings, then update `docs/org-rules-map.md` and close out the plan and log.
+- Last step: stop every dev server started during this plan's work unless the user asked to keep it running, and delete temporary files (scratch seed scripts, screenshots, console logs, test photos outside the repo's fixtures, leftover `.storage/pages/` test data).
+
+**Tests that matter:**
+- Any test added for a review finding; `bun run verify` passes.
+
+**Done when:**
+- The review findings are fixed or recorded as accepted, the docs match the behaviour, and `bun run verify` passes.
+
+**Verify:** None
+
+### Log (2026-11-25, `fix(backend): delete page images with a deleted organization and refuse storage prefixes that aren't a plain folder`)
+- Shipped (review findings fixed): deleting an organization at once (Better Auth `afterDeleteOrganization` in `modules/auth/auth.ts`) cascaded its `page_image` rows but left the files, which the sweep could then never find; it now calls `deleteOrganizationPageImages` through a lazy `@pagesModule` import, like bookings (test in `organizationDeletion.test.ts`). `deletePrefix` accepted `pages//`, `pages/./` and `pages/o2/../`, which resolve to `pages/` and would have removed every organization's photos had an empty org id ever reached it; it now refuses any empty, `.` or `..` part (cases added to `avatar.test.ts`).
+- Reviewed with no change: the sweep counts every `page_content` row (history included), and a save never rewrites the published row in place, so a published or restorable photo is never swept; keys are matched as substrings of the jsonb text, so they survive an origin change. The quota sums and inserts under the organization lock with the file written inside it, and a failed insert deletes the file; the key always uses the membership's org id, so another org id in the path is a 404; staff are refused by `pages:write` (tested). On the web, every write after an await checks `signal.aborted`, and dispose and abort release the controllers, so a late result can't write into a remounted editor; a moved or deleted block is looked up at write time.
+- Accepted and recorded: an image another organization's page uses by its address isn't kept by the sweep (it is per organization, as Decision 5 says; now in `docs/org-rules-map.md`). If deleting the files after a purge or deletion fails, it is logged and the files stay with no row to retry from.
+- Docs: `org-rules-map.md` says who can upload, that deletion and the purge remove page images, and the per-organization sweep; `README.md`'s editor spec section lists the photo tests and the fourth seeded `pro-org`.
+- Cleanup: deleted the 12 seed organizations that had page images (all from this plan's verifies and e2e runs) with their owners, and Phase 2's owner without an org; removed `.storage/pages/`, `/tmp/sinwy-p5/`, the `.playwright-cli/` page and console files, and the server logs; stopped the backend and web app (started 2026-11-25 18:00, during this plan). Left: about 34 other `webdevrokas+seed-…` users from e2e global setups since 2026-11-24, as every e2e run leaves them.
+- Checked in the running app: nothing (Verify was None; the e2e wasn't rerun, as no web code changed).

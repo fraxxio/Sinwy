@@ -167,6 +167,15 @@ test("the stored logo is deleted with the organization", async () => {
 	expect((await storageClient.serve(key)).status).toBe(404);
 });
 
+test("the page images are deleted with the organization", async () => {
+	const key = `pages/${orgId}/photo.png`;
+	await storageClient.put(key, new Uint8Array([1]), "image/png");
+
+	expect((await deleteOrganization(owner.cookie)).status).toBe(200);
+
+	expect((await storageClient.serve(key)).status).toBe(404);
+});
+
 const getPreview = (cookie: string) =>
 	fetch(new URL(`/api/account/organizations/${orgId}/deletion-preview`, base), {
 		headers: { cookie },

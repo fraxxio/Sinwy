@@ -228,11 +228,14 @@ Pages (every tier has them, up to a limit per organization)
 │  publicly, and the dashboard shows the rest "Published, not live"
 └─ page images: uploaded photos belong to the organization and count against
    a storage quota per organization
+    ├─ who: anyone who can edit pages; staff can't upload
     ├─ quota: Starter 100 MB, Professional 500 MB, Enterprise 2 GB; an
     │  inactive organization can't upload
     ├─ every uploaded image counts until it is swept: an image no saved
     │  version of any of the organization's pages uses is deleted once it is
     │  over a day old, so removed photos free their space within a day
+    │   └─ another organization's page using its address doesn't keep it
+    ├─ deleting the organization, at once or by the purge, deletes its images
     ├─ an upload that would go over the quota → refused, naming the quota;
     │  uploads at the same moment for the last space can't both pass
     └─ over the quota (after a downgrade): existing images stay; only new
@@ -291,8 +294,9 @@ rule in `lockedBlocksIn`),
 `afterCreateInvitation` and `membershipLimit`), `modules/organizations/`
 (`countSeatsUsed`, `withdrawInvitationOverCap`),
 `modules/auth/requireFeature.ts`,
-`modules/pages/` (`service.ts`, and `repository.ts` for the limit count and
-the served set), `modules/analytics/` (`range.ts` for retention, `routes.ts`
+`modules/pages/` (`service.ts`, and `repository.ts` for the limit count, the
+served set and the image quota; `sweep.ts`), `Sinwy.Backend/jobs.ts` (the
+purge's page image hook), `modules/analytics/` (`range.ts` for retention, `routes.ts`
 for the advanced gate).
 
 ## 6. Slots
@@ -569,7 +573,7 @@ refuses them)
 │   ├─ first, its upcoming bookings are cancelled as below and the customers
 │   │  emailed; then every booking goes with the organization
 │   ├─ its pages and all their versions go with it, as they do in the purge
-│   └─ its stored logo is deleted
+│   └─ its stored logo and page images are deleted
 ├─ a transfer accepted and waiting on the recipient's checkout → refused
 │  until the owner cancels it (Default 7 of the settings plan) [10]
 └─ scheduled for deletion → refused, "organization inactive"
@@ -617,7 +621,7 @@ Retention (30 days)
 
 Purge (hourly)
 → organizations without an owner, scheduled 30 days ago or more → deleted with
-  their data and logo
+  their data, logo and page images
 → repairs first, skipping anything under an hour old:
    ├─ without an owner but never scheduled → scheduled now, and its upcoming
    │  bookings cancelled as above (wired in `Sinwy.Backend/jobs.ts`)
@@ -632,7 +636,7 @@ organization hooks, `activeOrganization.ts`), `modules/organizations/`
 `modules/transfers/`, `modules/bookings/service.ts`
 (`cancelUpcomingOrganizationBookings`, `handleCustomerAccountDeleted`),
 `modules/user/service.ts` (the organization deletion preview),
-`Sinwy.Backend/jobs.ts` (the purge's booking hook); web
+`Sinwy.Backend/jobs.ts` (the purge's booking and page image hooks); web
 `src/modules/organizations/components/DeleteOrganizationDialog.tsx`.
 
 ## 12. Polar's part
