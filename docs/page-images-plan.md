@@ -11,7 +11,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 1 | Upload endpoint, tracking table and plan quota | – | done | `feat(backend, shared): upload page images within a per-plan storage quota` |
 | 2 | Orphan sweep and org purge | 1 | done | `feat(backend): sweep unused page images and delete them with a purged organization` |
 | 3 | Image field with upload in the editor | 1 | done | `feat(web, shared): upload photos from the device into Image and Hero in the page editor` |
-| 4 | Pending uploads in save status, Publish and leaving | 3 | todo | |
+| 4 | Pending uploads in save status, Publish and leaving | 3 | done | `feat(web): track photo uploads in save status, Publish and leaving the page editor` |
 | 5 | Usability rerun: task 3 (research) | 4 | todo | |
 | 6 | Code review, docs and cleanup | 5 | todo | |
 
@@ -45,44 +45,12 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Page image tracking (Phase 1).** `page_image` (`db/schema/pageSchema.ts`): id, organization_id (cascade), unique `key`, `bytes`, `created_at`, index (organization_id, created_at). `insertPageImageWithinLimit` (`modules/pages/repository.ts`) sums bytes and inserts under `lockOrganization`, which now serializes page creates and uploads. The upload answers 201 `{ src, usage }`; quota refusal is 409 `PAGE_IMAGE_QUOTA_EXCEEDED` (40928); a non-member gets 404, not 403.
 - **Test helpers.** `modules/pages/tests/pageImages.test.ts` has `fillQuota` (a row with no file) and `storedFiles(orgId)`; `pageImageSweep.test.ts` has `storeImage` (file and row, backdated) and `seedPage` (content rows straight into the table). Tests get a temp `STORAGE_LOCAL_DIR` from `test/setup.ts`.
 - **Sweep and purge (Phase 2).** `sweep-page-images` (`modules/pages/sweep.ts`) runs at server start and hourly. It deletes rows older than 24 h whose key no `page_content` row of a page in the same org contains, file first; it logs only when it deletes or fails something. `purgeHooks.onPurged` (`Sinwy.Backend/jobs.ts`) removes `pages/<orgId>/` after the org rows are gone.
-- **Running app.** Postgres may be down: `bun run db:up`. Seed with `bun run dev:seed-scenario pro-org` (no staff; `org-with-staff` has them) and log in with `dev:login-as`. `src` uses the `BETTER_AUTH_URL` origin (the web app, :3000), so it resolves only while the web app runs. Phase 1's upload in pro-org `86154843-…` is swept by the running backend once it is 24 h old and unused. Phase 2's verify purged its pro-org but left the owner user (no org). Phase 3's verify left pro-org `0857ecc7-…` (slug `seed-01379b03`) with a published "Gallery" page and two images. Phase 6 cleanup covers all three.
-- **Document rules.** `src` must pass `isSafeImageSrc` (http(s) or root-relative). Documents are capped at 256 KB (`PAGE_DOCUMENT_LIMITS.maxBytes`). Never put a `data:` or `blob:` URL in props: autosave sends every change after 1 s and would fail with an unfixable error. Keep the preview in the field's own state.
-- **Image field (Phase 3).** `image-field.tsx` is the `image` kind's UI (`customFields` now overrides built-in kinds). It keeps its upload view in component state keyed by the block id, a token drops a superseded pick's UI updates, and the result is written with one `replace` dispatch addressed by `getSelectorForId(blockId)`. The upload goes through `EditorImageUploadContext` (`UploadImage`), provided in `PageEditor` from its new `organizationId` prop via `uploadPageImage` (`lib/page-queries.ts`). Nothing tracks the upload outside the field yet: the upload continues if the field unmounts, but a reselected block doesn't show it as pending. `usePuck` now lives in `editor-fields.tsx` (re-exported from `editor-config.tsx`) to avoid an import cycle. `src` keeps `required: true`.
+- **Running app.** Postgres may be down: `bun run db:up`. Seed with `bun run dev:seed-scenario pro-org` (no staff; `org-with-staff` has them) and log in with `dev:login-as`. `src` uses the `BETTER_AUTH_URL` origin (the web app, :3000), so it resolves only while the web app runs. The header Back control is an `<a role="button">`: locate it by button role or text. Left by verifies (Phase 6 cleanup covers them): Phase 1's upload in pro-org `86154843-…`; Phase 2's owner user without an org; Phase 3's pro-org `0857ecc7-…` (slug `seed-01379b03`, published "Gallery", two images); Phase 4's pro-org `a76b6922-…` (slug `seed-a1cc86a9`, published "Upload test", one used and one dropped image).
+- **Document rules.** `src` must pass `isSafeImageSrc` (http(s) or root-relative). Documents are capped at 256 KB (`PAGE_DOCUMENT_LIMITS.maxBytes`). Never put a `data:` or `blob:` URL in props: autosave sends every change after 1 s and would fail with an unfixable error. Image blocks can't be top-level; seed them inside a Section.
+- **Uploads (Phases 3–4).** `uploads.ts` (`createUploads`) owns each field's upload view under key `<blockId>:<field>`, the failure messages and preview URLs; `image-field.tsx` only renders it (via `EditorUploadsContext`) and writes the result with one `replace` dispatch. The edit route creates the tracker beside autosave and disposes it on remount; Discard and "Load latest" call `abort()` first. Publish waits for `settled()`, then runs the pre-publish check, so another empty Image still asks "Publish anyway". After dispose or abort, results are ignored by `signal.aborted` checks; whether the request itself is cancelled doesn't matter (Phase 4 log).
 - **Shapes.** Image renders `square` as `aspect-square` and `wide` as `aspect-video` with `object-cover` (`shared/components/page-builder/blocks.tsx` L113, L209), so a 4:3 photo set to Wide is cropped to 16:9 (seen in Phase 3's verify). Photos' default items are `square`; a standalone Image defaults to `wide`.
-- **Editor lifecycle.** The edit route (`org-dashboard/routes/_shell.pages.$id.edit.tsx`) remounts the editor with `key={`${page.data.id}:${opened}`}` on Discard and "Load latest", and creates the autosave engine in a mount effect (L170), disposing it on unmount; StrictMode mounts twice. `LeaveGuard` (`SaveControls.tsx` L181) blocks through `shouldBlockFn` while autosave isn't `saved`. `publishAfterSave` and `discardAfterSave` live in `publishing.ts`.
-- **Client upload.** `apiUpload(path, form, signal?)`; an aborted fetch comes back as `{ isSuccess: false, code: 0, message: "Network error" }`, which the field shows as a network failure with Retry, so a disposed upload must be silenced before it reaches the field.
-- **Unit tests have no DOM.** Keep the upload tracker in a plain module, as `images.ts` does for `planImageResize`/`shapeFor` (its `shrinkImage` is the DOM part).
-- **e2e.** `bun run test:editor` (Playwright) needs `bun run start:server` and `bun run start:web`. `e2e/global-setup.ts` seeds `pro` (full), `secondPro` (1 free page slot), `thirdPro` (1 free), `photos` (4 free; for upload tests) and `starter`; add an org there if a test needs more. Helpers are in `e2e/editor-fixtures.ts`; the `photos` describe in `editor.e2e.ts` draws its JPEG in the page (`jpeg(page, w, h)`) and uploads with `getByLabel("Upload photo").setInputFiles`. The Shape select's text includes its arrow, so assert with `toContainText`.
-- **Usability method.** The #77 rerun (log removed in `3e2e220`; read it with `git show 3e2e220^:docs/page-autosave-log.md`, Phase 7). A cold agent works through the `e2e-test` skill in the owner's words with no UI hints, task pages are seeded through the real API by a scratch script that is deleted afterwards, and ease is scored 1–5. Task wording: `git show 6ee46ef:docs/puck-usability-tasks.md`.
-
----
-
-## Phase 4: Pending uploads in save status, Publish and leaving
-
-**Goal:** an upload in progress is never silently lost: the status says "Uploading…", Publish waits for it, leaving asks, and a remounted editor ignores late results.
-
-**Files:**
-- New plain module `page-editor/uploads.ts`: an upload tracker (pending count, subscribe, `settled()`, `dispose()` that aborts pending uploads and silences results). Consider keeping per-block pending state there too, so a reselected block shows its upload (see Standing notes, "Image field").
-- `WebFrontend/src/modules/org-dashboard/routes/_shell.pages.$id.edit.tsx` (create the tracker in the same mount effect as autosave; pass it to `PageEditor` next to `organizationId`).
-- `page-editor/PageEditor.tsx` (`uploadImage` memo and `EditorImageUploadContext`: wrap the upload with the tracker), `page-editor/image-field.tsx` (`pick`/`send` register with the tracker; don't show an aborted upload as a network error).
-- `page-editor/SaveControls.tsx` (`SaveStatus`, `LeaveGuard` L181, `shouldBlockFn`, beforeunload), `page-editor/publishing.ts` (`publishAfterSave`), `EditorLayout.tsx`.
-- Tests: `modules/org-dashboard/tests/page-editor-publishing.test.ts`, new `page-editor-uploads.test.ts`, the `photos` describe in `e2e/editor.e2e.ts` (throttle with `page.route("**/page-images", …)`).
-
-**Steps:**
-- "Uploading…" takes precedence over "Saved" in `SaveStatus`; failed or blocked save states still show.
-- `publishAfterSave` awaits `uploads.settled()` before flushing autosave, so the uploaded `src` is part of the saved version that gets published. An upload that fails does not block Publish; the pre-publish check then warns about the empty image as today.
-- `LeaveGuard` blocks while uploads are pending. Its dialog says a photo is still uploading and offers Wait (stay) and Leave anyway. Tab close warns while anything is pending.
-- Discard and "Load latest" dispose the tracker (Default 7); a result arriving after dispose never dispatches.
-
-**Tests that matter:**
-- Tracker: `settled()` resolves after success and failure alike, and after dispose nothing calls back.
-- Publish while an upload is pending publishes a version that includes the uploaded `src`.
-- Leaving during an upload asks; "Leave anyway" leaves; the late response doesn't write into the old editor.
-
-**Done when:**
-- With network throttled, Publish during an upload publishes the photo, and navigating away during an upload asks first.
-
-**Verify:** Seed `pro-org` with a page holding an Image block. Throttle the network in Playwright (route delay on `page-images`). Start an upload: the status reads "Uploading…". Press Publish: it completes after the upload and the published row's content has the stored URL. Start another upload and click the back link: the dialog appears; Wait keeps you in the editor, Leave anyway leaves. Reopen: the page has no URL from the dropped upload (its `page_image` row exists and will be swept). The throttle is the only simulation.
+- **e2e.** `bun run test:editor` (Playwright) needs `bun run start:server` (:3001) and `bun run start:web` (:3000). `e2e/global-setup.ts` seeds `pro` (full), `secondPro` (1 free page slot), `thirdPro` (1 free), `photos` (4 free, 3 used by its tests) and `starter`; add an org there if a test needs more. Helpers are in `e2e/editor-fixtures.ts`; the `photos` describe draws its JPEG in the page (`jpeg(page, w, h)`), uploads with `getByLabel("Upload photo").setInputFiles`, and holds uploads with `holdUploads(page)`. The Shape select's text includes its arrow, so assert with `toContainText`.
+- **Usability method.** The #77 rerun (log removed in `3e2e220`; read it with `git show 3e2e220^:docs/page-autosave-log.md`, Phase 7). A cold agent works through the `e2e-test` skill in the owner's words with no UI hints, task pages are seeded through the real API by a scratch script that is deleted afterwards, and ease is scored 1–5. Task wording: `git show 6ee46ef:docs/puck-usability-tasks.md`. With `playwright-cli run-code`, state kept between calls must live on `page`, not `globalThis`.
 
 ---
 
@@ -92,7 +60,8 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 **Files:**
 - Method and wording: Standing notes, "Usability method".
-- Where findings usually land: the Phase 3 image field, `publish-checks.ts`, `BlockDrawer.tsx` (finding Photos), `blocks.ts` labels.
+- Where findings usually land (all under `Sinwy.WebFrontend/src/modules/org-dashboard/components/page-editor/` unless noted): `image-field.tsx` (the field's UI), `uploads.ts` (upload flow and failure messages), `publish-checks.ts`, `BlockDrawer.tsx` (finding Photos), `Sinwy.Shared/types/page/blocks/blocks.ts` (labels and defaults).
+- Any fix: keep `e2e/editor.e2e.ts`'s `photos` describe green.
 
 **Steps:**
 - Run with the `e2e-test` skill: a cold agent, the owner's wording, no UI hints. Seed the page through the API with a scratch script, and give the agent a folder of 2–3 local salon-like photos (landscape and portrait, at least one over 2 MB).

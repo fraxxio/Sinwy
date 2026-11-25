@@ -4,8 +4,7 @@ import {
 	Puck,
 	type UiState,
 } from "@puckeditor/core";
-import { type ReactNode, useMemo } from "react";
-import { uploadPageImage } from "#/modules/org-dashboard/lib/page-queries";
+import type { ReactNode } from "react";
 import type { PageMetadata } from "#/shared/components/page-builder/blocks";
 import type { Autosave } from "./autosave";
 import { chromeOverrides } from "./BlockChrome";
@@ -14,10 +13,11 @@ import { canvasOverrides } from "./EditorCanvas";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
 import { EditorServicesContext, fieldOverrides } from "./editor-fields";
-import { EditorImageUploadContext, type UploadImage } from "./image-field";
+import { EditorUploadsContext } from "./image-field";
 import type { Publishing } from "./PublishControls";
 import type { ConflictActions } from "./SaveControls";
 import type { PageData } from "./save";
+import type { Uploads } from "./uploads";
 
 /** Puck's canvas picks the starting viewport and ours isn't Puck's, so the editor opens on desktop here. */
 const INITIAL_UI: Partial<UiState> = {
@@ -38,33 +38,29 @@ const OVERRIDES: Partial<Overrides> = {
 const DND = { enableDragHandle: true };
 
 export function PageEditor({
-	organizationId,
 	data,
 	metadata,
 	title,
 	path,
 	back,
 	autosave,
+	uploads,
 	conflict,
 	publishing,
 }: {
-	organizationId: string;
 	data: PageData;
 	metadata: PageMetadata;
 	title: string;
 	path: string;
 	back: ReactNode;
 	autosave: Autosave;
+	uploads: Uploads;
 	conflict: ConflictActions;
 	publishing: Publishing;
 }) {
-	const uploadImage = useMemo<UploadImage>(
-		() => (image, signal) => uploadPageImage(organizationId, image, signal),
-		[organizationId],
-	);
 	return (
 		<EditorServicesContext value={metadata.services}>
-			<EditorImageUploadContext value={uploadImage}>
+			<EditorUploadsContext value={uploads}>
 				<BlockAccessProvider>
 					<Puck
 						config={editorConfig}
@@ -81,12 +77,13 @@ export function PageEditor({
 							path={path}
 							back={back}
 							autosave={autosave}
+							uploads={uploads}
 							conflict={conflict}
 							publishing={publishing}
 						/>
 					</Puck>
 				</BlockAccessProvider>
-			</EditorImageUploadContext>
+			</EditorUploadsContext>
 		</EditorServicesContext>
 	);
 }

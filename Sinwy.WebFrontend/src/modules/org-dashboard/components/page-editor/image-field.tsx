@@ -1,54 +1,29 @@
 import { type ComponentData, useGetPuck } from "@puckeditor/core";
-import {
-	type ApiResponse,
-	BLOCKS,
-	type Blocks,
-	type PageImageDto,
-} from "@sinwy/shared";
+import { BLOCKS, type Blocks } from "@sinwy/shared";
 import { ImageIcon, LoaderCircleIcon } from "lucide-react";
 import {
 	createContext,
 	type DragEvent,
 	use,
-	useEffect,
+	useCallback,
 	useId,
 	useRef,
 	useState,
+	useSyncExternalStore,
 } from "react";
 import type { CustomFieldUi } from "#/shared/components/page-builder/puck-config";
 import { Button } from "#/shared/components/ui/button";
 import { Input } from "#/shared/components/ui/input";
 import { cn } from "#/shared/lib/utils";
 import { EditorField, usePuck } from "./editor-fields";
-import { type ImageShape, shapeFor, shrinkImage } from "./images";
+import type { ImageShape } from "./images";
+import { isBusy, type Uploads } from "./uploads";
 
-export type UploadImage = (
-	image: Blob,
-	signal?: AbortSignal,
-) => Promise<ApiResponse<PageImageDto>>;
-
-export const EditorImageUploadContext = createContext<UploadImage | null>(null);
-
-type UploadView =
-	| { blockId: string; status: "preparing" }
-	| { blockId: string; status: "uploading"; preview: string }
-	| {
-			blockId: string;
-			status: "failed";
-			message: string;
-			preview: string | null;
-			retry: (() => void) | null;
-	  };
-
-const MESSAGES = {
-	unreadable:
-		"This file can't be read as a photo. Choose a JPEG, PNG or another image.",
-	"too-large":
-		"This photo is still over 2 MB after shrinking. Choose a smaller photo.",
-	network: "The photo didn't upload. Check your connection and try again.",
-};
+export const EditorUploadsContext = createContext<Uploads | null>(null);
 
 const isUploadedImage = (src: string) => src.includes("/api/files/pages/");
+
+const noUploads = () => () => {};
 
 /** Writes the uploaded photo, and the shape that fits it where the block has one, as a single history entry. */
 function useWriteImage() {
@@ -89,85 +64,45 @@ function ImageField({
 	onChange: (value: string) => void;
 	readOnly?: boolean | undefined;
 }) {
-	const upload = use(EditorImageUploadContext);
+	const uploads = use(EditorUploadsContext);
 	const blockId = usePuck(
 		(s) => s.selectedItem?.props.id as string | undefined,
 	);
+	const key = blockId ? `${blockId}:${name}` : null;
 	const write = useWriteImage();
 	const inputId = useId();
 	const fileInput = useRef<HTMLInputElement>(null);
-	const latest = useRef(0);
-	const [view, setView] = useState<UploadView | null>(null);
 	const [addressOpen, setAddressOpen] = useState(
 		() => value !== "" && !isUploadedImage(value),
 	);
 	const [dragging, setDragging] = useState(false);
 
-	const preview = view && "preview" in view ? view.preview : null;
-	useEffect(
-		() => () => {
-			if (preview) URL.revokeObjectURL(preview);
-		},
-		[preview],
+	const shown = useSyncExternalStore(
+		uploads?.subscribe ?? noUploads,
+		useCallback(
+			() => (uploads && key ? uploads.view(key) : null),
+			[uploads, key],
+		),
 	);
+	const busy = isBusy(shown);
 
-	useEffect(() => {
-		if (value)
-			setView((current) => (current?.status === "failed" ? null : current));
-	}, [value]);
+	const pick = (file: File) => {
+		if (!uploads || !blockId || !key) return;
+		void uploads.pick(key, file, (src, shape) =>
+			write(blockId, name, src, shape),
+		);
+	};
 
-	const shown = view?.blockId === blockId ? view : null;
-	const busy = shown?.status === "preparing" || shown?.status === "uploading";
-
-	const pick = async (file: File) => {
-		if (!upload || !blockId) return;
-		const token = ++latest.current;
-		const show = (next: UploadView | null) => {
-			if (latest.current === token) setView(next);
-		};
-		show({ blockId, status: "preparing" });
-		const shrunk = await shrinkImage(file);
-		if (!shrunk.ok) {
-			show({
-				blockId,
-				status: "failed",
-				message: MESSAGES[shrunk.reason],
-				preview: null,
-				retry: null,
-			});
-			return;
-		}
-		const previewUrl = URL.createObjectURL(shrunk.blob);
-		const send = async () => {
-			show({ blockId, status: "uploading", preview: previewUrl });
-			const res = await upload(shrunk.blob);
-			if (res.isSuccess) {
-				write(
-					blockId,
-					name,
-					res.data.src,
-					shapeFor(shrunk.width, shrunk.height),
-				);
-				show(null);
-				return;
-			}
-			const retryable = res.code === 0 || res.code >= 500;
-			show({
-				blockId,
-				status: "failed",
-				message: res.code === 0 ? MESSAGES.network : res.message,
-				preview: previewUrl,
-				retry: retryable ? () => void send() : null,
-			});
-		};
-		await send();
+	const change = (next: string) => {
+		if (uploads && key) uploads.dismiss(key);
+		onChange(next);
 	};
 
 	const onDrop = (event: DragEvent) => {
 		event.preventDefault();
 		setDragging(false);
 		const file = event.dataTransfer.files[0];
-		if (file && !readOnly && !busy) void pick(file);
+		if (file && !readOnly && !busy) pick(file);
 	};
 
 	const image = (shown && "preview" in shown && shown.preview) || value;
@@ -221,7 +156,7 @@ function ImageField({
 				onChange={(event) => {
 					const file = event.currentTarget.files?.[0];
 					event.currentTarget.value = "";
-					if (file) void pick(file);
+					if (file) pick(file);
 				}}
 			/>
 			{shown?.status === "failed" && (
@@ -246,7 +181,7 @@ function ImageField({
 						type="button"
 						variant="outline"
 						size="sm"
-						disabled={busy || !upload}
+						disabled={busy || !uploads}
 						onClick={() => fileInput.current?.click()}
 					>
 						{value ? "Change photo" : "Upload photo"}
@@ -257,7 +192,7 @@ function ImageField({
 							variant="ghost"
 							size="sm"
 							disabled={busy}
-							onClick={() => onChange("")}
+							onClick={() => change("")}
 						>
 							Remove
 						</Button>
@@ -274,7 +209,7 @@ function ImageField({
 						value={value}
 						placeholder="https://"
 						readOnly={readOnly}
-						onChange={(event) => onChange(event.currentTarget.value)}
+						onChange={(event) => change(event.currentTarget.value)}
 					/>
 				</div>
 			) : (

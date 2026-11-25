@@ -715,4 +715,88 @@ test.describe("photos", () => {
 		expect(second?.props["src"]).toBe("");
 		expect(JSON.stringify(photos)).not.toMatch(/blob:|data:/);
 	});
+
+	/** Holds photo uploads at the network until `release` is called. */
+	const holdUploads = async (page: Page) => {
+		const gate = Promise.withResolvers<void>();
+		await page.route("**/page-images", async (route) => {
+			await gate.promise;
+			await route.continue().catch(() => {});
+		});
+		return gate.resolve;
+	};
+
+	test("Publish during an upload waits for it and publishes the photo", async ({
+		page,
+		pages,
+		editor,
+		org,
+	}) => {
+		const pageId = await pages.create([
+			section("gallery", [emptyPhoto("photo-1")]),
+		]);
+		await editor.open(pageId);
+		const release = await holdUploads(page);
+
+		await editor.select("photo-1");
+		await editor.settings.getByLabel("Upload photo").setInputFiles({
+			name: "salon.jpg",
+			mimeType: "image/jpeg",
+			buffer: await jpeg(page, 1200, 900),
+		});
+		await expect(editor.status).toHaveText("Uploading…");
+		await editor.button("Publish").click();
+		await expect(editor.button("Publishing…")).toBeVisible();
+		release();
+
+		await expect(page.getByText("Page published")).toBeVisible();
+		await expect(page.getByRole("alertdialog")).toHaveCount(0);
+		await expect(editor.status).toHaveText("Saved");
+		const detail = await pages.detail(pageId);
+		expect(detail.publishedVersion).toBe(detail.latestVersion.version);
+		expect(JSON.stringify(detail.latestVersion.content.data)).toMatch(
+			new RegExp(`"src":"[^"]*/api/files/pages/${org.orgId}/[^/"]+\\.jpg"`),
+		);
+	});
+
+	test("Back during an upload asks: Wait stays with the upload shown, Leave anyway drops it", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create([
+			section("gallery", [emptyPhoto("photo-1"), emptyPhoto("photo-2")]),
+		]);
+		await editor.open(pageId);
+		const release = await holdUploads(page);
+
+		await editor.select("photo-1");
+		await editor.settings.getByLabel("Upload photo").setInputFiles({
+			name: "salon.jpg",
+			mimeType: "image/jpeg",
+			buffer: await jpeg(page, 900, 1200),
+		});
+		await expect(editor.status).toHaveText("Uploading…");
+		await editor.select("photo-2");
+		await expect(editor.settings.getByText("Uploading…")).toBeHidden();
+		await editor.select("photo-1");
+		await expect(editor.settings.getByText("Uploading…")).toBeVisible();
+
+		await editor.back.click();
+		const prompt = page.getByRole("alertdialog");
+		await expect(prompt).toContainText("A photo is still uploading");
+		await prompt.getByRole("button", { name: "Wait" }).click();
+		await expect(prompt).toBeHidden();
+		await expect(page).toHaveURL(/\/edit$/);
+		await expect(editor.status).toHaveText("Uploading…");
+
+		await editor.back.click();
+		await prompt.getByRole("button", { name: "Leave anyway" }).click();
+		await expect(page).not.toHaveURL(/\/edit$/);
+		release();
+
+		expect(JSON.stringify(await pages.saved(pageId))).not.toMatch(
+			/"src":"[^"]/,
+		);
+	});
 });

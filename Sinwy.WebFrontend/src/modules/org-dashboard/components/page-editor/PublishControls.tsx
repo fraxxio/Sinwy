@@ -23,13 +23,15 @@ import { PublishIssuesDialog } from "./PublishIssuesDialog";
 import { type PublishIssue, publishIssues } from "./publish-checks";
 import { useAutosaveState } from "./SaveControls";
 import type { PageData } from "./save";
+import type { Uploads } from "./uploads";
 import { useBlockActions } from "./use-block-actions";
 
 /** The page as the server last answered, and the editor's ways to make it public or drop its draft. */
 export type Publishing = {
 	page: PageDetailDto;
 	organizationSlug: string;
-	publish: (data: PageData) => Promise<void>;
+	/** Reads the document once uploads in progress have written their photos. */
+	publish: (read: () => PageData) => Promise<void>;
 	discard: (data: PageData) => Promise<void>;
 };
 
@@ -78,9 +80,11 @@ export function PageStateBadge({
 
 export function PublishActions({
 	autosave,
+	uploads,
 	publishing: { page, publish, discard },
 }: {
 	autosave: Autosave;
+	uploads: Uploads;
 	publishing: Publishing;
 }) {
 	const getPuck = useGetPuck();
@@ -91,13 +95,15 @@ export function PublishActions({
 	const [issues, setIssues] = useState<PublishIssue[]>([]);
 	const published = page.status === "published";
 
+	const read = () => getPuck().appState.data as PageData;
+
 	const run = async (
 		action: "publish" | "discard",
-		write: (data: PageData) => Promise<void>,
+		write: () => Promise<void>,
 	) => {
 		setBusy(action);
 		try {
-			await write(getPuck().appState.data as PageData);
+			await write();
 		} finally {
 			setBusy(null);
 			setConfirming(false);
@@ -105,10 +111,15 @@ export function PublishActions({
 		}
 	};
 
-	const checkThenPublish = () => {
-		const found = publishIssues(getPuck().appState.data.content as BlockNode[]);
+	const checkThenPublish = async () => {
+		if (uploads.pending() > 0) {
+			setBusy("publish");
+			await uploads.settled();
+			setBusy(null);
+		}
+		const found = publishIssues(read().content as BlockNode[]);
 		if (found.length > 0) setIssues(found);
-		else void run("publish", publish);
+		else await run("publish", () => publish(read));
 	};
 
 	return (
@@ -145,7 +156,7 @@ export function PublishActions({
 								<AlertDialogAction
 									variant="destructive"
 									disabled={busy !== null}
-									onClick={() => run("discard", discard)}
+									onClick={() => run("discard", () => discard(read()))}
 								>
 									{busy === "discard" ? "Discarding…" : "Discard changes"}
 								</AlertDialogAction>
@@ -167,7 +178,7 @@ export function PublishActions({
 				issues={issues}
 				busy={busy === "publish"}
 				onCancel={() => setIssues([])}
-				onPublish={() => run("publish", publish)}
+				onPublish={() => run("publish", () => publish(read))}
 				onShow={(issue) => {
 					setIssues([]);
 					actions.show(issue.id);
