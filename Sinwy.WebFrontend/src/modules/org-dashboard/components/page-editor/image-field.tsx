@@ -16,7 +16,7 @@ import { Button } from "#/shared/components/ui/button";
 import { Input } from "#/shared/components/ui/input";
 import { cn } from "#/shared/lib/utils";
 import { EditorField, usePuck } from "./editor-fields";
-import type { ImageShape } from "./images";
+import { type ImageShape, rowShape } from "./images";
 import { isBusy, type Uploads } from "./uploads";
 
 export const EditorUploadsContext = createContext<Uploads | null>(null);
@@ -25,7 +25,10 @@ const isUploadedImage = (src: string) => src.includes("/api/files/pages/");
 
 const noUploads = () => () => {};
 
-/** Writes the uploaded photo, and the shape that fits it where the block has one, as a single history entry. */
+/**
+ * Writes the uploaded photo, and the shape that fits it where the block has one, as a single history entry. In a
+ * Photos row every photo takes the same shape, so the row stays even.
+ */
 function useWriteImage() {
 	const getPuck = useGetPuck();
 	return (blockId: string, name: string, src: string, shape: ImageShape) => {
@@ -33,6 +36,38 @@ function useWriteImage() {
 		const at = getSelectorForId(blockId);
 		const item = at && getItemBySelector(at);
 		if (!at || !item) return;
+		const [parentId = "", slot = ""] = at.zone.split(":");
+		const rowAt = getSelectorForId(parentId);
+		const row = rowAt && getItemBySelector(rowAt);
+		if (rowAt && row?.type === "Photos") {
+			const photos = row.props[slot] as ComponentData[];
+			const aspect = rowShape(
+				shape,
+				photos
+					.filter((p) => p.props.id !== blockId)
+					.map(({ props }) => ({ src: props["src"], aspect: props["aspect"] })),
+			);
+			dispatch({
+				type: "replace",
+				destinationZone: rowAt.zone,
+				destinationIndex: rowAt.index,
+				data: {
+					...row,
+					props: {
+						...row.props,
+						[slot]: photos.map((p) => ({
+							...p,
+							props: {
+								...p.props,
+								...(p.props.id === blockId && { [name]: src }),
+								aspect,
+							},
+						})),
+					},
+				},
+			});
+			return;
+		}
 		const fields = (BLOCKS as Blocks)[item.type]?.fields ?? {};
 		const data: ComponentData = {
 			...item,

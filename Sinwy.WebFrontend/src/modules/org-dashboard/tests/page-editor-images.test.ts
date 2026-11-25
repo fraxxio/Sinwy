@@ -3,6 +3,7 @@ import {
 	type ImageEncoding,
 	MAX_IMAGE_SIDE,
 	planImageResize,
+	rowShape,
 	shapeFor,
 } from "../components/page-editor/images";
 
@@ -75,5 +76,25 @@ describe("shapeFor", () => {
 		expect(shapeFor(4000, 3000)).toBe("wide");
 		expect(shapeFor(3000, 4000)).toBe("auto");
 		expect(shapeFor(10_000, 500)).toBe("wide");
+	});
+});
+
+describe("rowShape", () => {
+	const photo = (aspect: string) => ({
+		src: "/api/files/pages/o/a.jpg",
+		aspect,
+	});
+
+	it("stays wide while every photo is landscape, ignoring empty slots", () => {
+		expect(rowShape("wide", [])).toBe("wide");
+		expect(rowShape("wide", [{ src: "", aspect: "square" }])).toBe("wide");
+		expect(rowShape("wide", [photo("wide"), { aspect: "auto" }])).toBe("wide");
+	});
+
+	it("turns square when the new photo or any other one isn't landscape", () => {
+		expect(rowShape("auto", [])).toBe("square");
+		expect(rowShape("square", [photo("wide")])).toBe("square");
+		expect(rowShape("wide", [photo("square")])).toBe("square");
+		expect(rowShape("wide", [photo("auto")])).toBe("square");
 	});
 });

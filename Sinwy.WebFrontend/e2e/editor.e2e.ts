@@ -651,7 +651,7 @@ test.describe("photos", () => {
 		return Buffer.from(base64, "base64");
 	};
 
-	test("a photo from the device fills an Image with a fitting shape in one undo step, and a text file is refused", async ({
+	test("a photo from the device fills an Image with a fitting shape in one undo step, the Photos row keeps one shape, and a text file is refused", async ({
 		page,
 		pages,
 		editor,
@@ -707,12 +707,26 @@ test.describe("photos", () => {
 		);
 		await expect(photo).toHaveAttribute("src", stored);
 
+		await editor.block("photo-2").click();
+		await expect(shape).toContainText("Wide");
+		await fileInput.setInputFiles({
+			name: "chair.jpg",
+			mimeType: "image/jpeg",
+			buffer: await jpeg(page, 900, 1200),
+		});
+		await expect(editor.block("photo-2").locator("img")).toHaveAttribute(
+			"src",
+			stored,
+		);
+		await expect(shape).toContainText("Square");
+
 		await editor.save();
 		const [photos] = await pages.saved(pageId);
 		const [first, second] = (photos?.props["items"] ?? []) as Block[];
 		expect(first?.props["src"]).toMatch(stored);
-		expect(first?.props["aspect"]).toBe("wide");
-		expect(second?.props["src"]).toBe("");
+		expect(second?.props["src"]).toMatch(stored);
+		expect(first?.props["aspect"]).toBe("square");
+		expect(second?.props["aspect"]).toBe("square");
 		expect(JSON.stringify(photos)).not.toMatch(/blob:|data:/);
 	});
 

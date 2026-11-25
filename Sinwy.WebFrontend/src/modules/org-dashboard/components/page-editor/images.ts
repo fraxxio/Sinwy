@@ -41,6 +41,16 @@ export const shapeFor = (width: number, height: number): ImageShape => {
 	return "square";
 };
 
+/** A Photos row keeps one shape: Wide while every photo in it is landscape, otherwise Square. Empty slots don't count. */
+export const rowShape = (
+	uploaded: ImageShape,
+	others: readonly { src?: unknown; aspect?: unknown }[],
+): ImageShape =>
+	uploaded === "wide" &&
+	others.every((other) => !other.src || other.aspect === "wide")
+		? "wide"
+		: "square";
+
 export type ShrunkImage = { blob: Blob; width: number; height: number };
 
 export type ShrinkResult =
