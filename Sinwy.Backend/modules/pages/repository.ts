@@ -1,7 +1,19 @@
 import db, { type Tx } from "@db";
 import { page, pageContent, pageImage } from "@db/schema/pageSchema";
 import type { PageDocument } from "@sinwy/shared";
-import { and, asc, count, desc, eq, inArray, sql, sum } from "drizzle-orm";
+import {
+	and,
+	asc,
+	count,
+	desc,
+	eq,
+	gt,
+	inArray,
+	lt,
+	notExists,
+	sql,
+	sum,
+} from "drizzle-orm";
 
 export type PageRow = typeof page.$inferSelect;
 export type PageVersionRow = Pick<
@@ -404,3 +416,40 @@ export const insertPageImageWithinLimit = (
 		await tx.insert(pageImage).values(values);
 		return { used: used + values.bytes };
 	});
+
+/** Images created before `createdBefore` that no saved version of any page in their organization mentions, by id after `afterId`. */
+export const findUnusedPageImages = (
+	createdBefore: Date,
+	afterId: string | null,
+	limit: number,
+) =>
+	db
+		.select({
+			id: pageImage.id,
+			organizationId: pageImage.organizationId,
+			key: pageImage.key,
+		})
+		.from(pageImage)
+		.where(
+			and(
+				lt(pageImage.createdAt, createdBefore),
+				afterId === null ? undefined : gt(pageImage.id, afterId),
+				notExists(
+					db
+						.select({ one: sql`1` })
+						.from(pageContent)
+						.innerJoin(page, eq(page.id, pageContent.pageId))
+						.where(
+							and(
+								eq(page.organizationId, pageImage.organizationId),
+								sql`strpos(${pageContent.content}::text, ${pageImage.key}) > 0`,
+							),
+						),
+				),
+			),
+		)
+		.orderBy(asc(pageImage.id))
+		.limit(limit);
+
+export const deletePageImages = (ids: string[]) =>
+	db.delete(pageImage).where(inArray(pageImage.id, ids));

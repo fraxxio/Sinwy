@@ -9,6 +9,7 @@ export {
 } from "./notificationPreferences";
 export {
 	createPurgeOrganizationsJob,
+	type PurgeHooks,
 	purgeScheduledOrganizations,
 } from "./purge";
 export { registerOrganizationRoutes } from "./routes";

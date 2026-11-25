@@ -399,3 +399,21 @@ export const uploadPageImage = async (
 		throw error;
 	}
 };
+
+/** For the organization purge: best effort, as their rows go with the organization. */
+export const deleteOrganizationPageImages = async (
+	organizationIds: string[],
+) => {
+	for (const organizationId of organizationIds)
+		await storageClient
+			.deletePrefix(`pages/${organizationId}/`)
+			.catch((error: unknown) => {
+				pagesLogger.warn(
+					"Failed to delete a purged organization's page images",
+					{
+						organizationId,
+						error,
+					},
+				);
+			});
+};

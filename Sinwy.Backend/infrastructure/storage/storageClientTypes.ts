@@ -3,6 +3,8 @@ import appConfig from "@config";
 export type StorageClient = {
 	put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
 	delete(key: string): Promise<void>;
+	/** Deletes every object under `prefix`, which must end with `/`; missing is fine. */
+	deletePrefix(prefix: string): Promise<void>;
 	/** Response for GET /api/files/<key>: 404 when missing. */
 	serve(key: string): Promise<Response>;
 };

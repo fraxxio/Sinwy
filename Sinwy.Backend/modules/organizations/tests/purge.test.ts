@@ -1,5 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
 import { fileUrl, storageClient } from "@backend/infrastructure/storage";
+import { purgeHooks } from "@backend/jobs";
 import {
 	createUserWithSession,
 	insertOrganization,
@@ -81,6 +82,37 @@ test("deletes exactly the orgs past their retention, with their logo; a second r
 		purged: 0,
 	});
 	expect(await deletionScheduledAt(retained)).toEqual(ago(29 * DAY));
+});
+
+test("with the app's hooks, a purged org's page images go with it; another org's stay", async () => {
+	const logoKey = "logos/expired/logo.png";
+	const imageKeys = ["a.png", "b.jpg"];
+	await storageClient.put(logoKey, new Uint8Array([1]), "image/png");
+	const expired = await seedOrganization("Expired", {
+		deletionScheduledAt: ago(31 * DAY),
+		logo: fileUrl(logoKey),
+	});
+	const other = await seedOrganization("Other");
+	await withOwner(other);
+	for (const orgId of [expired, other])
+		for (const name of imageKeys)
+			await storageClient.put(
+				`pages/${orgId}/${name}`,
+				new Uint8Array([1]),
+				"image/png",
+			);
+
+	expect((await purgeScheduledOrganizations(now, purgeHooks)).purged).toBe(1);
+
+	expect((await storageClient.serve(logoKey)).status).toBe(404);
+	for (const name of imageKeys) {
+		expect((await storageClient.serve(`pages/${expired}/${name}`)).status).toBe(
+			404,
+		);
+		expect((await storageClient.serve(`pages/${other}/${name}`)).status).toBe(
+			200,
+		);
+	}
 });
 
 test("purges in batches until none are left", async () => {

@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Upload endpoint, tracking table and plan quota | – | done | `feat(backend, shared): upload page images within a per-plan storage quota` |
-| 2 | Orphan sweep and org purge | 1 | todo | |
+| 2 | Orphan sweep and org purge | 1 | done | `feat(backend): sweep unused page images and delete them with a purged organization` |
 | 3 | Image field with upload in the editor | 1 | todo | |
 | 4 | Pending uploads in save status, Publish and leaving | 3 | todo | |
 | 5 | Usability rerun: task 3 (research) | 4 | todo | |
@@ -40,13 +40,12 @@ Settled with the product owner. Ask before changing any of them.
 
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
-- **Storage.** `StorageClient` (`infrastructure/storage/storageClientTypes.ts`) has only `put`, `delete` and `serve`, with no list operation. The local client (`localStorageClient.ts`) writes under `STORAGE_LOCAL_DIR` (default `.storage`, gitignored) and rejects keys that escape the root. `fileUrl(key)` is `<BETTER_AUTH_URL origin>/api/files/<key>`; `keyFromFileUrl` returns null for any other origin. Files are served by `modules/files` with an immutable cache header.
+- **Storage.** `StorageClient` (`infrastructure/storage/storageClientTypes.ts`) has `put`, `delete`, `deletePrefix` (a folder prefix ending in `/`) and `serve`, with no list operation. The local client writes under `STORAGE_LOCAL_DIR` (default `.storage`, resolved against `Sinwy.Backend/`, gitignored) and rejects keys that escape the root. `fileUrl(key)` is `<BETTER_AUTH_URL origin>/api/files/<key>`; `keyFromFileUrl` returns null for any other origin. Files are served by `modules/files` with an immutable cache header.
 - **Tests on storage.** `modules/user/tests/avatar.test.ts` builds a `createLocalStorageClient(tmpRoot)`; route tests use the real `storageClient` and delete what they wrote (`avatarRoute.test.ts`, `organizations/tests/general.test.ts`).
 - **Page image tracking (Phase 1).** `page_image` (`db/schema/pageSchema.ts`): id, organization_id (cascade), unique `key`, `bytes`, `created_at`, index (organization_id, created_at). `insertPageImageWithinLimit` (`modules/pages/repository.ts`) sums bytes and inserts under `lockOrganization`, which now serializes page creates and uploads. The upload answers 201 `{ src, usage }`; quota refusal is 409 `PAGE_IMAGE_QUOTA_EXCEEDED` (40928); a non-member gets 404, not 403.
-- **Test helpers.** `modules/pages/tests/pageImages.test.ts` has `fillQuota` (a row with no file) and `storedFiles(orgId)` (lists `<STORAGE_LOCAL_DIR>/pages/<orgId>`). Tests get a temp `STORAGE_LOCAL_DIR` from `test/setup.ts`.
-- **Running app.** Postgres may be down: `bun run db:up`. Seed with `bun run dev:seed-scenario pro-org` (no staff; `org-with-staff` has them) and log in with `dev:login-as`. `src` uses the `BETTER_AUTH_URL` origin (the web app, :3000), so it resolves only while the web app runs. Phase 1 left one upload in pro-org `86154843-…` (row and file); Phase 6 cleanup covers it.
-- **Module direction.** `pages` imports `@organizationsModule`, never the reverse. The purge reaches other modules through `PurgeHooks` wired in `Sinwy.Backend/jobs.ts` (see `onScheduled`). `scripts/purgeOrganizations.ts` runs that same wired job. Org rows are hard-deleted in `purgeExpired` (`modules/organizations/purge.ts` L52), which only deletes the logo today.
-- **History rows.** `page_content` (`db/schema/pageSchema.ts`) keeps every checkpoint, discarded drafts included; saves within the 10-minute window update the latest row in place. Deleting a page cascades its rows. "Referenced" therefore means: any `page_content` row of any page of the org contains the key. Use `strpos(content::text, key) > 0`, not `LIKE`.
+- **Test helpers.** `modules/pages/tests/pageImages.test.ts` has `fillQuota` (a row with no file) and `storedFiles(orgId)`; `pageImageSweep.test.ts` has `storeImage` (file and row, backdated) and `seedPage` (content rows straight into the table). Tests get a temp `STORAGE_LOCAL_DIR` from `test/setup.ts`.
+- **Sweep and purge (Phase 2).** `sweep-page-images` (`modules/pages/sweep.ts`) runs at server start and hourly. It deletes rows older than 24 h whose key no `page_content` row of a page in the same org contains, file first; it logs only when it deletes or fails something. `purgeHooks.onPurged` (`Sinwy.Backend/jobs.ts`) removes `pages/<orgId>/` after the org rows are gone.
+- **Running app.** Postgres may be down: `bun run db:up`. Seed with `bun run dev:seed-scenario pro-org` (no staff; `org-with-staff` has them) and log in with `dev:login-as`. `src` uses the `BETTER_AUTH_URL` origin (the web app, :3000), so it resolves only while the web app runs. Phase 1's upload in pro-org `86154843-…` is swept by the running backend once it is 24 h old and unused. Phase 2's verify purged its pro-org but left the owner user (no org); Phase 6 cleanup covers both.
 - **Document rules.** `src` must pass `isSafeImageSrc` (http(s) or root-relative). Documents are capped at 256 KB (`PAGE_DOCUMENT_LIMITS.maxBytes`). Never put a `data:` or `blob:` URL in props: autosave sends every change after 1 s and would fail with an unfixable error. Keep the preview in the field's own state.
 - **Editor fields.** `puckField` (`WebFrontend/src/shared/components/page-builder/puck-config.ts`) maps the `image` kind to a plain text field and looks up `customFields` only for kinds with `custom: true`. `editorConfig` (`page-editor/editor-config.tsx`) passes `customFields: { serviceIds }`; `serviceIdsField` in `editor-fields.tsx` is the model for a custom field UI. `src` keeps `required: true`, which the pre-publish check (`publish-checks.ts` L29) uses to warn about empty images.
 - **Shapes.** Image renders `square` as `aspect-square` and `wide` as `aspect-video` with `object-cover` (`shared/components/page-builder/blocks.tsx` L113, L209). Photos' default items are `square`; a standalone Image defaults to `wide`.
@@ -55,35 +54,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - **Unit tests have no DOM.** Keep shrink planning, shape choice and the upload tracker in plain modules; DOM-only parts (canvas, `createImageBitmap`) stay thin.
 - **e2e.** `bun run test:editor` (Playwright) needs `bun run start:server` and `bun run start:web`. `e2e/global-setup.ts` seeds `pro`, `secondPro`, `thirdPro` (1 free page slot) and `starter`; add an org there if a test needs more. Helpers are in `e2e/editor-fixtures.ts`.
 - **Usability method.** The #77 rerun (log removed in `3e2e220`; read it with `git show 3e2e220^:docs/page-autosave-log.md`, Phase 7). A cold agent works through the `e2e-test` skill in the owner's words with no UI hints, task pages are seeded through the real API by a scratch script that is deleted afterwards, and ease is scored 1–5. Task wording: `git show 6ee46ef:docs/puck-usability-tasks.md`.
-
----
-
-## Phase 2: Orphan sweep and org purge
-
-**Goal:** files that no saved version of any page in the org uses are deleted after 24 h, and purging an organization deletes all its page images.
-
-**Files:**
-- `Sinwy.Backend/infrastructure/storage/{storageClientTypes,localStorageClient}.ts` (add `deletePrefix`; the local client's `pathFor` holds the root-escape guard).
-- `Sinwy.Backend/modules/pages/repository.ts` (`pageImage`, `pageContent`, `page` are already imported there), `service.ts` (has `pagesLogger`), `index.ts`; new `sweep.ts` holding the job, like `organizations/purge.ts`.
-- `Sinwy.Backend/modules/organizations/purge.ts` (`PurgeHooks`, `purgeExpired`), `Sinwy.Backend/jobs.ts`, `Sinwy.Backend/lib/jobs.ts` (the `Job` type).
-- Tests: `modules/pages/tests/pageImages.test.ts` (extend, or a new `pageImageSweep.test.ts` reusing its helpers), `modules/organizations/tests/purge.test.ts`, `modules/user/tests/avatar.test.ts` (local client tests).
-
-**Steps:**
-- `StorageClient.deletePrefix(prefix)`: the local driver removes the directory recursively, missing is fine, and the same root-escape guard applies. The prefix must end with `/` and be non-empty, so nothing can wipe the root.
-- Repository: find unreferenced rows older than a cutoff in batches (`strpos` over every `page_content` row of pages in the same org). The sweep deletes the file, then the row; a failed file delete is logged and the row kept, so the next run retries.
-- Job `sweep-page-images`, hourly, exported from the pages module and added to `jobs` in `jobs.ts`.
-- Add `onPurged(organizationIds)` to `PurgeHooks`, called after `deleteOrganizations` in `purgeExpired`. Wire it in `jobs.ts` to a pages service that runs `deletePrefix("pages/<orgId>/")` per org, best effort and logged. Rows go with the org's cascade.
-
-**Tests that matter:**
-- Not deleted: an image referenced only by an old checkpoint, by a discarded draft row, or by the published row; an unreferenced image younger than 24 h.
-- Deleted: an unreferenced image older than 24 h, and images of a deleted page. An image referenced by a page of a different org doesn't protect this org's file.
-- `deletePrefix` refuses an empty prefix, `/` and `..`, and leaves sibling orgs' files alone.
-- Purge removes the org's page image files and the logo; another org's files stay.
-
-**Done when:**
-- Running the sweep and the purge in tests leaves exactly the expected files on disk and rows in the table.
-
-**Verify:** Seed `pro-org` with a page. Upload two images through the API and save page content that references one. Backdate both `page_image.created_at` by 25 h through `sinwy_rw`, then run the sweep job once. A scratch script calls `runJob`, as `scripts/purgeOrganizations.ts` does. The unreferenced file's URL returns 404 and its row is gone; the referenced one still serves. Then schedule the org for deletion past retention and run `bun run db:purge-organizations`: `.storage/pages/<orgId>/` no longer exists. Time is simulated by backdating.
 
 ---
 
@@ -98,6 +68,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - New plain modules in `page-editor/`: shrink planning (`planImageResize`) and shape choice (`shapeFor`), with a thin DOM wrapper for `createImageBitmap` and canvas `toBlob`.
 - `WebFrontend/src/shared/lib/api.ts` (`apiUpload` takes an optional `signal`).
 - `WebFrontend/src/shared/components/ImageUpload.tsx` (reuse or extract the client checks).
+- The upload answers `PageImageDto` (`Sinwy.Shared/types/page/Page.ts`); quota errors come as `PAGE_IMAGE_QUOTA_EXCEEDED` with the server's message. No backend change is expected.
 - Tests: `modules/org-dashboard/tests/` (new `page-editor-images.test.ts`), `e2e/editor.e2e.ts`.
 
 **Steps:**

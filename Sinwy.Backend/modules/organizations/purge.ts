@@ -30,6 +30,8 @@ const unscheduleOwned = async (now: Date) => {
 export type PurgeHooks = {
 	/** Runs once the repair has scheduled ownerless organizations, as the account deletion would have. */
 	onScheduled?: (organizationIds: string[]) => Promise<unknown>;
+	/** Runs once the organizations' rows are deleted, for data other modules keep outside the database. */
+	onPurged?: (organizationIds: string[]) => Promise<unknown>;
 };
 
 /** Its owner is gone, but the account deletion never marked it. */
@@ -48,14 +50,16 @@ const scheduleOwnerless = async (now: Date, hooks: PurgeHooks) => {
 	return orgs.length;
 };
 
-const purgeExpired = async (now: Date) => {
+const purgeExpired = async (now: Date, hooks: PurgeHooks) => {
 	const cutoff = new Date(now.getTime() - RETENTION_MS);
 	let purged = 0;
 	for (;;) {
 		const batch = await findExpiredOrganizations(cutoff, BATCH_SIZE);
 		if (batch.length === 0) break;
-		await deleteOrganizations(batch.map((org) => org.id));
+		const ids = batch.map((org) => org.id);
+		await deleteOrganizations(ids);
 		for (const org of batch) await deleteStoredLogo(org.id, org.logo);
+		await hooks.onPurged?.(ids);
 		purged += batch.length;
 		if (batch.length < BATCH_SIZE) break;
 	}
@@ -74,7 +78,7 @@ export const purgeScheduledOrganizations = async (
 ) => ({
 	unscheduled: await unscheduleOwned(now),
 	scheduled: await scheduleOwnerless(now, hooks),
-	purged: await purgeExpired(now),
+	purged: await purgeExpired(now, hooks),
 });
 
 export const createPurgeOrganizationsJob = (
