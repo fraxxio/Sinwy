@@ -3,6 +3,7 @@ import {
 	API_ERROR_CODES,
 	type ApiResponse,
 	type PageDetailDto,
+	type PageImageDto,
 } from "@sinwy/shared";
 import {
 	type Clock,
@@ -14,6 +15,7 @@ import {
 	publishAfterSave,
 } from "../components/page-editor/publishing";
 import type { PageData } from "../components/page-editor/save";
+import { createUploads } from "../components/page-editor/uploads";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -64,6 +66,35 @@ const conflict: ApiResponse<PageDetailDto> = {
 	code: API_ERROR_CODES.PAGE_VERSION_CONFLICT,
 };
 
+const noUploads = { pending: () => 0, settled: async () => {} };
+
+const STORED = "https://sinwy.test/api/files/pages/org-1/photo.jpg";
+
+const withPhoto = (src: string): PageData => ({
+	root: { props: {} },
+	content: [{ type: "Image", props: { id: "image-1", src, aspect: "wide" } }],
+});
+
+/** A tracker whose uploads wait until the test answers them, writing into `doc`. */
+const photoUpload = () => {
+	const sent = deferred<Blob, ApiResponse<PageImageDto>>();
+	const uploads = createUploads({
+		prepare: async (file) => ({
+			ok: true,
+			blob: file,
+			width: 400,
+			height: 300,
+		}),
+		upload: (image) => sent.fn(image),
+	});
+	const state = { doc: withPhoto("") };
+	const pick = () =>
+		uploads.pick("image-1:src", new File(["jpeg"], "salon.jpg"), (src) => {
+			state.doc = withPhoto(src);
+		});
+	return { uploads, sent, state, pick };
+};
+
 const setup = () => {
 	const saves = deferred<{ data: PageData; base: number }, SaveOutcome>();
 	const writes = deferred<number, ApiResponse<PageDetailDto>>();
@@ -85,7 +116,12 @@ describe("publish after save", () => {
 	it("waits for the save in flight and publishes the version it made", async () => {
 		const { autosave, saves, writes, saving } = setup();
 		saving("typed");
-		const outcome = publishAfterSave(autosave, doc("typed"), writes.fn);
+		const outcome = publishAfterSave(
+			autosave,
+			noUploads,
+			() => doc("typed"),
+			writes.fn,
+		);
 		await settle();
 		expect(writes.calls).toHaveLength(0);
 
@@ -98,7 +134,12 @@ describe("publish after save", () => {
 	it("saves what was typed after the save in flight before publishing", async () => {
 		const { autosave, saves, writes, saving } = setup();
 		saving("typ");
-		const outcome = publishAfterSave(autosave, doc("typed"), writes.fn);
+		const outcome = publishAfterSave(
+			autosave,
+			noUploads,
+			() => doc("typed"),
+			writes.fn,
+		);
 		await saves.call(0).answer({ ok: true, base: 2 });
 		expect(saves.call(1).arg).toEqual({ data: doc("typed"), base: 2 });
 		expect(writes.calls).toHaveLength(0);
@@ -111,7 +152,12 @@ describe("publish after save", () => {
 
 	it("doesn't publish when the save fails, and says why", async () => {
 		const { autosave, saves, writes } = setup();
-		const outcome = publishAfterSave(autosave, doc("typed"), writes.fn);
+		const outcome = publishAfterSave(
+			autosave,
+			noUploads,
+			() => doc("typed"),
+			writes.fn,
+		);
 		await saves.call(0).answer({ ok: false, code: 0, message: "Offline" });
 		expect(await outcome).toEqual({
 			ok: false,
@@ -123,7 +169,12 @@ describe("publish after save", () => {
 
 	it("publishes again when its own save got there first", async () => {
 		const { autosave, saves, writes, saving } = setup();
-		const outcome = publishAfterSave(autosave, doc("start"), writes.fn);
+		const outcome = publishAfterSave(
+			autosave,
+			noUploads,
+			() => doc("start"),
+			writes.fn,
+		);
 		await settle();
 		expect(writes.calls.map((call) => call.arg)).toEqual([1]);
 
@@ -137,7 +188,12 @@ describe("publish after save", () => {
 
 	it("reports a version saved somewhere else instead of publishing it", async () => {
 		const { autosave, writes } = setup();
-		const outcome = publishAfterSave(autosave, doc("start"), writes.fn);
+		const outcome = publishAfterSave(
+			autosave,
+			noUploads,
+			() => doc("start"),
+			writes.fn,
+		);
 		await settle();
 		await writes.call(0).answer(conflict);
 		expect(await outcome).toMatchObject({
@@ -186,5 +242,58 @@ describe("discard after save", () => {
 			ok: false,
 			code: API_ERROR_CODES.PAGE_VERSION_CONFLICT,
 		});
+	});
+});
+
+describe("publish during a photo upload", () => {
+	const uploaded: ApiResponse<PageImageDto> = {
+		isSuccess: true,
+		data: { src: STORED } as PageImageDto,
+		message: null,
+		code: 201,
+	};
+
+	it("waits for the upload and publishes the version holding the photo", async () => {
+		const { autosave, saves, writes } = setup();
+		const { uploads, sent, state, pick } = photoUpload();
+		void pick();
+		const outcome = publishAfterSave(
+			autosave,
+			uploads,
+			() => state.doc,
+			writes.fn,
+		);
+		await settle();
+		expect(saves.calls).toHaveLength(0);
+
+		await sent.call(0).answer(uploaded);
+		expect(saves.call(0).arg).toEqual({ data: withPhoto(STORED), base: 1 });
+		await saves.call(0).answer({ ok: true, base: 2 });
+		await writes.call(0).answer(done);
+		expect(writes.calls.map((call) => call.arg)).toEqual([2]);
+		expect((await outcome).ok).toBe(true);
+	});
+
+	it("still publishes when the upload fails", async () => {
+		const { autosave, saves, writes } = setup();
+		const { uploads, sent, state, pick } = photoUpload();
+		void pick();
+		const outcome = publishAfterSave(
+			autosave,
+			uploads,
+			() => state.doc,
+			writes.fn,
+		);
+		await settle();
+		await sent.call(0).answer({
+			isSuccess: false,
+			data: null,
+			message: "Network error",
+			code: 0,
+		});
+		expect(saves.call(0).arg.data).toEqual(withPhoto(""));
+		await saves.call(0).answer({ ok: true, base: 2 });
+		await writes.call(0).answer(done);
+		expect((await outcome).ok).toBe(true);
 	});
 });

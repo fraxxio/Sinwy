@@ -13,9 +13,11 @@ import { canvasOverrides } from "./EditorCanvas";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
 import { EditorServicesContext, fieldOverrides } from "./editor-fields";
+import { EditorUploadsContext } from "./image-field";
 import type { Publishing } from "./PublishControls";
 import type { ConflictActions } from "./SaveControls";
 import type { PageData } from "./save";
+import type { Uploads } from "./uploads";
 
 /** Puck's canvas picks the starting viewport and ours isn't Puck's, so the editor opens on desktop here. */
 const INITIAL_UI: Partial<UiState> = {
@@ -42,6 +44,7 @@ export function PageEditor({
 	path,
 	back,
 	autosave,
+	uploads,
 	conflict,
 	publishing,
 }: {
@@ -51,32 +54,36 @@ export function PageEditor({
 	path: string;
 	back: ReactNode;
 	autosave: Autosave;
+	uploads: Uploads;
 	conflict: ConflictActions;
 	publishing: Publishing;
 }) {
 	return (
 		<EditorServicesContext value={metadata.services}>
-			<BlockAccessProvider>
-				<Puck
-					config={editorConfig}
-					data={data as Data}
-					metadata={metadata}
-					ui={INITIAL_UI}
-					viewports={VIEWPORTS}
-					overrides={OVERRIDES}
-					dnd={DND}
-					height="100%"
-				>
-					<EditorLayout
-						title={title}
-						path={path}
-						back={back}
-						autosave={autosave}
-						conflict={conflict}
-						publishing={publishing}
-					/>
-				</Puck>
-			</BlockAccessProvider>
+			<EditorUploadsContext value={uploads}>
+				<BlockAccessProvider>
+					<Puck
+						config={editorConfig}
+						data={data as Data}
+						metadata={metadata}
+						ui={INITIAL_UI}
+						viewports={VIEWPORTS}
+						overrides={OVERRIDES}
+						dnd={DND}
+						height="100%"
+					>
+						<EditorLayout
+							title={title}
+							path={path}
+							back={back}
+							autosave={autosave}
+							uploads={uploads}
+							conflict={conflict}
+							publishing={publishing}
+						/>
+					</Puck>
+				</BlockAccessProvider>
+			</EditorUploadsContext>
 		</EditorServicesContext>
 	);
 }

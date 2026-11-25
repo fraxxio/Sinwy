@@ -1,4 +1,4 @@
-import type { BrowserContext } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import type { PageDetailDto } from "@sinwy/shared";
 import {
 	type Block,
@@ -615,5 +615,202 @@ test.describe("publishing", () => {
 		await expect(page.getByText("Changes published")).toBeVisible();
 		const live = await storefront(context, pages, org, pageId);
 		expect(await live.heading()).toBe("Second draft");
+	});
+});
+
+test.describe("photos", () => {
+	test.use({ seed: "photos" });
+
+	const emptyPhoto = (id: string): Block => ({
+		type: "Image",
+		props: { id, src: "", alt: "", aspect: "square" },
+	});
+
+	/** A JPEG drawn in the browser, so no binary fixture has to live in the repo. */
+	const jpeg = async (
+		page: Page,
+		width: number,
+		height: number,
+	): Promise<Buffer> => {
+		const base64 = await page.evaluate(
+			([w, h]) => {
+				const canvas = document.createElement("canvas");
+				canvas.width = w;
+				canvas.height = h;
+				const context = canvas.getContext("2d");
+				if (!context) throw new Error("no 2d context");
+				const gradient = context.createLinearGradient(0, 0, w, h);
+				gradient.addColorStop(0, "#c084fc");
+				gradient.addColorStop(1, "#f59e0b");
+				context.fillStyle = gradient;
+				context.fillRect(0, 0, w, h);
+				return canvas.toDataURL("image/jpeg", 0.9).split(",")[1] ?? "";
+			},
+			[width, height] as const,
+		);
+		return Buffer.from(base64, "base64");
+	};
+
+	test("a photo from the device fills an Image with a fitting shape in one undo step, the Photos row keeps one shape, and a text file is refused", async ({
+		page,
+		pages,
+		editor,
+		org,
+	}) => {
+		const pageId = await pages.create([
+			{
+				type: "Photos",
+				props: {
+					id: "photos",
+					gap: "medium",
+					phoneLayout: "stack",
+					items: [emptyPhoto("photo-1"), emptyPhoto("photo-2")],
+				},
+			},
+		]);
+		await editor.open(pageId);
+		const stored = new RegExp(`/api/files/pages/${org.orgId}/[^/]+\\.jpg$`);
+		const photo = editor.block("photo-1").locator("img");
+		const shape = editor.settings.getByRole("combobox", { name: "Shape" });
+		const fileInput = editor.settings.getByLabel("Upload photo");
+
+		await editor.block("photo-1").click();
+		await expect(editor.selected).toHaveText("Image");
+		await expect(
+			editor.settings.getByText("Describe the photo for people"),
+		).toBeHidden();
+		await fileInput.setInputFiles({
+			name: "salon.jpg",
+			mimeType: "image/jpeg",
+			buffer: await jpeg(page, 1600, 900),
+		});
+		await expect(photo).toHaveAttribute("src", stored);
+		await expect(shape).toContainText("Wide");
+		await expect(
+			editor.settings.getByText("Describe the photo for people"),
+		).toBeVisible();
+
+		await editor.button("Undo").click();
+		await expect(photo).toHaveCount(0);
+		await expect(shape).toContainText("Square");
+		await editor.button("Redo").click();
+		await expect(photo).toHaveAttribute("src", stored);
+		await expect(shape).toContainText("Wide");
+
+		await fileInput.setInputFiles({
+			name: "notes.txt",
+			mimeType: "text/plain",
+			buffer: Buffer.from("not a photo"),
+		});
+		await expect(editor.settings.getByRole("alert")).toHaveText(
+			/can't be read as a photo/,
+		);
+		await expect(photo).toHaveAttribute("src", stored);
+
+		await editor.block("photo-2").click();
+		await expect(shape).toContainText("Wide");
+		await fileInput.setInputFiles({
+			name: "chair.jpg",
+			mimeType: "image/jpeg",
+			buffer: await jpeg(page, 900, 1200),
+		});
+		await expect(editor.block("photo-2").locator("img")).toHaveAttribute(
+			"src",
+			stored,
+		);
+		await expect(shape).toContainText("Square");
+
+		await editor.save();
+		const [photos] = await pages.saved(pageId);
+		const [first, second] = (photos?.props["items"] ?? []) as Block[];
+		expect(first?.props["src"]).toMatch(stored);
+		expect(second?.props["src"]).toMatch(stored);
+		expect(first?.props["aspect"]).toBe("square");
+		expect(second?.props["aspect"]).toBe("square");
+		expect(JSON.stringify(photos)).not.toMatch(/blob:|data:/);
+	});
+
+	/** Holds photo uploads at the network until `release` is called. */
+	const holdUploads = async (page: Page) => {
+		const gate = Promise.withResolvers<void>();
+		await page.route("**/page-images", async (route) => {
+			await gate.promise;
+			await route.continue().catch(() => {});
+		});
+		return gate.resolve;
+	};
+
+	test("Publish during an upload waits for it and publishes the photo", async ({
+		page,
+		pages,
+		editor,
+		org,
+	}) => {
+		const pageId = await pages.create([
+			section("gallery", [emptyPhoto("photo-1")]),
+		]);
+		await editor.open(pageId);
+		const release = await holdUploads(page);
+
+		await editor.select("photo-1");
+		await editor.settings.getByLabel("Upload photo").setInputFiles({
+			name: "salon.jpg",
+			mimeType: "image/jpeg",
+			buffer: await jpeg(page, 1200, 900),
+		});
+		await expect(editor.status).toHaveText("Uploading…");
+		await editor.button("Publish").click();
+		await expect(editor.button("Publishing…")).toBeVisible();
+		release();
+
+		await expect(page.getByText("Page published")).toBeVisible();
+		await expect(page.getByRole("alertdialog")).toHaveCount(0);
+		await expect(editor.status).toHaveText("Saved");
+		const detail = await pages.detail(pageId);
+		expect(detail.publishedVersion).toBe(detail.latestVersion.version);
+		expect(JSON.stringify(detail.latestVersion.content.data)).toMatch(
+			new RegExp(`"src":"[^"]*/api/files/pages/${org.orgId}/[^/"]+\\.jpg"`),
+		);
+	});
+
+	test("Back during an upload asks: Wait stays with the upload shown, Leave anyway drops it", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create([
+			section("gallery", [emptyPhoto("photo-1"), emptyPhoto("photo-2")]),
+		]);
+		await editor.open(pageId);
+		const release = await holdUploads(page);
+
+		await editor.select("photo-1");
+		await editor.settings.getByLabel("Upload photo").setInputFiles({
+			name: "salon.jpg",
+			mimeType: "image/jpeg",
+			buffer: await jpeg(page, 900, 1200),
+		});
+		await expect(editor.status).toHaveText("Uploading…");
+		await editor.select("photo-2");
+		await expect(editor.settings.getByText("Uploading…")).toBeHidden();
+		await editor.select("photo-1");
+		await expect(editor.settings.getByText("Uploading…")).toBeVisible();
+
+		await editor.back.click();
+		const prompt = page.getByRole("alertdialog");
+		await expect(prompt).toContainText("A photo is still uploading");
+		await prompt.getByRole("button", { name: "Wait" }).click();
+		await expect(prompt).toBeHidden();
+		await expect(page).toHaveURL(/\/edit$/);
+		await expect(editor.status).toHaveText("Uploading…");
+
+		await editor.back.click();
+		await prompt.getByRole("button", { name: "Leave anyway" }).click();
+		await expect(page).not.toHaveURL(/\/edit$/);
+		release();
+
+		expect(JSON.stringify(await pages.saved(pageId))).not.toMatch(
+			/"src":"[^"]/,
+		);
 	});
 });

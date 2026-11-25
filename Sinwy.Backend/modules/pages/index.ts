@@ -1,2 +1,8 @@
 export { registerPageRoutes, registerPublicPageRoutes } from "./routes";
-export { findServedPageId, getPageLabels, type PageLabel } from "./service";
+export {
+	deleteOrganizationPageImages,
+	findServedPageId,
+	getPageLabels,
+	type PageLabel,
+} from "./service";
+export { sweepPageImagesJob } from "./sweep";

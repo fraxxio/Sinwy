@@ -1,4 +1,4 @@
-import { unlink } from "node:fs/promises";
+import { rm, unlink } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import appConfig from "@config";
 import type { StorageClient } from "./storageClientTypes";
@@ -25,6 +25,17 @@ export const createLocalStorageClient = (rootDir: string): StorageClient => {
 			await unlink(pathFor(key)).catch((error: NodeJS.ErrnoException) => {
 				if (error.code !== "ENOENT") throw error;
 			});
+		},
+		async deletePrefix(prefix) {
+			const segments = prefix.split("/").slice(0, -1);
+			if (
+				!prefix.endsWith("/") ||
+				segments.length === 0 ||
+				segments.some((s) => s === "" || s === "." || s === "..")
+			) {
+				throw new Error(`Storage prefix must name a folder: ${prefix}`);
+			}
+			await rm(pathFor(prefix), { recursive: true, force: true });
 		},
 		async serve(key) {
 			const file = Bun.file(pathFor(key));

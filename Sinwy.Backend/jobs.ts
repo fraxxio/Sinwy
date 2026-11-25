@@ -3,15 +3,20 @@ import { cancelUpcomingOrganizationBookings } from "@bookingsModule";
 import { purgeNotificationsJob } from "@notificationsModule";
 import {
 	createPurgeOrganizationsJob,
+	type PurgeHooks,
 	purgeActivityJob,
 } from "@organizationsModule";
+import { deleteOrganizationPageImages, sweepPageImagesJob } from "@pagesModule";
 import { expireTransfersJob } from "@transfersModule";
 
-/** Organizations can't import bookings, so the purge's repair cancels bookings through this wiring. */
-export const purgeOrganizationsJob = createPurgeOrganizationsJob({
+/** Organizations can't import bookings or pages, so the purge reaches them through this wiring. */
+export const purgeHooks: PurgeHooks = {
 	onScheduled: (organizationIds) =>
 		cancelUpcomingOrganizationBookings(organizationIds),
-});
+	onPurged: deleteOrganizationPageImages,
+};
+
+export const purgeOrganizationsJob = createPurgeOrganizationsJob(purgeHooks);
 
 export const jobs = [
 	purgeOrganizationsJob,
@@ -19,4 +24,5 @@ export const jobs = [
 	rollupAnalyticsJob,
 	purgeActivityJob,
 	purgeNotificationsJob,
+	sweepPageImagesJob,
 ];

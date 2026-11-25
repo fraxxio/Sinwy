@@ -7,7 +7,7 @@ import type {
 import type { BlockField, Blocks } from "@sinwy/shared";
 import type { ReactNode } from "react";
 
-/** The editor UI of a custom field kind; the label and locked flag come from the manifest. */
+/** The editor UI of a field kind, custom or built in; the label and locked flag come from the manifest. */
 export type CustomFieldUi = Omit<
 	PuckCustomField<unknown>,
 	"label" | "metadata"
@@ -35,10 +35,9 @@ const puckField = (
 		...(field.label && { label: field.label }),
 		...(field.locked && { metadata: { locked: true } }),
 	};
-	if ("custom" in field) {
-		const ui = customFields[field.kind];
-		return ui ? { ...ui, ...meta } : null;
-	}
+	const ui = customFields[field.kind];
+	if (ui) return { ...ui, ...meta };
+	if ("custom" in field) return null;
 	switch (field.kind) {
 		case "text":
 		case "link":

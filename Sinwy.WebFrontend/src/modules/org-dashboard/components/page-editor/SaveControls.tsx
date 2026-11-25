@@ -24,6 +24,7 @@ import type { Autosave, AutosaveState } from "./autosave";
 import { usePuck } from "./editor-config";
 import { unsavedReason } from "./publishing";
 import type { PageData } from "./save";
+import type { Uploads } from "./uploads";
 import { useEditorKeys } from "./use-block-actions";
 
 /** What the editor does when the page was saved somewhere else. */
@@ -39,6 +40,13 @@ export const useAutosaveState = (autosave: Autosave) =>
 		autosave.subscribe,
 		autosave.getState,
 		autosave.getState,
+	);
+
+const useUploading = (uploads: Uploads) =>
+	useSyncExternalStore(
+		uploads.subscribe,
+		() => uploads.pending() > 0,
+		() => false,
 	);
 
 const STATUS_TEXT = {
@@ -68,10 +76,17 @@ function useSaveErrorToast(state: AutosaveState) {
 	}, [state]);
 }
 
-export function SaveStatus({ autosave }: { autosave: Autosave }) {
+export function SaveStatus({
+	autosave,
+	uploads,
+}: {
+	autosave: Autosave;
+	uploads: Uploads;
+}) {
 	const getPuck = useGetPuck();
 	const data = usePuck((s) => s.appState.data) as PageData;
 	const state = useAutosaveState(autosave);
+	const uploading = useUploading(uploads);
 	useSaveErrorToast(state);
 
 	const opening = useRef(true);
@@ -100,7 +115,11 @@ export function SaveStatus({ autosave }: { autosave: Autosave }) {
 				title={state.status === "blocked" ? state.message : undefined}
 				role="status"
 			>
-				{state.status === "blocked" ? state.message : STATUS_TEXT[state.status]}
+				{state.status === "blocked"
+					? state.message
+					: uploading && !problem && state.status !== "failed"
+						? "Uploading…"
+						: STATUS_TEXT[state.status]}
 			</span>
 			{state.status === "failed" && (
 				<Button variant="outline" size="sm" onClick={autosave.retryNow}>
@@ -177,18 +196,30 @@ export function ConflictBanner({
 	);
 }
 
-/** Leaving in the app saves first and asks only when that fails; closing or reloading the tab asks while anything is unsaved. */
-export function LeaveGuard({ autosave }: { autosave: Autosave }) {
+/**
+ * Leaving in the app saves first and asks when that fails or a photo is still
+ * uploading; closing or reloading the tab asks while either is pending.
+ */
+export function LeaveGuard({
+	autosave,
+	uploads,
+}: {
+	autosave: Autosave;
+	uploads: Uploads;
+}) {
 	const getPuck = useGetPuck();
 	const state = useAutosaveState(autosave);
+	const [uploading, setUploading] = useState(false);
 	const shouldBlockFn = useCallback(async () => {
 		autosave.change(getPuck().appState.data as PageData);
 		const final = await autosave.flush();
-		return final.status !== "saved";
-	}, [autosave, getPuck]);
+		const pending = uploads.pending() > 0;
+		setUploading(pending);
+		return pending || final.status !== "saved";
+	}, [autosave, uploads, getPuck]);
 	const enableBeforeUnload = useCallback(
-		() => autosave.getState().status !== "saved",
-		[autosave],
+		() => uploads.pending() > 0 || autosave.getState().status !== "saved",
+		[autosave, uploads],
 	);
 	const blocker = useBlocker({
 		shouldBlockFn,
@@ -202,19 +233,28 @@ export function LeaveGuard({ autosave }: { autosave: Autosave }) {
 			onOpenChange={(open) => !open && blocker.reset?.()}
 		>
 			<AlertDialogContent>
-				<AlertDialogHeader>
-					<AlertDialogTitle>Leave without saving?</AlertDialogTitle>
-					<AlertDialogDescription>
-						{unsavedReason(state)} If you leave now, they're lost.
-					</AlertDialogDescription>
-				</AlertDialogHeader>
+				{uploading ? (
+					<AlertDialogHeader>
+						<AlertDialogTitle>A photo is still uploading</AlertDialogTitle>
+						<AlertDialogDescription>
+							If you leave now, the photo isn't added to the page.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+				) : (
+					<AlertDialogHeader>
+						<AlertDialogTitle>Leave without saving?</AlertDialogTitle>
+						<AlertDialogDescription>
+							{unsavedReason(state)} If you leave now, they're lost.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+				)}
 				<AlertDialogFooter>
-					<AlertDialogCancel>Cancel</AlertDialogCancel>
+					<AlertDialogCancel>{uploading ? "Wait" : "Cancel"}</AlertDialogCancel>
 					<AlertDialogAction
 						variant="destructive"
 						onClick={() => blocker.proceed?.()}
 					>
-						Leave without saving
+						{uploading ? "Leave anyway" : "Leave without saving"}
 					</AlertDialogAction>
 				</AlertDialogFooter>
 			</AlertDialogContent>

@@ -18,6 +18,9 @@ export const RESERVED_PAGE_SLUGS = ["book", "s"] as const;
 
 export type PageUsageDto = { used: number; limit: number };
 
+/** An uploaded page image; `usage` is the organization's image storage in bytes. */
+export type PageImageDto = { src: string; usage: PageUsageDto };
+
 export type PageListItemDto = {
 	id: string;
 	title: string;

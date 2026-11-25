@@ -111,7 +111,7 @@ const Image = defineBlock({
 	description: "A single photo.",
 	group: "content",
 	fields: {
-		src: field.image({ label: "Image URL", required: true }),
+		src: field.image({ label: "Photo", required: true }),
 		alt: field.text({ label: "Description (for screen readers)" }),
 		aspect: field.select({
 			label: "Shape",
@@ -151,7 +151,7 @@ const Hero = defineBlock({
 		"A big welcome banner for the top of your page, with a booking button.",
 	group: "ready",
 	fields: {
-		image: field.image({ label: "Background image URL" }),
+		image: field.image({ label: "Background image" }),
 		align: align("center"),
 		items: field.slot({
 			allow: ["Heading", "RichText", "Button"],

@@ -41,6 +41,7 @@ import {
 	LeaveGuard,
 	SaveStatus,
 } from "./SaveControls";
+import type { Uploads } from "./uploads";
 import {
 	useBlockActions,
 	useEditorHotkeys,
@@ -246,6 +247,7 @@ export function EditorLayout({
 	path,
 	back,
 	autosave,
+	uploads,
 	conflict,
 	publishing,
 }: {
@@ -253,6 +255,7 @@ export function EditorLayout({
 	path: string;
 	back: ReactNode;
 	autosave: Autosave;
+	uploads: Uploads;
 	conflict: ConflictActions;
 	publishing: Publishing;
 }) {
@@ -289,11 +292,15 @@ export function EditorLayout({
 				</div>
 				<KeepUiOnHistory />
 				<HistoryButtons />
-				<SaveStatus autosave={autosave} />
-				<PublishActions autosave={autosave} publishing={publishing} />
+				<SaveStatus autosave={autosave} uploads={uploads} />
+				<PublishActions
+					autosave={autosave}
+					uploads={uploads}
+					publishing={publishing}
+				/>
 			</header>
 			<ConflictBanner autosave={autosave} actions={conflict} />
-			<LeaveGuard autosave={autosave} />
+			<LeaveGuard autosave={autosave} uploads={uploads} />
 			<div className="flex min-h-0 flex-1">
 				<LeftPanel />
 				<EditorCanvas />

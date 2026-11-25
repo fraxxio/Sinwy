@@ -5,6 +5,7 @@ import {
 } from "@sinwy/shared";
 import type { Autosave, AutosaveState } from "./autosave";
 import type { PageData } from "./save";
+import type { Uploads } from "./uploads";
 
 type PageWrite = (base: number) => Promise<ApiResponse<PageDetailDto>>;
 
@@ -37,16 +38,19 @@ const failed = (res: { code: number; message: string }): PageWriteOutcome => ({
 });
 
 /**
- * Saves the document, then publishes the version that save left. When one of
- * this editor's own saves lands first, it publishes again with that one; a
- * newer version from anywhere else is a conflict.
+ * Waits for photo uploads, saves the document they leave, then publishes the
+ * version that save left. When one of this editor's own saves lands first, it
+ * publishes again with that one; a newer version from anywhere else is a
+ * conflict.
  */
 export async function publishAfterSave(
 	autosave: Autosave,
-	data: PageData,
+	uploads: Pick<Uploads, "pending" | "settled">,
+	read: () => PageData,
 	publish: PageWrite,
 ): Promise<PageWriteOutcome> {
-	autosave.change(data);
+	if (uploads.pending() > 0) await uploads.settled();
+	autosave.change(read());
 	let state = await autosave.flush();
 	for (let attempt = 1; ; attempt++) {
 		if (!flushed(state))

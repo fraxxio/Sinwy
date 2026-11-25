@@ -63,6 +63,10 @@ export function api<T>(path: string, init?: RequestInit) {
 }
 
 /** Multipart POST; no Content-Type so the browser can set the boundary itself. */
-export function apiUpload<T>(path: string, body: FormData) {
-	return send<T>(path, { method: "POST", body });
+export function apiUpload<T>(
+	path: string,
+	body: FormData,
+	signal?: AbortSignal,
+) {
+	return send<T>(path, { method: "POST", body, ...(signal && { signal }) });
 }

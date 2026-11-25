@@ -20,6 +20,7 @@ import {
 	createAutosave,
 	type SaveFn,
 } from "#/modules/org-dashboard/components/page-editor/autosave";
+import { shrinkImage } from "#/modules/org-dashboard/components/page-editor/images";
 import {
 	discardAfterSave,
 	publishAfterSave,
@@ -30,11 +31,16 @@ import {
 	toPageDocument,
 } from "#/modules/org-dashboard/components/page-editor/save";
 import {
+	createUploads,
+	type Uploads,
+} from "#/modules/org-dashboard/components/page-editor/uploads";
+import {
 	discardDraft,
 	pageQuery,
 	publishPage,
 	savePageContent,
 	storePage,
+	uploadPageImage,
 } from "#/modules/org-dashboard/lib/page-queries";
 import { publicPagePath } from "#/modules/org-dashboard/lib/pages";
 import { servicesQuery } from "#/modules/org-dashboard/lib/service-queries";
@@ -166,20 +172,32 @@ function EditorScreen({
 		void storePage(queryClient, organization.id, res.data);
 		return { ok: true, base: res.data.latestVersion.version };
 	};
-	// Made in an effect, so StrictMode's second mount gets an engine that isn't disposed
-	const [autosave, setAutosave] = useState<Autosave | null>(null);
+	// Made in an effect, so StrictMode's second mount gets engines that aren't disposed
+	const [engines, setEngines] = useState<{
+		autosave: Autosave;
+		uploads: Uploads;
+	} | null>(null);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: one engine per mount, holding the document it opened with
 	useEffect(() => {
-		const engine = createAutosave({
+		const autosave = createAutosave({
 			data: initialData,
 			base: page.latestVersion.version,
 			save,
 		});
-		setAutosave(engine);
-		return engine.dispose;
+		const uploads = createUploads({
+			prepare: shrinkImage,
+			upload: (image, signal) =>
+				uploadPageImage(organization.id, image, signal),
+		});
+		setEngines({ autosave, uploads });
+		return () => {
+			uploads.dispose();
+			autosave.dispose();
+		};
 	}, []);
 
-	if (!autosave) return loading;
+	if (!engines) return loading;
+	const { autosave, uploads } = engines;
 
 	const keepMine = async () => {
 		try {
@@ -198,9 +216,12 @@ function EditorScreen({
 			});
 		}
 	};
-	const publish = async (data: PageData) => {
-		const outcome = await publishAfterSave(autosave, data, (baseVersion) =>
-			publishPage(organization.id, page.id, { baseVersion }),
+	const publish = async (read: () => PageData) => {
+		const outcome = await publishAfterSave(
+			autosave,
+			uploads,
+			read,
+			(baseVersion) => publishPage(organization.id, page.id, { baseVersion }),
 		);
 		if (!outcome.ok) {
 			toast.add({
@@ -224,6 +245,7 @@ function EditorScreen({
 		});
 	};
 	const discard = async (data: PageData) => {
+		uploads.abort();
 		const outcome = await discardAfterSave(autosave, data, (baseVersion) =>
 			discardDraft(organization.id, page.id, { baseVersion }),
 		);
@@ -264,7 +286,14 @@ function EditorScreen({
 			path={publicPagePath(organization.slug, page.slug)}
 			back={back}
 			autosave={autosave}
-			conflict={{ keepMine, loadLatest: () => reopen({ refetch: true }) }}
+			uploads={uploads}
+			conflict={{
+				keepMine,
+				loadLatest: () => {
+					uploads.abort();
+					return reopen({ refetch: true });
+				},
+			}}
 			publishing={{
 				page,
 				organizationSlug: organization.slug,

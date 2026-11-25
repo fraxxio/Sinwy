@@ -89,6 +89,36 @@ describe("localStorageClient", () => {
 		).rejects.toThrow();
 		await expect(client.delete("a/../../b")).rejects.toThrow();
 	});
+
+	test("deletePrefix removes everything under the prefix and nothing beside it", async () => {
+		await client.put("pages/o1/a.png", new Uint8Array(PNG), "image/png");
+		await client.put("pages/o1/b.png", new Uint8Array(PNG), "image/png");
+		await client.put("pages/o10/c.png", new Uint8Array(PNG), "image/png");
+
+		await client.deletePrefix("pages/o1/");
+
+		expect((await client.serve("pages/o1/a.png")).status).toBe(404);
+		expect((await client.serve("pages/o1/b.png")).status).toBe(404);
+		expect((await client.serve("pages/o10/c.png")).status).toBe(200);
+		await expect(client.deletePrefix("pages/o1/")).resolves.toBeUndefined();
+	});
+
+	test("deletePrefix refuses prefixes that aren't a folder inside the root", async () => {
+		await client.put("pages/o2/a.png", new Uint8Array(PNG), "image/png");
+		for (const prefix of [
+			"",
+			"/",
+			"pages",
+			"../",
+			"pages/../",
+			"/tmp/",
+			"pages//",
+			"pages/./",
+			"pages/o2/../",
+		])
+			await expect(client.deletePrefix(prefix)).rejects.toThrow();
+		expect((await client.serve("pages/o2/a.png")).status).toBe(200);
+	});
 });
 
 describe("keyFromFileUrl", () => {

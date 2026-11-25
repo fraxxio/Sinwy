@@ -1,4 +1,9 @@
-import { AutoField, type Field, type Overrides } from "@puckeditor/core";
+import {
+	AutoField,
+	createUsePuck,
+	type Field,
+	type Overrides,
+} from "@puckeditor/core";
 import type { PublicServiceDto } from "@sinwy/shared";
 import { LockIcon } from "lucide-react";
 import { createContext, type ReactNode, use, useId } from "react";
@@ -15,6 +20,8 @@ import {
 	SelectValue,
 } from "#/shared/components/ui/select";
 import { cn } from "#/shared/lib/utils";
+
+export const usePuck = createUsePuck();
 
 /** The org's active services, in their order; Puck doesn't pass `metadata` to fields. */
 export const EditorServicesContext = createContext<readonly PublicServiceDto[]>(
@@ -51,7 +58,7 @@ function FieldHeading({
 	);
 }
 
-function EditorField({
+export function EditorField({
 	label,
 	htmlFor,
 	readOnly,
@@ -118,6 +125,17 @@ function Segmented({
 	);
 }
 
+function PhotoDescriptionHint() {
+	const hasPhoto = usePuck((s) => Boolean(s.selectedItem?.props["src"]));
+	return (
+		hasPhoto && (
+			<p className="text-muted-foreground text-xs">
+				Describe the photo for people who can't see it.
+			</p>
+		)
+	);
+}
+
 /** Our inputs in place of Puck's for the field types the manifest uses; rich text keeps Puck's editor. */
 export const fieldOverrides: Partial<Overrides> = {
 	fieldLabel: ({ label, readOnly, className, children }) => (
@@ -126,18 +144,26 @@ export const fieldOverrides: Partial<Overrides> = {
 		</EditorField>
 	),
 	fieldTypes: {
-		text: ({ field, id, name, value, onChange, readOnly }) => (
-			<EditorField label={field.label ?? name} htmlFor={id} readOnly={readOnly}>
-				<Input
-					id={id}
-					name={name}
-					value={typeof value === "string" ? value : ""}
+		text: ({ field, id, name, value, onChange, readOnly }) => {
+			const text = typeof value === "string" ? value : "";
+			return (
+				<EditorField
+					label={field.label ?? name}
+					htmlFor={id}
 					readOnly={readOnly}
-					className={cn(readOnly && "bg-muted/60 text-muted-foreground")}
-					onChange={(event) => onChange(event.currentTarget.value)}
-				/>
-			</EditorField>
-		),
+				>
+					<Input
+						id={id}
+						name={name}
+						value={text}
+						readOnly={readOnly}
+						className={cn(readOnly && "bg-muted/60 text-muted-foreground")}
+						onChange={(event) => onChange(event.currentTarget.value)}
+					/>
+					{name === "alt" && text === "" && <PhotoDescriptionHint />}
+				</EditorField>
+			);
+		},
 		select: ({ field, id, name, value, onChange, readOnly }) => {
 			const items = optionsOf(field).map((option) => ({
 				label: option.label,

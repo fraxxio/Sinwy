@@ -2,8 +2,14 @@ import { membershipFrom, sessionFrom } from "@authModule";
 import { fail, ok } from "@backend/lib/app/respond";
 import type { Handler, IReqContext } from "@backend/lib/app/types";
 import {
+	ImageError,
+	readImageUpload,
+	respondImageError,
+} from "@backend/lib/image";
+import {
 	API_ERROR_CODES,
 	createPageSchema,
+	limitsFor,
 	PAGE_DOCUMENT_LIMITS,
 	pageBaseVersionSchema,
 	savePageContentSchema,
@@ -22,9 +28,24 @@ import {
 	savePageContent,
 	unpublishPage,
 	updatePage,
+	uploadPageImage,
 } from "./service";
 
-const respondError = (error: PageError) => {
+const MB = 1024 * 1024;
+
+const formatBytes = (bytes: number) =>
+	bytes >= 1024 * MB
+		? `${Math.round((bytes / (1024 * MB)) * 10) / 10} GB`
+		: `${Math.round(bytes / MB)} MB`;
+
+const quotaExceeded = (limit: number) =>
+	fail(
+		`Your plan includes ${formatBytes(limit)} for page photos, and it's full. Photos you've removed from your pages free their space within a day.`,
+		409,
+		API_ERROR_CODES.PAGE_IMAGE_QUOTA_EXCEEDED,
+	);
+
+const respondError = (error: PageError, limits = limitsFor(null)) => {
 	switch (error) {
 		case "inactive":
 			return fail(
@@ -62,6 +83,8 @@ const respondError = (error: PageError) => {
 				409,
 				API_ERROR_CODES.PAGE_NOT_PUBLISHED,
 			);
+		case "quota-exceeded":
+			return quotaExceeded(limits.pageImageBytes);
 		case "not-found":
 			return fail("Not found", 404);
 	}
@@ -198,4 +221,19 @@ export const getPublicPageHandler: Handler = async (c) => {
 	const { slug, pageSlug } = c.req.params as { slug: string; pageSlug: string };
 	const result = await getPublicPage(slug, pageSlug);
 	return result ? ok(result) : fail("This page isn't available", 404);
+};
+
+export const uploadPageImageHandler: Handler = async (c) => {
+	const membership = membershipFrom(c);
+	try {
+		const file = await readImageUpload(c.req);
+		if (!file) return fail("Missing file", 400);
+		const result = await uploadPageImage(membership, file);
+		return result.ok
+			? ok(result.data, 201, "Photo uploaded")
+			: respondError(result.error, limitsFor(membership.plan));
+	} catch (error) {
+		if (error instanceof ImageError) return respondImageError(error);
+		throw error;
+	}
 };
