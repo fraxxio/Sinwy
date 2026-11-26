@@ -126,6 +126,20 @@ describe("PageDocumentView", () => {
 		expect(html).not.toContain("Hidden until count is 3");
 	});
 
+	test("links a Button that opens one service's booking under the organization", () => {
+		const html = render(
+			doc([
+				block("Section", {
+					items: [
+						block("Button", { label: "Haircut", href: "book?service=svc-1" }),
+					],
+				}),
+			]),
+		);
+
+		expect(html).toContain('href="/acme/book?service=svc-1"');
+	});
+
 	test("lists the chosen services in their order with Book links", () => {
 		const html = render(salonDocument());
 

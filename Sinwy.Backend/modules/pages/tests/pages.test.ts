@@ -566,6 +566,27 @@ test("content: an invalid document → 400 naming the block, and no version is w
 	expect(await versionsOf(created.id)).toHaveLength(1);
 });
 
+test("content: a Button opening one service's booking saves; one with an unsafe service id is refused", async () => {
+	const created = await create();
+	const button = (href: string) =>
+		document(section(block("Button", { label: "Book", href })));
+	const serviceLink = `book?service=${crypto.randomUUID()}`;
+
+	const saved = await save(created.id, 1, button(serviceLink));
+	expect(saved.status).toBe(200);
+	const { version } = (await unwrap<PageDetailDto>(saved)).latestVersion;
+	const versions = (await versionsOf(created.id)).length;
+
+	const refused = await save(
+		created.id,
+		version,
+		button("book?service=<script>"),
+	);
+	expect(refused.status).toBe(400);
+	expect(await messageOf(refused)).toContain('"href" is not a safe link');
+	expect(await versionsOf(created.id)).toHaveLength(versions);
+});
+
 test("content: an oversized body → 413, and no version is written", async () => {
 	const created = await create();
 	const huge = JSON.stringify({

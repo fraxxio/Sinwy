@@ -8,7 +8,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
-| 1 | Service links pass the link rule; a shared link reader | – | todo | |
+| 1 | Service links pass the link rule; a shared link reader | – | done | `feat(shared): accept one service's booking as a Button link and read link targets` |
 | 2 | Link picker: booking, one service, web address | 1 | todo | |
 | 3 | Page links by id, resolved on the server | 1 | todo | |
 | 4 | "Another page" in the picker; editor and preview resolve page links | 2, 3 | todo | |
@@ -39,9 +39,10 @@ Settled with the product owner. Ask before changing any of them.
 
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
-- `isSafeLink` today (`Sinwy.Shared/types/page/PageUrls.ts`): `book` and `about-us` pass; `book?service=abc-123` fails (`BARE_PATH` is `^[a-z0-9-]+(\/[\w-]*)*$`); `example.com` also fails (the dot), so the server refuses a save with a bare domain. `/my-org/book?service=x` passes but bakes in the org slug. `page:x` fails today.
+- `Sinwy.Shared/types/page/PageUrls.ts` now has `isSafeLink` (accepts `book?service=<[\w-]+>`), `linkTarget(href)` → `{ kind: "booking" } | { kind: "service", serviceId } | { kind: "web", href }`, `bookingLink(serviceId?)` and `webAddress(text)`. `example.com` alone still fails `isSafeLink`; only `webAddress(...)` output passes. `page:x` fails until Phase 3. Their pure tests are in `Sinwy.Backend/modules/pages/tests/pageUrls.test.ts` (Shared has no test runner).
 - The Button's `href` is a `field.link` (`Sinwy.Shared/types/page/blocks/fields.ts:155`), validated server-side by `url(isSafeLink, …)` (`fields.ts:88`), which also accepts `""`. Manifest: `blocks.ts:134`, label "Link", default `book`, `required: true` (publish already warns "Has no link" when empty).
-- The storefront renders Buttons with `resolveHref` (`Sinwy.WebFrontend/src/shared/components/page-builder/urls.ts`): a safe href passes through, any other `isSafeLink` value is prefixed with `/<orgSlug>/`. So `book?service=<id>` and a bare page slug resolve with no change there. A Button whose href doesn't resolve renders an `<a>` with no `href`.
+- The storefront renders Buttons with `resolveHref` (`Sinwy.WebFrontend/src/shared/components/page-builder/urls.ts`): a safe href passes through, any other `isSafeLink` value is prefixed with `/<orgSlug>/` (tested for `book?service=<id>`). A Button whose href doesn't resolve renders an `<a>` with no `href`.
+- A content save within the same checkpoint updates the latest `page_content` row instead of adding one; count rows before and after rather than expecting a fixed number. The saved version is `latestVersion.version` on `PageDetailDto`.
 - `getPublicPage` (`Sinwy.Backend/modules/pages/service.ts:339`) already reads data beyond the page's own content: the organization's branding, the plan's served set (`isServed`) and, when `listsServices(content)`, the active services. Page addresses are one more input of that kind.
 - The storefront page route `src/modules/storefront/routes/$pageSlug.tsx` is server-rendered (its loader calls `publicPageQuery`). The booking route `routes/book.tsx:48` sets `ssr: false`, with no comment saying why.
 - The storefront booking route (`book.tsx:42`, `:128`) reads `service` from the search; an unknown or inactive id falls back to the "Choose a service" step, never an error.
@@ -56,36 +57,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 ---
 
-## Phase 1: Service links pass the link rule; a shared link reader
-
-**Goal:** a document can store `book?service=<id>`, and one shared function tells which kind of target any stored link is.
-
-**Files:**
-- `Sinwy.Shared/types/page/PageUrls.ts`: `BARE_PATH`, `isSafeLink`; the new reader and helpers go here, next to the rule.
-- `Sinwy.Shared` barrel that exports `isSafeLink` (find it with `git grep -n PageUrls Sinwy.Shared`).
-- `Sinwy.Backend/modules/pages/tests/pageDocument.test.ts:226` ("Button links take safe hrefs and bare paths") and `:366` (refusal message).
-- `Sinwy.WebFrontend/src/shared/components/page-builder/urls.ts` (`resolveHref`, expected unchanged).
-- `Sinwy.WebFrontend/src/shared/tests/page-document-view.test.ts:122-135` (rendered hrefs).
-
-**Steps:**
-- Widen the rule per Default 1 for `book?service=<id>` only; `page:<id>` comes in Phase 3. Nothing else with `?` passes.
-- Add `linkTarget(href)` returning one of: booking page (`book`), one service's booking (`book?service=<id>`, with the id), web address (everything else, including `""`, `tel:`, `mailto:`, `#…` and unknown bare paths). Phase 3 adds the page kind.
-- Add the writers the picker needs: `bookingLink(serviceId?)` and `webAddress(text)`, which trims and adds `https://` when the text looks like a domain (has a dot, no scheme, no leading `/` or `#`).
-- `resolveHref` needs no change; prove it with a test.
-
-**Tests that matter:**
-- The rule accepts `book?service=<uuid>` and refuses `book?service=`, `book?service=a&x=1`, `about?service=x`, `book?x=1` and a service id with `<`, `"` or spaces. A server save with `book?service=<uuid>` succeeds; with `book?service=<script>` it is refused with the existing message.
-- `linkTarget` maps every value class above, including values saved before this plan.
-- `webAddress` turns `example.com` and ` www.example.com/a ` into `https://…`, and leaves `https://`, `mailto:`, `tel:`, `#x` and `/x` alone.
-- The storefront renders a Button with `book?service=svc-1` as `href="/acme/book?service=svc-1"`.
-
-**Done when:**
-- `bun run verify` passes with the new tests.
-
-**Verify:** None.
-
----
-
 ## Phase 2: Link picker: booking, one service, web address
 
 **Goal:** an owner sets a Button's Link by choosing "Booking page", "One service's booking" (then a service) or "Web address", and the field names the current target in words.
@@ -94,8 +65,8 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - New `Sinwy.WebFrontend/src/modules/org-dashboard/components/page-editor/link-field.tsx`: `linkField: CustomFieldUi`.
 - `page-editor/editor-config.tsx`: add `link: linkField` to `customFields`.
 - `page-editor/editor-fields.tsx`: `EditorField`, `EditorServicesContext`, the `Select` usage in `fieldOverrides.select`, `serviceIdsField` as the pattern.
-- `Sinwy.Shared/types/page/PageUrls.ts`: `linkTarget`, `bookingLink`, `webAddress` from Phase 1.
-- New test `src/modules/org-dashboard/tests/page-editor-link-field.test.ts` for the pure wording function.
+- `Sinwy.Shared/types/page/PageUrls.ts`: use `linkTarget`, `bookingLink`, `webAddress` and `isSafeLink` as they are; add nothing there for wording.
+- New test `src/modules/org-dashboard/tests/page-editor-link-field.test.ts` for `describeLink`.
 
 **Steps:**
 - One "Opens" select with the three choices, then a second control for the choice: a service select, or a text input for the web address. Switching choices follows Default 3. Leave room for the "Another page" choice that Phase 4 adds.

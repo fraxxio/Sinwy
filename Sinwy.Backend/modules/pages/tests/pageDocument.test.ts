@@ -230,6 +230,7 @@ describe("pageDocumentSchema", () => {
 			"/x",
 			"#top",
 			"mailto:a@b.c",
+			"book?service=0b6f3c1e-8a4d-4c2b-9f7e-2d5a1b3c4e6f",
 			"",
 		])
 			expect(
@@ -364,6 +365,12 @@ describe("pageDocumentSchema", () => {
 		test("a javascript: link in a Button", () =>
 			expectRefused(
 				doc([section(block("Button", { href: "javascript:alert(1)" }))]),
+				'Button at Section 1 › items › 1: "href" is not a safe link',
+			));
+
+		test("a service booking link with an unsafe id", () =>
+			expectRefused(
+				doc([section(block("Button", { href: "book?service=<script>" }))]),
 				'Button at Section 1 › items › 1: "href" is not a safe link',
 			));
 
