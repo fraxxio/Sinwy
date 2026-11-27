@@ -1,7 +1,7 @@
 import { useGetPuck } from "@puckeditor/core";
 import type { BlockNode, PageDetailDto } from "@sinwy/shared";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { use, useState } from "react";
 import {
 	EDITOR_PAGE_STATE_LABELS,
 	editorPageState,
@@ -19,6 +19,7 @@ import {
 import { Badge } from "#/shared/components/ui/badge";
 import { Button } from "#/shared/components/ui/button";
 import type { Autosave } from "./autosave";
+import { EditorPagesContext, EditorServicesContext } from "./editor-fields";
 import { PublishIssuesDialog } from "./PublishIssuesDialog";
 import { type PublishIssue, publishIssues } from "./publish-checks";
 import { useAutosaveState } from "./SaveControls";
@@ -89,6 +90,8 @@ export function PublishActions({
 }) {
 	const getPuck = useGetPuck();
 	const actions = useBlockActions();
+	const services = use(EditorServicesContext);
+	const pages = use(EditorPagesContext);
 	const { changed } = usePageState(autosave, page);
 	const [busy, setBusy] = useState<"publish" | "discard" | null>(null);
 	const [confirming, setConfirming] = useState(false);
@@ -117,7 +120,10 @@ export function PublishActions({
 			await uploads.settled();
 			setBusy(null);
 		}
-		const found = publishIssues(read().content as BlockNode[]);
+		const found = publishIssues(read().content as BlockNode[], {
+			services,
+			pages,
+		});
 		if (found.length > 0) setIssues(found);
 		else await run("publish", () => publish(read));
 	};

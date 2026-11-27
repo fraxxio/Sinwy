@@ -12,7 +12,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 2 | Link picker: booking, one service, web address | 1 | done | `feat(web): choose a Button's link from booking, one service or a web address` |
 | 3 | Page links by id, resolved on the server | 1 | done | `feat(backend, shared): serve a Button linked to another page by id as that page's current address` |
 | 4 | "Another page" in the picker; editor and preview resolve page links | 2, 3 | done | `feat(web): point a Button at another live page, and resolve page links in the editor and preview` |
-| 5 | Publish warns about links that go nowhere | 4 | todo | |
+| 5 | Publish warns about links that go nowhere | 4 | done | `feat(web): warn on publish about Buttons that open a service no longer offered or a page that isn't live` |
 | 6 | Editor e2e test, usability check, docs and cleanup | 5 | todo | |
 
 ## Decisions
@@ -52,38 +52,14 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - The link picker is `linkField` in `page-editor/link-field.tsx`, registered as `customFields.link` in `editor-config.tsx`. Its pure parts are in `page-editor/links.ts`: `LINK_CHOICES`, `LinkChoice` (= `LinkTarget["kind"]`), `NamedPage`, `linkedPage(target, pages)` (by `page:<id>` or an old bare slug), `describeLink(target, services, pages)` → `{ choice, words }` ("Booking: <name>", "A service you no longer offer", "Another page: <title>", "A page that isn't live") and `typedWebLink(text)`. Tests: `tests/page-editor-link-field.test.ts`.
 - `EditorPagesContext` (`editor-fields.tsx`) holds the org's live pages minus the one being edited; `PageEditor`'s `otherPages` prop provides it. The edit route loads `pagesQuery` (filtered to `live`) and also puts `pageAddresses` (all live pages, id → slug) in `PageMetadata`.
 - `resolveHref(href, orgSlug, pageAddresses?)` resolves `page:<id>` through the map and returns `null` when it isn't there (no more `/<org>/page:<id>`); the Button render passes `pageMetadata(...).pageAddresses`. The preview route waits for `pagesQuery` and renders `resolvePageLinks(latestVersion.content, liveAddresses)`.
-- `publishIssues` has two callers: `PublishControls.tsx:120` (editor) and `PagePublishing.tsx:132` (page detail screen, which loads neither services nor pages yet).
+- `publishIssues(content, { services, pages }, blocks)` also flags link fields: a `book?service=<id>` not among the active services, or a `page:<id>` not among the other live pages. Old bare slugs and web addresses are never flagged. Callers: `PublishActions` (from the editor contexts) and `PagePublishing` (the page detail route loads active services and other live pages and waits for them when the member can write).
+- The publish dialog's title is "Some things look unfilled" even when every entry is a broken link, and Buttons are named "Button 1 in Section" (a Button's label isn't its title), so two broken Buttons are told apart only by place. Raised by the Phase 5 check; candidates for Phase 6's usability check.
 - The web address input syncs its text from the stored value only while it isn't focused (as Puck's own inputs do) and is keyed by block id; a refused text stays on screen with an inline message while the stored value is unchanged.
 - In the running editor the Link select is `combobox "Link opens"`, the service select `combobox "Service"`, the page select `combobox "Page"`, the input is labelled "Web address". Services come ordered by name, so "first active service" (Default 3) is the first alphabetically. Choosing "Another page" saves the first live page at once (Default 3). To add a block, click the card's inner button: `getByTestId('drawer-item:<Block>').getByRole('button', { name: 'Add <Block>' })` (the card itself adds nothing; every drawer item is in the DOM twice). Layers rows: `getByRole('button', { name: 'Expand', exact: true })` and `locator('button[class*=Layer-clickable]').filter({ hasText: 'Button' })`.
 - Seeds: `pro-org` (Professional, 5 pages) has no services; create them with `POST /api/organizations/<id>/services` `{ name, durationMinutes, priceMinor }`. `bookable-org` is on Starter and seeds "Haircut" and "Colouring". Image and Button blocks can't be top-level: put them inside a Section.
 - Editor e2e: `bun run test:editor` needs `bun run start:server` (:3001) and `bun run start:web` (:3000). `e2e/global-setup.ts` seeds four `pro-org`s and one Starter org into `Stack`; helpers (`editorFor`, the `pages` fixture with `create`/`publish`/`saved`) are in `e2e/editor-fixtures.ts`. A test that needs a second live page should get its own seeded org.
-- The backend (`bun run index.ts`, :3001) doesn't reload on changes: restart it after backend edits, asking the user first (stopping it needs their permission). Since Phase 3 it logs to `/tmp/sinwy-phase3/server.log`; the web server (:3000, vite) logs to `/tmp/sinwy-phase2/web.log`. Seeded orgs and scratch files from Phases 2–4 are in `/tmp/sinwy-phase{2,3,4}/`, for Phase 6's cleanup.
+- The backend (`bun run index.ts`, :3001) doesn't reload on changes: restart it after backend edits, asking the user first (stopping it needs their permission). Since Phase 3 it logs to `/tmp/sinwy-phase3/server.log`; the web server (:3000, vite) logs to `/tmp/sinwy-phase2/web.log`. Seeded orgs and scratch files from Phases 2–5 are in `/tmp/sinwy-phase{2,3,4,5}/`, for Phase 6's cleanup.
 - Known editor issues an agent may hit: #88 (Add with a Section selected nests the block inside it) and #89 (a click on a block announces a drop and enables Undo).
-
----
-
-## Phase 5: Publish warns about links that go nowhere
-
-**Goal:** Publish lists Buttons that open a service no longer offered or a page that isn't live or doesn't exist, as warnings (Default 4).
-
-**Files:**
-- `page-editor/publish-checks.ts`: `publishIssues(content, blocks)` and `problemWith(field, stored)`; add the active services and live pages as arguments (pure), and check `field.kind === "link"` values with `linkTarget` + `linkedPage`/`describeLink` from `page-editor/links.ts`.
-- `page-editor/PublishControls.tsx:120`: read services from `EditorServicesContext` and pages from `EditorPagesContext`.
-- `components/pages/PagePublishing.tsx:132` (page detail screen): it has neither list; load `servicesQuery` (active) and `pagesQuery` (`live`, minus this page) in its route, `routes/_shell.pages.$id.index.tsx:56`.
-- `src/modules/org-dashboard/tests/page-editor-publish-checks.test.ts`.
-
-**Steps:**
-- Reuse `linkTarget` and the picker's wording; problems read like the existing ones ("Opens booking for a service you no longer offer", "Opens a page that isn't live, so customers won't see it").
-- Keep `publishIssues` pure: services and pages come in as arguments.
-
-**Tests that matter:**
-- One issue per broken Button, in reading order, through shown slots only; no issue for `book`, an active service, a live page or a web address.
-
-**Done when:**
-- Publishing a page with such a Button lists it and still publishes on confirm.
-- `bun run verify` passes.
-
-**Verify:** Seed `pro-org`, create two services and a second page, publish that page. In the editor, add a Button to "Colouring" and one to the second page, save. Deactivate "Colouring" (Services screen) and unpublish the second page, reopen the editor, click Publish: the dialog lists both Buttons with their problems; "Publish anyway" publishes (`page` row `status` = `published`). Nothing is simulated.
 
 ---
 
@@ -93,6 +69,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 **Files:**
 - `Sinwy.WebFrontend/e2e/editor.e2e.ts` (new `links` describe), `e2e/global-setup.ts` and `e2e/stack.ts` (an org of its own with services and a second live page), `e2e/editor-fixtures.ts`.
+- If the usability check confirms the Phase 5 findings: the dialog title in `page-editor/PublishIssuesDialog.tsx`, and Button names in `nameOf` (`page-editor/publish-checks.ts`, tests in `tests/page-editor-publish-checks.test.ts`).
 - This plan and its log; the issue (#81) checklist.
 
 **Steps:**

@@ -3,10 +3,12 @@ import {
 	type BlockField,
 	type BlockNode,
 	type Blocks,
+	linkTarget,
 	normalizeRichText,
 	ownEntry,
 } from "@sinwy/shared";
 import { blockTitle } from "./block-actions";
+import { linkedPage, type NamedPage } from "./links";
 
 /** Something on a page an owner most likely meant to fill in before publishing. */
 export type PublishIssue = {
@@ -17,12 +19,34 @@ export type PublishIssue = {
 	problem: string;
 };
 
+/** What a link can still open: the org's active services and its other live pages. */
+export type LinkDestinations = {
+	services: readonly { id: string }[];
+	pages: readonly NamedPage[];
+};
+
 const sameText = (field: BlockField, value: string) =>
 	field.kind === "richText"
 		? normalizeRichText(value) === normalizeRichText(String(field.default))
 		: value.trim() === String(field.default).trim();
 
-function problemWith(field: BlockField, stored: unknown): string | null {
+function brokenLink(href: string, destinations: LinkDestinations) {
+	const target = linkTarget(href);
+	if (
+		target.kind === "service" &&
+		!destinations.services.some((s) => s.id === target.serviceId)
+	)
+		return "Opens booking for a service you no longer offer";
+	if (target.kind === "page" && !linkedPage(target, destinations.pages))
+		return "Opens a page that isn't live, so customers won't see it";
+	return null;
+}
+
+function problemWith(
+	field: BlockField,
+	stored: unknown,
+	destinations: LinkDestinations,
+): string | null {
 	const value = stored ?? field.default;
 	if (typeof value !== "string") return null;
 	if (field.required && !value.trim())
@@ -31,6 +55,7 @@ function problemWith(field: BlockField, stored: unknown): string | null {
 			: `Has no ${field.label.toLowerCase()}`;
 	if (field.placeholder && sameText(field, value))
 		return `Still has its sample ${field.label.toLowerCase()}`;
+	if (field.kind === "link") return brokenLink(value, destinations);
 	return null;
 }
 
@@ -61,9 +86,10 @@ function nameOf(
 	return `${label}${place} in ${around}`;
 }
 
-/** Empty photos, links and labels, and sample text left as it is, in reading order, through every shown slot. */
+/** Empty photos, links and labels, sample text left as it is, and links that go nowhere, in reading order, through every shown slot. */
 export function publishIssues(
 	content: readonly BlockNode[],
+	destinations: LinkDestinations,
 	blocks: Blocks = BLOCKS,
 ): PublishIssue[] {
 	const issues: PublishIssue[] = [];
@@ -74,7 +100,7 @@ export function publishIssues(
 			const definition = ownEntry(blocks, block.type);
 			if (!definition) continue;
 			for (const [name, field] of Object.entries(definition.fields)) {
-				const problem = problemWith(field, block.props[name]);
+				const problem = problemWith(field, block.props[name], destinations);
 				if (problem)
 					issues.push({
 						id: block.props.id,

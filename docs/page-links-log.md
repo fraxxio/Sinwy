@@ -137,3 +137,31 @@ Finished phases of the [page links plan](page-links-plan.md), with their specs a
 - Shipped: "Another page" in the link picker, with a `combobox "Page"` of the org's other live pages by title; it stores `pageLink(id)` and is disabled, with "To open another page, publish one first.", when there is none. `describeLink(target, services, pages)` names a live page "Another page: <title>", an unknown `page:<id>` "A page that isn't live", and an old bare slug matching a live page as that page (the next pick stores the id); `linkedPage` finds the page. `EditorPagesContext`, provided by `PageEditor`'s new `otherPages` prop; the edit route loads `pagesQuery` and waits for it. `PageMetadata.pageAddresses` (all live pages, id → slug) and `resolveHref(href, orgSlug, pageAddresses)` let the canvas Button link `page:<id>`, or render with no `href` when the page isn't live. The preview waits for `pagesQuery` and renders `resolvePageLinks(...)` with the live pages. Tests: `describeLink`/`linkedPage` cases (`page-editor-link-field.test.ts`), canvas render with addresses keeping a not-live Button without a link (`page-document-view.test.ts`; the preview's drop was already covered by the Phase 3 test there).
 - Differs from plan: the resolve happens in the preview route, not inside `PageDocumentView`, which stays a plain renderer. Canvas addresses include the page being edited (it's live to customers too); only the picker's list leaves it out. `resolveHref` now returns `null` for an unresolved `page:` value instead of `/<org>/page:<id>`, which also covers the storefront if one ever slipped through.
 - Checked in the running app (subagent, `pro-org` `seed-26036114`, pages About us / Draft page / Home made in the UI): the Page list held only About us; picking it read "Another page: About us" and saved `href = page:<About us id>`; a reload kept the words; the preview linked `/seed-26036114/about-us`. After About us was unpublished, the editor read "A page that isn't live", the canvas kept the Button and opening the editor saved nothing; the preview showed no Button. No errors in browser, server or web logs. Found: the drawer tip in the brief was wrong (fixed in the standing notes), and choosing "Another page" saves the first live page right away (Default 3, as intended). Not checked: an old bare-slug Button in the running app (unit tests only).
+
+## Phase 5: Publish warns about links that go nowhere
+
+**Goal:** Publish lists Buttons that open a service no longer offered or a page that isn't live or doesn't exist, as warnings (Default 4).
+
+**Files:**
+- `page-editor/publish-checks.ts`: `publishIssues(content, blocks)` and `problemWith(field, stored)`; add the active services and live pages as arguments (pure), and check `field.kind === "link"` values with `linkTarget` + `linkedPage`/`describeLink` from `page-editor/links.ts`.
+- `page-editor/PublishControls.tsx:120`: read services from `EditorServicesContext` and pages from `EditorPagesContext`.
+- `components/pages/PagePublishing.tsx:132` (page detail screen): it has neither list; load `servicesQuery` (active) and `pagesQuery` (`live`, minus this page) in its route, `routes/_shell.pages.$id.index.tsx:56`.
+- `src/modules/org-dashboard/tests/page-editor-publish-checks.test.ts`.
+
+**Steps:**
+- Reuse `linkTarget` and the picker's wording; problems read like the existing ones ("Opens booking for a service you no longer offer", "Opens a page that isn't live, so customers won't see it").
+- Keep `publishIssues` pure: services and pages come in as arguments.
+
+**Tests that matter:**
+- One issue per broken Button, in reading order, through shown slots only; no issue for `book`, an active service, a live page or a web address.
+
+**Done when:**
+- Publishing a page with such a Button lists it and still publishes on confirm.
+- `bun run verify` passes.
+
+**Verify:** Seed `pro-org`, create two services and a second page, publish that page. In the editor, add a Button to "Colouring" and one to the second page, save. Deactivate "Colouring" (Services screen) and unpublish the second page, reopen the editor, click Publish: the dialog lists both Buttons with their problems; "Publish anyway" publishes (`page` row `status` = `published`). Nothing is simulated.
+
+### Log (2026-11-27, `feat(web): warn on publish about Buttons that open a service no longer offered or a page that isn't live`)
+- Shipped: `publishIssues` takes `LinkDestinations` (`{ services, pages }`) and, for `field.kind === "link"`, reports "Opens booking for a service you no longer offer" or "Opens a page that isn't live, so customers won't see it", using `linkTarget` and `linkedPage`. `PublishActions` reads `EditorServicesContext` and `EditorPagesContext`; the page detail route loads `servicesQuery` (active) and `pagesQuery` (live, minus this page) and passes them to `PagePublishing`. Tests: broken service and page Buttons in reading order with one in a hidden column skipped; nothing flagged for `book`, an active service, a live page, an old bare slug, a web address or `tel:`.
+- Differs from plan: none. The page detail route waits for the two lists only when the member can write (the queries are disabled otherwise). If either list fails to load, every service or page link is flagged; these are only warnings, so this was left as is.
+- Checked in the running app (subagent, `pro-org` `seed-5076ea43`, services Colouring/Haircut, pages Home/About): with Colouring off and About unpublished, Publish in the editor listed exactly "Button 1 in Section · Opens booking for a service you no longer offer" and "Button 2 in Section · Opens a page that isn't live, so customers won't see it"; "Publish anyway" published (`status = published`, version 6). After a label edit, "Publish changes" on the page detail screen listed the same two and published version 7. No errors in browser, server or web logs. Findings for Phase 6: the dialog title "Some things look unfilled" fits broken links poorly, and Buttons are told apart only by place.
