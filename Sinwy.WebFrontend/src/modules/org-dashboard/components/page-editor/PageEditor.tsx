@@ -12,8 +12,13 @@ import { BlockAccessProvider } from "./BlockDrawer";
 import { canvasOverrides } from "./EditorCanvas";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
-import { EditorServicesContext, fieldOverrides } from "./editor-fields";
+import {
+	EditorPagesContext,
+	EditorServicesContext,
+	fieldOverrides,
+} from "./editor-fields";
 import { EditorUploadsContext } from "./image-field";
+import type { NamedPage } from "./links";
 import type { Publishing } from "./PublishControls";
 import type { ConflictActions } from "./SaveControls";
 import type { PageData } from "./save";
@@ -40,6 +45,7 @@ const DND = { enableDragHandle: true };
 export function PageEditor({
 	data,
 	metadata,
+	otherPages,
 	title,
 	path,
 	back,
@@ -50,6 +56,8 @@ export function PageEditor({
 }: {
 	data: PageData;
 	metadata: PageMetadata;
+	/** The org's live pages other than this one, which a Button can open. */
+	otherPages: readonly NamedPage[];
 	title: string;
 	path: string;
 	back: ReactNode;
@@ -60,30 +68,32 @@ export function PageEditor({
 }) {
 	return (
 		<EditorServicesContext value={metadata.services}>
-			<EditorUploadsContext value={uploads}>
-				<BlockAccessProvider>
-					<Puck
-						config={editorConfig}
-						data={data as Data}
-						metadata={metadata}
-						ui={INITIAL_UI}
-						viewports={VIEWPORTS}
-						overrides={OVERRIDES}
-						dnd={DND}
-						height="100%"
-					>
-						<EditorLayout
-							title={title}
-							path={path}
-							back={back}
-							autosave={autosave}
-							uploads={uploads}
-							conflict={conflict}
-							publishing={publishing}
-						/>
-					</Puck>
-				</BlockAccessProvider>
-			</EditorUploadsContext>
+			<EditorPagesContext value={otherPages}>
+				<EditorUploadsContext value={uploads}>
+					<BlockAccessProvider>
+						<Puck
+							config={editorConfig}
+							data={data as Data}
+							metadata={metadata}
+							ui={INITIAL_UI}
+							viewports={VIEWPORTS}
+							overrides={OVERRIDES}
+							dnd={DND}
+							height="100%"
+						>
+							<EditorLayout
+								title={title}
+								path={path}
+								back={back}
+								autosave={autosave}
+								uploads={uploads}
+								conflict={conflict}
+								publishing={publishing}
+							/>
+						</Puck>
+					</BlockAccessProvider>
+				</EditorUploadsContext>
+			</EditorPagesContext>
 		</EditorServicesContext>
 	);
 }

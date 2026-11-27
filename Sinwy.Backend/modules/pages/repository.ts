@@ -110,13 +110,9 @@ export const findPage = async (organizationId: string, pageId: string) => {
 };
 
 /** The published pages a plan serves: the oldest `limit` by creation, so republishing can't reorder them. */
-export const findServedPageIds = async (
-	organizationId: string,
-	limit: number,
-) => {
-	if (limit <= 0) return new Set<string>();
-	const rows = await db
-		.select({ id: page.id })
+const servedPages = (organizationId: string, limit: number) =>
+	db
+		.select({ id: page.id, slug: page.slug })
 		.from(page)
 		.where(
 			and(
@@ -126,7 +122,29 @@ export const findServedPageIds = async (
 		)
 		.orderBy(asc(page.createdAt), asc(page.id))
 		.limit(limit);
+
+export const findServedPageIds = async (
+	organizationId: string,
+	limit: number,
+) => {
+	if (limit <= 0) return new Set<string>();
+	const rows = await servedPages(organizationId, limit);
 	return new Set(rows.map((row) => row.id));
+};
+
+/** The slug of each of `pageIds` the plan serves, by id; the same pages as `findServedPageIds`. */
+export const findServedPageSlugs = async (
+	organizationId: string,
+	limit: number,
+	pageIds: readonly string[],
+) => {
+	if (limit <= 0 || pageIds.length === 0) return new Map<string, string>();
+	const served = servedPages(organizationId, limit).as("served");
+	const rows = await db
+		.select()
+		.from(served)
+		.where(inArray(served.id, [...pageIds]));
+	return new Map(rows.map((row) => [row.id, row.slug]));
 };
 
 const latestVersionOf = async (executor: Tx | typeof db, pageId: string) => {

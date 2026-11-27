@@ -19,17 +19,21 @@ export type PageMetadata = {
 	organizationSlug: string;
 	services: PublicServiceDto[];
 	branding: OrganizationBrandingDto | null;
+	/** Live page id → slug, for the editor canvas; served content has its page links resolved already. */
+	pageAddresses?: ReadonlyMap<string, string>;
 };
 
 export const pageMetadata = ({
 	organizationSlug,
 	services,
 	branding,
-}: Metadata): PageMetadata => ({
+	pageAddresses,
+}: Metadata): Required<PageMetadata> => ({
 	organizationSlug:
 		typeof organizationSlug === "string" ? organizationSlug : "",
 	services: Array.isArray(services) ? services : [],
 	branding: branding ?? null,
+	pageAddresses: pageAddresses instanceof Map ? pageAddresses : new Map(),
 });
 
 /** The page around its blocks, in the organization's branding; the editor's canvas uses it too. */
@@ -223,25 +227,25 @@ export const BLOCK_RENDERS: {
 		);
 	},
 
-	Button: ({ label, href, variant, align, puck }) => (
-		<div className={ALIGN[align]}>
-			<a
-				href={
-					resolveHref(href, pageMetadata(puck.metadata).organizationSlug) ??
-					undefined
-				}
-				className={cn(
-					buttonVariants({
-						variant: variant === "outline" ? "outline" : "default",
-						size: "lg",
-					}),
-					variant === "outline" && "text-foreground",
-				)}
-			>
-				{label}
-			</a>
-		</div>
-	),
+	Button: ({ label, href, variant, align, puck }) => {
+		const { organizationSlug, pageAddresses } = pageMetadata(puck.metadata);
+		return (
+			<div className={ALIGN[align]}>
+				<a
+					href={resolveHref(href, organizationSlug, pageAddresses) ?? undefined}
+					className={cn(
+						buttonVariants({
+							variant: variant === "outline" ? "outline" : "default",
+							size: "lg",
+						}),
+						variant === "outline" && "text-foreground",
+					)}
+				>
+					{label}
+				</a>
+			</div>
+		);
+	},
 
 	Photos: ({ items: Items, gap, phoneLayout }) => (
 		<Items

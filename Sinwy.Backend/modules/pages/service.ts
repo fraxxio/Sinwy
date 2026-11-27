@@ -24,6 +24,8 @@ import {
 	type PageStatus,
 	type PlanSlug,
 	type PublicPageDto,
+	pageLinksIn,
+	resolvePageLinks,
 	type SavePageContentInput,
 	type UpdatePageInput,
 } from "@sinwy/shared";
@@ -39,6 +41,7 @@ import {
 	findPublishedPageBySlug,
 	findPublishedPageIdBySlug,
 	findServedPageIds,
+	findServedPageSlugs,
 	insertNextVersion,
 	insertPageImageWithinLimit,
 	insertPageWithinLimit,
@@ -330,11 +333,28 @@ export const findServedPageId = async (
 	return id && (await isServed(organizationId, plan, id)) ? id : null;
 };
 
-/** Null for an unknown or inactive organization, a draft and a page over the plan's limit alike. */
 const listsServices = (content: PageDocument) => {
 	const { types } = blocksIn(content);
 	return types.has("Services") || types.has("Booking");
 };
+
+/** Page links swapped for the target's slug; a Button to a page the public can't see is dropped. */
+const withPageLinks = async (
+	organizationId: string,
+	plan: PlanSlug | null,
+	content: PageDocument,
+) => {
+	const linked = pageLinksIn(content);
+	if (linked.size === 0) return content;
+	const addresses = await findServedPageSlugs(
+		organizationId,
+		limitsFor(plan).pages,
+		[...linked],
+	);
+	return resolvePageLinks(content, addresses);
+};
+
+/** Null for an unknown or inactive organization, a draft and a page over the plan's limit alike. */
 
 export const getPublicPage = async (
 	organizationSlug: string,
@@ -355,7 +375,11 @@ export const getPublicPage = async (
 		title: row.title,
 		seoTitle: row.seoTitle ?? row.title,
 		seoDescription: row.seoDescription ?? (organization.tagline || null),
-		content: row.content,
+		content: await withPageLinks(
+			organization.id,
+			organization.plan,
+			row.content,
+		),
 		services: listsServices(row.content)
 			? await listPublicServices(organization.id)
 			: [],

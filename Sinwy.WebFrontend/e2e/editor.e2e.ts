@@ -814,3 +814,84 @@ test.describe("photos", () => {
 		);
 	});
 });
+
+test.describe("links", () => {
+	test.use({ seed: "links" });
+
+	test("a Button opens one service's booking and another opens another page, all by clicks, and the live page links to both", async ({
+		page,
+		context,
+		org,
+		pages,
+		addService,
+		editor,
+	}) => {
+		await addService("Beard trim");
+		const colouring = await addService("Colouring");
+		const aboutId = await pages.create(
+			[section("about", [heading("about-title", "About the salon")])],
+			"About us",
+		);
+		await pages.publish(aboutId);
+		const homeId = await pages.create(welcome());
+		await editor.open(homeId);
+
+		const linkOpens = editor.settings.getByRole("combobox", {
+			name: "Link opens",
+		});
+		const choose = async (combobox: string, option: string) => {
+			await editor.settings
+				.getByRole("combobox", { name: combobox, exact: true })
+				.click();
+			await page.getByRole("option", { name: option, exact: true }).click();
+		};
+		const addButton = async (label: string) => {
+			await editor.drawer
+				.getByRole("button", { name: "Add Button", exact: true })
+				.last()
+				.click();
+			await expect(editor.selected).toHaveText("Button");
+			await editor.settings.getByLabel("Label", { exact: true }).fill(label);
+		};
+
+		await editor.block("title").click();
+		await addButton("Book colouring");
+		await choose("Link opens", "One service's booking");
+		await choose("Service", "Colouring");
+		await expect(linkOpens).toContainText("Booking: Colouring");
+
+		await addButton("About the salon");
+		await choose("Link opens", "Another page");
+		await choose("Page", "About us");
+		await expect(linkOpens).toContainText("Another page: About us");
+
+		await editor.save();
+		const [intro] = await pages.saved(homeId);
+		const [, booking, about] = (intro?.props["items"] ?? []) as Block[];
+		expect(outline(intro ? [intro] : [])).toEqual([
+			{ Section: ["Heading", "Button", "Button"] },
+		]);
+		expect(booking?.props["href"]).toBe(`book?service=${colouring}`);
+		expect(about?.props["href"]).toBe(`page:${aboutId}`);
+
+		await page.reload();
+		await expect(editor.status).toHaveText("Saved");
+		await editor.select(booking?.props.id ?? "");
+		await expect(linkOpens).toContainText("Booking: Colouring");
+		await editor.select(about?.props.id ?? "");
+		await expect(linkOpens).toContainText("Another page: About us");
+
+		await editor.button("Publish").click();
+		await expect(editor.pageState).toHaveText("Live");
+		const live = await context.newPage();
+		const home = await pages.detail(homeId);
+		const aboutSlug = (await pages.detail(aboutId)).slug;
+		await live.goto(`/${org.slug}/${home.slug}`);
+		await expect(
+			live.getByRole("link", { name: "Book colouring" }),
+		).toHaveAttribute("href", `/${org.slug}/book?service=${colouring}`);
+		await expect(
+			live.getByRole("link", { name: "About the salon" }),
+		).toHaveAttribute("href", `/${org.slug}/${aboutSlug}`);
+	});
+});

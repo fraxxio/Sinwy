@@ -5,7 +5,11 @@ import { DeletePageButton } from "#/modules/org-dashboard/components/pages/Delet
 import { PageContentSummary } from "#/modules/org-dashboard/components/pages/PageContentSummary";
 import { PageDetailsForm } from "#/modules/org-dashboard/components/pages/PageDetailsForm";
 import { PagePublishing } from "#/modules/org-dashboard/components/pages/PagePublishing";
-import { pageQuery } from "#/modules/org-dashboard/lib/page-queries";
+import {
+	pageQuery,
+	pagesQuery,
+} from "#/modules/org-dashboard/lib/page-queries";
+import { servicesQuery } from "#/modules/org-dashboard/lib/service-queries";
 import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
 import { FieldError } from "#/shared/components/ui/field";
@@ -22,8 +26,21 @@ function PageDetailPage() {
 	const { organization, member } = Route.useRouteContext();
 	const canWrite = hasPermission(member.roles, "pages:write");
 	const page = useQuery(pageQuery(organization.id, id));
+	const services = useQuery({
+		...servicesQuery(organization.id),
+		enabled: canWrite,
+		select: (list) => list.filter((service) => service.isActive),
+	});
+	const otherLivePages = useQuery({
+		...pagesQuery(organization.id),
+		enabled: canWrite,
+		select: (list) => list.items.filter((item) => item.live && item.id !== id),
+	});
 
-	if (page.isPending)
+	if (
+		page.isPending ||
+		(canWrite && (services.isPending || otherLivePages.isPending))
+	)
 		return (
 			<>
 				<PageHeader title="Page" />
@@ -57,6 +74,10 @@ function PageDetailPage() {
 					organization={organization}
 					page={page.data}
 					canWrite={canWrite}
+					destinations={{
+						services: services.data ?? [],
+						pages: otherLivePages.data ?? [],
+					}}
 				/>
 				<PageContentSummary
 					organizationSlug={organization.slug}

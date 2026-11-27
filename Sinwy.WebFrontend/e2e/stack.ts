@@ -24,6 +24,8 @@ export type Stack = {
 	thirdPro: SeededOrg;
 	/** Photo uploads; its files count against its own storage quota. */
 	photos: SeededOrg;
+	/** Button links; holds services and a second live page. */
+	links: SeededOrg;
 	starter: SeededOrg;
 };
 

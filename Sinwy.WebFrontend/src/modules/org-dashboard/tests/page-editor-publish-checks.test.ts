@@ -3,9 +3,16 @@ import {
 	BLOCKS,
 	type BlockNode,
 	type BlockType,
+	bookingLink,
 	pageDocumentSchema,
+	pageLink,
 } from "@sinwy/shared";
-import { publishIssues } from "../components/page-editor/publish-checks";
+import {
+	type LinkDestinations,
+	publishIssues,
+} from "../components/page-editor/publish-checks";
+
+const nowhere: LinkDestinations = { services: [], pages: [] };
 
 /** A block as the drawer adds it: every default filled in, slot defaults given ids. */
 const added = (
@@ -39,7 +46,7 @@ describe("publishIssues", () => {
 				],
 			}),
 		];
-		expect(publishIssues(content)).toEqual([
+		expect(publishIssues(content, nowhere)).toEqual([
 			{
 				id: "heading",
 				block: "Heading in Section",
@@ -61,7 +68,7 @@ describe("publishIssues", () => {
 				],
 			}),
 		];
-		expect(publishIssues(content)).toEqual([
+		expect(publishIssues(content, nowhere)).toEqual([
 			{ id: "image", block: "Image in Find us", problem: "Has no photo" },
 		]);
 	});
@@ -85,7 +92,7 @@ describe("publishIssues", () => {
 				],
 			}),
 		];
-		expect(publishIssues(content)).toEqual([]);
+		expect(publishIssues(content, nowhere)).toEqual([]);
 	});
 
 	it("still counts sample rich text as unfilled after the server normalises it", () => {
@@ -105,7 +112,7 @@ describe("publishIssues", () => {
 				],
 			},
 		});
-		expect(publishIssues(saved.data.content as BlockNode[])).toEqual([
+		expect(publishIssues(saved.data.content as BlockNode[], nowhere)).toEqual([
 			{
 				id: "text",
 				block: "Text in Section",
@@ -127,8 +134,60 @@ describe("publishIssues", () => {
 				},
 			},
 		];
-		expect(publishIssues(content)).toEqual([
+		expect(publishIssues(content, nowhere)).toEqual([
 			{ id: "image", block: "Image in Section", problem: "Has no photo" },
 		]);
+	});
+
+	describe("links that go nowhere", () => {
+		const destinations: LinkDestinations = {
+			services: [{ id: "haircut" }],
+			pages: [{ id: "about-id", title: "About us", slug: "about-us" }],
+		};
+		const button = (id: string, href: string) =>
+			added("Button", id, { label: "Go", href });
+
+		it("lists each Button to a service no longer offered or a page that isn't live, in reading order", () => {
+			const content = [
+				added("Section", "section", {
+					items: [
+						button("gone-page", pageLink("deleted-id")),
+						added("Columns", "columns", {
+							count: "2",
+							column1: [button("gone-service", bookingLink("colouring"))],
+							column3: [button("hidden", pageLink("deleted-id"))],
+						}),
+					],
+				}),
+			];
+			expect(publishIssues(content, destinations)).toEqual([
+				{
+					id: "gone-page",
+					block: "Button in Section",
+					problem: "Opens a page that isn't live, so customers won't see it",
+				},
+				{
+					id: "gone-service",
+					block: "Button in Columns",
+					problem: "Opens booking for a service you no longer offer",
+				},
+			]);
+		});
+
+		it("flags nothing for booking, an offered service, a live page or a web address", () => {
+			const content = [
+				added("Section", "section", {
+					items: [
+						button("booking", bookingLink()),
+						button("service", bookingLink("haircut")),
+						button("page", pageLink("about-id")),
+						button("old-slug", "about-us"),
+						button("web", "https://example.com"),
+						button("phone", "tel:+123"),
+					],
+				}),
+			];
+			expect(publishIssues(content, destinations)).toEqual([]);
+		});
 	});
 });

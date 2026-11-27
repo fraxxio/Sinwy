@@ -46,6 +46,7 @@ import { Switch } from "#/shared/components/ui/switch";
 import { toast } from "#/shared/components/ui/toast";
 import { PublishIssuesDialog } from "../page-editor/PublishIssuesDialog";
 import {
+	type LinkDestinations,
 	type PublishIssue,
 	publishIssues,
 } from "../page-editor/publish-checks";
@@ -69,10 +70,12 @@ export function PagePublishing({
 	organization,
 	page,
 	canWrite,
+	destinations,
 }: {
 	organization: { id: string; slug: string };
 	page: PageDetailDto;
 	canWrite: boolean;
+	destinations: LinkDestinations;
 }) {
 	const queryClient = useQueryClient();
 	const unwrap = useUnwrapWrite();
@@ -131,6 +134,7 @@ export function PagePublishing({
 	const checkThenPublish = (action: "publish" | "update") => {
 		const issues = publishIssues(
 			page.latestVersion.content.data.content as BlockNode[],
+			destinations,
 		);
 		if (issues.length > 0) setChecked({ action, issues });
 		else write.mutate(action);

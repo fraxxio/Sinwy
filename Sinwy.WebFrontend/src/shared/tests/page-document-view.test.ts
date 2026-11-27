@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { BLOCKS, type PublicServiceDto } from "@sinwy/shared";
+import {
+	BLOCKS,
+	type PublicServiceDto,
+	pageDocumentSchema,
+	resolvePageLinks,
+} from "@sinwy/shared";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import type { PageMetadata } from "../components/page-builder/blocks";
@@ -124,6 +129,60 @@ describe("PageDocumentView", () => {
 		expect(html).toContain('href="#prices"');
 		expect(html).toContain("data-brand-color");
 		expect(html).not.toContain("Hidden until count is 3");
+	});
+
+	test("links a Button that opens one service's booking under the organization", () => {
+		const html = render(
+			doc([
+				block("Section", {
+					items: [
+						block("Button", { label: "Haircut", href: "book?service=svc-1" }),
+					],
+				}),
+			]),
+		);
+
+		expect(html).toContain('href="/acme/book?service=svc-1"');
+	});
+
+	test("links a Button to another page as the server serves it, under the organization", () => {
+		const stored = pageDocumentSchema.parse(
+			doc([
+				block("Section", {
+					items: [
+						block("Button", { label: "About", href: "page:pg-about" }),
+						block("Button", { label: "Gone", href: "page:pg-gone" }),
+					],
+				}),
+			]),
+		);
+
+		const html = render(
+			resolvePageLinks(stored, new Map([["pg-about", "about-us"]])),
+		);
+
+		expect(html).toContain('href="/acme/about-us"');
+		expect(html).toContain("About");
+		expect(html).not.toContain("Gone");
+		expect(html).not.toContain("page:");
+	});
+
+	test("the editor canvas links a Button to a live page and keeps one to a page that isn't live, without a link", () => {
+		const html = render(
+			doc([
+				block("Section", {
+					items: [
+						block("Button", { label: "About", href: "page:pg-about" }),
+						block("Button", { label: "Gone", href: "page:pg-gone" }),
+					],
+				}),
+			]),
+			{ ...METADATA, pageAddresses: new Map([["pg-about", "about-us"]]) },
+		);
+
+		expect(html).toContain('href="/acme/about-us"');
+		expect(html).toMatch(/<a class="[^"]*">Gone<\/a>/);
+		expect(html).not.toContain("page:");
 	});
 
 	test("lists the chosen services in their order with Book links", () => {

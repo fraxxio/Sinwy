@@ -20,6 +20,7 @@ import {
 	SelectValue,
 } from "#/shared/components/ui/select";
 import { cn } from "#/shared/lib/utils";
+import type { NamedPage } from "./links";
 
 export const usePuck = createUsePuck();
 
@@ -27,6 +28,9 @@ export const usePuck = createUsePuck();
 export const EditorServicesContext = createContext<readonly PublicServiceDto[]>(
 	[],
 );
+
+/** The org's other live pages, which a Button can open. */
+export const EditorPagesContext = createContext<readonly NamedPage[]>([]);
 
 type Option = { label: string; value: unknown };
 
