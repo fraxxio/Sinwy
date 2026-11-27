@@ -10,26 +10,35 @@ export const isSafeImageSrc = (src: string) => SAFE_IMAGE_SRC.test(src);
 const BARE_PATH = /^[a-z0-9-]+(\/[\w-]*)*$/;
 const BOOKING = "book";
 const SERVICE_BOOKING = /^book\?service=([\w-]+)$/;
+const PAGE_LINK = /^page:([\w-]+)$/;
 
-/** A Button link: a safe href, or a bare path such as `book` or `book?service=<id>` that the storefront resolves under the org. */
+/** A Button link: a safe href, a bare path such as `book` or `book?service=<id>` that the storefront resolves under the org, or `page:<pageId>`. */
 export const isSafeLink = (href: string) =>
-	isSafeHref(href) || BARE_PATH.test(href) || SERVICE_BOOKING.test(href);
+	isSafeHref(href) ||
+	BARE_PATH.test(href) ||
+	SERVICE_BOOKING.test(href) ||
+	PAGE_LINK.test(href);
 
 export type LinkTarget =
 	| { kind: "booking" }
 	| { kind: "service"; serviceId: string }
+	| { kind: "page"; pageId: string }
 	| { kind: "web"; href: string };
 
-/** What a stored Button link opens; anything that isn't booking is a web address, as stored. */
+/** What a stored Button link opens; anything that isn't booking, a service or a page is a web address, as stored. */
 export const linkTarget = (href: string): LinkTarget => {
 	if (href === BOOKING) return { kind: "booking" };
 	const serviceId = SERVICE_BOOKING.exec(href)?.[1];
 	if (serviceId) return { kind: "service", serviceId };
+	const pageId = PAGE_LINK.exec(href)?.[1];
+	if (pageId) return { kind: "page", pageId };
 	return { kind: "web", href };
 };
 
 export const bookingLink = (serviceId?: string) =>
 	serviceId ? `${BOOKING}?service=${serviceId}` : BOOKING;
+
+export const pageLink = (pageId: string) => `page:${pageId}`;
 
 const HAS_SCHEME = /^[a-z][a-z0-9+-]*:/i;
 

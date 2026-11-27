@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { bookingLink, isSafeLink, linkTarget, webAddress } from "@sinwy/shared";
+import {
+	bookingLink,
+	isSafeLink,
+	linkTarget,
+	pageLink,
+	webAddress,
+} from "@sinwy/shared";
 
 const SERVICE_ID = "0b6f3c1e-8a4d-4c2b-9f7e-2d5a1b3c4e6f";
 
@@ -17,7 +23,18 @@ describe("isSafeLink", () => {
 		"book?service=<script>",
 		'book?service="x"',
 		"book?service=a b",
+		"page:",
+		"page:a b",
+		"page:<script>",
+		"page:x?y=1",
+		"page:x/y",
+		"Page:x",
 	])("refuses %s", (href) => expect(isSafeLink(href)).toBe(false));
+
+	test("accepts a page by id", () => {
+		expect(isSafeLink(`page:${SERVICE_ID}`)).toBe(true);
+		expect(isSafeLink("page:pg_1")).toBe(true);
+	});
 });
 
 describe("linkTarget", () => {
@@ -29,8 +46,15 @@ describe("linkTarget", () => {
 		});
 	});
 
+	test("reads a page by id", () =>
+		expect(linkTarget(pageLink("pg_1"))).toEqual({
+			kind: "page",
+			pageId: "pg_1",
+		}));
+
 	test.each([
 		"",
+		"page:",
 		"https://example.com",
 		"/x",
 		"tel:+3701234567",

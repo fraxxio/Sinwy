@@ -13,7 +13,9 @@ import {
 	migrateDocument,
 	normalizeRichText,
 	pageDocumentSchema,
+	pageLinksIn,
 	ROOT_ALLOW,
+	resolvePageLinks,
 } from "@sinwy/shared";
 
 let nextId = 0;
@@ -231,6 +233,7 @@ describe("pageDocumentSchema", () => {
 			"#top",
 			"mailto:a@b.c",
 			"book?service=0b6f3c1e-8a4d-4c2b-9f7e-2d5a1b3c4e6f",
+			"page:0b6f3c1e-8a4d-4c2b-9f7e-2d5a1b3c4e6f",
 			"",
 		])
 			expect(
@@ -547,5 +550,83 @@ describe("lockedBlocksIn", () => {
 
 	test("ungated types are never locked", () => {
 		expect(locked(empty, salonDocument())).toEqual([]);
+	});
+});
+
+describe("page links", () => {
+	const button = (href: string, id?: string) =>
+		block("Button", { label: href, href }, id);
+	const linking = () =>
+		pageDocumentSchema.parse(
+			doc([
+				block("Hero"),
+				section(
+					block("Heading", {}, "heading"),
+					button("page:live", "to-live"),
+					button("page:gone", "to-gone"),
+					button("book", "to-booking"),
+				),
+				section(
+					block("Columns", {
+						count: "2",
+						column1: [button("page:live", "in-column")],
+						column4: [button("page:gone", "hidden-column")],
+					}),
+				),
+			]),
+		);
+	const addresses = new Map([["live", "about-us"]]);
+	const ids = (list: readonly BlockNode[]): string[] =>
+		list.flatMap((node) => [
+			node.props.id,
+			...Object.values(node.props).flatMap((value) =>
+				Array.isArray(value) ? ids(value as BlockNode[]) : [],
+			),
+		]);
+	const hrefOf = (list: readonly BlockNode[], id: string): unknown => {
+		for (const node of list) {
+			if (node.props.id === id) return node.props["href"];
+			for (const value of Object.values(node.props))
+				if (Array.isArray(value)) {
+					const found = hrefOf(value as BlockNode[], id);
+					if (found !== undefined) return found;
+				}
+		}
+		return undefined;
+	};
+
+	test("pageLinksIn collects linked page ids through every slot, hidden columns included", () => {
+		expect([...pageLinksIn(linking())].sort()).toEqual(["gone", "live"]);
+		expect(pageLinksIn(salonDocument()).size).toBe(0);
+	});
+
+	test("a link to a page in the map becomes its slug; one that isn't drops its Button, keeping siblings and parents", () => {
+		const stored = linking();
+		const resolved = resolvePageLinks(stored, addresses);
+		const content = resolved.data.content;
+
+		expect(hrefOf(content, "to-live")).toBe("about-us");
+		expect(hrefOf(content, "in-column")).toBe("about-us");
+		expect(hrefOf(content, "to-booking")).toBe("book");
+		expect(ids(content)).not.toContain("to-gone");
+		expect(ids(content)).not.toContain("hidden-column");
+		expect(ids(content)).toEqual(
+			ids(stored.data.content).filter(
+				(id) => id !== "to-gone" && id !== "hidden-column",
+			),
+		);
+		expect(pageDocumentSchema.parse(resolved)).toEqual(resolved);
+	});
+
+	test("leaves the stored document untouched", () => {
+		const stored = linking();
+		const copy = structuredClone(stored);
+		resolvePageLinks(stored, new Map());
+		expect(stored).toEqual(copy);
+	});
+
+	test("a document with no page links resolves to the same content", () => {
+		const salon = pageDocumentSchema.parse(salonDocument());
+		expect(resolvePageLinks(salon, addresses)).toEqual(salon);
 	});
 });

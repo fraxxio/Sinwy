@@ -68,3 +68,40 @@ Finished phases of the [page links plan](page-links-plan.md), with their specs a
 - Shipped: `linkField` (`page-editor/link-field.tsx`) in `customFields.link`: a "Link opens" select whose trigger shows `describeLink`'s words, then a service select or a web address input. Switching follows Default 3; "One service's booking" is disabled with a hint when there are no active services; every control respects `readOnly`. Tests for `describeLink` (all eight values) and `typedWebLink` in `tests/page-editor-link-field.test.ts`.
 - Differs from plan: `describeLink` and `typedWebLink` live in a pure `page-editor/links.ts` (the pattern of `images.ts`, `uploads.ts`) so the test imports no React or Puck. `typedWebLink` also refuses addresses over the 2048-character limit, which the server would refuse too. Besides keying by block id, the web address input resyncs from the stored value when it isn't focused, so Undo updates it.
 - Checked in the running app (subagent, real editor, saves and services API): default "Booking page"; picking Colouring saved `book?service=<Colouring id>` and read "Booking: Colouring"; `example.com` saved `https://example.com`; `javascript:x` showed the inline message and the stored row didn't change; reloads showed "Web address" and "Booking: Haircut". No console errors. Noted, as designed: switching to "Web address" saves `""` right away (Default 3; publish warns "Has no link"), and the refused text stays in the input until fixed.
+
+## Phase 3: Page links by id, resolved on the server
+
+**Goal:** a document can store `page:<id>`, and the public page read serves it as a real link to the target's current address, or without the Button when the target isn't live.
+
+**Files:**
+- `Sinwy.Shared/types/page/PageUrls.ts`: `isSafeLink`, `linkTarget` (add the page kind).
+- New shared `resolvePageLinks(content, addresses)` next to it, or beside the document walkers in `Sinwy.Shared/types/page/` (find them with `git grep -n "blocksIn" Sinwy.Shared Sinwy.Backend`).
+- `Sinwy.Backend/modules/pages/service.ts`: `getPublicPage` (`:339`), `isServed`, `listsServices` and `blocksIn` (the existing pattern for loading what a page needs); the repository for a query of the organization's served pages by id.
+- `Sinwy.Shared/types/page/Page.ts`: `PublicPageDto` (`:58`), expected unchanged.
+- `Sinwy.Backend/modules/pages/tests/pages.test.ts` (`readPublic` helper, `:495`) and `tests/pageDocument.test.ts:226`.
+- `Sinwy.WebFrontend/src/shared/tests/page-document-view.test.ts`.
+
+**Steps:**
+- `isSafeLink` accepts `page:<id>` (Default 1); `linkTarget` reads it as the page kind.
+- `resolvePageLinks(content, addresses)` is pure: `addresses` maps page id to slug for the pages that may be linked. Each Button with `page:<id>` found in the map gets the bare slug, which `resolveHref` already prefixes with the org; a Button whose id isn't in the map is removed from its slot. Every other value passes through untouched, and the result still passes `pageDocumentSchema`.
+- `getPublicPage` collects the page ids the content references and, only when there are any, loads those of the organization's pages that are live under the same rule `isServed` uses, in one query. Then it serves `resolvePageLinks(content, addresses)`. A page with no page links costs no extra query. An id from another organization is never in the map, so it never becomes a link.
+- The storefront needs no change: the served content holds no `page:` values.
+- Last step, after the phase is done: remind the product owner and ask whether to look into the storefront booking route (`src/modules/storefront/routes/book.tsx`, `ssr: false`) not being rendered on the server. Find out what needs the browser there and whether its services and first step could be loaded and rendered on the server, like public pages. Report what you found and ask before changing it; it's outside this plan.
+
+**Tests that matter:**
+- A published page with a Button to a live page serves `href` as that page's slug, and after the target's slug changes the same read serves the new slug, with no new version of the linking page.
+- A Button to a page that is unpublished, deleted, not live after a downgrade, or belongs to another organization is absent from the served content; its siblings and parent stay, and stored versions are unchanged.
+- A page with no page links runs no extra query (or at least returns the same content byte for byte).
+- The rule refuses `page:`, `page:a b`, `page:<script>` and `page:x?y=1`.
+
+**Done when:**
+- The storefront page's server-rendered HTML contains `href="/<org>/<target-slug>"` for a page link, before any script runs.
+- `bun run verify` passes.
+
+**Verify:** Seed `pro-org`, log in as its owner. Through the API, create pages "Home" and "About us" (slug `about-us`), save Home with a Section holding two Buttons: one `page:<About us id>`, one `page:<random uuid>`. Publish both. Fetch `/<org>/home` with `curl` (no JavaScript): the HTML has one Button, linking to `/<org>/about-us`. Change About us's slug to `about` on its detail screen and fetch again: the link is `/<org>/about`, and Home's `page_content` rows are unchanged. Unpublish About us and fetch again: the Button is gone. Nothing is simulated.
+
+### Log (2026-11-27, `feat(backend, shared): serve a Button linked to another page by id as that page's current address`)
+- Shipped: `isSafeLink` accepts `page:<[\w-]+>`; `linkTarget` reads it as `{ kind: "page", pageId }`, `pageLink(id)` writes it. Pure `pageLinksIn(content)` (linked page ids through every slot) and `resolvePageLinks(content, addresses)` in `PageDocument.ts`, generic over every `link` field of the manifest: a linked id in the map becomes the bare slug, a block whose link isn't in the map is dropped, the input isn't mutated. `getPublicPage` serves `withPageLinks(...)`, which returns the content untouched when there are no page links and otherwise runs one query, `findServedPageSlugs(orgId, limit, ids)`, built on the same `servedPages` query as `findServedPageIds`. Tests: rule and reader (`pageUrls.test.ts`), walkers (`pageDocument.test.ts` "page links"), served content across rename, draft, delete, unpublish, downgrade, another org and an unknown id, plus byte-for-byte content with no page links (`pages.test.ts`), and the storefront render of resolved content (`page-document-view.test.ts`).
+- Differs from plan: `describeLink` treats the page kind like a web address for now (the shared `case "page": case "web":`), so the picker type-checks until Phase 4 gives it its own choice. "No extra query" is checked through the early return and the byte-for-byte test, not a query counter. The booking route was looked into but not changed (see the report to the product owner below).
+- Checked in the running app (subagent, real backend, web SSR and DB, `pro-org` `seed-8302ad81`): curl of `/<org>/home` had one Button, `href="/<org>/about-us"`, and no `page:` anywhere, including the dehydrated state; after the slug was changed to `about` on the page's detail screen it linked `/<org>/about`; after About us was unpublished the Button was gone and the Section stayed, empty. Home's one `page_content` row was byte-identical throughout. No errors in the server, web or browser logs. Not checked in the app: the downgrade and other-organization cases (integration tests only).
+- Booking route `ssr: false`: the reason is in the public-pages log of 2026-11-07 (`7d91db2`): the route reads the session (`authClient.useSession`) and today's date in the org's timezone, which would mismatch on hydration. Both sit in later steps: the session only in the Confirm step, today's date only in the time step. The header and the "Choose a service" step use only `storefrontQuery` data, which the loader already fetches. So the route could render on the server with those two later steps kept to the browser (or with today's date passed from the loader). Reported to the product owner; not changed.

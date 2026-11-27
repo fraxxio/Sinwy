@@ -10,7 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Service links pass the link rule; a shared link reader | – | done | `feat(shared): accept one service's booking as a Button link and read link targets` |
 | 2 | Link picker: booking, one service, web address | 1 | done | `feat(web): choose a Button's link from booking, one service or a web address` |
-| 3 | Page links by id, resolved on the server | 1 | todo | |
+| 3 | Page links by id, resolved on the server | 1 | done | `feat(backend, shared): serve a Button linked to another page by id as that page's current address` |
 | 4 | "Another page" in the picker; editor and preview resolve page links | 2, 3 | todo | |
 | 5 | Publish warns about links that go nowhere | 4 | todo | |
 | 6 | Editor e2e test, usability check, docs and cleanup | 5 | todo | |
@@ -39,56 +39,24 @@ Settled with the product owner. Ask before changing any of them.
 
 Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
-- `Sinwy.Shared/types/page/PageUrls.ts` now has `isSafeLink` (accepts `book?service=<[\w-]+>`), `linkTarget(href)` → `{ kind: "booking" } | { kind: "service", serviceId } | { kind: "web", href }`, `bookingLink(serviceId?)` and `webAddress(text)`. `example.com` alone still fails `isSafeLink`; only `webAddress(...)` output passes. `page:x` fails until Phase 3. Their pure tests are in `Sinwy.Backend/modules/pages/tests/pageUrls.test.ts` (Shared has no test runner).
+- `Sinwy.Shared/types/page/PageUrls.ts` has `isSafeLink` (accepts `book?service=<[\w-]+>` and `page:<[\w-]+>`), `linkTarget(href)` → `{ kind: "booking" } | { kind: "service", serviceId } | { kind: "page", pageId } | { kind: "web", href }`, `bookingLink(serviceId?)`, `pageLink(pageId)` and `webAddress(text)`. `example.com` alone still fails `isSafeLink`; only `webAddress(...)` output passes. Their pure tests are in `Sinwy.Backend/modules/pages/tests/pageUrls.test.ts` (Shared has no test runner).
+- `pageLinksIn(content)` and `resolvePageLinks(content, addresses)` (`addresses`: `Map` page id → slug) are in `Sinwy.Shared/types/page/PageDocument.ts`. The resolved `href` is the bare slug, which `resolveHref` prefixes with the org. A block whose link isn't in the map is dropped and its parent stays (an emptied Section renders empty). Tests: `pageDocument.test.ts` "page links".
+- `getPublicPage` serves `withPageLinks(...)`, whose one query is `findServedPageSlugs` in the pages repository. The public response holds no `page:` values (checked in SSR HTML and the dehydrated state).
 - The Button's `href` is a `field.link` (`Sinwy.Shared/types/page/blocks/fields.ts:155`), validated server-side by `url(isSafeLink, …)` (`fields.ts:88`), which also accepts `""`. Manifest: `blocks.ts:134`, label "Link", default `book`, `required: true` (publish already warns "Has no link" when empty).
 - The storefront renders Buttons with `resolveHref` (`Sinwy.WebFrontend/src/shared/components/page-builder/urls.ts`): a safe href passes through, any other `isSafeLink` value is prefixed with `/<orgSlug>/` (tested for `book?service=<id>`). A Button whose href doesn't resolve renders an `<a>` with no `href`.
 - A content save within the same checkpoint updates the latest `page_content` row instead of adding one; count rows before and after rather than expecting a fixed number. The saved version is `latestVersion.version` on `PageDetailDto`.
-- `getPublicPage` (`Sinwy.Backend/modules/pages/service.ts:339`) already reads data beyond the page's own content: the organization's branding, the plan's served set (`isServed`) and, when `listsServices(content)`, the active services. Page addresses are one more input of that kind.
-- The storefront page route `src/modules/storefront/routes/$pageSlug.tsx` is server-rendered (its loader calls `publicPageQuery`). The booking route `routes/book.tsx:48` sets `ssr: false`, with no comment saying why.
 - The storefront booking route (`book.tsx:42`, `:128`) reads `service` from the search; an unknown or inactive id falls back to the "Choose a service" step, never an error.
 - Service ids are UUIDs (text primary key). Page slugs match `^[a-z0-9]+(-[a-z0-9]+)*$` and can't be `book` or `s` (`RESERVED_PAGE_SLUGS`, `Sinwy.Shared/types/page/Page.ts:17`).
 - Puck renders the stored document in the editor canvas, so the canvas can't use server-resolved content: the Button render there has to look `page:<id>` up from Puck `metadata` (`PageMetadata` and `pageMetadata` in `src/shared/components/page-builder/blocks.tsx:18`).
 - Puck doesn't pass `metadata` to fields, so data reaches a field through React context: `EditorServicesContext` (`page-editor/editor-fields.tsx`) is provided in `PageEditor.tsx:62` from `metadata.services`, which the edit route already filters to active services.
-- The link picker is `linkField` in `page-editor/link-field.tsx`, registered as `customFields.link` in `editor-config.tsx`. Its pure parts are in `page-editor/links.ts`: `LINK_CHOICES`, `LinkChoice` (= `LinkTarget["kind"]`), `describeLink(target, services)` → `{ choice, words }` and `typedWebLink(text)` (`null` when refused, `""` for empty). Tests: `tests/page-editor-link-field.test.ts`. Adding the page kind to `LinkTarget` makes `describeLink`'s switch fail to type-check until it handles it.
+- The link picker is `linkField` in `page-editor/link-field.tsx`, registered as `customFields.link` in `editor-config.tsx`. Its pure parts are in `page-editor/links.ts`: `LINK_CHOICES`, `LinkChoice` (= `LinkTarget["kind"]`), `describeLink(target, services)` → `{ choice, words }` and `typedWebLink(text)` (`null` when refused, `""` for empty). Tests: `tests/page-editor-link-field.test.ts`. For now `describeLink` handles the page kind with `case "page": case "web":`, so a `page:` value shows as a web address; Phase 4 replaces that.
 - The web address input syncs its text from the stored value only while it isn't focused (as Puck's own inputs do) and is keyed by block id; a refused text stays on screen with an inline message while the stored value is unchanged.
 - In the running editor the Link select is `combobox "Link opens"`, the service select `combobox "Service"`, the input is labelled "Web address". Services come ordered by name, so "first active service" (Default 3) is the first alphabetically. Block drawer cards are found with `getByTestId('drawer-item:<Block>')`.
 - `pagesQuery` (`src/modules/org-dashboard/lib/page-queries.ts`) returns `PageListItemDto` items with `id`, `title`, `slug`, `status` and `live`. The edit route (`routes/_shell.pages.$id.edit.tsx`) loads `pageQuery` and `servicesQuery` and waits for both before mounting the editor.
 - Seeds: `pro-org` (Professional, 5 pages) has no services; create them with `POST /api/organizations/<id>/services` `{ name, durationMinutes, priceMinor }`. `bookable-org` is on Starter and seeds "Haircut" and "Colouring". Image and Button blocks can't be top-level: put them inside a Section.
 - Editor e2e: `bun run test:editor` needs `bun run start:server` (:3001) and `bun run start:web` (:3000). `e2e/global-setup.ts` seeds four `pro-org`s and one Starter org into `Stack`; helpers (`editorFor`, the `pages` fixture with `create`/`publish`/`saved`) are in `e2e/editor-fixtures.ts`. A test that needs a second live page should get its own seeded org.
+- The backend (`bun run index.ts`, :3001) doesn't reload on changes: restart it after backend edits, asking the user first (stopping it needs their permission). Since Phase 3 it logs to `/tmp/sinwy-phase3/server.log`; the web server (:3000, vite) logs to `/tmp/sinwy-phase2/web.log`. Seeded orgs and scratch files from Phases 2 and 3 are in those folders, for Phase 6's cleanup.
 - Known editor issues an agent may hit: #88 (Add with a Section selected nests the block inside it) and #89 (a click on a block announces a drop and enables Undo).
-
----
-
-## Phase 3: Page links by id, resolved on the server
-
-**Goal:** a document can store `page:<id>`, and the public page read serves it as a real link to the target's current address, or without the Button when the target isn't live.
-
-**Files:**
-- `Sinwy.Shared/types/page/PageUrls.ts`: `isSafeLink`, `linkTarget` (add the page kind).
-- New shared `resolvePageLinks(content, addresses)` next to it, or beside the document walkers in `Sinwy.Shared/types/page/` (find them with `git grep -n "blocksIn" Sinwy.Shared Sinwy.Backend`).
-- `Sinwy.Backend/modules/pages/service.ts`: `getPublicPage` (`:339`), `isServed`, `listsServices` and `blocksIn` (the existing pattern for loading what a page needs); the repository for a query of the organization's served pages by id.
-- `Sinwy.Shared/types/page/Page.ts`: `PublicPageDto` (`:58`), expected unchanged.
-- `Sinwy.Backend/modules/pages/tests/pages.test.ts` (`readPublic` helper, `:495`) and `tests/pageDocument.test.ts:226`.
-- `Sinwy.WebFrontend/src/shared/tests/page-document-view.test.ts`.
-
-**Steps:**
-- `isSafeLink` accepts `page:<id>` (Default 1); `linkTarget` reads it as the page kind.
-- `resolvePageLinks(content, addresses)` is pure: `addresses` maps page id to slug for the pages that may be linked. Each Button with `page:<id>` found in the map gets the bare slug, which `resolveHref` already prefixes with the org; a Button whose id isn't in the map is removed from its slot. Every other value passes through untouched, and the result still passes `pageDocumentSchema`.
-- `getPublicPage` collects the page ids the content references and, only when there are any, loads those of the organization's pages that are live under the same rule `isServed` uses, in one query. Then it serves `resolvePageLinks(content, addresses)`. A page with no page links costs no extra query. An id from another organization is never in the map, so it never becomes a link.
-- The storefront needs no change: the served content holds no `page:` values.
-- Last step, after the phase is done: remind the product owner and ask whether to look into the storefront booking route (`src/modules/storefront/routes/book.tsx`, `ssr: false`) not being rendered on the server. Find out what needs the browser there and whether its services and first step could be loaded and rendered on the server, like public pages. Report what you found and ask before changing it; it's outside this plan.
-
-**Tests that matter:**
-- A published page with a Button to a live page serves `href` as that page's slug, and after the target's slug changes the same read serves the new slug, with no new version of the linking page.
-- A Button to a page that is unpublished, deleted, not live after a downgrade, or belongs to another organization is absent from the served content; its siblings and parent stay, and stored versions are unchanged.
-- A page with no page links runs no extra query (or at least returns the same content byte for byte).
-- The rule refuses `page:`, `page:a b`, `page:<script>` and `page:x?y=1`.
-
-**Done when:**
-- The storefront page's server-rendered HTML contains `href="/<org>/<target-slug>"` for a page link, before any script runs.
-- `bun run verify` passes.
-
-**Verify:** Seed `pro-org`, log in as its owner. Through the API, create pages "Home" and "About us" (slug `about-us`), save Home with a Section holding two Buttons: one `page:<About us id>`, one `page:<random uuid>`. Publish both. Fetch `/<org>/home` with `curl` (no JavaScript): the HTML has one Button, linking to `/<org>/about-us`. Change About us's slug to `about` on its detail screen and fetch again: the link is `/<org>/about`, and Home's `page_content` rows are unchanged. Unpublish About us and fetch again: the Button is gone. Nothing is simulated.
 
 ---
 
@@ -97,11 +65,12 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** an owner points a Button at another live page by choosing it from a list, and the editor canvas and the dashboard preview link it the way customers will see it.
 
 **Files:**
-- `page-editor/link-field.tsx` (`LinkPicker`, `ServicePicker` as the pattern for a page select, the disabled-choice hint) and `page-editor/links.ts` (`LINK_CHOICES`, `describeLink`, which takes the live pages as a new argument); `tests/page-editor-link-field.test.ts`.
-- `page-editor/editor-fields.tsx`: add a pages context next to `EditorServicesContext`; `PageEditor.tsx:62` provides it.
-- `routes/_shell.pages.$id.edit.tsx`: load `pagesQuery` alongside `pageQuery` and `servicesQuery`; pass live pages minus the current one.
-- `Sinwy.WebFrontend/src/shared/components/page-builder/blocks.tsx`: `PageMetadata`, `pageMetadata` and the Button render (`:226`).
-- `routes/_shell.pages.$id.preview.tsx` and `PageDocumentView.tsx`: the preview applies `resolvePageLinks` (Default 5).
+- `src/modules/org-dashboard/components/page-editor/links.ts`: `LINK_CHOICES`, and `describeLink`, which takes the live pages as a new argument and gives the page kind its own branch (now shared with `web`). Write links with `pageLink(id)` from `@sinwy/shared`. Tests: `src/modules/org-dashboard/tests/page-editor-link-field.test.ts`.
+- `page-editor/link-field.tsx`: `LinkPicker`, with `ServicePicker` as the pattern for a page select and for the disabled-choice hint.
+- `page-editor/editor-fields.tsx`: a pages context next to `EditorServicesContext`; `PageEditor.tsx:62` provides it.
+- `routes/_shell.pages.$id.edit.tsx`: load `pagesQuery` alongside `pageQuery` and `servicesQuery`; pass live pages (`live: true`) minus the current one.
+- `Sinwy.WebFrontend/src/shared/components/page-builder/blocks.tsx`: `PageMetadata` (`:18`), `pageMetadata` (`:24`) and the Button render (`:226`).
+- `routes/_shell.pages.$id.preview.tsx` (`PageDocumentView` at `:90`, given `latestVersion.content`) and `PageDocumentView.tsx`: apply `resolvePageLinks` from `@sinwy/shared` with a `Map` of live page id → slug (Default 5). `src/shared/tests/page-document-view.test.ts` already renders resolved content; extend it there.
 
 **Steps:**
 - The "Another page" choice opens a select of live pages by title. The words read "Another page: About us"; a `page:<id>` that isn't in the list reads "A page that isn't live"; a bare slug that matches a live page reads "Another page: <title>" and the next pick stores `page:<id>` (Decisions).

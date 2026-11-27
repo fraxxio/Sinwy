@@ -11,6 +11,7 @@ import {
 	PAGE_DOCUMENT_LIMITS,
 	ROOT_ALLOW,
 } from "./blocks";
+import { linkTarget } from "./PageUrls";
 
 /** What a page document is checked and migrated against; tests pass their own. */
 export type PageManifest = {
@@ -314,4 +315,65 @@ export const lockedBlocksIn = (
 			required !== undefined && !features.includes(required) && !kept.has(type)
 		);
 	});
+};
+
+const linkFieldsOf = (blocks: Blocks, type: string) =>
+	Object.entries(ownEntry(blocks, type)?.fields ?? {})
+		.filter(([, f]) => f.kind === "link")
+		.map(([name]) => name);
+
+const linkedPageId = (value: unknown) => {
+	if (typeof value !== "string") return null;
+	const target = linkTarget(value);
+	return target.kind === "page" ? target.pageId : null;
+};
+
+/** The ids of the pages a document's links point to, through every slot. */
+export const pageLinksIn = (
+	document: DocumentLike,
+	blocks: Blocks = BLOCKS,
+) => {
+	const ids = new Set<string>();
+	const walk = (list: unknown, depth: number) => {
+		if (!Array.isArray(list) || depth > LIMITS.maxDepth) return;
+		for (const node of list) {
+			if (!isBlockLike(node)) continue;
+			for (const name of linkFieldsOf(blocks, node.type)) {
+				const id = linkedPageId(node.props[name]);
+				if (id) ids.add(id);
+			}
+			for (const slot of ownEntry(blocks, node.type)?.slots ?? [])
+				walk(node.props[slot], depth + 1);
+		}
+	};
+	walk(document.data.content, 1);
+	return ids;
+};
+
+/** Each `page:<id>` link swapped for that page's slug from `addresses` (id → slug); a block linking to a page not in it is dropped. */
+export const resolvePageLinks = (
+	document: PageDocument,
+	addresses: ReadonlyMap<string, string>,
+	blocks: Blocks = BLOCKS,
+): PageDocument => {
+	const resolve = (list: readonly BlockNode[]): BlockNode[] =>
+		list.flatMap((node) => {
+			const props = { ...node.props };
+			for (const name of linkFieldsOf(blocks, node.type)) {
+				const id = linkedPageId(props[name]);
+				if (!id) continue;
+				const slug = addresses.get(id);
+				if (slug === undefined) return [];
+				props[name] = slug;
+			}
+			for (const slot of ownEntry(blocks, node.type)?.slots ?? []) {
+				const children = props[slot];
+				if (Array.isArray(children)) props[slot] = resolve(children);
+			}
+			return [{ ...node, props }];
+		});
+	return {
+		...document,
+		data: { ...document.data, content: resolve(document.data.content) },
+	};
 };

@@ -1224,3 +1224,130 @@ test("public: unknown organization, unknown page, draft, inactive and over-limit
 	}
 	expect(bodies.size).toBe(1);
 });
+
+const linkButton = (href: string) => block("Button", { label: href, href });
+const storedVersions = (pageId: string) =>
+	db
+		.select({
+			id: pageContent.id,
+			content: pageContent.content,
+			updatedAt: pageContent.updatedAt,
+		})
+		.from(pageContent)
+		.where(eq(pageContent.pageId, pageId))
+		.orderBy(asc(pageContent.version));
+const hrefsIn = (content: PublicPageDto["content"]) =>
+	JSON.stringify(content)
+		.match(/"href":"[^"]*"/g)
+		?.map((pair) => pair.slice(8, -1)) ?? [];
+
+test("public: a page link serves the target's current slug, with no new version of the linking page", async () => {
+	await setPlan("professional");
+	const home = await create({ slug: "home" });
+	const about = await create({ slug: "about-us" });
+	await save(home.id, 1, document(section(linkButton(`page:${about.id}`))));
+	await publish(home.id);
+	await publish(about.id);
+	const before = await storedVersions(home.id);
+
+	const first = await unwrap<PublicPageDto>(await readPublic("home"));
+	expect(hrefsIn(first.content)).toEqual(["about-us"]);
+
+	const renamed = await call("PATCH", `pages/${about.id}`, org.ownerCookie, {
+		slug: "about",
+	});
+	expect(renamed.status).toBe(200);
+	const second = await unwrap<PublicPageDto>(await readPublic("home"));
+	expect(hrefsIn(second.content)).toEqual(["about"]);
+	expect(await storedVersions(home.id)).toEqual(before);
+});
+
+test("public: a Button to a page the public can't see is dropped, its siblings and parent stay, and stored versions are unchanged", async () => {
+	await setPlan("professional");
+	const home = await create({ slug: "home" });
+	const about = await create({ slug: "about-us" });
+	const draft = await create({ slug: "draft" });
+	const removed = await create({ slug: "removed" });
+	const other = await seedOrg("Other", "professional");
+	const theirs = await unwrap<PageDetailDto>(
+		await call(
+			"POST",
+			"pages",
+			other.ownerCookie,
+			{ title: "Theirs", slug: "theirs" },
+			other.orgId,
+		),
+	);
+	expect(
+		(
+			await call(
+				"POST",
+				`pages/${theirs.id}/publish`,
+				other.ownerCookie,
+				{ baseVersion: 1 },
+				other.orgId,
+			)
+		).status,
+	).toBe(200);
+	const heading = block("Heading", { text: "Visit" });
+	await save(
+		home.id,
+		1,
+		document(
+			section(
+				heading,
+				linkButton(`page:${about.id}`),
+				linkButton(`page:${draft.id}`),
+				linkButton(`page:${removed.id}`),
+				linkButton(`page:${theirs.id}`),
+				linkButton(`page:${crypto.randomUUID()}`),
+				linkButton("book"),
+			),
+		),
+	);
+	for (const created of [home, about, removed]) await publish(created.id);
+	expect((await call("DELETE", `pages/${removed.id}`)).status).toBe(200);
+	const before = await storedVersions(home.id);
+
+	const served = await unwrap<PublicPageDto>(await readPublic("home"));
+	expect(served.content.data.content).toHaveLength(1);
+	const items = served.content.data.content[0]?.props["items"] as {
+		props: { id: string };
+	}[];
+	expect(items.map((item) => item.props.id)).toEqual([
+		heading.props.id,
+		expect.any(String),
+		expect.any(String),
+	]);
+	expect(hrefsIn(served.content)).toEqual(["about-us", "book"]);
+
+	expect((await call("POST", `pages/${about.id}/unpublish`)).status).toBe(200);
+	const unpublished = await unwrap<PublicPageDto>(await readPublic("home"));
+	expect(hrefsIn(unpublished.content)).toEqual(["book"]);
+
+	await publish(about.id);
+	await setPlan("starter");
+	const downgraded = await unwrap<PublicPageDto>(await readPublic("home"));
+	expect(hrefsIn(downgraded.content)).toEqual(["book"]);
+
+	expect(await storedVersions(home.id)).toEqual(before);
+});
+
+test("public: a page with no page links is served exactly as stored", async () => {
+	const created = await create({ slug: "plain-links" });
+	const stored = document(
+		section(
+			linkButton("book"),
+			linkButton("book?service=svc_1"),
+			linkButton("https://example.com"),
+			linkButton("about-us"),
+		),
+	);
+	await save(created.id, 1, stored);
+	const published = await publish(created.id);
+
+	const served = await unwrap<PublicPageDto>(await readPublic("plain-links"));
+	expect(JSON.stringify(served.content)).toBe(
+		JSON.stringify(published.latestVersion.content),
+	);
+});

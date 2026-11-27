@@ -32,6 +32,7 @@ export function describeLink(
 					: "A service you no longer offer",
 			};
 		}
+		case "page":
 		case "web":
 			return { choice: "web", words: "Web address" };
 	}
