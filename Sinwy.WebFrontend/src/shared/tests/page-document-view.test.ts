@@ -167,6 +167,24 @@ describe("PageDocumentView", () => {
 		expect(html).not.toContain("page:");
 	});
 
+	test("the editor canvas links a Button to a live page and keeps one to a page that isn't live, without a link", () => {
+		const html = render(
+			doc([
+				block("Section", {
+					items: [
+						block("Button", { label: "About", href: "page:pg-about" }),
+						block("Button", { label: "Gone", href: "page:pg-gone" }),
+					],
+				}),
+			]),
+			{ ...METADATA, pageAddresses: new Map([["pg-about", "about-us"]]) },
+		);
+
+		expect(html).toContain('href="/acme/about-us"');
+		expect(html).toMatch(/<a class="[^"]*">Gone<\/a>/);
+		expect(html).not.toContain("page:");
+	});
+
 	test("lists the chosen services in their order with Book links", () => {
 		const html = render(salonDocument());
 

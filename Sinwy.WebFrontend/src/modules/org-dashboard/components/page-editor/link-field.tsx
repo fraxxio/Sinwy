@@ -1,4 +1,4 @@
-import { bookingLink, linkTarget } from "@sinwy/shared";
+import { bookingLink, linkTarget, pageLink } from "@sinwy/shared";
 import { use, useEffect, useId, useRef, useState } from "react";
 import type { CustomFieldUi } from "#/shared/components/page-builder/puck-config";
 import { Input } from "#/shared/components/ui/input";
@@ -12,11 +12,17 @@ import {
 	SelectValue,
 } from "#/shared/components/ui/select";
 import { cn } from "#/shared/lib/utils";
-import { EditorField, EditorServicesContext, usePuck } from "./editor-fields";
+import {
+	EditorField,
+	EditorPagesContext,
+	EditorServicesContext,
+	usePuck,
+} from "./editor-fields";
 import {
 	describeLink,
 	LINK_CHOICES,
 	type LinkChoice,
+	linkedPage,
 	typedWebLink,
 } from "./links";
 
@@ -49,6 +55,42 @@ function ServicePicker({
 		>
 			<SelectTrigger aria-label="Service" className="w-full">
 				<SelectValue placeholder="Choose a service" />
+			</SelectTrigger>
+			<SelectContent>
+				<SelectGroup>
+					{items.map((item) => (
+						<SelectItem key={item.value} value={item.value}>
+							{item.label}
+						</SelectItem>
+					))}
+				</SelectGroup>
+			</SelectContent>
+		</Select>
+	);
+}
+
+function PagePicker({
+	pageId,
+	onChange,
+	readOnly,
+}: {
+	pageId: string | null;
+	onChange: (href: string) => void;
+	readOnly?: boolean | undefined;
+}) {
+	const pages = use(EditorPagesContext);
+	const items = pages.map((p) => ({ label: p.title, value: p.id }));
+	return (
+		<Select
+			items={items}
+			value={pageId}
+			disabled={readOnly}
+			onValueChange={(next) => {
+				if (next !== null && next !== pageId) onChange(pageLink(next));
+			}}
+		>
+			<SelectTrigger aria-label="Page" className="w-full">
+				<SelectValue placeholder="Choose a page" />
 			</SelectTrigger>
 			<SelectContent>
 				<SelectGroup>
@@ -106,18 +148,23 @@ function WebAddressInput({ href, onChange, readOnly }: Omit<Props, "label">) {
 
 function LinkPicker({ label, href, onChange, readOnly }: Props) {
 	const services = use(EditorServicesContext);
+	const pages = use(EditorPagesContext);
 	const blockId = usePuck(
 		(s) => s.selectedItem?.props.id as string | undefined,
 	);
 	const target = linkTarget(href);
-	const { choice, words } = describeLink(target, services);
+	const { choice, words } = describeLink(target, services, pages);
 	const noServices = services.length === 0;
+	const noPages = pages.length === 0;
+	const unavailable = (value: LinkChoice) =>
+		(value === "service" && noServices) || (value === "page" && noPages);
 
 	const choose = (next: LinkChoice) => {
 		if (next === choice) return;
 		if (next === "booking") onChange(bookingLink());
 		if (next === "service" && services[0])
 			onChange(bookingLink(services[0].id));
+		if (next === "page" && pages[0]) onChange(pageLink(pages[0].id));
 		if (next === "web") onChange("");
 	};
 
@@ -140,7 +187,7 @@ function LinkPicker({ label, href, onChange, readOnly }: Props) {
 							<SelectItem
 								key={item.value}
 								value={item.value}
-								disabled={item.value === "service" && noServices}
+								disabled={unavailable(item.value)}
 							>
 								{item.label}
 							</SelectItem>
@@ -155,10 +202,17 @@ function LinkPicker({ label, href, onChange, readOnly }: Props) {
 					readOnly={readOnly}
 				/>
 			)}
-			{target.kind === "web" && (
+			{choice === "page" && (
+				<PagePicker
+					pageId={linkedPage(target, pages)?.id ?? null}
+					onChange={onChange}
+					readOnly={readOnly}
+				/>
+			)}
+			{choice === "web" && (
 				<WebAddressInput
 					key={blockId}
-					href={target.href}
+					href={href}
 					onChange={onChange}
 					readOnly={readOnly}
 				/>
@@ -166,6 +220,11 @@ function LinkPicker({ label, href, onChange, readOnly }: Props) {
 			{noServices && (
 				<p className="text-muted-foreground text-xs">
 					To open booking for one service, add services first.
+				</p>
+			)}
+			{noPages && (
+				<p className="text-muted-foreground text-xs">
+					To open another page, publish one first.
 				</p>
 			)}
 		</EditorField>

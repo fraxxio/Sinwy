@@ -1,7 +1,11 @@
+import { resolvePageLinks } from "@sinwy/shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
-import { pageQuery } from "#/modules/org-dashboard/lib/page-queries";
+import {
+	pageQuery,
+	pagesQuery,
+} from "#/modules/org-dashboard/lib/page-queries";
 import { servicesQuery } from "#/modules/org-dashboard/lib/service-queries";
 import { ContentBox } from "#/shared/components/ContentBox";
 import { PageHeader } from "#/shared/components/PageHeader";
@@ -31,6 +35,15 @@ function PagePreviewPage() {
 		...servicesQuery(organization.id),
 		select: (list) => list.filter((service) => service.isActive),
 	});
+	const pageAddresses = useQuery({
+		...pagesQuery(organization.id),
+		select: (list) =>
+			new Map(
+				list.items
+					.filter((item) => item.live)
+					.map((item) => [item.id, item.slug]),
+			),
+	});
 
 	const backButton = (
 		<Button
@@ -47,7 +60,7 @@ function PagePreviewPage() {
 		</Button>
 	);
 
-	if (page.isPending)
+	if (page.isPending || pageAddresses.isPending)
 		return (
 			<>
 				<PageHeader
@@ -88,7 +101,10 @@ function PagePreviewPage() {
 			<ContentBox>
 				{latestVersion.content.data.content.length ? (
 					<PageDocumentView
-						document={latestVersion.content}
+						document={resolvePageLinks(
+							latestVersion.content,
+							pageAddresses.data ?? new Map(),
+						)}
 						metadata={{
 							organizationSlug: organization.slug,
 							services,

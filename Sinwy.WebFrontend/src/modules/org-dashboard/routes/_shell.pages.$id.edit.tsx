@@ -2,6 +2,7 @@ import {
 	API_ERROR_CODES,
 	hasPermission,
 	type PageDetailDto,
+	type PageListItemDto,
 	type ServiceDto,
 } from "@sinwy/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -37,6 +38,7 @@ import {
 import {
 	discardDraft,
 	pageQuery,
+	pagesQuery,
 	publishPage,
 	savePageContent,
 	storePage,
@@ -81,6 +83,11 @@ function PageEditPage() {
 		...servicesQuery(organization.id),
 		enabled: canWrite,
 	});
+	const livePages = useQuery({
+		...pagesQuery(organization.id),
+		enabled: canWrite,
+		select: (list) => list.items.filter((item) => item.live),
+	});
 	// A new key opens a fresh editor on the page's cached document, refetched first when asked
 	const [opened, setOpened] = useState(0);
 	const reopen = async ({ refetch }: { refetch: boolean }) => {
@@ -115,7 +122,8 @@ function PageEditPage() {
 				{back}
 			</div>
 		);
-	if (page.isPending || services.isPending) return loading;
+	if (page.isPending || services.isPending || livePages.isPending)
+		return loading;
 
 	return (
 		<Suspense fallback={loading}>
@@ -123,6 +131,7 @@ function PageEditPage() {
 				key={`${page.data.id}:${opened}`}
 				page={page.data}
 				services={services.data ?? []}
+				livePages={livePages.data ?? []}
 				back={back}
 				reopen={reopen}
 			/>
@@ -133,11 +142,13 @@ function PageEditPage() {
 function EditorScreen({
 	page,
 	services,
+	livePages,
 	back,
 	reopen,
 }: {
 	page: PageDetailDto;
 	services: ServiceDto[];
+	livePages: PageListItemDto[];
 	back: ReactNode;
 	reopen: (options: { refetch: boolean }) => Promise<void>;
 }) {
@@ -281,7 +292,9 @@ function EditorScreen({
 				organizationSlug: organization.slug,
 				services: services.filter((service) => service.isActive),
 				branding: branding ?? null,
+				pageAddresses: new Map(livePages.map((p) => [p.id, p.slug])),
 			}}
+			otherPages={livePages.filter((p) => p.id !== page.id)}
 			title={page.title}
 			path={publicPagePath(organization.slug, page.slug)}
 			back={back}
