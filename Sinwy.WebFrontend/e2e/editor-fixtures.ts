@@ -33,7 +33,7 @@ export const outline = (blocks: Block[]): unknown[] =>
 
 type Pages = {
 	/** A new page in the org, with `blocks` saved as its first version. */
-	create: (blocks?: Block[]) => Promise<string>;
+	create: (blocks?: Block[], title?: string) => Promise<string>;
 	/** The blocks of the page's latest saved version. */
 	saved: (pageId: string) => Promise<Block[]>;
 	/** Saves `blocks` as a new version, as another tab would. */
@@ -115,10 +115,26 @@ export const drag = async (page: Page, from: Locator, to: Point) => {
 
 const ORIGIN = { origin: new URL(WEB_URL).origin };
 
+/** Calls the org's API as its owner. */
+const orgApi =
+	(page: Page, org: SeededOrg) =>
+	async <T>(method: string, path: string, data?: unknown) => {
+		const res = await page.request.fetch(
+			`/api/organizations/${org.orgId}${path}`,
+			{ method, headers: ORIGIN, ...(data !== undefined && { data }) },
+		);
+		const json = (await res.json()) as ApiResponse<T>;
+		if (!json.isSuccess)
+			throw new Error(`${method} ${path} → ${res.status()} ${json.message}`);
+		return json.data;
+	};
+
 export const test = base.extend<{
 	seed: keyof Stack;
 	org: SeededOrg;
 	pages: Pages;
+	/** Adds an active service to the org and returns its id. */
+	addService: (name: string) => Promise<string>;
 	editor: Editor;
 }>({
 	seed: ["pro", { option: true }],
@@ -126,17 +142,7 @@ export const test = base.extend<{
 	storageState: async ({ org }, use) => use(org.storageStateFile),
 
 	pages: async ({ page, org }, use) => {
-		const call = async <T>(method: string, path: string, data?: unknown) => {
-			const res = await page.request.fetch(
-				`/api/organizations/${org.orgId}${path}`,
-				{ method, headers: ORIGIN, ...(data !== undefined && { data }) },
-			);
-			const json = (await res.json()) as ApiResponse<T>;
-			if (!json.isSuccess)
-				throw new Error(`${method} ${path} → ${res.status()} ${json.message}`);
-			return json.data;
-		};
-
+		const call = orgApi(page, org);
 		const detail = (pageId: string) =>
 			call<PageDetailDto>("GET", `/pages/${pageId}`);
 
@@ -150,10 +156,10 @@ export const test = base.extend<{
 			});
 
 		await use({
-			create: async (blocks) => {
+			create: async (blocks, title) => {
 				const slug = `e2e-${crypto.randomUUID().slice(0, 8)}`;
 				const created = await call<PageDetailDto>("POST", "/pages", {
-					title: `Editor ${slug}`,
+					title: title ?? `Editor ${slug}`,
 					slug,
 				});
 				if (blocks) await saveOver(created, blocks);
@@ -170,6 +176,20 @@ export const test = base.extend<{
 				}),
 			detail,
 		});
+	},
+
+	addService: async ({ page, org }, use) => {
+		const call = orgApi(page, org);
+		await use(
+			async (name) =>
+				(
+					await call<{ id: string }>("POST", "/services", {
+						name,
+						durationMinutes: 30,
+						priceMinor: 2500,
+					})
+				).id,
+		);
 	},
 
 	editor: async ({ page, org }, use) => use(editorFor(page, org)),

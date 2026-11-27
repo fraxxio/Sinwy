@@ -165,3 +165,37 @@ Finished phases of the [page links plan](page-links-plan.md), with their specs a
 - Shipped: `publishIssues` takes `LinkDestinations` (`{ services, pages }`) and, for `field.kind === "link"`, reports "Opens booking for a service you no longer offer" or "Opens a page that isn't live, so customers won't see it", using `linkTarget` and `linkedPage`. `PublishActions` reads `EditorServicesContext` and `EditorPagesContext`; the page detail route loads `servicesQuery` (active) and `pagesQuery` (live, minus this page) and passes them to `PagePublishing`. Tests: broken service and page Buttons in reading order with one in a hidden column skipped; nothing flagged for `book`, an active service, a live page, an old bare slug, a web address or `tel:`.
 - Differs from plan: none. The page detail route waits for the two lists only when the member can write (the queries are disabled otherwise). If either list fails to load, every service or page link is flagged; these are only warnings, so this was left as is.
 - Checked in the running app (subagent, `pro-org` `seed-5076ea43`, services Colouring/Haircut, pages Home/About): with Colouring off and About unpublished, Publish in the editor listed exactly "Button 1 in Section · Opens booking for a service you no longer offer" and "Button 2 in Section · Opens a page that isn't live, so customers won't see it"; "Publish anyway" published (`status = published`, version 6). After a label edit, "Publish changes" on the page detail screen listed the same two and published version 7. No errors in browser, server or web logs. Findings for Phase 6: the dialog title "Some things look unfilled" fits broken links poorly, and Buttons are told apart only by place.
+
+
+## Phase 6: Editor e2e test, usability check, docs and cleanup
+
+**Goal:** the issue's Done-when is proven by a Playwright test and by a cold agent, and the plan is closed.
+
+**Files:**
+- `Sinwy.WebFrontend/e2e/editor.e2e.ts` (new `links` describe), `e2e/global-setup.ts` and `e2e/stack.ts` (an org of its own with services and a second live page), `e2e/editor-fixtures.ts`.
+- If the usability check confirms the Phase 5 findings: the dialog title in `page-editor/PublishIssuesDialog.tsx`, and Button names in `nameOf` (`page-editor/publish-checks.ts`, tests in `tests/page-editor-publish-checks.test.ts`).
+- This plan and its log; the issue (#81) checklist.
+
+**Steps:**
+- One test: add two Buttons inside a Section, point one at a service and one at another page by clicks only, save, reload, see both targets in words, publish, then check the storefront page's two `href`s.
+- A cold agent runs the Verify flow below without being told the stored formats, and reports where it hesitated.
+- Last step: stop every dev server started during the plan's work unless the user asked to keep it running, and delete temporary files (probe scripts, screenshots, browser console logs, scratch data).
+
+**Tests that matter:**
+- The e2e test above; it fails if any step needs typing a path.
+
+**Done when:**
+- `bun run test:editor` and `bun run verify` pass; the agent completes the task; the plan's Status is all done.
+
+**Verify:** Seed `pro-org`, create two services and a second page "About us", publish it. Task for the agent: "On the Home page, add a button that opens booking for Colouring, and another that opens About us; publish." Check: the stored targets are `book?service=<Colouring id>` and `page:<About us id>`, the storefront page links to `/<org>/book?service=<Colouring id>` and `/<org>/about-us`, and the agent never typed a path. Nothing is simulated.
+
+### Log (2026-11-27, `test(web): prove a Button opens one service's booking and another page by clicks only`)
+- Shipped: a `links` describe in `e2e/editor.e2e.ts` with its own seeded `pro-org` (`links` in `Stack`). It adds services "Beard trim" and "Colouring" and a live page "About us", adds two Buttons after the Home heading by clicks, and picks "One service's booking" → "Colouring" and "Another page" → "About us" from the comboboxes (Colouring is picked explicitly, not taken as the first service). It then checks the stored `book?service=<id>` and `page:<id>`, the words after a reload, and both `href`s on the live page. Fixtures: `orgApi` is shared by `pages` and a new `addService`, and `pages.create` takes an optional title. `bun run test:editor` passes 19 of 19.
+- Differs from plan: the publish dialog title and Button names in `nameOf` are unchanged. The usability task's links were all valid, so no warning came up and the check couldn't confirm the Phase 5 findings. They stay open: the title "Some things look unfilled" fits broken links poorly, and two broken Buttons are told apart only by place ("Button 1 in Section"). A Select trigger's text includes its chevron, so the test matches with `toContainText`.
+- Checked in the running app: a cold subagent with only the browser (no source, API or database) got the brief's task on a seeded `pro-org` with Haircut, Colouring and live pages Home and About us. It finished, and the only text it typed was the two Labels. Stored afterwards: `book?service=<Colouring id>` and `page:<About us id>`. Live HTML: `/<org>/book?service=<Colouring id>` and `/<org>/about-us`, with no `page:` value. No console errors. Its hesitations, left open as candidates for new issues:
+  - After "One service's booking" or "Another page", the second select fills in the first service or page. It has no visible label ("Service" and "Page" are only `aria-label`s), so an owner who wanted Haircut could miss that Colouring was chosen for them.
+  - A new Button's Label is always "Book now", even when it opens another page.
+  - The pages list has no Edit action: the title opens the detail screen, then "Edit content" opens the editor.
+  - Add with nothing selected wraps a Button in a new Section, so the Buttons sit in a second Section with a gap below the heading.
+  - The storefront page shows Sinwy's own header and footer menu (its "About us" goes to `/about`) next to the business's own "About us" Button.
+- Cleanup: stopped the backend (:3001) and web (:3000) dev servers the plan had started, and deleted `/tmp/sinwy-phase2` to `/tmp/sinwy-phase6` and the playwright-cli page snapshots and console logs in `.playwright-cli/`. Seeded orgs stay in the dev database, as the user chose.

@@ -13,7 +13,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | 3 | Page links by id, resolved on the server | 1 | done | `feat(backend, shared): serve a Button linked to another page by id as that page's current address` |
 | 4 | "Another page" in the picker; editor and preview resolve page links | 2, 3 | done | `feat(web): point a Button at another live page, and resolve page links in the editor and preview` |
 | 5 | Publish warns about links that go nowhere | 4 | done | `feat(web): warn on publish about Buttons that open a service no longer offered or a page that isn't live` |
-| 6 | Editor e2e test, usability check, docs and cleanup | 5 | todo | |
+| 6 | Editor e2e test, usability check, docs and cleanup | 5 | done | `test(web): prove a Button opens one service's booking and another page by clicks only` |
 
 ## Decisions
 
@@ -37,50 +37,4 @@ Settled with the product owner. Ask before changing any of them.
 
 ## Standing notes
 
-Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
-
-- `Sinwy.Shared/types/page/PageUrls.ts` has `isSafeLink` (accepts `book?service=<[\w-]+>` and `page:<[\w-]+>`), `linkTarget(href)` → `{ kind: "booking" } | { kind: "service", serviceId } | { kind: "page", pageId } | { kind: "web", href }`, `bookingLink(serviceId?)`, `pageLink(pageId)` and `webAddress(text)`. `example.com` alone still fails `isSafeLink`; only `webAddress(...)` output passes. Their pure tests are in `Sinwy.Backend/modules/pages/tests/pageUrls.test.ts` (Shared has no test runner).
-- `pageLinksIn(content)` and `resolvePageLinks(content, addresses)` (`addresses`: `Map` page id → slug) are in `Sinwy.Shared/types/page/PageDocument.ts`. The resolved `href` is the bare slug, which `resolveHref` prefixes with the org. A block whose link isn't in the map is dropped and its parent stays (an emptied Section renders empty). Tests: `pageDocument.test.ts` "page links".
-- `getPublicPage` serves `withPageLinks(...)`, whose one query is `findServedPageSlugs` in the pages repository. The public response holds no `page:` values (checked in SSR HTML and the dehydrated state).
-- The Button's `href` is a `field.link` (`Sinwy.Shared/types/page/blocks/fields.ts:155`), validated server-side by `url(isSafeLink, …)` (`fields.ts:88`), which also accepts `""`. Manifest: `blocks.ts:134`, label "Link", default `book`, `required: true` (publish already warns "Has no link" when empty).
-- The storefront renders Buttons with `resolveHref` (`Sinwy.WebFrontend/src/shared/components/page-builder/urls.ts`): a safe href passes through, any other `isSafeLink` value is prefixed with `/<orgSlug>/` (tested for `book?service=<id>`). A Button whose href doesn't resolve renders an `<a>` with no `href`.
-- A content save within the same checkpoint updates the latest `page_content` row instead of adding one; count rows before and after rather than expecting a fixed number. The saved version is `latestVersion.version` on `PageDetailDto`.
-- The storefront booking route (`book.tsx:42`, `:128`) reads `service` from the search; an unknown or inactive id falls back to the "Choose a service" step, never an error.
-- Service ids are UUIDs (text primary key). Page slugs match `^[a-z0-9]+(-[a-z0-9]+)*$` and can't be `book` or `s` (`RESERVED_PAGE_SLUGS`, `Sinwy.Shared/types/page/Page.ts:17`).
-- Puck renders the stored document in the editor canvas, so the canvas can't use server-resolved content: the Button render there has to look `page:<id>` up from Puck `metadata` (`PageMetadata` and `pageMetadata` in `src/shared/components/page-builder/blocks.tsx:18`).
-- Puck doesn't pass `metadata` to fields, so data reaches a field through React context: `EditorServicesContext` (`page-editor/editor-fields.tsx`) is provided in `PageEditor.tsx:62` from `metadata.services`, which the edit route already filters to active services.
-- The link picker is `linkField` in `page-editor/link-field.tsx`, registered as `customFields.link` in `editor-config.tsx`. Its pure parts are in `page-editor/links.ts`: `LINK_CHOICES`, `LinkChoice` (= `LinkTarget["kind"]`), `NamedPage`, `linkedPage(target, pages)` (by `page:<id>` or an old bare slug), `describeLink(target, services, pages)` → `{ choice, words }` ("Booking: <name>", "A service you no longer offer", "Another page: <title>", "A page that isn't live") and `typedWebLink(text)`. Tests: `tests/page-editor-link-field.test.ts`.
-- `EditorPagesContext` (`editor-fields.tsx`) holds the org's live pages minus the one being edited; `PageEditor`'s `otherPages` prop provides it. The edit route loads `pagesQuery` (filtered to `live`) and also puts `pageAddresses` (all live pages, id → slug) in `PageMetadata`.
-- `resolveHref(href, orgSlug, pageAddresses?)` resolves `page:<id>` through the map and returns `null` when it isn't there (no more `/<org>/page:<id>`); the Button render passes `pageMetadata(...).pageAddresses`. The preview route waits for `pagesQuery` and renders `resolvePageLinks(latestVersion.content, liveAddresses)`.
-- `publishIssues(content, { services, pages }, blocks)` also flags link fields: a `book?service=<id>` not among the active services, or a `page:<id>` not among the other live pages. Old bare slugs and web addresses are never flagged. Callers: `PublishActions` (from the editor contexts) and `PagePublishing` (the page detail route loads active services and other live pages and waits for them when the member can write).
-- The publish dialog's title is "Some things look unfilled" even when every entry is a broken link, and Buttons are named "Button 1 in Section" (a Button's label isn't its title), so two broken Buttons are told apart only by place. Raised by the Phase 5 check; candidates for Phase 6's usability check.
-- The web address input syncs its text from the stored value only while it isn't focused (as Puck's own inputs do) and is keyed by block id; a refused text stays on screen with an inline message while the stored value is unchanged.
-- In the running editor the Link select is `combobox "Link opens"`, the service select `combobox "Service"`, the page select `combobox "Page"`, the input is labelled "Web address". Services come ordered by name, so "first active service" (Default 3) is the first alphabetically. Choosing "Another page" saves the first live page at once (Default 3). To add a block, click the card's inner button: `getByTestId('drawer-item:<Block>').getByRole('button', { name: 'Add <Block>' })` (the card itself adds nothing; every drawer item is in the DOM twice). Layers rows: `getByRole('button', { name: 'Expand', exact: true })` and `locator('button[class*=Layer-clickable]').filter({ hasText: 'Button' })`.
-- Seeds: `pro-org` (Professional, 5 pages) has no services; create them with `POST /api/organizations/<id>/services` `{ name, durationMinutes, priceMinor }`. `bookable-org` is on Starter and seeds "Haircut" and "Colouring". Image and Button blocks can't be top-level: put them inside a Section.
-- Editor e2e: `bun run test:editor` needs `bun run start:server` (:3001) and `bun run start:web` (:3000). `e2e/global-setup.ts` seeds four `pro-org`s and one Starter org into `Stack`; helpers (`editorFor`, the `pages` fixture with `create`/`publish`/`saved`) are in `e2e/editor-fixtures.ts`. A test that needs a second live page should get its own seeded org.
-- The backend (`bun run index.ts`, :3001) doesn't reload on changes: restart it after backend edits, asking the user first (stopping it needs their permission). Since Phase 3 it logs to `/tmp/sinwy-phase3/server.log`; the web server (:3000, vite) logs to `/tmp/sinwy-phase2/web.log`. Seeded orgs and scratch files from Phases 2–5 are in `/tmp/sinwy-phase{2,3,4,5}/`, for Phase 6's cleanup.
-- Known editor issues an agent may hit: #88 (Add with a Section selected nests the block inside it) and #89 (a click on a block announces a drop and enables Undo).
-
----
-
-## Phase 6: Editor e2e test, usability check, docs and cleanup
-
-**Goal:** the issue's Done-when is proven by a Playwright test and by a cold agent, and the plan is closed.
-
-**Files:**
-- `Sinwy.WebFrontend/e2e/editor.e2e.ts` (new `links` describe), `e2e/global-setup.ts` and `e2e/stack.ts` (an org of its own with services and a second live page), `e2e/editor-fixtures.ts`.
-- If the usability check confirms the Phase 5 findings: the dialog title in `page-editor/PublishIssuesDialog.tsx`, and Button names in `nameOf` (`page-editor/publish-checks.ts`, tests in `tests/page-editor-publish-checks.test.ts`).
-- This plan and its log; the issue (#81) checklist.
-
-**Steps:**
-- One test: add two Buttons inside a Section, point one at a service and one at another page by clicks only, save, reload, see both targets in words, publish, then check the storefront page's two `href`s.
-- A cold agent runs the Verify flow below without being told the stored formats, and reports where it hesitated.
-- Last step: stop every dev server started during the plan's work unless the user asked to keep it running, and delete temporary files (probe scripts, screenshots, browser console logs, scratch data).
-
-**Tests that matter:**
-- The e2e test above; it fails if any step needs typing a path.
-
-**Done when:**
-- `bun run test:editor` and `bun run verify` pass; the agent completes the task; the plan's Status is all done.
-
-**Verify:** Seed `pro-org`, create two services and a second page "About us", publish it. Task for the agent: "On the Home page, add a button that opens booking for Colouring, and another that opens About us; publish." Check: the stored targets are `book?service=<Colouring id>` and `page:<About us id>`, the storefront page links to `/<org>/book?service=<Colouring id>` and `/<org>/about-us`, and the agent never typed a path. Nothing is simulated.
+None: every phase is done and the plan is closed. Findings left open are in the Phase 6 log entry.
