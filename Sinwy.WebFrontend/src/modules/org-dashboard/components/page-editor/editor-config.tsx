@@ -9,6 +9,7 @@ import { FirstRunBlocks } from "./BlockDrawer";
 import { ROOT_ZONE } from "./block-actions";
 import { lockedField, serviceIdsField, usePuck } from "./editor-fields";
 import { imageField } from "./image-field";
+import { linkField } from "./link-field";
 
 export { usePuck };
 
@@ -62,7 +63,11 @@ const withLockedFields = (config: Config): Config => ({
 /** Top-level drops are limited to what the server accepts there; Puck has no `root.allow`. */
 export const editorConfig = withLockedFields(
 	puckConfigFrom(BLOCKS, BLOCK_RENDERS, {
-		customFields: { serviceIds: serviceIdsField, image: imageField },
+		customFields: {
+			serviceIds: serviceIdsField,
+			image: imageField,
+			link: linkField,
+		},
 		root: {
 			render: ({ puck }: { puck: PuckContext }) => <EditorPage puck={puck} />,
 		},

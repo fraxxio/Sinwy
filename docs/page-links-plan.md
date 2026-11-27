@@ -9,7 +9,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | Phase | Title | Depends on | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 1 | Service links pass the link rule; a shared link reader | – | done | `feat(shared): accept one service's booking as a Button link and read link targets` |
-| 2 | Link picker: booking, one service, web address | 1 | todo | |
+| 2 | Link picker: booking, one service, web address | 1 | done | `feat(web): choose a Button's link from booking, one service or a web address` |
 | 3 | Page links by id, resolved on the server | 1 | todo | |
 | 4 | "Another page" in the picker; editor and preview resolve page links | 2, 3 | todo | |
 | 5 | Publish warns about links that go nowhere | 4 | todo | |
@@ -49,41 +49,13 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 - Service ids are UUIDs (text primary key). Page slugs match `^[a-z0-9]+(-[a-z0-9]+)*$` and can't be `book` or `s` (`RESERVED_PAGE_SLUGS`, `Sinwy.Shared/types/page/Page.ts:17`).
 - Puck renders the stored document in the editor canvas, so the canvas can't use server-resolved content: the Button render there has to look `page:<id>` up from Puck `metadata` (`PageMetadata` and `pageMetadata` in `src/shared/components/page-builder/blocks.tsx:18`).
 - Puck doesn't pass `metadata` to fields, so data reaches a field through React context: `EditorServicesContext` (`page-editor/editor-fields.tsx`) is provided in `PageEditor.tsx:62` from `metadata.services`, which the edit route already filters to active services.
-- Custom field UIs are keyed by field kind in `customFields` in `page-editor/editor-config.tsx` (now `{ serviceIds, image }`). Follow `serviceIdsField` (`editor-fields.tsx`): a `CustomFieldUi` whose `render` wraps `EditorField` and respects `readOnly`. The link field writes one prop, so plain `onChange` is one undo step.
+- The link picker is `linkField` in `page-editor/link-field.tsx`, registered as `customFields.link` in `editor-config.tsx`. Its pure parts are in `page-editor/links.ts`: `LINK_CHOICES`, `LinkChoice` (= `LinkTarget["kind"]`), `describeLink(target, services)` → `{ choice, words }` and `typedWebLink(text)` (`null` when refused, `""` for empty). Tests: `tests/page-editor-link-field.test.ts`. Adding the page kind to `LinkTarget` makes `describeLink`'s switch fail to type-check until it handles it.
+- The web address input syncs its text from the stored value only while it isn't focused (as Puck's own inputs do) and is keyed by block id; a refused text stays on screen with an inline message while the stored value is unchanged.
+- In the running editor the Link select is `combobox "Link opens"`, the service select `combobox "Service"`, the input is labelled "Web address". Services come ordered by name, so "first active service" (Default 3) is the first alphabetically. Block drawer cards are found with `getByTestId('drawer-item:<Block>')`.
 - `pagesQuery` (`src/modules/org-dashboard/lib/page-queries.ts`) returns `PageListItemDto` items with `id`, `title`, `slug`, `status` and `live`. The edit route (`routes/_shell.pages.$id.edit.tsx`) loads `pageQuery` and `servicesQuery` and waits for both before mounting the editor.
 - Seeds: `pro-org` (Professional, 5 pages) has no services; create them with `POST /api/organizations/<id>/services` `{ name, durationMinutes, priceMinor }`. `bookable-org` is on Starter and seeds "Haircut" and "Colouring". Image and Button blocks can't be top-level: put them inside a Section.
 - Editor e2e: `bun run test:editor` needs `bun run start:server` (:3001) and `bun run start:web` (:3000). `e2e/global-setup.ts` seeds four `pro-org`s and one Starter org into `Stack`; helpers (`editorFor`, the `pages` fixture with `create`/`publish`/`saved`) are in `e2e/editor-fixtures.ts`. A test that needs a second live page should get its own seeded org.
 - Known editor issues an agent may hit: #88 (Add with a Section selected nests the block inside it) and #89 (a click on a block announces a drop and enables Undo).
-
----
-
-## Phase 2: Link picker: booking, one service, web address
-
-**Goal:** an owner sets a Button's Link by choosing "Booking page", "One service's booking" (then a service) or "Web address", and the field names the current target in words.
-
-**Files:**
-- New `Sinwy.WebFrontend/src/modules/org-dashboard/components/page-editor/link-field.tsx`: `linkField: CustomFieldUi`.
-- `page-editor/editor-config.tsx`: add `link: linkField` to `customFields`.
-- `page-editor/editor-fields.tsx`: `EditorField`, `EditorServicesContext`, the `Select` usage in `fieldOverrides.select`, `serviceIdsField` as the pattern.
-- `Sinwy.Shared/types/page/PageUrls.ts`: use `linkTarget`, `bookingLink`, `webAddress` and `isSafeLink` as they are; add nothing there for wording.
-- New test `src/modules/org-dashboard/tests/page-editor-link-field.test.ts` for `describeLink`.
-
-**Steps:**
-- One "Opens" select with the three choices, then a second control for the choice: a service select, or a text input for the web address. Switching choices follows Default 3. Leave room for the "Another page" choice that Phase 4 adds.
-- The words come from one pure function (`describeLink(target, services)`) used by the select trigger: "Booking page", "Booking: Haircut", "A service you no longer offer" (Default 2), "Web address".
-- The web address input keeps its own text while typing and writes `webAddress(text)` only when the result passes `isSafeLink`; otherwise it shows an inline message and writes nothing, so autosave never sends a value the server refuses. Reset the local text when the selected block changes (key it by block id).
-- With no active services, "One service's booking" is disabled with a hint to add services.
-- Respect `readOnly` on every control. The manifest label stays "Link".
-
-**Tests that matter:**
-- `describeLink` for `book`, `book?service=<active>`, `book?service=<gone>`, `https://x`, `tel:…`, `#prices`, `about-us` and `""`: each shows the expected choice and words, so documents saved before this plan open on the right choice.
-- A typed bare domain is stored as `https://…`; typing a value that `isSafeLink` refuses never reaches the document.
-
-**Done when:**
-- An owner can point a Button at one service's booking with clicks only, and a reload shows "Booking: <service>".
-- `bun run verify` passes.
-
-**Verify:** Seed `pro-org`, log in as its owner with `dev:login-as`, create two services ("Haircut", "Colouring") through the API. Create a page, open it in the editor, add a Section and a Button inside it. In the Button's settings the Link shows "Booking page". Choose "One service's booking", pick "Colouring": the field reads "Booking: Colouring" and the page saves (`page_content` latest row: Button `href` is `book?service=<Colouring id>`). Choose "Web address", type `example.com`: after save the stored `href` is `https://example.com`. Type `javascript:x`: an inline message shows and the stored value doesn't change. Reload: the field shows the last choice in words. Nothing is simulated.
 
 ---
 
@@ -125,7 +97,7 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 **Goal:** an owner points a Button at another live page by choosing it from a list, and the editor canvas and the dashboard preview link it the way customers will see it.
 
 **Files:**
-- `page-editor/link-field.tsx` and `describeLink` from Phase 2; `tests/page-editor-link-field.test.ts`.
+- `page-editor/link-field.tsx` (`LinkPicker`, `ServicePicker` as the pattern for a page select, the disabled-choice hint) and `page-editor/links.ts` (`LINK_CHOICES`, `describeLink`, which takes the live pages as a new argument); `tests/page-editor-link-field.test.ts`.
 - `page-editor/editor-fields.tsx`: add a pages context next to `EditorServicesContext`; `PageEditor.tsx:62` provides it.
 - `routes/_shell.pages.$id.edit.tsx`: load `pagesQuery` alongside `pageQuery` and `servicesQuery`; pass live pages minus the current one.
 - `Sinwy.WebFrontend/src/shared/components/page-builder/blocks.tsx`: `PageMetadata`, `pageMetadata` and the Button render (`:226`).
