@@ -71,8 +71,9 @@ export default async function globalSetup() {
 	await requireServer("backend", BACKEND_URL, "bun run start:server");
 	await requireServer("web app", WEB_URL, "bun run start:web");
 
-	const [pro, secondPro, thirdPro, photos, links, deleting, starter] =
+	const [pro, secondPro, thirdPro, photos, links, deleting, richText, starter] =
 		await Promise.all([
+			seedOrg("pro-org"),
 			seedOrg("pro-org"),
 			seedOrg("pro-org"),
 			seedOrg("pro-org"),
@@ -88,6 +89,7 @@ export default async function globalSetup() {
 		photos,
 		links,
 		deleting,
+		richText,
 		starter,
 	};
 	await mkdir(OUTPUT_DIR, { recursive: true });

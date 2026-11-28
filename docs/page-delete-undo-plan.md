@@ -10,6 +10,7 @@ Run a phase with the `implementation-phase` skill. Finished phases and their log
 | --- | --- | --- | --- | --- |
 | 1 | Delete toast with Undo | – | done | `feat(web): show a "Deleted" toast with Undo after every block delete in the page editor` |
 | 2 | Usability rerun, review, docs and cleanup | 1 | done | `fix(web): undo a delete without the edit just before it, and keep a photo that finished uploading into a deleted block` |
+| 3 | One undo step per rich-text edit | 2 | done | `fix(web): stop selecting a Text block from recording an undo step in the page editor` |
 
 ## Decisions
 
@@ -30,8 +31,12 @@ Settled with the product owner. Ask before changing any of them.
 
 ## Standing notes
 
-All phases are done. What later work on the page editor should know:
+Verified facts and gotchas the remaining phases rely on. Don't check them again. Each phase prunes this list when it finishes.
 
-- Deletes are caught in one place: `reportDelete` (Puck's `onAction`, `DeleteToast.tsx`) feeds `<DeleteToast />` and `noteDelete`. `splitDeleteEntry` (`delete-history.ts`) gives an edit made less than 250 ms before a delete its own history entry (log, phase 2).
-- Still open, predates the plan: Puck's built-in rich-text field records a duplicate history entry when an already-edited Text block is selected, so Ctrl+Z needs two presses and the delete toast closes (log, phases 1 and 2).
-- `bun run test:editor` runs `Sinwy.WebFrontend/e2e/editor.e2e.ts` against the running stack (24 tests, about 1.6 min). It isn't part of `bun run verify`.
+- Deletes are caught in one place: `reportDelete` (Puck's `onAction`, `DeleteToast.tsx`) feeds `<DeleteToast />` and `noteDelete`. `splitDeleteEntry` (`delete-history.ts`) gives an edit made less than 250 ms before a delete its own history entry (log, phase 2). The toast closes when `appState.data` is no longer the object from straight after the delete.
+- Rich-text fields and history (log, phase 3): Tiptap's `setEditable` emits `update`, and Puck's rich-text editor calls it on mount and saves that update as an edit while `ui.field.focus` names its field. Puck never clears that focus for a contenteditable, so any action that remounts the fields must clear it: `KeepUiOnHistory` (undo and redo) and `ForgetFieldFocusOnSelect` (selection) in `EditorLayout.tsx`. Puck already keys each settings field by the selected block's id, so re-keying changes nothing.
+- In e2e, `editor.typeRichText` types at the end of the settings panel's rich-text field (`editor.settings.getByRole("textbox")`), and `richText()` builds a Text block. On the phone view a selected block's action bar covers the middle of the block below, so select that one with `editor.select`. Escape typed into it stays in the field and doesn't deselect the block.
+- Autosave stores an edit about 1 s after it. An edit and a delete less than 250 ms apart are now separate undo steps (phase 2).
+- The spec's `deleting` seed is its own `pro-org`, and a Professional org holds 5 pages. Its describe creates 4 pages and `richText`'s creates 3, so a new test that creates a page goes elsewhere or gets its own seed in `global-setup.ts`.
+- `bun run test:editor` runs `Sinwy.WebFrontend/e2e/editor.e2e.ts` against the running stack (27 tests, about 1.8 min). It isn't part of `bun run verify`.
+

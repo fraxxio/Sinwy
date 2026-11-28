@@ -8,6 +8,7 @@ import {
 	expect,
 	heading,
 	outline,
+	richText,
 	section,
 	test,
 } from "./editor-fixtures";
@@ -393,6 +394,118 @@ test.describe("deleting", () => {
 			.toContain("Where to find us");
 		await page.keyboard.press("ControlOrMeta+z");
 		await expect(editor.block("find-title")).toHaveText("Find us");
+	});
+});
+
+test.describe("rich text", () => {
+	test.use({ seed: "richText" });
+
+	const textPage = () => [
+		section("texts", [richText("alpha", "Alpha"), richText("bravo", "Bravo")]),
+		section("end", [heading("end-title", "The end")]),
+	];
+	const savedContent = async (
+		pages: { saved: (pageId: string) => Promise<Block[]> },
+		pageId: string,
+	) => {
+		const [texts] = await pages.saved(pageId);
+		return ((texts?.props["items"] ?? []) as Block[]).map(
+			(block) => block.props["content"],
+		);
+	};
+
+	test("selecting Text blocks records nothing, so each Undo takes back one edit", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(textPage());
+		await editor.open(pageId);
+		const alpha = editor.block("alpha");
+		const bravo = editor.block("bravo");
+
+		await alpha.click();
+		await editor.typeRichText(" one");
+		await expect(editor.status).toHaveText("Saved");
+		await bravo.click();
+		await alpha.click();
+		await editor.typeRichText(" two");
+		await expect(alpha).toHaveText("Alpha one two");
+		await expect(editor.status).toHaveText("Saved");
+
+		await editor.button("Phone").click();
+		await bravo.click();
+		// Bravo's action bar covers the middle of Alpha on the phone view
+		await editor.select("alpha");
+		await expect(editor.selected).toHaveText("Text");
+		await editor.select("texts");
+
+		await page.keyboard.press("ControlOrMeta+z");
+		await expect(alpha).toHaveText("Alpha one");
+		await editor.button("Undo").click();
+		await expect(alpha).toHaveText("Alpha");
+		await expect(editor.button("Undo")).toBeDisabled();
+		await expect(bravo).toHaveText("Bravo");
+		await expect
+			.poll(() => savedContent(pages, pageId))
+			.toEqual(["<p>Alpha</p>", "<p>Bravo</p>"]);
+	});
+
+	test("clicking an edited Text block after a delete keeps the toast, and its Undo keeps the edit", async ({
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(textPage());
+		await editor.open(pageId);
+		const alpha = editor.block("alpha");
+
+		await alpha.click();
+		await editor.typeRichText(" edited");
+		await expect(editor.status).toHaveText("Saved");
+		await editor.select("end");
+		await editor.button("Delete").click();
+		await expect(editor.deleteToast).toBeVisible();
+
+		await alpha.click();
+		await expect(editor.settings.getByRole("textbox")).toHaveText(
+			"Alpha edited",
+		);
+		await expect(editor.status).toHaveText("Saved");
+		await expect(editor.deleteToast).toBeVisible();
+		await editor.deleteToast.getByRole("button", { name: "Undo" }).click();
+		await expect(editor.block("end-title")).toHaveText("The end");
+		await expect(alpha).toHaveText("Alpha edited");
+		await expect.poll(async () => (await pages.saved(pageId)).length).toBe(2);
+		expect(await savedContent(pages, pageId)).toEqual([
+			"<p>Alpha edited</p>",
+			"<p>Bravo</p>",
+		]);
+	});
+
+	test("typing straight after selecting a Text block lands every key in one undo step", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(textPage());
+		await editor.open(pageId);
+		const alpha = editor.block("alpha");
+		const bravo = editor.block("bravo");
+
+		await bravo.click();
+		await editor.typeRichText(" first");
+		await expect(editor.status).toHaveText("Saved");
+
+		await alpha.click();
+		await editor.typeRichText(" quick brown fox");
+		await expect(alpha).toHaveText("Alpha quick brown fox");
+		await editor.select("texts");
+		await page.keyboard.press("ControlOrMeta+z");
+		await expect(alpha).toHaveText("Alpha");
+		await expect(bravo).toHaveText("Bravo first");
+		await page.keyboard.press("ControlOrMeta+z");
+		await expect(bravo).toHaveText("Bravo");
+		await expect(editor.button("Undo")).toBeDisabled();
 	});
 });
 

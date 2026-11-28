@@ -17,6 +17,11 @@ export const heading = (id: string, text: string): Block => ({
 	props: { id, text, size: "2", align: "start" },
 });
 
+export const richText = (id: string, words: string): Block => ({
+	type: "RichText",
+	props: { id, content: `<p>${words}</p>` },
+});
+
 export const section = (id: string, items: Block[]): Block => ({
 	type: "Section",
 	props: { id, tone: "plain", padding: "medium", items },
@@ -94,6 +99,13 @@ export const editorFor = (page: Page, org: SeededOrg) => {
 			await canvas
 				.locator(`[data-puck-component="${id}"]`)
 				.click({ position: { x: 6, y: 6 } });
+		},
+
+		/** Types `text` at the end of the selected block's rich-text field in the settings panel. */
+		typeRichText: async (text: string) => {
+			await settings.getByRole("textbox").click();
+			await page.keyboard.press("End");
+			await page.keyboard.type(text);
 		},
 
 		/** Saves at once with the shortcut and waits until everything is saved. */

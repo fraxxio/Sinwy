@@ -137,6 +137,7 @@ Run the two servers as separate long-running processes, each with its output in 
 - adding blocks by click, where they land and the scroll to them;
 - dragging a drawer card to the end of the page, and moving a block by its handle;
 - editing a field, and undo and redo that keep the phone view;
+- rich text: selecting Text blocks records no undo step, so each Undo takes back one edit and the "Deleted …" toast stays open, and typing straight after selecting a Text block lands every key;
 - the keyboard shortcuts;
 - deleting a block from the action bar, the settings panel, the Layers row and the Delete key, the "Deleted …" toast's Undo, the toast closing on the next edit, and an edit just before a delete keeping its own undo step;
 - autosave with no click, which survives a reload, and Ctrl+S saving what was just typed;
