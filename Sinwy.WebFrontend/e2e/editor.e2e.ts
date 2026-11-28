@@ -335,7 +335,7 @@ test.describe("deleting", () => {
 
 		await editor.block("find-title").click();
 		await page.keyboard.press("Delete");
-		await expect(editor.deleteToast).toHaveText(/^Deleted Heading in Find us/);
+		await expect(editor.deleteToast).toHaveText(/^Deleted Heading · Find us/);
 		await expect(editor.deleteToast).not.toContainText("With ");
 	});
 

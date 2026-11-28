@@ -347,12 +347,21 @@ describe("deletedNotice", () => {
 	});
 
 	it("gives a single block a title and no description", () => {
-		const heading = block("Heading", "heading-1", { text: "Find us" });
-		expect(deletedNotice([section()], heading)).toEqual({
+		const hours = block("Heading", "hours", { text: "Opening hours" });
+		const findUs = section();
+		findUs.props["items"] = [...(findUs.props["items"] as BlockNode[]), hours];
+		expect(deletedNotice([findUs], hours)).toEqual({
 			title: "Deleted Heading in Find us",
 		});
 		const text = block("RichText", "text-9");
 		expect(deletedNotice([text], text)).toEqual({ title: "Deleted Text" });
+	});
+
+	it("names the Heading that titles its section by its own text", () => {
+		const title = block("Heading", "heading-1", { text: "Find us" });
+		expect(deletedNotice([section()], title)).toEqual({
+			title: "Deleted Heading · Find us",
+		});
 	});
 
 	it("names a Section with no Heading by its label and counts its blocks", () => {

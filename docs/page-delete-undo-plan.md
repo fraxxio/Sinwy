@@ -23,7 +23,7 @@ Settled with the product owner. Ask before changing any of them.
 
 ### Defaults (not yet confirmed; change only if asked)
 
-1. The toast title is "Deleted <name>", where the name is what the canvas calls the block (`canvasLabel`, else `blockTitle`, else the component label). For a block that holds others, the description says what was inside, for example "With 4 photos" or "With 3 blocks inside". A single block gets no description.
+1. The toast title is "Deleted <name>", where the name is what the canvas calls the block (`canvasLabel`, else `blockTitle`, else the component label). The Heading that titles its section or Hero is named by its own text instead ("Deleted Heading · Inside the salon"), since its canvas label names the parent by that same text (chosen by the product owner after phase 1). For a block that holds others, the description says what was inside, for example "With 4 photos" or "With 3 blocks inside". A single block gets no description.
 2. Only one delete toast shows at a time: a new delete replaces the previous toast.
 3. A delete from the Layers row ends with nothing selected, like the other paths. Puck's own `remove` selects the next block.
 4. The timeout is 10 000 ms. Base UI pauses it while the toast is hovered or focused.
@@ -34,7 +34,6 @@ Verified facts and gotchas the remaining phases rely on. Don't check them again.
 
 - Deletes are caught in one place: `reportDelete` (Puck's `onAction`, `DeleteToast.tsx`) reads the removed block from `prevAppState` and hands it to `<DeleteToast />` (mounted in `EditorLayout.tsx`), which shows the toast, clears the selection in a microtask, and closes the toast when `appState.data` is no longer the object from straight after the delete.
 - Puck's built-in rich-text field records a duplicate history entry when an already-edited Text block is selected. The page doesn't change, but `appState.data` does, so the delete toast closes. That's correct: its Undo would only take back that empty entry. Ctrl+Z and the header Undo need two presses in the same case. This bug predates the plan (log, phase 1).
-- Deleting a section's own title Heading is named "Deleted Heading in Inside the salon": the canvas label (Default 1) names the parent by the Heading that is being deleted. Ask the product owner before changing it (log, phase 1).
 - Base UI keeps a closing toast in the DOM with `data-ending-style` for its exit animation; `editor.deleteToast` in `editor-fixtures.ts` skips it. `editor.deleteLayer(index)` deletes a top-level block from the Layers tab, whose rows are labelled only by block type ("Section").
 - The spec's `deleting` seed is its own `pro-org`; a Professional org holds 5 pages, so a new describe that creates pages needs its own seed in `global-setup.ts`.
 - Autosave stores an edit about 1 s after it. An undo made inside that delay never reaches the server, so the e2e must wait for the save after the delete before undoing if it checks `page_content`. An edit and a delete less than 250 ms apart are one undo step, so a test that edits and then deletes waits for the edit to save first.

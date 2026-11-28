@@ -111,15 +111,20 @@ export function blockTitle(
 	block: BlockNode,
 	blocks: Blocks = BLOCKS,
 ): string | null {
+	const heading = titleHeading(block, blocks);
+	return heading ? String(heading.props["text"]).trim() : null;
+}
+
+function titleHeading(block: BlockNode, blocks: Blocks): BlockNode | undefined {
 	const sample = ownEntry(blocks, "Heading")?.fields["text"];
 	for (const slot of slotsOf(block, blocks))
 		for (const child of childrenIn(block, slot)) {
 			const text = child.type === "Heading" ? child.props["text"] : null;
 			if (typeof text !== "string" || !text.trim()) continue;
 			if (sample?.placeholder && text.trim() === sample.default) continue;
-			return text.trim();
+			return child;
 		}
-	return null;
+	return undefined;
 }
 
 /** "Section · Find us" for a titled block, "Heading in Find us" for a block inside one, else the block's label. */
@@ -154,10 +159,14 @@ export function deletedNotice(
 	block: BlockNode,
 	blocks: Blocks = BLOCKS,
 ): { title: string; description?: string } {
-	const name =
-		canvasLabel(content, block.props.id, blocks) ??
-		blockTitle(block, blocks) ??
-		labelOf(block.type, blocks);
+	const parent = findWithParent(content, block.props.id, blocks)?.parent;
+	const titledParent =
+		parent && titleHeading(parent, blocks)?.props.id === block.props.id;
+	const name = titledParent
+		? `${labelOf(block.type, blocks)} · ${blockTitle(parent, blocks)}`
+		: (canvasLabel(content, block.props.id, blocks) ??
+			blockTitle(block, blocks) ??
+			labelOf(block.type, blocks));
 	const title = `Deleted ${name}`;
 	const held = inside(block, blocks);
 	const photos = held.filter(({ type }) => type === "Image").length;
