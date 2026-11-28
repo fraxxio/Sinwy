@@ -91,6 +91,7 @@ const photoUpload = () => {
 	const pick = () =>
 		uploads.pick("image-1:src", new File(["jpeg"], "salon.jpg"), (src) => {
 			state.doc = withPhoto(src);
+			return true;
 		});
 	return { uploads, sent, state, pick };
 };

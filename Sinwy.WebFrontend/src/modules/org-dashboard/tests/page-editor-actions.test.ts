@@ -5,6 +5,7 @@ import {
 	blockTitle,
 	canvasLabel,
 	cloneBlock,
+	deletedNotice,
 	drawerGroups,
 	moveTarget,
 	parentSelector,
@@ -16,6 +17,10 @@ import {
 	stepInReadingOrder,
 	zoneContent,
 } from "../components/page-editor/block-actions";
+import {
+	noteDelete,
+	splitDeleteEntry,
+} from "../components/page-editor/delete-history";
 import { blockActions } from "../components/page-editor/use-block-actions";
 
 const block = (
@@ -313,6 +318,67 @@ describe("canvas names", () => {
 	});
 });
 
+describe("deletedNotice", () => {
+	const photos = (count: number) =>
+		block("Photos", "photos-1", {
+			items: Array.from({ length: count }, (_, i) =>
+				block("Image", `photo-${i}`, { src: `/${i}.jpg` }),
+			),
+		});
+	const salon = block("Section", "salon", {
+		items: [
+			block("Heading", "salon-heading", { text: "Inside the salon" }),
+			photos(2),
+		],
+	});
+
+	it("names a Section by its Heading and says what it held", () => {
+		expect(deletedNotice([salon], salon)).toEqual({
+			title: "Deleted Section · Inside the salon",
+			description: "With 2 photos and 1 more block inside",
+		});
+		expect(deletedNotice([section()], section())).toEqual({
+			title: "Deleted Section · Find us",
+			description: "With 1 photo and 4 more blocks inside",
+		});
+	});
+
+	it("counts the photos of a Photos block", () => {
+		expect(deletedNotice([salon], photos(4))).toEqual({
+			title: "Deleted Photos in Inside the salon",
+			description: "With 4 photos",
+		});
+	});
+
+	it("gives a single block a title and no description", () => {
+		const hours = block("Heading", "hours", { text: "Opening hours" });
+		const findUs = section();
+		findUs.props["items"] = [...(findUs.props["items"] as BlockNode[]), hours];
+		expect(deletedNotice([findUs], hours)).toEqual({
+			title: "Deleted Heading in Find us",
+		});
+		const text = block("RichText", "text-9");
+		expect(deletedNotice([text], text)).toEqual({ title: "Deleted Text" });
+	});
+
+	it("names the Heading that titles its section by its own text", () => {
+		const title = block("Heading", "heading-1", { text: "Find us" });
+		expect(deletedNotice([section()], title)).toEqual({
+			title: "Deleted Heading · Find us",
+		});
+	});
+
+	it("names a Section with no Heading by its label and counts its blocks", () => {
+		const bare = block("Section", "bare", {
+			items: [block("RichText", "a"), block("Button", "b")],
+		});
+		expect(deletedNotice([bare], bare)).toEqual({
+			title: "Deleted Section",
+			description: "With 2 blocks inside",
+		});
+	});
+});
+
 describe("undo and redo", () => {
 	/** Puck's history over two data states, with the latest edit recorded or still waiting for its 250 ms. */
 	const fakeHistory = (pending: boolean) => {
@@ -354,6 +420,87 @@ describe("undo and redo", () => {
 		setTimeout(record, 120);
 		await undone;
 		expect(travels).toEqual(["back from 1"]);
+	});
+});
+
+describe("splitDeleteEntry", () => {
+	const page = (...content: BlockNode[]) => ({
+		root: { props: {} },
+		content,
+	});
+	const saved = page(block("Heading", "heading-1", { text: "Find us" }));
+	const edited = page(block("Heading", "heading-1", { text: "Where to" }));
+	const deleted = page();
+	const ui = (selected: string) => ({ selected });
+
+	/** Puck's history after a delete, the edit before it recorded on its own or sharing the delete's entry. */
+	const afterDelete = (editRecorded: boolean) => {
+		const set: { id: string; state: { data: unknown; ui: unknown } }[][] = [];
+		const history = {
+			histories: [
+				{ id: "h0", state: { data: saved, ui: ui("start") } },
+				...(editRecorded
+					? [{ id: "h1", state: { data: edited, ui: ui("edit") } }]
+					: []),
+			],
+			index: editRecorded ? 1 : 0,
+			setHistories: (next: (typeof set)[number]) => set.push(next),
+		};
+		const puck = { appState: { data: deleted, ui: ui("now") }, history };
+		const record = () => {
+			history.histories.push({
+				id: "h-delete",
+				state: { data: deleted, ui: ui("delete") },
+			});
+			history.index = history.histories.length - 1;
+		};
+		noteDelete({ data: edited, ui: ui("before") } as never, deleted as never);
+		return {
+			split: () => splitDeleteEntry(puck as unknown as PuckApi),
+			puck,
+			record,
+			set,
+		};
+	};
+
+	it("gives the edit just before a delete its own entry, keeping the page and today's UI", () => {
+		const { split, record, set } = afterDelete(false);
+		record();
+		split();
+		expect(set).toEqual([
+			[
+				{ id: "h0", state: { data: saved, ui: ui("start") } },
+				{ id: "h-delete-before", state: { data: edited, ui: ui("before") } },
+				{ id: "h-delete", state: { data: deleted, ui: ui("now") } },
+			],
+		]);
+		split();
+		expect(set).toHaveLength(1);
+	});
+
+	it("waits for the delete to be recorded", () => {
+		const { split, record, set } = afterDelete(false);
+		split();
+		expect(set).toHaveLength(0);
+		record();
+		split();
+		expect(set).toHaveLength(1);
+	});
+
+	it("leaves a delete alone that has an entry of its own", () => {
+		const { split, record, set } = afterDelete(true);
+		record();
+		split();
+		expect(set).toHaveLength(0);
+	});
+
+	it("gives up once the page changes again before the delete is recorded", () => {
+		const { split, puck, record, set } = afterDelete(false);
+		puck.appState.data = page(block("Heading", "heading-2"));
+		split();
+		record();
+		split();
+		expect(set).toHaveLength(0);
 	});
 });
 

@@ -17,6 +17,11 @@ export const heading = (id: string, text: string): Block => ({
 	props: { id, text, size: "2", align: "start" },
 });
 
+export const richText = (id: string, words: string): Block => ({
+	type: "RichText",
+	props: { id, content: `<p>${words}</p>` },
+});
+
 export const section = (id: string, items: Block[]): Block => ({
 	type: "Section",
 	props: { id, tone: "plain", padding: "medium", items },
@@ -48,10 +53,11 @@ export const editorFor = (page: Page, org: SeededOrg) => {
 	const settings = page.getByRole("complementary", { name: "Block settings" });
 	const banner = page.getByRole("banner");
 	const status = banner.getByRole("status");
+	const drawer = page.getByRole("complementary", { name: "Blocks" });
 	return {
 		page,
 		canvas,
-		drawer: page.getByRole("complementary", { name: "Blocks" }),
+		drawer,
 		settings,
 		/** The selected block's label, in the settings panel's toolbar. */
 		selected: settings.getByRole("heading", { level: 2 }),
@@ -62,6 +68,21 @@ export const editorFor = (page: Page, org: SeededOrg) => {
 		back: page.getByRole("banner").getByText("Back", { exact: true }),
 		/** The save status in the header: "Saved", "Saving…" or what went wrong. */
 		status,
+		/** The toast shown after a delete, with its Undo. */
+		deleteToast: page
+			.locator('[data-slot="toast"]:not([data-ending-style])')
+			.filter({ hasText: /^Deleted / }),
+		/** Clicks the Delete icon on the Layers row of the top-level block at `index`. */
+		deleteLayer: async (index: number) => {
+			await drawer.getByRole("tab", { name: "Layers" }).click();
+			const row = drawer
+				.getByRole("list")
+				.first()
+				.locator(":scope > li")
+				.nth(index);
+			await row.hover();
+			await row.getByTitle("Delete", { exact: true }).first().click();
+		},
 		/** Whether the page is public: "Live", "Changes not live yet", "Draft, not public"… */
 		pageState: banner.locator('[data-slot="badge"]'),
 
@@ -78,6 +99,13 @@ export const editorFor = (page: Page, org: SeededOrg) => {
 			await canvas
 				.locator(`[data-puck-component="${id}"]`)
 				.click({ position: { x: 6, y: 6 } });
+		},
+
+		/** Types `text` at the end of the selected block's rich-text field in the settings panel. */
+		typeRichText: async (text: string) => {
+			await settings.getByRole("textbox").click();
+			await page.keyboard.press("End");
+			await page.keyboard.type(text);
 		},
 
 		/** Saves at once with the shortcut and waits until everything is saved. */

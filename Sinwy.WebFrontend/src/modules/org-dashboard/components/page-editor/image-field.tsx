@@ -35,7 +35,7 @@ function useWriteImage() {
 		const { dispatch, getItemBySelector, getSelectorForId } = getPuck();
 		const at = getSelectorForId(blockId);
 		const item = at && getItemBySelector(at);
-		if (!at || !item) return;
+		if (!at || !item) return false;
 		const [parentId = "", slot = ""] = at.zone.split(":");
 		const rowAt = getSelectorForId(parentId);
 		const row = rowAt && getItemBySelector(rowAt);
@@ -66,7 +66,7 @@ function useWriteImage() {
 					},
 				},
 			});
-			return;
+			return true;
 		}
 		const fields = (BLOCKS as Blocks)[item.type]?.fields ?? {};
 		const data: ComponentData = {
@@ -83,6 +83,7 @@ function useWriteImage() {
 			destinationIndex: at.index,
 			data,
 		});
+		return true;
 	};
 }
 

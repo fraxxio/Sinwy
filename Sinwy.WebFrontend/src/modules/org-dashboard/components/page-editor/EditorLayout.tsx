@@ -27,6 +27,7 @@ import { cn } from "#/shared/lib/utils";
 import type { Autosave } from "./autosave";
 import { BlockToolbar } from "./BlockChrome";
 import { BlockDrawer } from "./BlockDrawer";
+import { DeleteToast } from "./DeleteToast";
 import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
 import { PreloadRichText } from "./editor-fields";
@@ -187,6 +188,22 @@ function KeepUiOnHistory() {
 	return null;
 }
 
+/**
+ * Puck keeps a rich-text field marked as focused after its block is deselected, and the next block's rich-text editor
+ * then records its unchanged text as an edit when it mounts. A new selection remounts the fields, so none has focus.
+ */
+function ForgetFieldFocusOnSelect() {
+	const getPuck = useGetPuck();
+	const selectedId = usePuck((s) => s.selectedItem?.props.id ?? null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: runs when the selection changes
+	useLayoutEffect(() => {
+		const { appState, dispatch } = getPuck();
+		if (appState.ui.field.focus == null) return;
+		dispatch({ type: "setUi", ui: { field: { focus: null } } });
+	}, [getPuck, selectedId]);
+	return null;
+}
+
 function LeftPanel() {
 	return (
 		<aside
@@ -291,6 +308,8 @@ export function EditorLayout({
 					<ViewportSwitch />
 				</div>
 				<KeepUiOnHistory />
+				<ForgetFieldFocusOnSelect />
+				<DeleteToast />
 				<HistoryButtons />
 				<SaveStatus autosave={autosave} uploads={uploads} />
 				<PublishActions

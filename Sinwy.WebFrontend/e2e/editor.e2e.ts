@@ -8,6 +8,7 @@ import {
 	expect,
 	heading,
 	outline,
+	richText,
 	section,
 	test,
 } from "./editor-fixtures";
@@ -238,6 +239,273 @@ test.describe("on Professional", () => {
 		await expect(title).toHaveText("Welcome to the salon today");
 		const [saved] = await pages.saved(pageId);
 		expect(saved?.props.id).toBe("elsewhere");
+	});
+});
+
+test.describe("deleting", () => {
+	test.use({ seed: "deleting" });
+
+	const photo = (id: string): Block => ({
+		type: "Image",
+		props: { id, src: "", alt: "", aspect: "square" },
+	});
+	const salonPage = () => [
+		section("salon", [
+			heading("salon-title", "Inside the salon"),
+			{
+				type: "Photos",
+				props: {
+					id: "salon-photos",
+					gap: "medium",
+					phoneLayout: "stack",
+					items: [photo("photo-1"), photo("photo-2")],
+				},
+			},
+		]),
+		section("find", [heading("find-title", "Find us")]),
+	];
+	const savedIds = async (
+		pages: { saved: (pageId: string) => Promise<Block[]> },
+		pageId: string,
+	) => (await pages.saved(pageId)).map((block) => block.props.id);
+
+	const expectSalonToast = async (editor: Editor) => {
+		await expect(editor.deleteToast).toContainText(
+			"Deleted Section · Inside the salon",
+		);
+		await expect(editor.deleteToast).toContainText(
+			"With 2 photos and 1 more block inside",
+		);
+	};
+
+	test("Undo in the toast brings back a deleted section with its photos, and the restore saves", async ({
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(salonPage());
+		await editor.open(pageId);
+		const before = await pages.saved(pageId);
+
+		await editor.select("salon");
+		await editor.canvas
+			.getByRole("button", { name: "Delete", exact: true })
+			.click();
+		await expect(editor.block("salon")).toHaveCount(0);
+		await expectSalonToast(editor);
+		await expect.poll(() => savedIds(pages, pageId)).toEqual(["find"]);
+
+		await editor.deleteToast.getByRole("button", { name: "Undo" }).click();
+		await expect(editor.deleteToast).toHaveCount(0);
+		await expect(editor.block("photo-2")).toBeVisible();
+		await expect.poll(() => pages.saved(pageId)).toEqual(before);
+	});
+
+	test("the settings panel, the Layers row and the Delete key show the same toast", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(salonPage());
+		await editor.open(pageId);
+		const undo = async () => {
+			await editor.deleteToast.getByRole("button", { name: "Undo" }).click();
+			await expect(editor.block("salon")).toBeVisible();
+		};
+
+		await editor.select("salon");
+		await editor.settings
+			.getByRole("button", { name: "Delete", exact: true })
+			.click();
+		await expectSalonToast(editor);
+		await undo();
+
+		await editor.select("find");
+		await expect(editor.selected).toHaveText("Section");
+		await editor.deleteLayer(0);
+		await expect(editor.block("salon")).toHaveCount(0);
+		await expectSalonToast(editor);
+		await expect(
+			editor.settings.getByText("Select a block on the page"),
+		).toBeVisible();
+		await undo();
+
+		await editor.select("salon");
+		await page.keyboard.press("Delete");
+		await expectSalonToast(editor);
+		await undo();
+
+		await editor.block("find-title").click();
+		await page.keyboard.press("Delete");
+		await expect(editor.deleteToast).toHaveText(/^Deleted Heading · Find us/);
+		await expect(editor.deleteToast).not.toContainText("With ");
+	});
+
+	test("the toast closes on the next edit and on Ctrl+Z, so its Undo never takes back anything else", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(salonPage());
+		await editor.open(pageId);
+
+		await editor.select("salon");
+		await page.keyboard.press("Delete");
+		await expect(editor.deleteToast).toBeVisible();
+		await editor.block("find-title").click();
+		await editor.settings
+			.getByLabel("Text", { exact: true })
+			.fill("Where to find us");
+		await expect(editor.deleteToast).toHaveCount(0);
+		// an edit and a delete less than 250 ms apart are one undo step
+		await expect
+			.poll(async () => JSON.stringify(await pages.saved(pageId)))
+			.toContain("Where to find us");
+
+		await editor.select("find");
+		await page.keyboard.press("Delete");
+		await expect(editor.deleteToast).toBeVisible();
+		await page.keyboard.press("ControlOrMeta+z");
+		await expect(editor.deleteToast).toHaveCount(0);
+		await expect(editor.block("find")).toHaveCount(1);
+		await expect(editor.block("find-title")).toHaveText("Where to find us");
+	});
+
+	test("an edit just before a delete keeps its own undo step, so toast Undo brings the block back edited", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(salonPage());
+		await editor.open(pageId);
+
+		await editor.block("find-title").click();
+		await editor.settings
+			.getByLabel("Text", { exact: true })
+			.fill("Where to find us");
+		await editor.settings
+			.getByRole("button", { name: "Delete", exact: true })
+			.click();
+		await expect(editor.block("find-title")).toHaveCount(0);
+
+		await editor.deleteToast.getByRole("button", { name: "Undo" }).click();
+		await expect(editor.block("find-title")).toHaveText("Where to find us");
+		await expect
+			.poll(async () => JSON.stringify(await pages.saved(pageId)))
+			.toContain("Where to find us");
+		await page.keyboard.press("ControlOrMeta+z");
+		await expect(editor.block("find-title")).toHaveText("Find us");
+	});
+});
+
+test.describe("rich text", () => {
+	test.use({ seed: "richText" });
+
+	const textPage = () => [
+		section("texts", [richText("alpha", "Alpha"), richText("bravo", "Bravo")]),
+		section("end", [heading("end-title", "The end")]),
+	];
+	const savedContent = async (
+		pages: { saved: (pageId: string) => Promise<Block[]> },
+		pageId: string,
+	) => {
+		const [texts] = await pages.saved(pageId);
+		return ((texts?.props["items"] ?? []) as Block[]).map(
+			(block) => block.props["content"],
+		);
+	};
+
+	test("selecting Text blocks records nothing, so each Undo takes back one edit", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(textPage());
+		await editor.open(pageId);
+		const alpha = editor.block("alpha");
+		const bravo = editor.block("bravo");
+
+		await alpha.click();
+		await editor.typeRichText(" one");
+		await expect(editor.status).toHaveText("Saved");
+		await bravo.click();
+		await alpha.click();
+		await editor.typeRichText(" two");
+		await expect(alpha).toHaveText("Alpha one two");
+		await expect(editor.status).toHaveText("Saved");
+
+		await editor.button("Phone").click();
+		await bravo.click();
+		// Bravo's action bar covers the middle of Alpha on the phone view
+		await editor.select("alpha");
+		await expect(editor.selected).toHaveText("Text");
+		await editor.select("texts");
+
+		await page.keyboard.press("ControlOrMeta+z");
+		await expect(alpha).toHaveText("Alpha one");
+		await editor.button("Undo").click();
+		await expect(alpha).toHaveText("Alpha");
+		await expect(editor.button("Undo")).toBeDisabled();
+		await expect(bravo).toHaveText("Bravo");
+		await expect
+			.poll(() => savedContent(pages, pageId))
+			.toEqual(["<p>Alpha</p>", "<p>Bravo</p>"]);
+	});
+
+	test("clicking an edited Text block after a delete keeps the toast, and its Undo keeps the edit", async ({
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(textPage());
+		await editor.open(pageId);
+		const alpha = editor.block("alpha");
+
+		await alpha.click();
+		await editor.typeRichText(" edited");
+		await expect(editor.status).toHaveText("Saved");
+		await editor.select("end");
+		await editor.button("Delete").click();
+		await expect(editor.deleteToast).toBeVisible();
+
+		await alpha.click();
+		await expect(editor.settings.getByRole("textbox")).toHaveText(
+			"Alpha edited",
+		);
+		await expect(editor.status).toHaveText("Saved");
+		await expect(editor.deleteToast).toBeVisible();
+		await editor.deleteToast.getByRole("button", { name: "Undo" }).click();
+		await expect(editor.block("end-title")).toHaveText("The end");
+		await expect(alpha).toHaveText("Alpha edited");
+		await expect.poll(async () => (await pages.saved(pageId)).length).toBe(2);
+		expect(await savedContent(pages, pageId)).toEqual([
+			"<p>Alpha edited</p>",
+			"<p>Bravo</p>",
+		]);
+	});
+
+	test("typing straight after selecting a Text block lands every key in one undo step", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(textPage());
+		await editor.open(pageId);
+		const alpha = editor.block("alpha");
+		const bravo = editor.block("bravo");
+
+		await bravo.click();
+		await editor.typeRichText(" first");
+		await expect(editor.status).toHaveText("Saved");
+
+		await alpha.click();
+		await editor.typeRichText(" quick brown fox");
+		await expect(alpha).toHaveText("Alpha quick brown fox");
+		await editor.select("texts");
+		await page.keyboard.press("ControlOrMeta+z");
+		await expect(alpha).toHaveText("Alpha");
+		await expect(bravo).toHaveText("Bravo first");
+		await page.keyboard.press("ControlOrMeta+z");
+		await expect(bravo).toHaveText("Bravo");
+		await expect(editor.button("Undo")).toBeDisabled();
 	});
 });
 
@@ -771,6 +1039,45 @@ test.describe("photos", () => {
 		expect(JSON.stringify(detail.latestVersion.content.data)).toMatch(
 			new RegExp(`"src":"[^"]*/api/files/pages/${org.orgId}/[^/"]+\\.jpg"`),
 		);
+	});
+
+	test("a photo that finishes uploading after its section was deleted comes back with Undo and Retry", async ({
+		page,
+		pages,
+		editor,
+		org,
+	}) => {
+		const pageId = await pages.create([
+			section("gallery", [emptyPhoto("photo-1")]),
+			section("find", [heading("find-title", "Find us")]),
+		]);
+		await editor.open(pageId);
+		const release = await holdUploads(page);
+
+		await editor.select("photo-1");
+		await editor.settings.getByLabel("Upload photo").setInputFiles({
+			name: "salon.jpg",
+			mimeType: "image/jpeg",
+			buffer: await jpeg(page, 1200, 900),
+		});
+		await expect(editor.status).toHaveText("Uploading…");
+		await editor.select("gallery");
+		await page.keyboard.press("Delete");
+		await editor.deleteToast.hover();
+		release();
+		await expect(editor.status).not.toHaveText("Uploading…");
+
+		await editor.deleteToast.getByRole("button", { name: "Undo" }).click();
+		await editor.select("photo-1");
+		const alert = editor.settings.getByRole("alert");
+		await expect(alert).toContainText("after its block was deleted");
+		await alert.getByRole("button", { name: "Retry" }).click();
+		await expect(alert).toHaveCount(0);
+		await expect
+			.poll(async () => JSON.stringify(await pages.saved(pageId)))
+			.toMatch(
+				new RegExp(`"src":"[^"]*/api/files/pages/${org.orgId}/[^/"]+\\.jpg"`),
+			);
 	});
 
 	test("Back during an upload asks: Wait stays with the upload shown, Leave anyway drops it", async ({

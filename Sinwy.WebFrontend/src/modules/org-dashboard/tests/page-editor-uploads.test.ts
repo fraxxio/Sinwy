@@ -23,8 +23,10 @@ const offline: ApiResponse<PageImageDto> = {
 
 const setup = ({
 	prepared = { ok: true, blob: new Blob(["jpeg"]), width: 400, height: 300 },
+	blockOnPage = () => true,
 }: {
 	prepared?: ShrinkResult;
+	blockOnPage?: () => boolean;
 } = {}) => {
 	const sends: {
 		signal: AbortSignal;
@@ -45,9 +47,11 @@ const setup = ({
 	});
 	const written: { src: string; shape: string }[] = [];
 	const pick = () =>
-		uploads.pick(KEY, new File(["jpeg"], "salon.jpg"), (src, shape) =>
-			written.push({ src, shape }),
-		);
+		uploads.pick(KEY, new File(["jpeg"], "salon.jpg"), (src, shape) => {
+			if (!blockOnPage()) return false;
+			written.push({ src, shape });
+			return true;
+		});
 	const send = (index: number) => {
 		const found = sends[index];
 		if (!found) throw new Error(`No upload ${index}`);
@@ -103,6 +107,34 @@ describe("upload tracker", () => {
 		await send(1).answer(uploaded);
 		expect(uploads.pending()).toBe(0);
 		expect(written).toHaveLength(1);
+	});
+
+	it("keeps a photo that finished after its block was deleted, and Retry writes it once the block is back", async () => {
+		let onPage = false;
+		const { uploads, pick, send, written } = setup({
+			blockOnPage: () => onPage,
+		});
+		void pick();
+		await settle();
+
+		await send(0).answer(uploaded);
+		expect(uploads.pending()).toBe(0);
+		expect(written).toHaveLength(0);
+		const view = uploads.view(KEY);
+		expect(view).toMatchObject({
+			status: "failed",
+			message: expect.stringContaining("after its block was deleted"),
+		});
+		if (view?.status !== "failed" || !view.retry) throw new Error("No retry");
+
+		view.retry();
+		expect(uploads.view(KEY)).toMatchObject({ status: "failed" });
+		onPage = true;
+		view.retry();
+		expect(uploads.pending()).toBe(0);
+		expect(() => send(1)).toThrow();
+		expect(written).toEqual([{ src: STORED, shape: "wide" }]);
+		expect(uploads.view(KEY)).toBeNull();
 	});
 
 	it("settles when the photo can't be prepared, without uploading", async () => {

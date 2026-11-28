@@ -9,6 +9,7 @@ import type { PageMetadata } from "#/shared/components/page-builder/blocks";
 import type { Autosave } from "./autosave";
 import { chromeOverrides } from "./BlockChrome";
 import { BlockAccessProvider } from "./BlockDrawer";
+import { reportDelete } from "./DeleteToast";
 import { canvasOverrides } from "./EditorCanvas";
 import { EditorLayout } from "./EditorLayout";
 import { DESKTOP_WIDTH, editorConfig, VIEWPORTS } from "./editor-config";
@@ -80,6 +81,7 @@ export function PageEditor({
 							overrides={OVERRIDES}
 							dnd={DND}
 							height="100%"
+							onAction={reportDelete}
 						>
 							<EditorLayout
 								title={title}
