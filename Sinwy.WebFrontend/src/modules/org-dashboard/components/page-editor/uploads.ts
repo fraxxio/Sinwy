@@ -11,7 +11,8 @@ export type UploadView =
 			retry: (() => void) | null;
 	  };
 
-export type WriteImage = (src: string, shape: ImageShape) => void;
+/** Puts the uploaded photo in its block; false when the block is no longer on the page. */
+export type WriteImage = (src: string, shape: ImageShape) => boolean;
 
 const MESSAGES = {
 	unreadable:
@@ -19,6 +20,8 @@ const MESSAGES = {
 	"too-large":
 		"This photo is still over 2 MB after shrinking. Choose a smaller photo.",
 	network: "The photo didn't upload. Check your connection and try again.",
+	deleted:
+		"This photo finished uploading after its block was deleted. Retry to add it.",
 };
 
 const previewOf = (view: UploadView | undefined) =>
@@ -92,8 +95,19 @@ export function createUploads({
 			const res = await upload(image, signal);
 			if (signal.aborted) return;
 			if (res.isSuccess) {
-				write(res.data.src, shape);
-				show(key, null);
+				const { src } = res.data;
+				if (write(src, shape)) {
+					show(key, null);
+					return;
+				}
+				show(key, {
+					status: "failed",
+					message: MESSAGES.deleted,
+					preview,
+					retry: () => {
+						if (!disposed && write(src, shape)) show(key, null);
+					},
+				});
 				return;
 			}
 			const retryable = res.code === 0 || res.code >= 500;

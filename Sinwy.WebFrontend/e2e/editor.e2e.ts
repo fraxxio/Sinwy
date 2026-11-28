@@ -368,6 +368,32 @@ test.describe("deleting", () => {
 		await expect(editor.block("find")).toHaveCount(1);
 		await expect(editor.block("find-title")).toHaveText("Where to find us");
 	});
+
+	test("an edit just before a delete keeps its own undo step, so toast Undo brings the block back edited", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(salonPage());
+		await editor.open(pageId);
+
+		await editor.block("find-title").click();
+		await editor.settings
+			.getByLabel("Text", { exact: true })
+			.fill("Where to find us");
+		await editor.settings
+			.getByRole("button", { name: "Delete", exact: true })
+			.click();
+		await expect(editor.block("find-title")).toHaveCount(0);
+
+		await editor.deleteToast.getByRole("button", { name: "Undo" }).click();
+		await expect(editor.block("find-title")).toHaveText("Where to find us");
+		await expect
+			.poll(async () => JSON.stringify(await pages.saved(pageId)))
+			.toContain("Where to find us");
+		await page.keyboard.press("ControlOrMeta+z");
+		await expect(editor.block("find-title")).toHaveText("Find us");
+	});
 });
 
 test.describe("on Starter", () => {
@@ -900,6 +926,45 @@ test.describe("photos", () => {
 		expect(JSON.stringify(detail.latestVersion.content.data)).toMatch(
 			new RegExp(`"src":"[^"]*/api/files/pages/${org.orgId}/[^/"]+\\.jpg"`),
 		);
+	});
+
+	test("a photo that finishes uploading after its section was deleted comes back with Undo and Retry", async ({
+		page,
+		pages,
+		editor,
+		org,
+	}) => {
+		const pageId = await pages.create([
+			section("gallery", [emptyPhoto("photo-1")]),
+			section("find", [heading("find-title", "Find us")]),
+		]);
+		await editor.open(pageId);
+		const release = await holdUploads(page);
+
+		await editor.select("photo-1");
+		await editor.settings.getByLabel("Upload photo").setInputFiles({
+			name: "salon.jpg",
+			mimeType: "image/jpeg",
+			buffer: await jpeg(page, 1200, 900),
+		});
+		await expect(editor.status).toHaveText("Uploading…");
+		await editor.select("gallery");
+		await page.keyboard.press("Delete");
+		await editor.deleteToast.hover();
+		release();
+		await expect(editor.status).not.toHaveText("Uploading…");
+
+		await editor.deleteToast.getByRole("button", { name: "Undo" }).click();
+		await editor.select("photo-1");
+		const alert = editor.settings.getByRole("alert");
+		await expect(alert).toContainText("after its block was deleted");
+		await alert.getByRole("button", { name: "Retry" }).click();
+		await expect(alert).toHaveCount(0);
+		await expect
+			.poll(async () => JSON.stringify(await pages.saved(pageId)))
+			.toMatch(
+				new RegExp(`"src":"[^"]*/api/files/pages/${org.orgId}/[^/"]+\\.jpg"`),
+			);
 	});
 
 	test("Back during an upload asks: Wait stays with the upload shown, Leave anyway drops it", async ({

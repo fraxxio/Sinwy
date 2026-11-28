@@ -17,6 +17,10 @@ import {
 	stepInReadingOrder,
 	zoneContent,
 } from "../components/page-editor/block-actions";
+import {
+	noteDelete,
+	splitDeleteEntry,
+} from "../components/page-editor/delete-history";
 import { blockActions } from "../components/page-editor/use-block-actions";
 
 const block = (
@@ -416,6 +420,87 @@ describe("undo and redo", () => {
 		setTimeout(record, 120);
 		await undone;
 		expect(travels).toEqual(["back from 1"]);
+	});
+});
+
+describe("splitDeleteEntry", () => {
+	const page = (...content: BlockNode[]) => ({
+		root: { props: {} },
+		content,
+	});
+	const saved = page(block("Heading", "heading-1", { text: "Find us" }));
+	const edited = page(block("Heading", "heading-1", { text: "Where to" }));
+	const deleted = page();
+	const ui = (selected: string) => ({ selected });
+
+	/** Puck's history after a delete, the edit before it recorded on its own or sharing the delete's entry. */
+	const afterDelete = (editRecorded: boolean) => {
+		const set: { id: string; state: { data: unknown; ui: unknown } }[][] = [];
+		const history = {
+			histories: [
+				{ id: "h0", state: { data: saved, ui: ui("start") } },
+				...(editRecorded
+					? [{ id: "h1", state: { data: edited, ui: ui("edit") } }]
+					: []),
+			],
+			index: editRecorded ? 1 : 0,
+			setHistories: (next: (typeof set)[number]) => set.push(next),
+		};
+		const puck = { appState: { data: deleted, ui: ui("now") }, history };
+		const record = () => {
+			history.histories.push({
+				id: "h-delete",
+				state: { data: deleted, ui: ui("delete") },
+			});
+			history.index = history.histories.length - 1;
+		};
+		noteDelete({ data: edited, ui: ui("before") } as never, deleted as never);
+		return {
+			split: () => splitDeleteEntry(puck as unknown as PuckApi),
+			puck,
+			record,
+			set,
+		};
+	};
+
+	it("gives the edit just before a delete its own entry, keeping the page and today's UI", () => {
+		const { split, record, set } = afterDelete(false);
+		record();
+		split();
+		expect(set).toEqual([
+			[
+				{ id: "h0", state: { data: saved, ui: ui("start") } },
+				{ id: "h-delete-before", state: { data: edited, ui: ui("before") } },
+				{ id: "h-delete", state: { data: deleted, ui: ui("now") } },
+			],
+		]);
+		split();
+		expect(set).toHaveLength(1);
+	});
+
+	it("waits for the delete to be recorded", () => {
+		const { split, record, set } = afterDelete(false);
+		split();
+		expect(set).toHaveLength(0);
+		record();
+		split();
+		expect(set).toHaveLength(1);
+	});
+
+	it("leaves a delete alone that has an entry of its own", () => {
+		const { split, record, set } = afterDelete(true);
+		record();
+		split();
+		expect(set).toHaveLength(0);
+	});
+
+	it("gives up once the page changes again before the delete is recorded", () => {
+		const { split, puck, record, set } = afterDelete(false);
+		puck.appState.data = page(block("Heading", "heading-2"));
+		split();
+		record();
+		split();
+		expect(set).toHaveLength(0);
 	});
 });
 

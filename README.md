@@ -138,13 +138,13 @@ Run the two servers as separate long-running processes, each with its output in 
 - dragging a drawer card to the end of the page, and moving a block by its handle;
 - editing a field, and undo and redo that keep the phone view;
 - the keyboard shortcuts;
-- deleting a block from the action bar, the settings panel, the Layers row and the Delete key, the "Deleted …" toast's Undo, and the toast closing on the next edit;
+- deleting a block from the action bar, the settings panel, the Layers row and the Delete key, the "Deleted …" toast's Undo, the toast closing on the next edit, and an edit just before a delete keeping its own undo step;
 - autosave with no click, which survives a reload, and Ctrl+S saving what was just typed;
 - a save refused for a newer version keeping the edits, then "Keep mine" and "Load latest";
 - leaving the editor: Back saves first, and asks when a save can't go through;
 - publishing and discarding from the editor and the page's detail screen, and a publish refused for a newer version;
 - the pre-publish warnings about unfilled blocks;
-- uploading a photo from the device into an Image and a Photos row, Publish waiting for an upload, and Back asking while one runs;
+- uploading a photo from the device into an Image and a Photos row, Publish waiting for an upload, Back asking while one runs, and a photo that finishes after its section was deleted coming back with Undo and Retry;
 - the locked Booking tile on Starter.
 
 It checks the saved document through the API. It isn't part of `bun run verify`. **Run it before any `@puckeditor/core` upgrade, and upgrade only if it passes.** Failure traces are written to `.playwright-cli/editor-e2e/results/`.

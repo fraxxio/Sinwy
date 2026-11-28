@@ -14,6 +14,7 @@ import {
 	stepInReadingOrder,
 	WRAPPER,
 } from "./block-actions";
+import { splitDeleteEntry } from "./delete-history";
 import { useCanvasDocument } from "./EditorCanvas";
 
 /** Scrolls the canvas to a block once Puck has rendered it, unless it's already in view. */
@@ -66,6 +67,7 @@ async function travelWhenRecorded(
 	const started = Date.now();
 	while (historyPending(getPuck()) && Date.now() - started < SETTLE_TIMEOUT_MS)
 		await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
+	splitDeleteEntry(getPuck());
 	getPuck().history[direction]();
 }
 

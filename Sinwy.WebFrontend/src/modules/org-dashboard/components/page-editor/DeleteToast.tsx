@@ -3,6 +3,7 @@ import type { BlockNode } from "@sinwy/shared";
 import { type RefObject, useEffect, useEffectEvent, useRef } from "react";
 import { toast } from "#/shared/components/ui/toast";
 import { deletedNotice, zoneContent } from "./block-actions";
+import { noteDelete, splitDeleteEntry } from "./delete-history";
 import { usePuck } from "./editor-config";
 import { useBlockActions } from "./use-block-actions";
 
@@ -21,6 +22,7 @@ export const reportDelete: OnAction = (action, appState, prevAppState) => {
 	const content = prevAppState.data.content as BlockNode[];
 	const block = zoneContent(content, action.zone)?.[action.index];
 	if (!block) return;
+	noteDelete(prevAppState, appState.data);
 	for (const listener of listeners)
 		listener({ block, content, after: appState.data });
 };
@@ -42,6 +44,7 @@ export function DeleteToast() {
 	const getPuck = useGetPuck();
 	const actions = useBlockActions();
 	const data = usePuck((s) => s.appState.data);
+	const historyIndex = usePuck((s) => s.history.index);
 	const shown = useRef<Shown | null>(null);
 
 	const onDelete = useEffectEvent(({ block, content, after }: Deleted) => {
@@ -78,6 +81,11 @@ export function DeleteToast() {
 	useEffect(() => {
 		if (shown.current && data !== shown.current.after) closeShown(shown);
 	}, [data]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: runs when Puck records history
+	useEffect(() => {
+		splitDeleteEntry(getPuck());
+	}, [historyIndex, getPuck]);
 
 	return null;
 }
