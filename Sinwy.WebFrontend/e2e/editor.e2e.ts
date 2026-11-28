@@ -241,6 +241,135 @@ test.describe("on Professional", () => {
 	});
 });
 
+test.describe("deleting", () => {
+	test.use({ seed: "deleting" });
+
+	const photo = (id: string): Block => ({
+		type: "Image",
+		props: { id, src: "", alt: "", aspect: "square" },
+	});
+	const salonPage = () => [
+		section("salon", [
+			heading("salon-title", "Inside the salon"),
+			{
+				type: "Photos",
+				props: {
+					id: "salon-photos",
+					gap: "medium",
+					phoneLayout: "stack",
+					items: [photo("photo-1"), photo("photo-2")],
+				},
+			},
+		]),
+		section("find", [heading("find-title", "Find us")]),
+	];
+	const savedIds = async (
+		pages: { saved: (pageId: string) => Promise<Block[]> },
+		pageId: string,
+	) => (await pages.saved(pageId)).map((block) => block.props.id);
+
+	const expectSalonToast = async (editor: Editor) => {
+		await expect(editor.deleteToast).toContainText(
+			"Deleted Section · Inside the salon",
+		);
+		await expect(editor.deleteToast).toContainText(
+			"With 2 photos and 1 more block inside",
+		);
+	};
+
+	test("Undo in the toast brings back a deleted section with its photos, and the restore saves", async ({
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(salonPage());
+		await editor.open(pageId);
+		const before = await pages.saved(pageId);
+
+		await editor.select("salon");
+		await editor.canvas
+			.getByRole("button", { name: "Delete", exact: true })
+			.click();
+		await expect(editor.block("salon")).toHaveCount(0);
+		await expectSalonToast(editor);
+		await expect.poll(() => savedIds(pages, pageId)).toEqual(["find"]);
+
+		await editor.deleteToast.getByRole("button", { name: "Undo" }).click();
+		await expect(editor.deleteToast).toHaveCount(0);
+		await expect(editor.block("photo-2")).toBeVisible();
+		await expect.poll(() => pages.saved(pageId)).toEqual(before);
+	});
+
+	test("the settings panel, the Layers row and the Delete key show the same toast", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(salonPage());
+		await editor.open(pageId);
+		const undo = async () => {
+			await editor.deleteToast.getByRole("button", { name: "Undo" }).click();
+			await expect(editor.block("salon")).toBeVisible();
+		};
+
+		await editor.select("salon");
+		await editor.settings
+			.getByRole("button", { name: "Delete", exact: true })
+			.click();
+		await expectSalonToast(editor);
+		await undo();
+
+		await editor.select("find");
+		await expect(editor.selected).toHaveText("Section");
+		await editor.deleteLayer(0);
+		await expect(editor.block("salon")).toHaveCount(0);
+		await expectSalonToast(editor);
+		await expect(
+			editor.settings.getByText("Select a block on the page"),
+		).toBeVisible();
+		await undo();
+
+		await editor.select("salon");
+		await page.keyboard.press("Delete");
+		await expectSalonToast(editor);
+		await undo();
+
+		await editor.block("find-title").click();
+		await page.keyboard.press("Delete");
+		await expect(editor.deleteToast).toHaveText(/^Deleted Heading in Find us/);
+		await expect(editor.deleteToast).not.toContainText("With ");
+	});
+
+	test("the toast closes on the next edit and on Ctrl+Z, so its Undo never takes back anything else", async ({
+		page,
+		pages,
+		editor,
+	}) => {
+		const pageId = await pages.create(salonPage());
+		await editor.open(pageId);
+
+		await editor.select("salon");
+		await page.keyboard.press("Delete");
+		await expect(editor.deleteToast).toBeVisible();
+		await editor.block("find-title").click();
+		await editor.settings
+			.getByLabel("Text", { exact: true })
+			.fill("Where to find us");
+		await expect(editor.deleteToast).toHaveCount(0);
+		// an edit and a delete less than 250 ms apart are one undo step
+		await expect
+			.poll(async () => JSON.stringify(await pages.saved(pageId)))
+			.toContain("Where to find us");
+
+		await editor.select("find");
+		await page.keyboard.press("Delete");
+		await expect(editor.deleteToast).toBeVisible();
+		await page.keyboard.press("ControlOrMeta+z");
+		await expect(editor.deleteToast).toHaveCount(0);
+		await expect(editor.block("find")).toHaveCount(1);
+		await expect(editor.block("find-title")).toHaveText("Where to find us");
+	});
+});
+
 test.describe("on Starter", () => {
 	test.use({ seed: "starter" });
 

@@ -137,6 +137,44 @@ export function canvasLabel(
 	return around ? `${label} in ${around}` : label;
 }
 
+const inside = (block: BlockNode, blocks: Blocks): BlockNode[] =>
+	slotsOf(block, blocks).flatMap((slot) =>
+		childrenIn(block, slot).flatMap((child) => [
+			child,
+			...inside(child, blocks),
+		]),
+	);
+
+const counted = (count: number, noun: string) =>
+	`${count} ${noun}${count === 1 ? "" : "s"}`;
+
+/** The toast after a delete: the block's name on the canvas and, for a block that held others, what went with it. */
+export function deletedNotice(
+	content: readonly BlockNode[],
+	block: BlockNode,
+	blocks: Blocks = BLOCKS,
+): { title: string; description?: string } {
+	const name =
+		canvasLabel(content, block.props.id, blocks) ??
+		blockTitle(block, blocks) ??
+		labelOf(block.type, blocks);
+	const title = `Deleted ${name}`;
+	const held = inside(block, blocks);
+	const photos = held.filter(({ type }) => type === "Image").length;
+	const others = held.filter(
+		({ type }) => type !== "Image" && type !== "Photos",
+	).length;
+	if (photos && others)
+		return {
+			title,
+			description: `With ${counted(photos, "photo")} and ${counted(others, "more block")} inside`,
+		};
+	if (photos) return { title, description: `With ${counted(photos, "photo")}` };
+	if (others)
+		return { title, description: `With ${counted(others, "block")} inside` };
+	return { title };
+}
+
 /** What to tell the owner when a block is dropped on a zone that doesn't take it, so Puck kept it where it was. */
 export function refusedDropNotice(
 	content: readonly BlockNode[],

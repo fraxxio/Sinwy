@@ -26,6 +26,7 @@ export type Stack = {
 	photos: SeededOrg;
 	/** Button links; holds services and a second live page. */
 	links: SeededOrg;
+	deleting: SeededOrg;
 	starter: SeededOrg;
 };
 

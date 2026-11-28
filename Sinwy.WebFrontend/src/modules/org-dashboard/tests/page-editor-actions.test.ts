@@ -5,6 +5,7 @@ import {
 	blockTitle,
 	canvasLabel,
 	cloneBlock,
+	deletedNotice,
 	drawerGroups,
 	moveTarget,
 	parentSelector,
@@ -310,6 +311,58 @@ describe("canvas names", () => {
 		expect(
 			refusedDropNotice(content(), "heading-1", "section-2:items"),
 		).toBeNull();
+	});
+});
+
+describe("deletedNotice", () => {
+	const photos = (count: number) =>
+		block("Photos", "photos-1", {
+			items: Array.from({ length: count }, (_, i) =>
+				block("Image", `photo-${i}`, { src: `/${i}.jpg` }),
+			),
+		});
+	const salon = block("Section", "salon", {
+		items: [
+			block("Heading", "salon-heading", { text: "Inside the salon" }),
+			photos(2),
+		],
+	});
+
+	it("names a Section by its Heading and says what it held", () => {
+		expect(deletedNotice([salon], salon)).toEqual({
+			title: "Deleted Section · Inside the salon",
+			description: "With 2 photos and 1 more block inside",
+		});
+		expect(deletedNotice([section()], section())).toEqual({
+			title: "Deleted Section · Find us",
+			description: "With 1 photo and 4 more blocks inside",
+		});
+	});
+
+	it("counts the photos of a Photos block", () => {
+		expect(deletedNotice([salon], photos(4))).toEqual({
+			title: "Deleted Photos in Inside the salon",
+			description: "With 4 photos",
+		});
+	});
+
+	it("gives a single block a title and no description", () => {
+		const heading = block("Heading", "heading-1", { text: "Find us" });
+		expect(deletedNotice([section()], heading)).toEqual({
+			title: "Deleted Heading in Find us",
+		});
+		const text = block("RichText", "text-9");
+		expect(deletedNotice([text], text)).toEqual({ title: "Deleted Text" });
+	});
+
+	it("names a Section with no Heading by its label and counts its blocks", () => {
+		const bare = block("Section", "bare", {
+			items: [block("RichText", "a"), block("Button", "b")],
+		});
+		expect(deletedNotice([bare], bare)).toEqual({
+			title: "Deleted Section",
+			description: "With 2 blocks inside",
+		});
 	});
 });
 

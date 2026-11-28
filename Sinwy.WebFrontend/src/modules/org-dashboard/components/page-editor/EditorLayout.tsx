@@ -27,6 +27,7 @@ import { cn } from "#/shared/lib/utils";
 import type { Autosave } from "./autosave";
 import { BlockToolbar } from "./BlockChrome";
 import { BlockDrawer } from "./BlockDrawer";
+import { DeleteToast } from "./DeleteToast";
 import { EditorCanvas } from "./EditorCanvas";
 import { usePuck, VIEWPORTS } from "./editor-config";
 import { PreloadRichText } from "./editor-fields";
@@ -291,6 +292,7 @@ export function EditorLayout({
 					<ViewportSwitch />
 				</div>
 				<KeepUiOnHistory />
+				<DeleteToast />
 				<HistoryButtons />
 				<SaveStatus autosave={autosave} uploads={uploads} />
 				<PublishActions
